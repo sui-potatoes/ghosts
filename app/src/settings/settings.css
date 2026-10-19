@@ -1,0 +1,164 @@
+/*
+ * Display preferences, driven by data attributes that settings/store.ts keeps
+ * on <html>. The scanline + vignette overlay itself is body::before in
+ * index.css; these rules pare it down or remove it.
+ */
+html[data-scanlines="off"][data-vignette="on"] body::before {
+    background: radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, 0.55) 100%);
+}
+
+html[data-scanlines="on"][data-vignette="off"] body::before {
+    background: repeating-linear-gradient(
+        0deg,
+        rgba(255, 255, 255, 0.015) 0px,
+        rgba(255, 255, 255, 0.015) 1px,
+        transparent 1px,
+        transparent 3px
+    );
+}
+
+html[data-scanlines="off"][data-vignette="off"] body::before {
+    display: none;
+}
+
+html[data-reduce-motion="on"] *,
+html[data-reduce-motion="on"] *::before,
+html[data-reduce-motion="on"] *::after {
+    animation: none !important;
+    transition: none !important;
+}
+
+/* === Settings screen === */
+
+/* Category list: mono rows with a caret that lights on the current one. */
+.settings-nav-item {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    display: flex;
+    align-items: baseline;
+    width: 100%;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    text-align: left;
+    white-space: nowrap;
+}
+
+.settings-nav-item::before {
+    content: "›";
+    margin-right: 12px;
+    color: var(--disabled-color);
+    transition: color 0.15s ease;
+}
+
+.settings-nav-item:hover,
+.settings-nav-item:focus-visible {
+    color: var(--text-color);
+}
+
+.settings-nav-item[aria-current="true"] {
+    color: var(--text-color);
+}
+
+.settings-nav-item[aria-current="true"]::before {
+    color: var(--accent-color);
+}
+
+@media (max-width: 767px) {
+    .settings-nav-item {
+        width: auto;
+        padding: 10px 14px 10px 0;
+        border-bottom: none;
+    }
+}
+
+/* A control row. Focus anywhere inside lights the whole row. */
+.ctl-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    margin: 0 -12px;
+    padding: 12px;
+    border-bottom: 1px solid var(--border-color);
+    transition: background-color 0.15s ease;
+}
+
+.ctl-row:hover,
+.ctl-row:focus-within {
+    background-color: var(--accent-dim);
+}
+
+/* On/off pill. */
+.switch-pill {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    min-width: 64px;
+    padding: 5px 10px;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    transition:
+        border-color 0.15s ease,
+        color 0.15s ease;
+}
+
+.switch-pill[aria-checked="true"] {
+    border-color: var(--accent-color);
+    color: var(--accent-color);
+}
+
+.switch-pill:disabled {
+    color: var(--disabled-color);
+    border-color: var(--border-color);
+}
+
+/* Ten-block level bar. */
+.seg {
+    display: flex;
+    gap: 3px;
+    padding: 4px 0;
+}
+
+.seg-block {
+    display: block;
+    width: 12px;
+    height: 10px;
+    background: var(--border-color);
+    cursor: pointer;
+    transition: background-color 0.1s ease;
+}
+
+.seg-block.on {
+    background: var(--text-color);
+}
+
+.seg:focus-visible .seg-block.on {
+    background: var(--accent-color);
+}
+
+.seg-btn {
+    font-family: var(--font-mono);
+    font-size: 16px;
+    line-height: 1;
+    padding: 0 4px;
+    color: var(--text-secondary);
+}
+
+.seg-btn:disabled {
+    color: var(--disabled-color);
+}
+
+/* Key cap. */
+.kbd {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+}

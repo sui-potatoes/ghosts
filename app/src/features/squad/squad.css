@@ -1,0 +1,1093 @@
+/* Squad layout uses Ghosts' shared palette, typography and .btn/.label primitives. */
+.squad-screen {
+    /* Neutral studio surfaces; the app’s cyan remains an interface accent. */
+    --squad-studio-background: #111111;
+    --squad-studio-platform: #191919;
+    --squad-studio-line: #262626;
+    min-height: 100svh;
+    padding: 0 32px;
+    color: var(--text-color);
+    background: var(--background-color);
+    font-family: var(--font-sans);
+    font-weight: 300;
+}
+.squad-screen * {
+    box-sizing: border-box;
+}
+.squad-screen button,
+.squad-screen input,
+.squad-screen select {
+    font-family: var(--font-mono);
+}
+.squad-screen button {
+    font-weight: 400;
+}
+.squad-screen button:disabled {
+    color: var(--disabled-color);
+    cursor: not-allowed;
+}
+/* Selection is shown by state, not by the keyboard focus ring. */
+.squad-screen :focus-visible {
+    outline: none;
+}
+.squad-header {
+    min-height: 116px;
+    display: flex;
+    align-items: center;
+    gap: 48px;
+    border-bottom: 1px solid var(--border-color);
+}
+.squad-back {
+    white-space: nowrap;
+}
+.squad-title {
+    font-family: var(--font-mono);
+    font-size: 30px;
+    font-weight: 300;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    margin: 0;
+}
+.squad-save {
+    margin-left: auto;
+    text-align: right;
+    max-width: 250px;
+}
+.squad-save small {
+    display: block;
+    font-size: 11px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+}
+.squad-workspace {
+    display: grid;
+    grid-template-columns: 220px minmax(280px, 1fr) 360px;
+    height: calc(100svh - 156px);
+    min-height: 560px;
+    max-height: 1100px;
+}
+.squad-roster {
+    padding: 28px 20px 20px 0;
+    border-right: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+.roster-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    gap: 12px;
+}
+.roster-heading h2,
+.roster-heading > span,
+.sq-eyebrow,
+.sq-count,
+.stage-identity > span,
+.stage-toolbar > span,
+.inventory-heading,
+.equipment-stock,
+.equipment-stats,
+.squad-footer,
+.personnel-stamp > span,
+.personnel-stamp small {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    font-weight: 400;
+}
+.roster-heading h2 {
+    margin: 0;
+}
+.roster-heading > span {
+    color: var(--disabled-color);
+}
+.roster-list {
+    overflow: auto;
+    min-height: 0;
+}
+.roster-card {
+    border: 1px solid transparent;
+    border-bottom-color: var(--border-color);
+    width: 100%;
+    display: flex;
+    align-items: center;
+    position: relative;
+    text-align: left;
+    padding: 14px 6px 14px 0;
+    gap: 12px;
+    color: var(--text-secondary);
+}
+.roster-card.selected {
+    background: transparent;
+    border-color: var(--accent-color);
+}
+.roster-portrait {
+    width: 54px;
+    height: 72px;
+    flex-shrink: 0;
+    position: relative;
+    overflow: hidden;
+    background: var(--squad-studio-background);
+    display: grid;
+    place-items: center;
+}
+.roster-portrait img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.roster-portrait > span {
+    font: 24px var(--font-mono);
+    color: var(--disabled-color);
+}
+.roster-portrait small {
+    position: absolute;
+    bottom: 3px;
+    left: 4px;
+    font: 8px var(--font-mono);
+    color: var(--text-secondary);
+    background: var(--surface-color);
+    padding: 1px 3px;
+}
+.roster-person {
+    min-width: 0;
+}
+.roster-person > span {
+    display: block;
+    font: 9px var(--font-mono);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--disabled-color);
+}
+.roster-person strong {
+    display: block;
+    font: 14px var(--font-mono);
+    letter-spacing: 0.16em;
+    margin: 6px 0;
+    color: var(--text-color);
+}
+.roster-card.selected strong {
+    color: var(--accent-color);
+}
+.roster-person p {
+    font: 11px var(--font-sans);
+    margin: 0;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.roster-person small {
+    display: block;
+    font: 9px var(--font-mono);
+    color: var(--disabled-color);
+    margin-top: 7px;
+}
+.recruit-stage {
+    position: relative;
+    overflow: hidden;
+    background: var(--squad-studio-background);
+    min-height: 0;
+}
+.recruit-canvas {
+    position: absolute;
+    inset: 0;
+    touch-action: none;
+}
+.recruit-canvas canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+.stage-identity {
+    position: absolute;
+    z-index: 1;
+    top: 28px;
+    left: 28px;
+    right: 24px;
+    pointer-events: none;
+}
+.stage-identity > span {
+    font-size: 9px;
+    color: var(--text-secondary);
+}
+.stage-identity h2 {
+    font: 300 clamp(26px, 3.5vw, 46px)/1.2 var(--font-mono);
+    letter-spacing: 0.2em;
+    margin: 12px 0;
+}
+.stage-identity p {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin: 0;
+}
+.stage-toolbar {
+    position: absolute;
+    bottom: 22px;
+    left: 24px;
+    right: 24px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    z-index: 2;
+}
+.stage-toolbar > span {
+    font-size: 8px;
+    color: var(--disabled-color);
+}
+.stage-toolbar > div {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+.stage-toolbar button {
+    border: 1px solid var(--border-color);
+    background: var(--surface-color);
+    color: var(--text-secondary);
+    padding: 8px 10px;
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+.stage-toolbar button[aria-pressed="true"] {
+    color: var(--accent-color);
+    border-color: var(--accent-color);
+}
+.stage-toolbar button:hover {
+    color: var(--accent-color);
+}
+.studio-status {
+    position: absolute;
+    top: 64px;
+    left: 24px;
+    right: 24px;
+    padding: 12px;
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    font: 11px/1.6 var(--font-mono);
+    z-index: 3;
+}
+.studio-error {
+    color: var(--warn-color);
+}
+.studio-error button {
+    display: block;
+    margin-top: 8px;
+    padding: 6px 12px;
+    border: 1px solid var(--border-color);
+}
+.squad-inspector {
+    display: flex;
+    flex-direction: column;
+    border-left: 1px solid var(--border-color);
+    min-height: 0;
+    background: var(--background-color);
+}
+.inspector-tabs {
+    display: flex;
+    flex-shrink: 0;
+    padding: 0 16px;
+    border-bottom: 1px solid var(--border-color);
+}
+.inspector-tabs button {
+    padding: 25px 10px 22px;
+    border-bottom: 1px solid transparent;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    position: relative;
+}
+.inspector-tabs button[aria-pressed="true"] {
+    color: var(--accent-color);
+    border-bottom-color: var(--accent-color);
+}
+.inspector-tabs button:hover {
+    color: var(--accent-color);
+}
+.inspector-tabs i {
+    position: absolute;
+    top: 15px;
+    right: 5px;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--warn-color);
+}
+.inspector-content {
+    overflow: auto;
+    min-height: 0;
+    padding: 28px 24px;
+}
+.sq-panel-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 24px;
+}
+.sq-eyebrow {
+    color: var(--disabled-color);
+    font-size: 9px;
+}
+.sq-panel-heading h3 {
+    font: 400 11px var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.22em;
+    margin: 10px 0 0;
+}
+.sq-count {
+    color: var(--text-secondary);
+    font-size: 9px;
+    white-space: nowrap;
+}
+.loadout-slots {
+    display: flex;
+    flex-direction: column;
+    border-top: 1px solid var(--border-color);
+}
+.loadout-slots > button {
+    display: flex;
+    align-items: center;
+    text-align: left;
+    height: 65px;
+    gap: 12px;
+    padding: 10px 8px;
+    border-bottom: 1px solid var(--border-color);
+    overflow: hidden;
+    color: var(--text-secondary);
+}
+.loadout-slots > button.selected {
+    background: var(--accent-dim);
+}
+.slot-number {
+    font-size: 10px;
+    color: var(--disabled-color);
+}
+.loadout-slots small {
+    display: block;
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--disabled-color);
+    margin-bottom: 6px;
+}
+.loadout-slots strong {
+    font-size: 11px;
+    font-weight: 400;
+}
+.loadout-slots > button.selected strong {
+    color: var(--accent-color);
+}
+.loadout-slots img {
+    width: 68px;
+    height: 42px;
+    object-fit: contain;
+    margin-left: auto;
+}
+.slot-empty {
+    margin-left: auto;
+    color: var(--disabled-color);
+    font-size: 20px;
+}
+.inventory-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 10px;
+    margin: 30px 0 16px;
+}
+.inventory-heading h4 {
+    font-size: 10px;
+    margin: 0;
+    font-weight: 400;
+}
+.inventory-heading > span {
+    color: var(--disabled-color);
+    font-size: 8px;
+}
+.equipment-list {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+.equipment-card {
+    border-top: 1px solid var(--border-color);
+}
+.equipment-image {
+    height: 132px;
+    position: relative;
+    overflow: hidden;
+    background: var(--squad-studio-background);
+    display: grid;
+    place-items: center;
+}
+.equipment-image > img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+.equipment-image > span:not(.equipment-stock) {
+    font-size: 10px;
+    color: var(--disabled-color);
+}
+.equipment-stock {
+    position: absolute;
+    top: 12px;
+    right: 10px;
+    font-size: 8px;
+    color: var(--text-secondary);
+}
+.equipment-description {
+    padding: 16px 0 0;
+}
+.equipment-description h4 {
+    font: 400 14px var(--font-mono);
+    letter-spacing: 0.08em;
+    margin: 8px 0 12px;
+}
+.equipment-description p,
+.sq-panel-copy {
+    font-size: 13px;
+    line-height: 1.65;
+    color: var(--text-secondary);
+    margin: 0 0 18px;
+}
+.equipment-stats {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 9px;
+    letter-spacing: 0.06em;
+    padding: 14px 0;
+    border-top: 1px solid var(--border-color);
+    color: var(--text-secondary);
+}
+.sq-primary,
+.sq-equipped {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    font-size: 10px;
+    padding: 11px 12px;
+}
+.sq-primary:not(:disabled) {
+    color: var(--accent-color);
+    border-color: var(--accent-color);
+}
+.sq-primary:hover:not(:disabled) {
+    background: var(--accent-dim);
+}
+.sq-equipped {
+    color: var(--text-secondary);
+    justify-content: center;
+    font-size: 9px;
+    letter-spacing: 0.1em;
+}
+.sq-footnote {
+    margin-top: 20px;
+    font-size: 11px;
+    line-height: 1.6;
+    color: var(--disabled-color);
+}
+.appearance-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+}
+.appearance-nav button {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 7px 6px;
+    color: var(--text-secondary);
+}
+.appearance-nav button[aria-pressed="true"] {
+    color: var(--accent-color);
+}
+.appearance-nav button:hover {
+    color: var(--accent-color);
+}
+.appearance-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+}
+.sq-field {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+}
+.sq-field > span {
+    font: 10px var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    color: var(--text-secondary);
+}
+.sq-field select,
+.sq-field input {
+    width: 100%;
+    min-height: 40px;
+    border: 1px solid var(--border-color);
+    background: var(--raised-color);
+    color: var(--text-color);
+    padding: 10px 12px;
+    font-size: 12px;
+    border-radius: 0;
+    color-scheme: dark;
+}
+.sq-field input:focus,
+.sq-field select:focus {
+    border-color: var(--accent-color);
+}
+.sq-range {
+    display: block;
+    font: 11px var(--font-mono);
+    color: var(--text-secondary);
+}
+.sq-range > span {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+.sq-range output {
+    color: var(--disabled-color);
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+}
+.sq-range input {
+    width: 100%;
+    accent-color: var(--accent-color);
+    height: 3px;
+    display: block;
+    margin: 12px 0;
+    cursor: pointer;
+}
+.sq-range small {
+    display: flex;
+    justify-content: space-between;
+    font-size: 9px;
+    color: var(--disabled-color);
+}
+.sq-color {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font: 11px var(--font-mono);
+    color: var(--text-secondary);
+}
+.sq-color input {
+    width: 48px;
+    height: 26px;
+    border: 1px solid var(--border-color);
+    background: var(--raised-color);
+    padding: 3px;
+    cursor: pointer;
+}
+.sq-preset-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.sq-preset-buttons button {
+    border: 1px solid var(--border-color);
+    font-size: 10px;
+    color: var(--text-secondary);
+    padding: 8px;
+}
+.appearance-footer {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 24px;
+    border-top: 1px solid var(--border-color);
+    padding-top: 16px;
+}
+.appearance-footer > div {
+    display: flex;
+    gap: 8px;
+}
+.appearance-footer > div > button {
+    flex: 1;
+    border: 1px solid var(--border-color);
+    padding: 10px 8px;
+    color: var(--text-secondary);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+.sq-text-button {
+    color: var(--text-secondary);
+    font: 10px var(--font-mono);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 7px 0;
+    text-align: left;
+}
+.appearance-footer > .sq-text-button {
+    text-align: center;
+}
+.personnel-form {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+.callsign-input {
+    text-transform: uppercase;
+}
+.personnel-stamp {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin-top: 32px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border-color);
+}
+.personnel-stamp > span,
+.personnel-stamp small {
+    font-size: 9px;
+    color: var(--disabled-color);
+}
+.personnel-stamp strong {
+    font: 400 11px var(--font-mono);
+    letter-spacing: 0.22em;
+    color: var(--text-secondary);
+}
+/* Stats panel: one row per visible commander stat, bar then value then gear delta. */
+.stats-group {
+    border-top: 1px solid var(--border-color);
+}
+.stats-group + .stats-group {
+    margin-top: 22px;
+}
+.stats-group-heading {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 0 6px;
+    font-size: 9px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--disabled-color);
+}
+.stat-row {
+    display: grid;
+    grid-template-columns: 88px 1fr 52px 32px;
+    align-items: center;
+    gap: 12px;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--border-color);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+}
+.stat-label {
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+/* Base in white, then what gear added in accent, or what it took away in amber. */
+.stat-bar {
+    display: flex;
+    height: 4px;
+    background: var(--border-color);
+}
+.stat-bar i {
+    display: block;
+    height: 100%;
+    flex-shrink: 0;
+}
+.stat-bar-base {
+    width: var(--base, 0%);
+    background: var(--text-color);
+}
+.stat-bar-gain {
+    width: var(--gain, 0%);
+    background: var(--accent-color);
+}
+.stat-bar-loss {
+    width: var(--loss, 0%);
+    background: var(--warn-color);
+}
+.stat-value {
+    text-align: right;
+    color: var(--text-color);
+}
+.stat-delta {
+    text-align: right;
+    font-size: 9px;
+}
+.stat-delta-value {
+    color: var(--disabled-color);
+    text-decoration: underline dotted;
+    text-underline-offset: 3px;
+}
+.stat-delta-value.up {
+    color: var(--accent-color);
+}
+.stat-delta-value.down {
+    color: var(--warn-color);
+}
+.sq-error {
+    color: var(--warn-color);
+    padding: 12px;
+    border-left: 1px solid var(--warn-color);
+    font-size: 12px;
+    line-height: 1.6;
+}
+.squad-footer {
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 15px;
+    border-top: 1px solid var(--border-color);
+    color: var(--disabled-color);
+    font-size: 8px;
+}
+.sq-dialog {
+    position: fixed;
+    inset: 0;
+    margin: auto;
+    padding: 28px;
+    width: min(440px, calc(100vw - 48px));
+    max-height: 90svh;
+    overflow: auto;
+    background: var(--surface-color);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+}
+.sq-dialog::backdrop {
+    background: color-mix(in srgb, var(--background-color) 85%, transparent);
+    backdrop-filter: blur(4px);
+}
+.sq-dialog h2 {
+    font: 400 11px var(--font-mono);
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    margin: 12px 0;
+}
+.sq-dialog p {
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--text-secondary);
+    margin-bottom: 24px;
+}
+.sq-dialog > .sq-field {
+    margin-bottom: 24px;
+}
+.sq-dialog-close {
+    position: absolute;
+    top: 18px;
+    right: 20px;
+    color: var(--disabled-color);
+    font-size: 20px;
+}
+.sq-dialog-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.sq-dialog-actions > button:not(.sq-primary) {
+    padding: 10px 14px;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+}
+.inspector-appearance {
+    overflow: hidden;
+    flex: 1;
+    display: flex;
+    min-height: 0;
+}
+.inspector-appearance .appearance-panel {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    min-height: 0;
+}
+.inspector-appearance .sq-panel-heading,
+.inspector-appearance .appearance-nav,
+.inspector-appearance .appearance-footer {
+    flex-shrink: 0;
+}
+.inspector-appearance .appearance-fields {
+    overflow: auto;
+    min-height: 0;
+    padding: 2px 4px 4px 0;
+}
+.inspector-appearance .appearance-footer {
+    margin-top: 16px;
+    padding-top: 12px;
+    gap: 8px;
+}
+@media (min-width: 1650px) {
+    .squad-screen {
+        padding: 0 64px;
+    }
+    .squad-workspace {
+        grid-template-columns: 250px minmax(400px, 1fr) 410px;
+    }
+    .roster-portrait {
+        width: 68px;
+        height: 86px;
+    }
+    .inspector-content {
+        padding: 32px;
+    }
+}
+@media (max-width: 1100px) {
+    .squad-screen {
+        padding: 0 24px;
+    }
+    .squad-workspace {
+        grid-template-columns: 180px minmax(240px, 1fr) 320px;
+    }
+    .squad-roster {
+        padding-right: 12px;
+    }
+    .roster-card {
+        gap: 8px;
+    }
+    .roster-portrait {
+        width: 44px;
+        height: 64px;
+    }
+    .roster-person strong {
+        font-size: 12px;
+    }
+    .roster-person small {
+        font-size: 8px;
+    }
+    .inspector-content {
+        padding: 24px 16px;
+    }
+    .inspector-tabs {
+        padding: 0 8px;
+    }
+    .inspector-tabs button {
+        font-size: 9px;
+        padding-left: 8px;
+        padding-right: 8px;
+    }
+    .stage-toolbar {
+        left: 16px;
+        right: 16px;
+    }
+    .stage-toolbar button {
+        padding: 8px;
+    }
+    .squad-header {
+        gap: 28px;
+    }
+}
+@media (max-width: 900px) {
+    .squad-workspace {
+        grid-template-columns: minmax(270px, 1fr) 330px;
+        grid-template-rows: auto minmax(670px, 1fr);
+        height: auto;
+        max-height: none;
+    }
+    .squad-roster {
+        grid-column: 1/-1;
+        border-right: 0;
+        border-bottom: 1px solid var(--border-color);
+        padding: 20px 0;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 12px;
+    }
+    .roster-heading {
+        grid-column: 1/-1;
+        margin: 0;
+    }
+    .roster-list {
+        display: flex;
+        gap: 8px;
+    }
+    .roster-card {
+        min-width: 160px;
+        max-width: 180px;
+        padding: 6px;
+    }
+    .squad-inspector {
+        max-height: 820px;
+    }
+    .squad-header {
+        min-height: 106px;
+    }
+    .squad-save {
+        max-width: 170px;
+    }
+    .squad-save small {
+        font-size: 10px;
+    }
+    .stage-toolbar {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    .squad-footer {
+        font-size: 7px;
+    }
+}
+@media (max-width: 620px) {
+    .squad-screen {
+        padding: 0 24px;
+    }
+    .squad-header {
+        gap: 20px;
+        flex-wrap: wrap;
+        padding: 24px 0;
+    }
+    .squad-title {
+        font-size: 24px;
+    }
+    .squad-save {
+        max-width: 100%;
+        margin-left: 0;
+        text-align: left;
+        flex-basis: 100%;
+    }
+    .squad-save small {
+        display: inline;
+        margin-left: 12px;
+        font-size: 10px;
+    }
+    .squad-workspace {
+        display: flex;
+        flex-direction: column;
+    }
+    .squad-roster {
+        display: block;
+    }
+    .roster-heading {
+        margin-bottom: 12px;
+    }
+    .roster-list {
+        padding-bottom: 8px;
+    }
+    .recruit-stage {
+        height: 570px;
+        flex-shrink: 0;
+    }
+    .squad-inspector {
+        border: 1px solid var(--border-color);
+        max-height: none;
+    }
+    .inspector-tabs {
+        justify-content: center;
+    }
+    .inspector-tabs button {
+        flex: 1;
+    }
+    .inspector-content {
+        overflow: visible;
+        padding: 24px;
+    }
+    .stage-identity h2 {
+        font-size: 30px;
+    }
+    .stage-toolbar {
+        flex-direction: row;
+        align-items: center;
+    }
+    .squad-footer {
+        font-size: 6px;
+        letter-spacing: 0.06em;
+    }
+    .inspector-appearance {
+        height: 740px;
+        flex: auto;
+        overflow: hidden;
+    }
+    .appearance-fields {
+        max-height: 520px;
+    }
+}
+
+.armor-finish {
+    border: 1px solid var(--color-border, #303437);
+    padding: 16px;
+    margin: 24px 0;
+    min-width: 0;
+}
+.armor-finish legend {
+    padding: 0 8px;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #a9adae;
+}
+.armor-finishes {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+}
+.armor-finishes button {
+    background: transparent;
+    border: 1px solid #303437;
+    padding: 7px;
+    color: #a9adae;
+    font-size: 10px;
+}
+.armor-finishes button[aria-pressed="true"] {
+    border-color: var(--color-accent, #83cdd0);
+    color: #e4e8e8;
+}
+.armor-finishes button > span {
+    display: flex;
+    height: 15px;
+    margin-bottom: 7px;
+}
+.armor-finishes i {
+    flex: 1;
+}
+.armor-color-channels {
+    display: flex;
+    gap: 16px;
+    margin-top: 16px;
+}
+.armor-color-channels label {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 11px;
+    color: #a9adae;
+}
+.armor-color-channels input {
+    width: 27px;
+    height: 27px;
+    padding: 2px;
+    border: 1px solid #54595b;
+    background: transparent;
+    cursor: pointer;
+}
+
+/* Motion review shares the character stage; the controls never cover the model. */
+.drills-open .recruit-canvas { bottom: 210px; }
+.motion-controls { position: absolute; bottom: 90px; left: 24px; right: 24px; z-index: 2; padding: 12px; border: 1px solid var(--border-color); background: var(--surface-color); font: 10px var(--font-mono); }
+.motion-picker { display: flex; align-items: center; gap: 12px; color: var(--text-secondary); }
+.motion-picker select { flex: 1; min-width: 0; }
+.motion-controls select, .motion-controls button { padding: 7px 9px; border: 1px solid var(--border-color); background: var(--background-color); color: var(--text-color); font: inherit; }
+.motion-controls button:hover { border-color: var(--accent-color); color: var(--accent-color); }
+.motion-controls button:disabled { opacity: .35; }
+.motion-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 9px; }
+.motion-actions label { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.motion-controls input { accent-color: var(--accent-color); }
+.motion-timeline { display: flex; gap: 12px; align-items: center; margin-top: 10px; color: var(--text-secondary); }
+.motion-timeline input { flex: 1; min-width: 0; }
+.motion-controls p { color: var(--warn-color); margin: 8px 0 0; }
+@media (max-width: 620px) { .drills-open .recruit-canvas { bottom: 240px; } .motion-controls { left: 12px; right: 12px; bottom: 100px; } }

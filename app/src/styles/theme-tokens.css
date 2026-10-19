@@ -1,0 +1,13 @@
+/* Shared Ghosts palette: app shell, squad and embedded playtest. */
+:root {
+    --text-color: #ffffff;
+    --text-secondary: #c9cdd4;
+    --disabled-color: #5c616a;
+    --background-color: #0a0b0d;
+    --surface-color: #101215;
+    --raised-color: #161920;
+    --border-color: #22262d;
+    --accent-color: #7fe3ef;
+    --accent-dim: rgba(127, 227, 239, 0.08);
+    --warn-color: #d9a452;
+}

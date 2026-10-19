@@ -1,0 +1,24 @@
+BLACKLINE ASSET CREDITS
+
+Full beard and moustache by grinsegold — CC-BY.
+Source: https://static.makehumancommunity.org/assets/assetpacks/bodyparts06.html
+Originals: http://www.makehumancommunity.org/node/188 and http://www.makehumancommunity.org/node/187
+Adapted for Blackline: face fitting, skin weights and morphs, texture normalization/compression, dye and cut variants.
+
+Hair: MakeHuman Community system assets — CC0 1.0.
+https://static.makehumancommunity.org/assets/assetpacks/makehuman_system_assets.html
+
+Additional skeletal motion: Quaternius Universal Animation Library — CC0 1.0.
+https://quaternius.com/packs/universalanimationlibrary.html
+
+MPFB portrait integration: native MakeHuman system mesh, targets, skin, eyes, brows, lashes and hair from the MakeHuman system assets CC0 pack.
+https://static.makehumancommunity.org/assets/assetpacks/makehuman_system_assets.html
+Offline authoring: MPFB 2.0.18 (GPL extension code is not shipped to the browser).
+https://github.com/makehumancommunity/mpfb2/tree/v2.0.18
+The existing combat body, mocap and gun credits above continue to apply.
+District surface materials: Poly Haven — CC0.
+Asphalt 02: https://polyhaven.com/a/asphalt_02
+Concrete Floor 02: https://polyhaven.com/a/concrete_floor_02
+Brick Wall 02: https://polyhaven.com/a/brick_wall_02
+1K albedo and 512px normal/roughness maps, mipmapped KTX2/ETC1S.
+Store signage and shop geometry are original demo representations; brand names belong to their owners.

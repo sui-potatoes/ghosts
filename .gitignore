@@ -1,0 +1,10 @@
+# AI assistants
+.claude/
+CLAUDE.md
+.cursor/
+.cursorrules
+.aider*
+.codex/
+
+# OS
+.DS_Store

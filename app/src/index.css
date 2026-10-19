@@ -1,0 +1,472 @@
+@import "tailwindcss";
+@import "./styles/theme-tokens.css";
+
+/*
+ * Palette tokens for Tailwind: `text-foreground`, `text-secondary`,
+ * `border-line`, `bg-surface`, `text-accent`, `bg-overlay`, … — never inline
+ * `style={{ color: "var(--…)" }}`.
+ */
+@theme inline {
+    --color-foreground: var(--text-color);
+    --color-secondary: var(--text-secondary);
+    --color-muted: var(--disabled-color);
+    --color-line: var(--border-color);
+    --color-surface: var(--surface-color);
+    --color-raised: var(--raised-color);
+    --color-accent: var(--accent-color);
+    --color-accent-dim: var(--accent-dim);
+    --color-warn: var(--warn-color);
+    --color-overlay: color-mix(in srgb, var(--background-color) 85%, transparent);
+
+    --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --font-sans: "Inter", system-ui, sans-serif;
+}
+
+/*
+ * Ghosts is dark-only: grim cyberpunk noir. Near-black ground, cold greys,
+ * and a single cold neon (accent) spent only on what is live right now.
+ * Amber (warn) is reserved for states that need attention, e.g. "no recovery".
+ */
+
+
+@layer base {
+    /*
+     * Not a web page. No scrollbars (scrolling itself still works), no
+     * rubber-banding or pull-to-refresh, no long-press callouts, no iOS text
+     * inflation, no native selection blue, no platform widget skins.
+     */
+    html {
+        overscroll-behavior: none;
+        -webkit-text-size-adjust: 100%;
+        text-size-adjust: 100%;
+    }
+
+    * {
+        scrollbar-width: none;
+        -webkit-touch-callout: none;
+    }
+
+    *::-webkit-scrollbar {
+        display: none;
+        width: 0;
+        height: 0;
+    }
+
+    ::selection {
+        background: color-mix(in srgb, var(--accent-color) 35%, transparent);
+        color: var(--text-color);
+    }
+
+    button,
+    select,
+    textarea,
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]) {
+        appearance: none;
+        border-radius: 0;
+    }
+
+    /* Mouse focus shows nothing; keyboard focus keeps the accent ring below. */
+    :focus:not(:focus-visible) {
+        outline: none;
+    }
+
+    html,
+    body,
+    #root {
+        min-height: 100%;
+    }
+
+    body {
+        font-family: var(--font-sans);
+        font-weight: 300;
+        background-color: var(--background-color);
+        color: var(--text-color);
+        margin: 0;
+        padding: 0;
+        overflow-x: hidden;
+        cursor: default;
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    /* Game chrome is not a document; editable fields retain normal text interaction. */
+    input:not([type="range"]):not([type="color"]):not([type="checkbox"]):not([type="radio"]):not(
+            [type="button"]
+        ):not([type="submit"]),
+    textarea,
+    [contenteditable="true"] {
+        cursor: text;
+        -webkit-user-select: text;
+        user-select: text;
+    }
+
+    img,
+    canvas {
+        -webkit-user-drag: none;
+    }
+
+    /* Faint scanlines + a vignette: enough grain to read as a terminal in a
+       dark room, not enough to fight the type. */
+    body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 0;
+        background:
+            repeating-linear-gradient(
+                0deg,
+                rgba(255, 255, 255, 0.015) 0px,
+                rgba(255, 255, 255, 0.015) 1px,
+                transparent 1px,
+                transparent 3px
+            ),
+            radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, 0.55) 100%);
+    }
+
+    #root {
+        position: relative;
+        z-index: 1;
+    }
+
+    a,
+    button {
+        color: var(--text-color);
+        background: none;
+        border: none;
+        cursor: pointer;
+        text-decoration: none;
+        transition: color 0.15s ease;
+    }
+
+    a:hover,
+    button:hover:not(:disabled) {
+        color: var(--accent-color);
+    }
+
+    button:disabled {
+        color: var(--disabled-color);
+        cursor: not-allowed;
+    }
+
+    :focus-visible {
+        outline: 1px solid var(--accent-color);
+        outline-offset: 3px;
+    }
+
+    /* Mono labels: the voice of the interface. */
+    .label {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+    }
+
+    /* Menu backdrop: image now, with the saved live scene using the same host. */
+    .main-menu {
+        position: relative;
+        isolation: isolate;
+        background-color: var(--background-color);
+    }
+
+    .main-menu-backdrop,
+    .main-menu-backdrop canvas {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        user-select: none;
+    }
+
+    .main-menu-backdrop canvas {
+        display: block;
+    }
+
+    .main-menu-image {
+        object-fit: cover;
+        object-position: 65% center;
+    }
+
+    .main-menu::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background:
+            linear-gradient(
+                90deg,
+                rgba(10, 11, 13, 0.92),
+                rgba(10, 11, 13, 0.65) 36%,
+                transparent 75%
+            ),
+            linear-gradient(0deg, rgba(10, 11, 13, 0.65), transparent 30%);
+    }
+
+    @media (max-width: 767px) {
+        .main-menu::after {
+            background: rgba(10, 11, 13, 0.76);
+        }
+    }
+
+    /* Main-menu entry: a wide mono row with a caret that lights up on hover. */
+    .menu-item {
+        font-family: var(--font-mono);
+        font-weight: 400;
+        font-size: 15px;
+        letter-spacing: 0.28em;
+        text-transform: uppercase;
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 24px;
+        width: 100%;
+        padding: 14px 0;
+        border-bottom: 1px solid var(--border-color);
+        text-align: left;
+    }
+
+    .menu-item::before {
+        content: "›";
+        margin-right: 14px;
+        color: var(--disabled-color);
+        transition: color 0.15s ease;
+    }
+
+    .menu-item:hover:not(:disabled)::before,
+    .menu-item:focus-visible::before {
+        color: var(--accent-color);
+    }
+
+    .menu-item:disabled {
+        color: var(--disabled-color);
+    }
+
+    .menu-item .tag {
+        font-size: 10px;
+        letter-spacing: 0.2em;
+        color: var(--disabled-color);
+    }
+
+    /* Outline button for secondary actions on the settings screen. */
+    .btn {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        border: 1px solid var(--border-color);
+        padding: 8px 14px;
+        transition:
+            border-color 0.15s ease,
+            color 0.15s ease;
+    }
+
+    .btn:hover:not(:disabled) {
+        border-color: var(--accent-color);
+        color: var(--accent-color);
+    }
+
+    .btn:disabled {
+        color: var(--disabled-color);
+        border-color: var(--border-color);
+    }
+
+    /* Loading placeholder: a slow shimmer in the surface tone. */
+    .skeleton {
+        display: inline-block;
+        background: linear-gradient(
+            90deg,
+            var(--raised-color) 0%,
+            var(--border-color) 50%,
+            var(--raised-color) 100%
+        );
+        background-size: 200% 100%;
+        animation: skeleton-shimmer 1.4s ease-in-out infinite;
+    }
+
+    @keyframes skeleton-shimmer {
+        to {
+            background-position: -200% 0;
+        }
+    }
+
+    /* Instant tooltip: hover or focus the wrapper, the bubble appears above it. */
+    .tip {
+        position: relative;
+        display: inline-block;
+    }
+
+    .tip-bubble {
+        display: none;
+        position: absolute;
+        right: 0;
+        bottom: calc(100% + 8px);
+        z-index: 20;
+        width: max-content;
+        max-width: 280px;
+        padding: 8px 10px;
+        border: 1px solid var(--border-color);
+        background: var(--raised-color);
+        color: var(--text-color);
+        font: 11px/1.5 var(--font-mono);
+        letter-spacing: 0.04em;
+        text-align: left;
+        text-transform: none;
+        white-space: pre-line;
+        pointer-events: none;
+    }
+
+    .tip:hover .tip-bubble,
+    .tip:focus-visible .tip-bubble {
+        display: block;
+    }
+
+    /* Status dot next to the recovery line: amber pulse while unset. */
+    .dot {
+        display: inline-block;
+        width: 6px;
+        height: 6px;
+        border-radius: 999px;
+        background: currentColor;
+    }
+
+    .dot-pulse {
+        animation: dot-pulse 2.4s ease-in-out infinite;
+    }
+
+    @keyframes dot-pulse {
+        0%,
+        100% {
+            opacity: 1;
+        }
+        50% {
+            opacity: 0.35;
+        }
+    }
+}
+
+/* Isolated image-to-scene comparison; the normal menu keeps its static image. */
+.scene-study {
+    position: relative;
+    width: 100%;
+    min-height: 100svh;
+    height: 100svh;
+    overflow: hidden;
+    background: #080d12;
+}
+.study-source,
+.study-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+}
+.study-source {
+    object-fit: cover;
+    pointer-events: none;
+}
+.study-canvas {
+    cursor: grab;
+    touch-action: none;
+}
+.study-canvas:active {
+    cursor: grabbing;
+}
+.study-canvas canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+.study-canvas-hidden {
+    visibility: hidden;
+}
+.study-header {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    padding: 30px 36px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 24px;
+    pointer-events: none;
+    background: linear-gradient(#080d1277, transparent);
+}
+.study-header a {
+    pointer-events: auto;
+}
+.study-header h1 {
+    font-family: var(--font-mono);
+    font-size: 28px;
+    letter-spacing: -0.04em;
+    font-weight: 300;
+    margin: 12px 0 0;
+}
+.study-header .label {
+    color: #c9d3d9;
+    font-size: 10px;
+}
+.study-controls {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 24px 36px;
+    background: linear-gradient(transparent, #080d12e8 35%);
+    display: flex;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 18px;
+    justify-content: space-between;
+    pointer-events: none;
+}
+.study-caption {
+    max-width: 420px;
+}
+.study-caption .label {
+    color: #bbd1db;
+    font-size: 10px;
+}
+.study-caption p {
+    color: #aab4bd;
+    font-size: 12px;
+    line-height: 1.6;
+    margin: 8px 0 0;
+}
+.study-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    pointer-events: auto;
+}
+.study-buttons button {
+    border: 1px solid #71808a66;
+    padding: 10px 13px;
+    background: #0b121ade;
+    font: 11px var(--font-mono);
+    color: #b6c3cb;
+}
+.study-buttons button[aria-pressed="true"] {
+    border-color: #b0cedc;
+    color: #edf7fc;
+    background: #20313ce8;
+}
+.study-buttons button:disabled {
+    opacity: 0.4;
+}
+@media (max-width: 600px) {
+    .study-header {
+        padding: 22px;
+    }
+    .study-controls {
+        padding: 20px;
+    }
+    .study-header h1 {
+        font-size: 24px;
+    }
+    .study-caption p {
+        font-size: 11px;
+    }
+}
