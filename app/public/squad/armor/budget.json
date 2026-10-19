@@ -1,0 +1,72 @@
+[
+  {
+    "sex": "male",
+    "kind": "spectre",
+    "triangles": 3886,
+    "materials": 4,
+    "vertices": 4586
+  },
+  {
+    "sex": "female",
+    "kind": "spectre",
+    "triangles": 3898,
+    "materials": 4,
+    "vertices": 4592
+  },
+  {
+    "sex": "male",
+    "kind": "field-kit",
+    "triangles": 9752,
+    "materials": 3,
+    "vertices": 10694
+  },
+  {
+    "sex": "female",
+    "kind": "field-kit",
+    "triangles": 9752,
+    "materials": 3,
+    "vertices": 10704
+  },
+  {
+    "sex": "male",
+    "kind": "nyx",
+    "triangles": 38376,
+    "materials": 5,
+    "vertices": 41580
+  },
+  {
+    "sex": "male",
+    "kind": "nyx-mid",
+    "triangles": 46348,
+    "materials": 5,
+    "vertices": 50546
+  },
+  {
+    "sex": "male",
+    "kind": "nyx-heavy",
+    "triangles": 54540,
+    "materials": 5,
+    "vertices": 60924
+  },
+  {
+    "sex": "female",
+    "kind": "nyx",
+    "triangles": 38376,
+    "materials": 5,
+    "vertices": 41873
+  },
+  {
+    "sex": "female",
+    "kind": "nyx-mid",
+    "triangles": 46348,
+    "materials": 5,
+    "vertices": 50791
+  },
+  {
+    "sex": "female",
+    "kind": "nyx-heavy",
+    "triangles": 54540,
+    "materials": 5,
+    "vertices": 61231
+  }
+]

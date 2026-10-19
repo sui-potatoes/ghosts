@@ -1,0 +1,28 @@
+COMMANDER / LOCAL SQUAD PREVIEW
+
+Native body, facial targets, skin, eyes, brows, lashes and hair:
+MakeHuman Community system assets, CC0 1.0.
+https://static.makehumancommunity.org/assets/assetpacks/makehuman_system_assets.html
+Offline authoring: MPFB 2.0.18. The GPL Blender extension is not shipped.
+https://github.com/makehumancommunity/mpfb2/tree/v2.0.18
+
+Frozen idle pose: existing native-rig retarget of Quaternius Universal Animation
+Library Idle_Loop, CC0 1.0.
+https://quaternius.com/packs/universalanimationlibrary.html
+
+Spectre light armor, weapon attachment calibration, cosmetics and the pistol:
+reused from the existing Commander Black Rain prototype. Rifle geometry is the
+Rifle mesh extracted from that prototype's blackline-operative.glb; sniper uses
+that geometry with the prototype's optic/barrel concept. No new character or
+animation library was downloaded for this integration.
+
+The shared inventory and personnel records in this preview are fictional local
+frontend data. The armor and weapon models remain prototype art.
+
+Combat boots, utility belts and revised fitted shoulder caps: original
+procedural geometry authored for this game, fitted to the native MakeHuman body.
+Reproducible Blender source: game/scripts/build-field-kit.py.
+
+NYX Veil / Shade / Wraith armor: original fitted geometry and procedural woven /
+ceramic normal maps authored for Ghosts. Separate male/female native-bind exports.
+Reproducible Blender source: game/scripts/build-nyx.py, native_gear.py and nyx_details.py.

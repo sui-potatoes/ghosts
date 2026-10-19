@@ -1,0 +1,16 @@
+node_modules
+dist
+
+# dotenv environment variables file
+.env
+.env.test
+.env.local
+.env*
+!.env.example
+
+# IDE
+.idea
+.vscode
+
+# other
+.DS_Store

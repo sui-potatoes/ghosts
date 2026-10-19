@@ -1,0 +1,4 @@
+Additional skeletal motion: Quaternius Universal Animation Library, CC0 1.0.
+https://quaternius.com/packs/universalanimationlibrary.html
+Pistol_Aim_Neutral, Pistol_Shoot, Pistol_Reload, Pistol_Idle_Loop, Idle_Loop.
+Retargeted offline to the existing character skeleton.

@@ -1,0 +1,13 @@
+{
+    // Cloudflare Workers with static assets. The dashboard build runs
+    // `pnpm build` and then `npx wrangler deploy` from this directory.
+    "$schema": "node_modules/wrangler/config-schema.json",
+    "name": "ghosts",
+    "compatibility_date": "2026-10-01",
+    "assets": {
+        "directory": "./dist",
+        // Unknown paths serve index.html for the React router; real files win.
+        "not_found_handling": "single-page-application",
+        "html_handling": "auto-trailing-slash"
+    }
+}
