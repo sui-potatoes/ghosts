@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import { koraPlan } from "./district-plan.ts";
 import type { Role } from "./game.ts";
 import type { Cell, MapPlan } from "./map.ts";

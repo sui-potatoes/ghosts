@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import * as T from "three";
 import { nativeClip } from "../motion/clips";
 import { paintArmor } from "./armor-materials";

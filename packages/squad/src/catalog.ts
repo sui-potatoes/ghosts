@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import type { Equipment, Slot } from "./types";
 export const SLOT_NAMES: Record<Slot, string> = {
     primary: "Primary weapon",

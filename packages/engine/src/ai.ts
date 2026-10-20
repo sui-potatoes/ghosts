@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import type { GameEvent } from "./events.ts";
 import { distance, type Cell, type Encounter, type Unit } from "./game.ts";
 

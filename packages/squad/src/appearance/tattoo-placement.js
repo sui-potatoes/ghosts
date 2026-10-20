@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import * as T from "three";
 import { frontSurface } from "./brow-shape.js";
 import { DecalGeometry } from "three/addons/geometries/DecalGeometry.js";

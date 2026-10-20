@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import type { ArmorColors } from "./types.ts";
 
 export const DEFAULT_ARMOR_COLORS: ArmorColors = {

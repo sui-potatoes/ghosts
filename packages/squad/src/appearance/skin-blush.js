@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import { BufferAttribute, Color, Vector4 } from "three";
 
 // Rest-space coordinates stay attached to the skin through every native morph.

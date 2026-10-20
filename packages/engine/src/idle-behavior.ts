@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 export type IdleContext = "open" | "cover" | "wall" | "pistol";
 export type IdleChoice = {
   clip: string;

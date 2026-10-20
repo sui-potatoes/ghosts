@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import { Fragment, useEffect, useRef } from "react";
 import { closeBriefing, closeDebrief, reset } from "../actions";
 import { encounterReport } from "../aftermath/report";

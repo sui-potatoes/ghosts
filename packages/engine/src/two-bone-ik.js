@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import * as T from 'three';
 const forward=new T.Vector3(0,0,1);
 export function setWorldRotation(bone,rotation){bone.quaternion.copy(bone.parent.getWorldQuaternion(new T.Quaternion()).invert().multiply(rotation));bone.updateMatrixWorld(true);}

@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import { MotionControls } from "./MotionControls";
 import { STOPPED, type MotionState } from "@ghosts/squad/motion/player";
 import { useEffect, useRef, useState } from "react";

@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import type { Encounter } from "../game.ts";
 /** Dev-only visual fixture; imported behind import.meta.env.DEV. */
 export function prepareDebriefReview(game: Encounter, variant: string) {

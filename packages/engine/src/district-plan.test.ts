@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CELL, STREET, districtBuildings, footprint, surfaceHeight } from './district-plan.ts';

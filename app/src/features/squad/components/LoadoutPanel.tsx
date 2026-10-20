@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import { ARMOR_FINISHES } from "@ghosts/squad/armor-colors";
 import { useState } from "react";
 import { EQUIPMENT, SLOTS, SLOT_NAMES, itemById } from "@ghosts/squad/catalog";

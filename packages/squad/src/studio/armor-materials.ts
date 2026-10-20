@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import type { MeshStandardMaterial } from "three";
 import type { ArmorColors } from "../types";
 

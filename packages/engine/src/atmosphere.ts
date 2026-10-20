@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import * as T from 'three';
 
 /** Six depth-tested mist layers, one draw call and one shared 128px texture. */

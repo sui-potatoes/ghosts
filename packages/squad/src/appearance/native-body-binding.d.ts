@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import type { BufferGeometry, SkinnedMesh, Skeleton } from "three";
 export function installBodySuit(
     mesh: SkinnedMesh,

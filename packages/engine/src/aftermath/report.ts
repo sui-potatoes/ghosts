@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import type { Encounter } from "../game.ts";
 
 export const XP_PER_LEVEL = 100;

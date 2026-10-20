@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 export const motions = [
     ["rifle_idle", "Rifle ready idle", "Ready"],
     ["rifle_crouch_idle", "Rifle crouched idle", "Cover"],

@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 /**
  * The Ghosts encounter engine. Mount `<Encounter>` to play; the rules,
  * scenario, keys and settings types are here for hosts that store

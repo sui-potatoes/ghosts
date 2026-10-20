@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 export interface Surface {
     sample(x: number, y: number): number;
 }

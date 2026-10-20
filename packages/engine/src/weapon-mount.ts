@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import { Group, type Object3D } from "three";
 
 /** Preserve the source weapon/hand attachment, including its mirrored scale. */

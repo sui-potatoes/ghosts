@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import { normalizeArmorColors } from "./armor-colors.ts";
 import { EQUIPMENT, INITIAL_STOCK, SLOTS, itemById } from "./catalog.ts";
 import { normalize, presets, fromPreset } from "./appearance/editor-state.js";

@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import { CELL, tacticalMap, type Cell, type TacticalMap } from "./map.ts";
 import { describe, type Command, type GameEvent } from "./events.ts";
 import { blackRain, type Scenario } from "./scenario.ts";

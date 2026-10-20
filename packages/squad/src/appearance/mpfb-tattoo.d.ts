@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import type { BufferGeometry, Material } from "three";
 import type { Appearance } from "../types";
 export function nativeTattoo(

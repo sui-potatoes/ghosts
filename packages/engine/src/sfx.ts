@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 /**
  * Recorded sound effects from `public/sounds/<name>.mp3`. An effect kind has
  * one or more takes; the player varies them without an immediate repeat.

@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import { useEffect, useRef, useState } from "react";
 import { audio } from "../audio";
 import { boot } from "../boot";

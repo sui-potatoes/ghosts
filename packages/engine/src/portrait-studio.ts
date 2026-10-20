@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import * as T from "three";
 import { portraitFrame, portraitIconPose } from "./portrait-frame";
 import { soldier, disposePortrait } from "./humans";

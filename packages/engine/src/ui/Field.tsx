@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import { useEffect, useState, type RefObject } from "react";
 import { cancelTargeting, fire, pick, select, throwGrenade } from "../actions";
 import { distance, weapons } from "../game";

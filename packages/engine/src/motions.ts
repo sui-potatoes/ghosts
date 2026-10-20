@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import type { Unit, Weapon } from "./game.ts";
 export const motions = [
   ["rifle_idle", "Rifle ready idle", "Ready"],

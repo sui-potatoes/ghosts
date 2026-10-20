@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import * as T from "three";
 const point = new T.Vector3();
 /** A small, cached sampling of the native sole surface; used for boot contact and crossfades. */

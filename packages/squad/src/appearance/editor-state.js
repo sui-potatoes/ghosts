@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 export const GLASSES = [
     ["none", "None"],
     ["rectangular", "Rectangular acetate"],

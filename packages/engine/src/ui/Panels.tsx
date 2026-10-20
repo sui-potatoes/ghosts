@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import { action, endTurn, select } from "../actions";
 import { distance, weapons } from "../game";
 import { pad2 } from "../html";

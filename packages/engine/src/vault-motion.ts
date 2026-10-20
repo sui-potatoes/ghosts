@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 /** Horizontal travel synchronized to the authored contact and landing keys.
  * Vertical motion belongs to the skeleton's pelvis/legs, never the scene root.
  */

@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 /**
  * Combat key bindings as data. The engine defines the actions and their
  * defaults; the shell stores the player's bindings and passes them in through

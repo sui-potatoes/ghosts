@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 /** Keep an absolute deadline so a late vsync does not permanently shift every later frame. */
 export class FramePacer {
   private next = 0;

@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import type * as T from "three";
 
 type GpuTimer = { TIME_ELAPSED_EXT: number; GPU_DISJOINT_EXT: number };

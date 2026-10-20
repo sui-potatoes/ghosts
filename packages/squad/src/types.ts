@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 export type Sex = "female" | "male";
 export interface Appearance {
     version: number;

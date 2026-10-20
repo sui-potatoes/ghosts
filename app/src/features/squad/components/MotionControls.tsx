@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import { useState } from "react";
 import { motions, type Motion } from "@ghosts/squad/motion/catalog";
 import type { MotionState } from "@ghosts/squad/motion/player";

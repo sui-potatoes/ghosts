@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import type { Appearance, Schema, Sex } from "../types";
 export const GLASSES: [string, string][];
 export const SCARS: [string, string][];

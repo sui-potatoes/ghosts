@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import { refresh, showBriefing } from "./actions";
 import { audio } from "./audio";
 import { bindControls } from "./controls";

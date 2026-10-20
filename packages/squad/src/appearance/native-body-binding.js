@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import * as T from "three";
 const canonical = (name) => name.replace(/[^a-zA-Z0-9]/g, "");
 /** Move the combat skeleton into native rest anatomy; never reshape the native body to the old rig. */

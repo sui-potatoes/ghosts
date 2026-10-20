@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import { useSyncExternalStore } from "react";
 import { session, type Session } from "../session";
 

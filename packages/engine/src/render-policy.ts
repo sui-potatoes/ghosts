@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 export type RenderMode = "battery" | "smooth";
 /** Null means no animation frame should be requested at all. */
 export function renderCadence(

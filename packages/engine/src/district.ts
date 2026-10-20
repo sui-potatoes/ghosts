@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import { cityBlocks } from "./city-blocks";
 import * as T from 'three';
 import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';

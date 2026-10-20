@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import { Encounter, type Cell, type Unit } from "./game";
 import type { Scenario } from "./scenario";
 import type { Battlefield } from "./scene/battlefield";

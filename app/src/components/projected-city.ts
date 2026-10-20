@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import * as THREE from "three";
 import imageUrl from "../assets/menu-night-1672.webp";
 

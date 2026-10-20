@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 /**
  * Operative voice lines. Recordings live in `public/sounds` as
  * `<phrase>-<sex>-<NN>.mp3`; a voice is a sex plus a two-digit index, so a

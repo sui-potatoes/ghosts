@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 // Small, face-fitted edits to native brow cards. All coordinates are in metres.
 // A front-surface grid avoids raycasting the entire portrait for each slider tick.
 export function frontSurface(positions, indices, cell = 0.008) {

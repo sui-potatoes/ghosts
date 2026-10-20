@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import * as T from 'three';
 export function shortestAngle(from:number,to:number) {
  return Math.atan2(Math.sin(to-from),Math.cos(to-from));

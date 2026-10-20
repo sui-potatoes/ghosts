@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import * as T from "three";
 import { clearEquipment, motionSkeleton } from "./clearance.ts";
 import type { Sex } from "../types";

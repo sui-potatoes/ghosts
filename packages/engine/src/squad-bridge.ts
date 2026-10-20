@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import { initialSquad } from "@ghosts/squad/model";
 import { DEFAULT_ARMOR_COLORS } from "@ghosts/squad/armor-colors";
 import type { Appearance, ArmorColors, Recruit } from "@ghosts/squad/types";
