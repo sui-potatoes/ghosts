@@ -1,0 +1,24 @@
+/*
+ * The legacy sheets were written for a page of their own, on browser
+ * defaults. Inside a host page (Tailwind's preflight, the host's body type)
+ * those defaults are gone; put back the ones the sheets rely on. Zero
+ * specificity beyond the root, so every rule in the sheets still wins.
+ */
+.encounter {
+  font-weight: 400;
+  line-height: normal;
+}
+.encounter :where(*) {
+  margin: revert;
+  padding: revert;
+}
+.encounter :where(img, canvas, svg, video) {
+  display: revert;
+  vertical-align: revert;
+}
+.encounter :where(input, select, textarea, option) {
+  font-size: revert;
+  font-weight: revert;
+  line-height: revert;
+  color: revert;
+}
