@@ -10,6 +10,12 @@ importers:
 
   app:
     dependencies:
+      '@ghosts/engine':
+        specifier: workspace:*
+        version: link:../packages/engine
+      '@ghosts/squad':
+        specifier: workspace:*
+        version: link:../packages/squad
       '@mysten/dapp-kit-core':
         specifier: ^1.3.2
         version: 1.6.38(@mysten/sui@2.36.0(typescript@5.9.3))(typescript@5.9.3)

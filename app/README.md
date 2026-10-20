@@ -6,11 +6,16 @@ Sui (testnet).
 
 ## Run
 
+The repository is a pnpm workspace: this app plus `packages/engine`
+(`@ghosts/engine`, the encounter) and `packages/squad` (`@ghosts/squad`, the
+squad domain and character pipeline). Install from the repository root.
+
 ```bash
 pnpm install
 pnpm dev          # http://localhost:5174
 pnpm build        # type-check + production build
 pnpm lint
+pnpm test         # every package's tests
 ```
 
 Copy `.env.example` to `.env` and set `VITE_ENOKI_API_KEY` to enable Google
@@ -23,15 +28,12 @@ and motion drills. It is available without a wallet. Motion previews offer 38
 captured actions, pause/scrub, loop, speed and reset; `pnpm test:motion` checks
 native-rig conversion and playback lifecycle.
 
-The playable Tokyo street encounter remains at `/demo`, available from the main
-menu without a wallet. It includes the Lawson / 7-Eleven district, turn-based
-combat, cover and weapons. Characters and armor use the shared Squad builder;
-appearance editing lives in `/squad`.
-
-The encounter lives in `demo-runtime/` with its own document lifecycle; Vite
-builds it alongside Ghosts. See `demo-runtime/README.md` for boundaries.
-`pnpm test:demo` checks encounter rules and animation transitions. Sign-in and
-Settings retain their existing behavior. Ranked/Public modes remain disabled.
+The playable Tokyo street encounter is at `/demo`, available from the main
+menu without a wallet: the Lawson / 7-Eleven district, turn-based combat, cover
+and weapons, with the squad saved in `/squad`. The screen mounts `<Encounter>`
+from `@ghosts/engine` (see `packages/engine/README.md`) and owns the pause
+menu. Sign-in and Settings retain their existing behavior. Ranked/Public modes
+remain disabled.
 
 Stack and conventions mirror the Sui Potatoes `app`. See `CLAUDE.md`.
 
@@ -50,6 +52,9 @@ Connect to Git). Project settings:
 | --- | --- |
 | Root directory | `app` |
 | Build command | `pnpm build` |
+
+pnpm finds the workspace root above `app/`, so the install there also links
+`packages/engine` and `packages/squad`.
 | Deploy command | `npx wrangler deploy` |
 
 Node comes from `.node-version` and pnpm from `packageManager`. Pushes to

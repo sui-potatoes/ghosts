@@ -1,0 +1,30 @@
+{
+    "name": "@ghosts/engine",
+    "version": "0.0.0",
+    "private": true,
+    "type": "module",
+    "description": "The Ghosts encounter engine: headless rules, the three.js battlefield, and the React encounter UI. Mount <Encounter> to play.",
+    "exports": {
+        ".": "./src/index.ts",
+        "./keys": "./src/keys.ts"
+    },
+    "scripts": {
+        "test": "node --experimental-strip-types --test src/aftermath/report.test.ts src/ai.test.ts src/aim-transition.test.ts src/batching.test.ts src/city-blocks.test.ts src/combat-pose.test.ts src/district-plan.test.ts src/events.test.ts src/frame-pacer.test.ts src/game.test.ts src/idle-behavior.test.ts src/map.test.ts src/motions.test.ts src/portrait-frame.test.ts src/render-policy.test.ts src/scene-weather.test.ts src/sfx.test.ts src/sole-contact.test.ts src/squad-bridge.test.ts src/voice.test.ts",
+        "typecheck": "tsc -p ."
+    },
+    "dependencies": {
+        "@ghosts/squad": "workspace:*",
+        "three": "^0.174.0"
+    },
+    "peerDependencies": {
+        "react": "^19.1.1",
+        "react-dom": "^19.1.1"
+    },
+    "devDependencies": {
+        "@types/react": "^19.1.8",
+        "@types/three": "^0.174.0",
+        "react": "^19.1.1",
+        "react-dom": "^19.1.1",
+        "typescript": "^5.8.3"
+    }
+}

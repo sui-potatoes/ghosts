@@ -5,9 +5,10 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import { Route, Routes } from "react-router-dom";
 
 import MainMenu from "./screens/MainMenu";
-import Demo from "./screens/Demo";
 import Settings from "./screens/Settings";
 const Squad = lazy(() => import("./screens/Squad"));
+// The encounter brings three.js and the combat assets; load it with the route.
+const Demo = lazy(() => import("./screens/Demo"));
 import SceneStudy from "./screens/SceneStudy";
 import { EscapeBack } from "./EscapeBack";
 import { onSignInRequest } from "./signIn";
@@ -23,7 +24,14 @@ export function App() {
         <>
             <Routes>
                 <Route index path="/" element={<MainMenu />} />
-                <Route path="/demo" element={<Demo />} />
+                <Route
+                    path="/demo"
+                    element={
+                        <Suspense fallback={<p className="label p-10">Bringing the squad in…</p>}>
+                            <Demo />
+                        </Suspense>
+                    }
+                />
                 <Route path="/settings" element={<Settings />} />
                 <Route
                     path="/squad"

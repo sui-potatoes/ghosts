@@ -5,8 +5,22 @@ import { useCurrentAccount, useDAppKit } from "@mysten/dapp-kit-react";
 import { formatAddress, MIST_PER_SUI } from "@mysten/sui/utils";
 import { useState, type ReactNode } from "react";
 
-import { Slider, Switch } from "./controls";
-import { DEFAULTS, useSettings } from "./store";
+import { Tooltip } from "../components/Tooltip";
+import { NETWORK } from "../constants";
+import { useBalance } from "../hooks/useBalance";
+import { usePlayerName } from "../hooks/usePlayerName";
+import { useSignInMethod } from "../hooks/useSignInMethod";
+import { NameDialog } from "../NameDialog";
+import { requestSignIn } from "../signIn";
+import { Field, Keys, Slider, Switch } from "./controls";
+import { COMBAT_ACTIONS, COMBAT_LABELS } from "@ghosts/engine/keys";
+import { ACTION_LABELS, ACTIONS } from "./keys";
+import { useSettingsSection } from "./store";
+
+/*
+ * The settings panels. Shared by the Settings screen and the in-game pause
+ * menu, so a change made mid-encounter is the same change.
+ */
 
 /** Button row under a panel's fields. */
 function Actions({ children }: { children: ReactNode }) {
@@ -203,6 +217,36 @@ export function DisplayPanel() {
                 onChange={(reduceMotion) => setDisplay({ reduceMotion })}
             />
             <Actions>
+                <ResetButton onReset={reset} />
+            </Actions>
+        </>
+    );
+}
+
+export function ControlsPanel() {
+    const [controls, , reset] = useSettingsSection("controls");
+
+    return (
+        <>
+            <h3 className="label pb-2 text-muted">Menus</h3>
+            {ACTIONS.map((action) => (
+                <Field key={action} label={ACTION_LABELS[action]}>
+                    <Keys action={action} />
+                </Field>
+            ))}
+            <h3 className="label pt-8 pb-2 text-muted">Combat</h3>
+            {COMBAT_ACTIONS.map((action) => (
+                <Field key={action} label={COMBAT_LABELS[action]}>
+                    <Keys keys={controls.combat[action]} />
+                </Field>
+            ))}
+            <Field label="Select operator">
+                <Keys keys={["1", "–", "9"]} />
+            </Field>
+            <Actions>
+                <button className="btn" disabled>
+                    Rebind · soon
+                </button>
                 <ResetButton onReset={reset} />
             </Actions>
         </>

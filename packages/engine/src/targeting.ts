@@ -1,0 +1,63 @@
+import {
+  distance,
+  type Cell,
+  type Encounter,
+  type Unit,
+} from "./game.ts";
+
+export function shotBlockReason(
+  game: Encounter,
+  unit: Unit,
+  target?: Unit,
+): string | null {
+  if (!game.canAct(unit)) return "NO ACTION POINTS";
+  if (!unit.ammo) return "MAGAZINE EMPTY";
+  if (!target || target.hp <= 0 || target.enemy === unit.enemy)
+    return "NO TARGET";
+  if (distance(unit.pos, target.pos) > unit.range + 3)
+    return "OUT OF RANGE";
+  if (game.map.coverPeek(unit.pos,target.pos).blocked) return "WALL BLOCKS SHOT";
+  return null;
+}
+export function bestShotTarget(game: Encounter, unit: Unit): Unit | undefined {
+  return [...game.enemies].sort((a, b) => {
+    const ar = distance(unit.pos, a.pos) <= unit.range + 3 && !game.map.coverPeek(unit.pos,a.pos).blocked,
+      br = distance(unit.pos, b.pos) <= unit.range + 3 && !game.map.coverPeek(unit.pos,b.pos).blocked;
+    return (
+      Number(br) - Number(ar) ||
+      game.chance(unit, b) - game.chance(unit, a) ||
+      distance(unit.pos, a.pos) - distance(unit.pos, b.pos)
+    );
+  })[0];
+}
+export function grenadeBlockReason(
+  game: Encounter,
+  unit: Unit,
+  point: Cell | null,
+): string | null {
+  if (!game.canAct(unit)) return "NO ACTION POINTS";
+  if (unit.grenade) return "GRENADE EXPENDED";
+  if (!point) return "NO LANDING TILE";
+  if (!game.map.inBounds(point)) return "OUTSIDE THE DISTRICT";
+  if (distance(unit.pos, point) > 5)
+    return "OUT OF THROW RANGE";
+  return null;
+}
+export function defaultGrenadeTarget(game: Encounter, unit: Unit): Cell {
+  const candidates: Cell[] = [];
+  const { minX, maxX, minZ, maxZ } = game.map.bounds;
+  for (let x = minX; x <= maxX; x++)
+    for (let z = minZ; z <= maxZ; z++) {
+      const point: Cell = [x, z];
+      if (
+        distance(unit.pos, point) >= 3 &&
+        !grenadeBlockReason(game, unit, point)
+      )
+        candidates.push(point);
+    }
+  const score = (p: Cell) =>
+    game.enemies.filter((e) => distance(e.pos, p) <= 2).length * 100 -
+    game.allies.filter((a) => distance(a.pos, p) <= 2).length * 200 -
+    Math.min(...game.enemies.map((e) => distance(e.pos, p)), 100);
+  return candidates.sort((a, b) => score(b) - score(a))[0] ?? [...unit.pos];
+}

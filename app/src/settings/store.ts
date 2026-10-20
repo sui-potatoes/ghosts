@@ -9,18 +9,28 @@
 
 import { useSyncExternalStore } from "react";
 
+import {
+    DEFAULT_COMBAT_BINDINGS,
+    sanitizeCombatBindings,
+    type CombatBindings,
+} from "@ghosts/engine/keys";
 import { ACTIONS, DEFAULT_BINDINGS, actionOf, type Action, type Bindings } from "./keys";
 
 export type Settings = {
     audio: { master: number; music: number; sfx: number; voice: number; muted: boolean };
-    display: { scanlines: boolean; vignette: boolean; reduceMotion: boolean; batterySaver: boolean };
-    controls: { bindings: Bindings };
+    display: {
+        scanlines: boolean;
+        vignette: boolean;
+        reduceMotion: boolean;
+        batterySaver: boolean;
+    };
+    controls: { bindings: Bindings; combat: CombatBindings };
 };
 
 export const DEFAULTS: Settings = {
     audio: { master: 80, music: 60, sfx: 80, voice: 80, muted: false },
     display: { scanlines: true, vignette: true, reduceMotion: false, batterySaver: true },
-    controls: { bindings: DEFAULT_BINDINGS },
+    controls: { bindings: DEFAULT_BINDINGS, combat: DEFAULT_COMBAT_BINDINGS },
 };
 
 const KEY = "ghosts:settings";
@@ -73,7 +83,7 @@ function sanitize(raw: unknown): Settings {
             reduceMotion: flag(d.reduceMotion, DEFAULTS.display.reduceMotion),
             batterySaver: flag(d.batterySaver, DEFAULTS.display.batterySaver),
         },
-        controls: { bindings: bindings(c.bindings) },
+        controls: { bindings: bindings(c.bindings), combat: sanitizeCombatBindings(c.combat) },
     };
 }
 

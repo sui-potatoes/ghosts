@@ -4,7 +4,7 @@ import globals from "globals";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-    { ignores: ["dist", "public/demo-assets/basis/**", "demo-runtime/**"] },
+    { ignores: ["dist", "public/demo-assets/basis/**"] },
     js.configs.recommended,
     {
         files: ["src/features/squad/appearance/*.js"],

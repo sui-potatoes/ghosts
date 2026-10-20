@@ -5,16 +5,17 @@
     "type": "module",
     "scripts": {
         "dev": "vite",
-        "build": "tsc && tsc -p demo-runtime/tsconfig.json && vite build",
+        "build": "tsc && vite build",
         "lint": "eslint . --report-unused-disable-directives --max-warnings 0",
         "prettify": "prettier . --write",
         "preview": "vite preview",
-        "test:squad": "node --experimental-strip-types --test tests/squad.test.ts",
         "test:motion": "node --experimental-strip-types --test tests/motion.test.ts tests/clearance.test.ts tests/armor-deformation.test.ts",
-        "test:demo": "node --experimental-strip-types --test demo-runtime/src/game.test.ts demo-runtime/src/high-cover.test.ts demo-runtime/src/aim-transition.test.ts demo-runtime/src/district-plan.test.ts demo-runtime/src/combat-pose.test.ts demo-runtime/src/frame-pacer.test.ts demo-runtime/src/render-policy.test.ts demo-runtime/src/scene-weather.test.ts demo-runtime/src/squad-bridge.test.ts demo-runtime/src/shell-bridge.test.ts demo-runtime/src/voice.test.ts demo-runtime/src/sfx.test.ts demo-runtime/src/sole-contact.test.ts demo-runtime/src/aftermath/report.test.ts",
-        "test:equipment": "node --experimental-strip-types --test tests/sidearm.test.ts"
+        "test:equipment": "node --experimental-strip-types --test tests/sidearm.test.ts",
+        "test": "pnpm test:motion && pnpm test:equipment"
     },
     "dependencies": {
+        "@ghosts/engine": "workspace:*",
+        "@ghosts/squad": "workspace:*",
         "@mysten/dapp-kit-core": "^1.3.2",
         "@mysten/dapp-kit-react": "^2.0.3",
         "@mysten/enoki": "^1.0.8",
