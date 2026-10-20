@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import { CELL, footprint, tacticalMap, type Cell, type MapPlan } from "./map.ts";
 
 /**

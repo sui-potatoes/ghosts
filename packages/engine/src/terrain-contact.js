@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import * as T from 'three';
 import {soleProbeIndices} from './sole-contact.js';
 import {setWorldRotation,solveLeg} from './two-bone-ik.js';

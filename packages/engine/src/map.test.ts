@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import {test} from 'node:test';import assert from 'node:assert/strict';import {kora} from './district-plan.ts';
 type P=readonly [number,number];
 const coverPeek=(a:P,b:P)=>kora.coverPeek(a,b),highCoverAt=(c:P)=>kora.highCoverAt(c),clearBuildingShot=(a:P,b:P)=>kora.clearBuildingShot(a,b),coverStep=(c:P,a:P,b:P)=>kora.coverStep(c,a,b);

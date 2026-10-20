@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import * as T from 'three';
 import {loadMotions,captureClip} from '@ghosts/squad/motion/clips';
 import {CharacterAssets} from '@ghosts/squad/studio/character-assets';

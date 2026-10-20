@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 type Point = readonly [number, number];
 export type Cell = [number, number];
 

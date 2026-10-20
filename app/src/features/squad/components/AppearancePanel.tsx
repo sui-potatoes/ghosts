@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import { useState } from "react";
 import type { Appearance } from "@ghosts/squad/types";
 import { schema } from "@ghosts/squad/appearance/schema";

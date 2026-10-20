@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import type * as T from "three";
 import { buildDistrict, loadDistrictTextures } from "../district";
 import type { Occluder } from "./occlusion";

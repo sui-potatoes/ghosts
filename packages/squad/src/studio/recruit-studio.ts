@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import { mountHandEquipment } from "./held-equipment";
 import * as T from "three";
 import { WeaponCarry } from "../motion/weapon-carry";

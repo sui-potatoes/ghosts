@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import * as T from "three";
 /** Use posed facial landmarks, so a tilted idle cannot turn the studio into an overhead shot. */
 export function portraitFrame(head: T.Mesh, eyes: T.Mesh) {

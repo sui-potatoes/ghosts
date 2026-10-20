@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import { audio } from "./audio";
 import { pad2 } from "./html";
 import type { GameEvent } from "./events";

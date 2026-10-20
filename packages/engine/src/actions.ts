@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import { audio } from "./audio";
 import { hostilePhase } from "./ai";
 import type { Command, GameEvent } from "./events";

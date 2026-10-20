@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import { useState } from "react";
 import { ROLES } from "@ghosts/squad/model";
 import type { Recruit, Role } from "@ghosts/squad/types";

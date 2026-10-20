@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import * as T from "three";
 import type { Cell } from "../map";
 import type { Space } from "./space";

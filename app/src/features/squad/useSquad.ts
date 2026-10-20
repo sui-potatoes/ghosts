@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import { useState } from "react";
 import { initialSquad, restoreSquad, SQUAD_STORAGE_KEY } from "@ghosts/squad/model";
 import type { SquadState } from "@ghosts/squad/types";

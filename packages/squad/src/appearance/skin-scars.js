@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import { Vector4 } from "three";
 const styles = ["none", "fine", "slash", "paired", "stitched"];
 // Rest coordinates make markings follow morphs and native skinning with no decal mesh.

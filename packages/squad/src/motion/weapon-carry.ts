@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import * as T from "three";
 
 /** Transfer at the two-handed starting pose, retaining the fore-end grip. */

@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import * as T from 'three';
 const cache=new WeakMap<T.AnimationClip[],T.AnimationClip[]>();
 /** Keep captured wall idles, peeks and steps aligned to their obstacle face.

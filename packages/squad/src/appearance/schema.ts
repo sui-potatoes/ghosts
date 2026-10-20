@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import type { Schema } from "../types";
 export const schema: Schema = {
     shapes: [

@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import { escapeHTML as h, pad2 } from "../html.ts";
 import { XP_PER_LEVEL, type EncounterReport, type RecruitReport } from "./report.ts";
 import "./reveal.css";

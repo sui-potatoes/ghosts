@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import source from "../assets/menu-night-1672.webp";

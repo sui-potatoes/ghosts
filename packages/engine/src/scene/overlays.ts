@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import * as T from "three";
 import { key, type Encounter, type Unit } from "../game";
 import { CELL, type Cell } from "../map";

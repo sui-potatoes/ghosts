@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 /** A packed district outside the playable 18×14 grid. All dimensions are metres. */
 export interface CityBuilding { x:number; z:number; w:number; d:number; h:number; rotation:number; style:number; shop:boolean; recess?:number }
 export function cityBlocks(): CityBuilding[] {

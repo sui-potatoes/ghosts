@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 /* global process, console */
 import { createRequire } from "node:module";
 import { resolve, dirname } from "node:path";

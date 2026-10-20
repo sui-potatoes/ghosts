@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import { action, cancelTargeting, endTurn, fire, pick, select, throwGrenade } from "./actions";
 import { distance } from "./game";
 import { combatActionOf } from "./keys";

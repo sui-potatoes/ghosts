@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import * as T from "three";
 import { SIDEARM_MOUNT_OFFSET } from "./sidearm.ts";
 

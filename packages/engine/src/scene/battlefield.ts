@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import * as T from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { shortestAngle, shoulderArc } from "../aim-transition";

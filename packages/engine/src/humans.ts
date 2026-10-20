@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import {WeaponCarry} from "@ghosts/squad/motion/weapon-carry";
 import {coverStepClips} from './cover-step';
 // @ts-ignore Native contact helpers.

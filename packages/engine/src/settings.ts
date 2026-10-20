@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import { DEFAULT_COMBAT_BINDINGS, type CombatBindings } from "./keys.ts";
 
 /** Levels 0–100, as the shell's audio settings keep them. */

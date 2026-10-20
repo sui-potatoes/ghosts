@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import { MeshStandardMaterial } from "three";
 import { paintArmor } from "../src/studio/armor-materials.ts";
 import test from "node:test";

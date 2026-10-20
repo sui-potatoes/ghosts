@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 // @ts-ignore Native editor adapter is shared JavaScript.
 import { deployment } from "./mpfb-characters.js";
 import { EffectPlayer, type EffectKind } from "./sfx";

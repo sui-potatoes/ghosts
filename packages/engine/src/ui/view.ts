@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 import { cancelTargeting } from "../actions";
 import { keyCap, type CombatAction } from "../keys";
 import { session } from "../session";
