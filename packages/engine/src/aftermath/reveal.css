@@ -1,0 +1,569 @@
+/* Field records: physical sleeves, foil-edged cards, restrained Ghosts typography. */
+.encounter #modal.encounter-rewards {
+    width: min(1220px, calc(100vw - 48px));
+    max-width: none;
+    max-height: calc(100dvh - 32px);
+    margin: auto;
+    padding: 0;
+    overflow: auto;
+    color: #eeeae0;
+    border: 1px solid #393b39;
+    background: radial-gradient(ellipse at 50% 0, #29302d80, transparent 65%), #101213;
+    box-shadow: 0 40px 120px #000b;
+    font-family: var(--mono);
+}
+.encounter #modal.encounter-rewards::backdrop {
+    background: #060809dc;
+    backdrop-filter: blur(9px);
+}
+.encounter .debrief-shell {
+    padding: 26px 32px 14px;
+}
+.encounter .debrief-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+}
+.encounter .debrief-eyebrow {
+    font-size: 9px;
+    letter-spacing: 0.18em;
+    color: #a2b1ad;
+    margin: 0 0 14px;
+}
+.encounter .debrief-eyebrow span {
+    margin-left: 24px;
+    color: #747a78;
+}
+.encounter .debrief-header h2 {
+    font: 400 clamp(28px, 3.7vw, 44px)/1.05 var(--mono);
+    letter-spacing: -0.055em;
+    margin: 0;
+}
+.encounter .debrief-subtitle {
+    font-size: 11px;
+    color: #a3a9a5;
+    margin: 14px 0 0;
+}
+.encounter .debrief-seal {
+    border: 1px solid #687268;
+    padding: 12px 20px;
+    text-align: center;
+    font-size: 9px;
+    line-height: 1.9;
+    letter-spacing: 0.18em;
+    color: #b4c4ae;
+    transform: rotate(6deg);
+}
+.encounter .debrief-seal b {
+    font-weight: 500;
+}
+.encounter .debrief-meta {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 20px 0 16px;
+    padding-top: 13px;
+    border-top: 1px solid #343935;
+    color: #848e88;
+    font-size: 9px;
+    letter-spacing: 0.09em;
+}
+.encounter .debrief-meta i {
+    padding: 0 9px;
+    font-style: normal;
+}
+.encounter .record-deck {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 18px;
+}
+.encounter .record-slot {
+    position: relative;
+    min-width: 0;
+    perspective: 1100px;
+    padding-top: 10px;
+}
+.encounter .record-sleeve {
+    position: absolute;
+    inset: 28px 0 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    padding: 25px 10px;
+    border: 1px solid #535651;
+    background:
+        repeating-linear-gradient(115deg, #ffffff03 0 1px, transparent 1px 5px),
+        linear-gradient(135deg, #383e39, #1a1e1b);
+    color: #aeb4a4;
+    clip-path: polygon(0 0, 30% 0, 38% 5%, 62% 5%, 70% 0, 100% 0, 100% 100%, 0 100%);
+    box-shadow: inset 0 0 0 6px #141815;
+    animation: sleeve-away 0.8s calc(1.2s + var(--order) * 0.28s) both;
+}
+.encounter .record-sleeve span,
+.encounter .record-sleeve small {
+    font-size: 8px;
+    letter-spacing: 0.14em;
+}
+.encounter .record-sleeve b {
+    font-size: 100px;
+    font-weight: 100;
+    line-height: 1;
+    color: #707c69;
+}
+.encounter .recruit-record {
+    position: relative;
+    opacity: 0;
+    transform: translateY(65px) scale(0.92);
+    animation: record-extract 0.9s calc(0.75s + var(--order) * 0.28s) cubic-bezier(0.19, 1, 0.22, 1)
+        forwards;
+}
+.encounter .record-turn {
+    position: relative;
+    transform-style: preserve-3d;
+    transition: transform 0.7s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+.encounter .record-front,
+.encounter .record-back {
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    border: 1px solid #596158;
+}
+.encounter .record-front {
+    position: relative;
+    overflow: hidden;
+    background: #191d1b;
+    transform: rotateY(180deg);
+}
+.encounter .record-back {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: center;
+    padding: 32px 15px;
+    background: repeating-linear-gradient(45deg, #b5c3ab08 0 1px, transparent 1px 9px), #161b18;
+    box-shadow:
+        inset 0 0 0 7px #0d100e,
+        inset 0 0 0 8px #475043;
+}
+.encounter .record-back span {
+    letter-spacing: 0.2em;
+    font-size: 12px;
+}
+.encounter .record-back b {
+    font-size: 100px;
+    font-weight: 100;
+    color: #b0b8a2;
+}
+.encounter .record-back small {
+    font-size: 7px;
+    letter-spacing: 0.08em;
+    text-align: center;
+}
+.encounter .is-revealed .record-turn {
+    transform: rotateY(180deg);
+}
+.encounter .record-id {
+    display: flex;
+    justify-content: space-between;
+    gap: 4px;
+    padding: 10px 12px;
+    font-size: 8px;
+    color: #b1b8ae;
+    letter-spacing: 0.06em;
+}
+.encounter .record-portrait {
+    position: relative;
+    height: clamp(115px, 14vw, 165px);
+    overflow: hidden;
+    background: #22272c;
+}
+.encounter .record-portrait::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(transparent 58%, #191d1b);
+    pointer-events: none;
+}
+.encounter .record-portrait img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    object-position: center 38%;
+    filter: saturate(0.65);
+}
+.encounter .record-silhouette {
+    font-size: 100px;
+    text-align: center;
+    color: #6f7d70;
+}
+.encounter .record-status,
+.encounter .record-rank {
+    position: absolute;
+    z-index: 1;
+    bottom: 9px;
+    font-size: 8px;
+    letter-spacing: 0.08em;
+}
+.encounter .record-status {
+    left: 12px;
+    color: #c7d0c4;
+}
+.encounter .record-rank {
+    right: 12px;
+    color: #dce3d4;
+}
+.encounter .record-rank b {
+    font-size: 19px;
+    font-weight: 500;
+}
+.encounter .record-identity {
+    padding: 12px 14px 7px;
+}
+.encounter .record-identity h3 {
+    font: 400 23px/1 var(--mono);
+    letter-spacing: 0.14em;
+    margin: 0;
+    color: #f0ede2;
+}
+.encounter .record-identity p {
+    margin: 8px 0 0;
+    font-size: 9px;
+    line-height: 1.4;
+    color: #b2b8ae;
+    min-height: 25px;
+    overflow-wrap: anywhere;
+}
+.encounter .record-service {
+    margin: 0 14px;
+    padding: 10px 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px solid #353c33;
+    font-size: 8px;
+    color: #a5b09e;
+    letter-spacing: 0.04em;
+}
+.encounter .record-service strong {
+    font-size: 16px;
+    font-weight: 400;
+    color: #e2e5d9;
+}
+.encounter .record-experience {
+    padding: 11px 14px 17px;
+    min-height: 85px;
+}
+.encounter .record-experience > div:first-child {
+    display: flex;
+    justify-content: space-between;
+    font-size: 8px;
+    gap: 3px;
+    color: #aeb9a8;
+}
+.encounter .record-experience strong {
+    font-weight: 500;
+    color: #ccdbb3;
+}
+.encounter .record-xp {
+    height: 4px;
+    background: #3a4236;
+    margin-top: 13px;
+    overflow: hidden;
+}
+.encounter .record-xp i {
+    display: block;
+    height: 100%;
+    background: #a5cdbd;
+    transform-origin: left;
+    transform: scaleX(0);
+}
+.encounter .record-experience p {
+    margin: 8px 0 0;
+    display: flex;
+    justify-content: space-between;
+    gap: 4px;
+    font-size: 7px;
+    color: #899582;
+}
+.encounter .record-edge {
+    position: absolute;
+    inset: 4px;
+    border: 1px solid #ffffff08;
+    pointer-events: none;
+}
+.encounter .record-promotion {
+    position: absolute;
+    top: 37%;
+    left: 0;
+    right: 0;
+    z-index: 3;
+    padding: 13px 4px;
+    text-align: center;
+    background: #dfbc6f;
+    color: #17170f;
+    opacity: 0;
+    transform: scale(0.7) rotate(-8deg);
+    pointer-events: none;
+    box-shadow: 0 0 45px #d9b36548;
+}
+.encounter .record-promotion b {
+    display: block;
+    font-size: clamp(15px, 2vw, 25px);
+    font-weight: 700;
+    letter-spacing: -0.05em;
+}
+.encounter .record-promotion span {
+    position: absolute;
+    right: 12px;
+    top: -25px;
+    color: #f5d79b;
+    font-size: 32px;
+}
+.encounter .record-promotion small {
+    font-size: 8px;
+    letter-spacing: 0.12em;
+}
+.encounter .is-promoted .record-promotion {
+    animation: promotion-stamp 2.2s cubic-bezier(0.2, 1.5, 0.4, 1) forwards;
+}
+.encounter .is-promoted .record-front {
+    border-color: #d9b365;
+}
+.encounter .is-promoted .record-front::after {
+    content: "";
+    position: absolute;
+    inset: -50%;
+    background: linear-gradient(110deg, transparent 40%, #f7dc9c77 50%, transparent 60%);
+    transform: translateX(-100%);
+    animation: foil-sweep 1.3s ease-out forwards;
+    pointer-events: none;
+}
+.encounter .is-promoted .record-status,
+.encounter .is-promoted .record-rank,
+.encounter .is-promoted .record-experience strong {
+    color: #e9ca85;
+}
+.encounter .is-promoted .record-xp i {
+    background: #e9ca85;
+}
+.encounter .is-kia .record-front {
+    background: #18191a;
+    border-color: #4c4d4d;
+}
+.encounter .is-kia .record-portrait img {
+    filter: grayscale(1) brightness(0.55);
+}
+.encounter .is-kia .record-portrait::after {
+    background:
+        linear-gradient(transparent, #18191a),
+        repeating-linear-gradient(0deg, #0003 0 1px, transparent 1px 4px);
+}
+.encounter .is-kia .record-identity h3 {
+    color: #a0a2a0;
+}
+.encounter .is-kia .record-rank {
+    color: #777b78;
+}
+.encounter .is-kia .record-status {
+    color: #d3a59b;
+    border: 1px solid #846862;
+    padding: 3px 6px;
+}
+.encounter .is-kia .record-service {
+    border-color: #303332;
+    color: #787e79;
+}
+.encounter .is-kia .record-service strong {
+    color: #929892;
+}
+.encounter .record-memorial {
+    padding: 11px 14px 17px;
+    min-height: 85px;
+    border-top: 1px solid #42413e;
+    margin: 0 14px;
+    padding-left: 0;
+    padding-right: 0;
+}
+.encounter .record-memorial strong {
+    display: block;
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    font-weight: 400;
+    color: #baa49a;
+}
+.encounter .record-memorial span {
+    display: block;
+    margin-top: 8px;
+    color: #858982;
+    font-size: 9px;
+    line-height: 1.6;
+}
+.encounter .is-kia.is-revealed .record-front {
+    animation: memorial-settle 2s 0.5s both;
+}
+.encounter .debrief-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    margin-top: 18px;
+    border-top: 1px solid #343935;
+    padding-top: 14px;
+}
+.encounter .debrief-summary {
+    color: #adb5a9;
+    font-size: 10px;
+    line-height: 1.5;
+    margin: 0;
+}
+.encounter .debrief-footer > div {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 10px;
+}
+.encounter .debrief-footer button {
+    padding: 11px 14px;
+    font: 9px var(--mono);
+    letter-spacing: 0.05em;
+    text-decoration: none;
+    color: #dddccd;
+    background: transparent;
+    border: 1px solid #51574d;
+    cursor: pointer;
+}
+.encounter .debrief-footer button span {
+    margin-left: 12px;
+}
+.encounter .debrief-footer button[data-redeploy] {
+    border-color: #abc1ae;
+    color: #c8dfcb;
+}
+.encounter .debrief-footer button:disabled {
+    opacity: 0.25;
+    cursor: default;
+}
+.encounter .debrief-footer button[data-quit] {
+    border-color: transparent;
+    color: #9daba0;
+}
+.encounter .debrief-note {
+    margin: 12px 0 0;
+    font-size: 7px;
+    letter-spacing: 0.16em;
+    color: #73796f;
+    text-align: center;
+}
+.encounter #modal.reveal-immediately .recruit-record {
+    animation: none;
+    opacity: 1;
+    transform: none;
+}
+.encounter #modal.reveal-immediately .record-sleeve {
+    display: none;
+}
+.encounter #modal.reveal-immediately .record-turn {
+    transition: none;
+}
+.encounter #modal.reveal-immediately .record-promotion {
+    animation: none;
+    opacity: 0;
+}
+.encounter #modal.reveal-immediately .record-front,
+.encounter #modal.reveal-immediately .record-front::after {
+    animation: none;
+}
+@keyframes record-extract {
+    0% {
+        opacity: 0;
+        transform: translateY(65px) scale(0.92);
+    }
+    25% {
+        opacity: 1;
+    }
+    70% {
+        transform: translateY(-12px) scale(1);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+@keyframes sleeve-away {
+    to {
+        opacity: 0;
+        transform: translateY(60px) scale(0.95);
+    }
+}
+@keyframes promotion-stamp {
+    0% {
+        opacity: 0;
+        transform: scale(1.5) rotate(-8deg);
+    }
+    16%,
+    66% {
+        opacity: 1;
+        transform: scale(1) rotate(-5deg);
+    }
+    100% {
+        opacity: 0;
+        transform: translateY(-12px) scale(0.96) rotate(-5deg);
+    }
+}
+@keyframes foil-sweep {
+    to {
+        transform: translateX(100%);
+    }
+}
+@keyframes memorial-settle {
+    from {
+        filter: brightness(0.5);
+    }
+    to {
+        filter: brightness(0.85);
+    }
+}
+@media (max-width: 760px) {
+    .encounter #modal.encounter-rewards {
+        width: calc(100vw - 20px);
+        max-height: calc(100dvh - 20px);
+    }
+    .encounter .debrief-shell {
+        padding: 24px 18px 18px;
+    }
+    .encounter .debrief-eyebrow span,
+    .encounter .debrief-seal {
+        display: none;
+    }
+    .encounter .record-deck {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px 12px;
+    }
+    .encounter .record-portrait {
+        height: 180px;
+    }
+    .encounter .debrief-footer {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    .encounter .debrief-footer > div {
+        justify-content: flex-start;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .encounter .encounter-rewards *,
+    .encounter .encounter-rewards *::after {
+        animation: none !important;
+        transition: none !important;
+    }
+}

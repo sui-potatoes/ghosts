@@ -14,40 +14,27 @@ jobs:
     name: Lint, test and build
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    defaults:
-      run:
-        working-directory: app
     steps:
       - uses: actions/checkout@v4
 
-      # pnpm version comes from the packageManager field in app/package.json.
+      # pnpm version comes from the packageManager field in the root package.json.
       - uses: pnpm/action-setup@v4
-        with:
-          package_json_file: app/package.json
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
-          cache-dependency-path: app/pnpm-lock.yaml
 
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm lint
 
-      - name: Test squad model
-        run: pnpm test:squad
+      # The engine and squad packages on their own; the app build checks all three together.
+      - run: pnpm typecheck
 
-      - name: Test encounter runtime
-        run: pnpm test:demo
+      # Squad model, encounter engine, and the app's asset-backed motion and equipment tests.
+      - run: pnpm test
 
-      - name: Test motion
-        run: pnpm test:motion
-
-      - name: Test equipment
-        run: pnpm test:equipment
-
-      # Type-checks the app and the runtime, then bundles both entries.
       - run: pnpm build
 
       - uses: actions/upload-artifact@v4
@@ -55,4 +42,3 @@ jobs:
           name: dist
           path: app/dist
           retention-days: 7
-

@@ -6,12 +6,6 @@ import { defineConfig } from "vite";
 export default defineConfig({
     build: {
         target: "es2022",
-        rollupOptions: {
-            input: {
-                main: "index.html",
-                demo: "demo-runtime/index.html",
-            },
-        },
     },
     plugins: [tailwindcss(), react()],
     // `app/` takes 5173; keep both dev servers runnable side by side.

@@ -18,8 +18,6 @@
   Cache-Control: no-cache
 /index.html
   Cache-Control: no-cache
-/demo-runtime/index.html
-  Cache-Control: no-cache
 
 /*
   X-Content-Type-Options: nosniff
