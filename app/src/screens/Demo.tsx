@@ -21,6 +21,14 @@ export default function Demo() {
     const navigate = useNavigate();
     const frame = useRef<HTMLIFrameElement>(null);
     const [paused, setPaused] = useState(false);
+    // The roster as saved when the encounter starts; playing never writes it back.
+    const [squad] = useState(() => {
+        try {
+            return savedRecruits(localStorage.getItem(SQUAD_STORAGE_KEY));
+        } catch {
+            return null;
+        }
+    });
 
     const send = useCallback((message: ShellMessage) => {
         frame.current?.contentWindow?.postMessage(message, location.origin);

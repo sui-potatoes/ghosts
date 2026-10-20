@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
 import * as T from "three";
-import { motionSkeleton, clearEquipment } from "../src/features/squad/motion/clearance.ts";
-import { nativeClip } from "../src/features/squad/motion/clips.ts";
+import { motionSkeleton, clearEquipment } from "@ghosts/squad/motion/clearance";
+import { nativeClip } from "@ghosts/squad/motion/clips";
 
 // Read geometry without loading texture images or requiring a WebGL context.
 for (const sex of ["female", "male"])

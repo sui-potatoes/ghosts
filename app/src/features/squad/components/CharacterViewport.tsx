@@ -1,8 +1,8 @@
 import { MotionControls } from "./MotionControls";
-import { STOPPED, type MotionState } from "../motion/player";
+import { STOPPED, type MotionState } from "@ghosts/squad/motion/player";
 import { useEffect, useRef, useState } from "react";
-import type { Appearance, Recruit } from "../types";
-import type { Focus, RecruitStudio } from "../studio/recruit-studio";
+import type { Appearance, Recruit } from "@ghosts/squad/types";
+import type { Focus, RecruitStudio } from "@ghosts/squad/studio/recruit-studio";
 
 interface Props {
     recruit: Recruit;
@@ -25,7 +25,7 @@ export function CharacterViewport(props: Props) {
         [attempt, setAttempt] = useState(0);
     useEffect(() => {
         let cancelled = false;
-        void import("../studio/recruit-studio")
+        void import("@ghosts/squad/studio/recruit-studio")
             .then(async ({ createRecruitStudio }) => {
                 if (cancelled || !host.current) return;
                 const view = createRecruitStudio(host.current, setMotion);

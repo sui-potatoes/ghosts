@@ -3,16 +3,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useSquad } from "../features/squad/useSquad";
-import { editRecruit, equip, MAX_RECRUITS } from "../features/squad/model";
-import { itemById } from "../features/squad/catalog";
+import { editRecruit, equip, MAX_RECRUITS } from "@ghosts/squad/model";
+import { itemById } from "@ghosts/squad/catalog";
 import { CharacterViewport } from "../features/squad/components/CharacterViewport";
 import { AppearancePanel } from "../features/squad/components/AppearancePanel";
 import { LoadoutPanel } from "../features/squad/components/LoadoutPanel";
 import { StatsPanel } from "../features/squad/components/StatsPanel";
 import { DossierPanel } from "../features/squad/components/PersonnelForm";
 import type { PersonnelDetails } from "../features/squad/components/PersonnelForm";
-import type { Focus } from "../features/squad/studio/recruit-studio";
-import type { Slot } from "../features/squad/types";
+import type { Focus } from "@ghosts/squad/studio/recruit-studio";
+import type { Slot } from "@ghosts/squad/types";
 import "../features/squad/squad.css";
 
 type Panel = "Loadout" | "Stats" | "Appearance" | "Personnel";

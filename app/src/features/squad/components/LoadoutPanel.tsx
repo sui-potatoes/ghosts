@@ -1,8 +1,8 @@
-import { ARMOR_FINISHES } from "../armor-colors";
+import { ARMOR_FINISHES } from "@ghosts/squad/armor-colors";
 import { useState } from "react";
-import { EQUIPMENT, SLOTS, SLOT_NAMES, itemById } from "../catalog";
-import { available, totalWeight } from "../model";
-import type { ArmorColors, Recruit, Slot, SquadState } from "../types";
+import { EQUIPMENT, SLOTS, SLOT_NAMES, itemById } from "@ghosts/squad/catalog";
+import { available, totalWeight } from "@ghosts/squad/model";
+import type { ArmorColors, Recruit, Slot, SquadState } from "@ghosts/squad/types";
 
 interface Props {
     recruit: Recruit;

@@ -4,10 +4,10 @@
 import type { CSSProperties } from "react";
 
 import { Tooltip } from "../../../components/Tooltip";
-import { itemById } from "../catalog";
-import { contributions, formatStat, RECRUIT_DEFAULT, VISIBLE } from "../stats";
-import type { Contribution, StatRow } from "../stats";
-import type { Recruit } from "../types";
+import { itemById } from "@ghosts/squad/catalog";
+import { contributions, formatStat, RECRUIT_DEFAULT, VISIBLE } from "@ghosts/squad/stats";
+import type { Contribution, StatRow } from "@ghosts/squad/stats";
+import type { Recruit } from "@ghosts/squad/types";
 
 const SOURCE_NAMES = { weapon: "Primary weapon", armor: "Body armor" } as const;
 

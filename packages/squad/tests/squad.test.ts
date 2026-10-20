@@ -1,5 +1,5 @@
 import { MeshStandardMaterial } from "three";
-import { paintArmor } from "../src/features/squad/studio/armor-materials.ts";
+import { paintArmor } from "../src/studio/armor-materials.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -9,8 +9,9 @@ import {
     addRecruit,
     editRecruit,
     restoreSquad,
+    savedRecruits,
     MAX_RECRUITS,
-} from "../src/features/squad/model.ts";
+} from "../src/model.ts";
 import {
     add,
     CLASSIFIED,
@@ -23,9 +24,9 @@ import {
     stats,
     unpack,
     VISIBLE,
-} from "../src/features/squad/stats.ts";
-import { shuffleFace, normalize } from "../src/features/squad/appearance/editor-state.js";
-import { schema } from "../src/features/squad/appearance/schema.ts";
+} from "../src/stats.ts";
+import { shuffleFace, normalize } from "../src/appearance/editor-state.js";
+import { schema } from "../src/appearance/schema.ts";
 
 test("equipping swaps conserve the shared inventory and enforce slots", () => {
     const start = initialSquad();
@@ -212,4 +213,11 @@ test("recruit stats combine operative, primary weapon and armor like unit.move",
     // No gear at all is the chain default.
     const unarmed = equip(equip(squad, "vex", "primary", null), "vex", "armor", null).recruits[0];
     assert.deepEqual(recruitStats(unarmed), RECRUIT_DEFAULT);
+});
+
+test("a corrupt or missing save reads as no recruits", () => {
+    assert.equal(savedRecruits(null), null);
+    assert.equal(savedRecruits("{broken"), null);
+    assert.equal(savedRecruits(JSON.stringify({ version: 2, recruits: [] })), null);
+    assert.equal(savedRecruits(JSON.stringify(initialSquad()))?.length, initialSquad().recruits.length);
 });

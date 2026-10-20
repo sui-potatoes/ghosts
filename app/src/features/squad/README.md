@@ -1,29 +1,25 @@
 # Local squad management
 
-`/squad` integrates the existing MPFB character editor into `game`. It is a frontend
+`/squad` integrates the existing MPFB character editor into Ghosts. It is a frontend
 preview, available without signing in. It does not read or mutate GameAccount,
 wallet, inventory objects, Move modules, or remote services.
 
 ## Boundaries
 
-- `model.ts`, `catalog.ts`, `types.ts`: pure roster and equipment domain. Stock is
-  total owned; availability subtracts assignments. Swaps return the previous item.
-  Recruits start unequipped; four slots, all filled by the starting roster
-  (no recruitment UI yet); callsigns are unique.
-- `stats.ts`: mirror of `commander::stats` (fifteen packed u8 fields, signed
-  modifiers, `add` semantics) with the `commander::items` presets by catalog id.
-  A recruit's field stats are operative + primary weapon + armor in `unit.move`'s
-  order; sidearm and utility do not count. Defense, plus-one, dodgeability, area
-  and environmental damage are kept but never listed. Role does not change stats.
+The domain lives in the `@ghosts/squad` package (`packages/squad/`): roster
+model, catalog and types, stats, armor colors, appearance helpers, the studio
+and motion. This folder is the screen:
+
 - `useSquad.ts`: versioned local storage, validated on restore. Storage failure
   leaves a usable in-memory session and a visible notice.
-- `components/`: roster inspector, appearance controls, stats panel, personnel form, viewport.
-- `studio/`: one on-demand Three.js context. Shared texture/model caches, captured pose and optional motion drills, native rig and calibrated weapon attachment. Portraits and item
-  thumbnails use the same renderer. Resources are released on route unmount.
-- `appearance/`: isolated ports of the existing MPFB editor's normalization,
-  randomization and cosmetic geometry/shader helpers, with typed boundaries.
-  `schema.ts` is the editor's 51 facial controls. No procedural beard substitute.
+- `components/`: roster inspector, appearance controls, stats panel, personnel
+  form, viewport.
 - `squad.css`: scoped screen styles; no changes to global UI tokens.
+
+The studio (`@ghosts/squad/studio/recruit-studio`) is one on-demand Three.js
+context: shared texture/model caches, captured pose and optional motion
+drills, native rig and calibrated weapon attachment. Portraits and item
+thumbnails use the same renderer. Resources are released on route unmount.
 
 Appearance is a draft until Apply; switching recruits prompts to apply/discard.
 Loadout and personnel edits save immediately. The saved appearance also drives
@@ -45,7 +41,7 @@ stats are local catalog descriptions, not an implementation of combat rules.
 
 ## Checks
 
-`pnpm test:squad` (Node 22+) exercises stock limits, immutable equipment swaps,
+`pnpm test` in `packages/squad` (Node 22+) exercises stock limits, immutable equipment swaps,
 slot validation, callsign validation, recruitment capacity, untrusted storage,
 stats packing and combination against the Move presets, and face randomization. Also run `pnpm build` and `pnpm lint`.
 
@@ -67,7 +63,6 @@ out of the game bundle. The packer preserves native inverse bind matrices,
 merges by material and writes the asset budget next to the GLBs.
 `node --test tests/field-kit.test.mjs` checks both body types' skeleton bindings,
 weights, geometry budgets and boot ground contact in the studio pose.
-
 
 ## NYX armor pack
 
@@ -104,14 +99,13 @@ selection, not with the main menu. `public/squad/armor/budget.json` records the
 exported counts. `node --test tests/field-kit.test.mjs` checks both native rigs,
 skin weights, bounds, texture coordinates and budgets.
 
-
 ## Armor finishes
 
 Each recruit stores `armorColors: { primary, secondary, accent }` independently
 of facial appearance and inventory. The loadout armor section offers three RGB
 color pickers and Graphite, Bone, Oxblood, and Olive combinations. The existing
 local save version migrates missing or invalid channels to defaults on restore.
-`armor-colors.ts` owns the palette and validation; `studio/armor-materials.ts`
+`@ghosts/squad/armor-colors` owns the palette and validation; `studio/armor-materials.ts`
 paints only owned material clones. Cloth, boots and NYX hardware retain their
 finishes. Color-only changes update existing materials and redraw without
 rebuilding geometry, reloading assets, or resetting the camera.
@@ -141,7 +135,7 @@ across the side of the chest. Authoring rejects nonpositive radial sections.
 
 ## Motion drills
 
-`motion/` owns the 38-action catalog, lazy per-body-type compressed clip loading,
+`@ghosts/squad/motion` owns the 38-action catalog, lazy per-body-type compressed clip loading,
 centimetre/Z-up to metre/Y-up conversion, in-place root movement and boot contact.
 `MotionPlayer` has no combat state. Pause/scrub/reset are local previews and never
 save appearance/equipment. Changing the character stops the old player; closing
@@ -151,8 +145,8 @@ Run `pnpm test:motion` for animation conversion and lifecycle regression checks.
 
 ### Handgun attachment
 
-`studio/sidearm.ts` is the single pistol model used by Squad, inventory and the
-Tokyo playtest. `held-equipment.ts` restores inventory-centred clones to the hand
+`@ghosts/squad/studio/sidearm` is the single pistol model used by Squad, inventory and the
+encounter. `held-equipment.ts` restores inventory-centred clones to the hand
 socket, including the pistol-specific grip offset. Combat imports the same model
 and offset. The rifle calibration is unchanged. `pnpm test:equipment` samples
 both native rigs through ready, idle, recoil and reload, checks palm contact,
