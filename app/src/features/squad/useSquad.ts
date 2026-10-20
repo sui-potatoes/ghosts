@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { initialSquad, restoreSquad, SQUAD_STORAGE_KEY } from "./model";
-import type { SquadState } from "./types";
+import { initialSquad, restoreSquad, SQUAD_STORAGE_KEY } from "@ghosts/squad/model";
+import type { SquadState } from "@ghosts/squad/types";
 export function useSquad() {
     const [notice, setNotice] = useState("");
     const [state, setState] = useState<SquadState>(() => {

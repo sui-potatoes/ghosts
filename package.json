@@ -1,0 +1,13 @@
+{
+    "name": "ghosts-workspace",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "dev": "pnpm --dir app dev",
+        "build": "pnpm --dir app build",
+        "lint": "pnpm --dir app lint",
+        "test": "pnpm -r --if-present test",
+        "typecheck": "pnpm -r --if-present typecheck"
+    },
+    "packageManager": "pnpm@9.1.0"
+}

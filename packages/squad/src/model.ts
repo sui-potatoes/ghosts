@@ -130,3 +130,13 @@ export function restoreSquad(input: unknown): SquadState {
     }
     return result;
 }
+
+/** The recruits of a saved roster (`JSON` text), or null when there is none or it is invalid. */
+export function savedRecruits(raw: string | null): Recruit[] | null {
+    if (!raw) return null;
+    try {
+        return restoreSquad(JSON.parse(raw)).recruits;
+    } catch {
+        return null;
+    }
+}

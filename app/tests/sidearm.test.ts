@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
 import * as T from "three";
-import { createSidearm, SIDEARM_GRIP } from "../src/features/squad/studio/sidearm.ts";
-import { mountHandEquipment } from "../src/features/squad/studio/held-equipment.ts";
-import { nativeClip } from "../src/features/squad/motion/clips.ts";
+import { createSidearm, SIDEARM_GRIP } from "@ghosts/squad/studio/sidearm";
+import { mountHandEquipment } from "@ghosts/squad/studio/held-equipment";
+import { nativeClip } from "@ghosts/squad/motion/clips";
 
 function inventoryGun() {
     const group = new T.Group(),

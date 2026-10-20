@@ -3,10 +3,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
 import * as T from "three";
-import { nativeClip, captureClip } from "../src/features/squad/motion/clips.ts";
-import { clearEquipment, motionSkeleton } from "../src/features/squad/motion/clearance.ts";
-import { WeaponCarry } from "../src/features/squad/motion/weapon-carry.ts";
-import { mountHandEquipment } from "../src/features/squad/studio/held-equipment.ts";
+import { nativeClip, captureClip } from "@ghosts/squad/motion/clips";
+import { clearEquipment, motionSkeleton } from "@ghosts/squad/motion/clearance";
+import { WeaponCarry } from "@ghosts/squad/motion/weapon-carry";
+import { mountHandEquipment } from "@ghosts/squad/studio/held-equipment";
 
 function assets(sex: string) {
     const b = readFileSync(`public/squad/body/${sex}/skin.glb`);

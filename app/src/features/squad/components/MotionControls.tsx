@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { motions, type Motion } from "../motion/catalog";
-import type { MotionState } from "../motion/player";
-import type { RecruitStudio } from "../studio/recruit-studio";
+import { motions, type Motion } from "@ghosts/squad/motion/catalog";
+import type { MotionState } from "@ghosts/squad/motion/player";
+import type { RecruitStudio } from "@ghosts/squad/studio/recruit-studio";
 
 interface Props {
     studio: RecruitStudio | null;

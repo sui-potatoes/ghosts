@@ -1,6 +1,6 @@
 import { useState } from "react";
-import type { Appearance } from "../types";
-import { schema } from "../appearance/schema";
+import type { Appearance } from "@ghosts/squad/types";
+import { schema } from "@ghosts/squad/appearance/schema";
 import {
     BROWS,
     BROW_CONTROLS,
@@ -14,7 +14,7 @@ import {
     fromPreset,
     presets,
     normalize,
-} from "../appearance/editor-state.js";
+} from "@ghosts/squad/appearance/editor-state";
 const SKINS = [
     ["young_caucasian", "Clear · light"],
     ["young_asian", "Clear · medium"],

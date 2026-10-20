@@ -3,10 +3,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
 import * as T from "three";
-import { nativeClip } from "../src/features/squad/motion/clips.ts";
-import { motions } from "../src/features/squad/motion/catalog.ts";
-import { MotionPlayer, STOPPED, type MotionState } from "../src/features/squad/motion/player.ts";
-import { soleMinimum } from "../src/features/squad/motion/sole-contact.ts";
+import { nativeClip } from "@ghosts/squad/motion/clips";
+import { motions } from "@ghosts/squad/motion/catalog";
+import { MotionPlayer, STOPPED, type MotionState } from "@ghosts/squad/motion/player";
+import { soleMinimum } from "@ghosts/squad/motion/sole-contact";
 
 for (const sex of ["female", "male"]) test(`${sex}: every drill binds to the current native rig, with finite in-place tracks`, () => {
     const file = readFileSync(`public/squad/body/${sex}/skin.glb`);

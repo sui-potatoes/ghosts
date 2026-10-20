@@ -92,7 +92,15 @@ export const ITEM_STATS: Record<string, Stats> = {
     // items::rifle(2) "Sharpshooter Rifle": 5 DMG, 1 SPREAD, +20% CRIT, 1 AREA, 5 RANGE, 3 AMMO
     srs9: unpack(0x03_05_00_01_01_14_14_01_05n << 48n),
     // Frontend preset: a service pistol until commander mints one.
-    k12: stats({ damage: 3, spread: 1, critChance: 5, canBeDodged: 1, areaSize: 1, range: 3, ammo: 6 }),
+    k12: stats({
+        damage: 3,
+        spread: 1,
+        critChance: 5,
+        canBeDodged: 1,
+        areaSize: 1,
+        range: 3,
+        ammo: 6,
+    }),
     // items::armor(1) "Light Armor": +1 ARM, +10% DODGE
     spectre: stats({ armor: 1, dodge: 10 }),
     nyx: stats({ armor: 1, dodge: 10 }),
@@ -134,9 +142,10 @@ export function contributions(recruit: Recruit): {
         ["weapon", recruit.equipment.primary],
         ["armor", recruit.equipment.armor],
     ];
-    const byStat = Object.fromEntries(
-        STAT_KEYS.map((k) => [k, [] as Contribution[]]),
-    ) as Record<StatKey, Contribution[]>;
+    const byStat = Object.fromEntries(STAT_KEYS.map((k) => [k, [] as Contribution[]])) as Record<
+        StatKey,
+        Contribution[]
+    >;
     let total = RECRUIT_DEFAULT;
     for (const [source, item] of steps) {
         const modifier = ITEM_STATS[item ?? ""] ?? EMPTY;

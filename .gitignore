@@ -5,6 +5,7 @@ CLAUDE.md
 .cursorrules
 .aider*
 .codex/
+node_modules
 
 # OS
 .DS_Store
