@@ -28,11 +28,7 @@ export default function MainMenu() {
     // The local playtest is available with or without a connected account.
     const entries: Entry[] = [
         { label: "Demo", onClick: () => navigate("/demo") },
-        ...(account
-            ? []
-            : [
-                  { label: "Login", onClick: requestSignIn },
-              ]),
+        ...(account ? [] : [{ label: "Login", onClick: requestSignIn }]),
         { label: "Ranked", tag: "soon", disabled: true },
         { label: "Public", tag: "soon", disabled: true },
         { label: "Squad", onClick: () => navigate("/squad") },
@@ -85,7 +81,11 @@ export default function MainMenu() {
                         Sui · {NETWORK} <span className="text-muted">/</span> build 0.0.0
                     </span>
                     <span>© Sui Potatoes</span>
-                    <a href="https://github.com/sui-potatoes/app" target="_blank" rel="noreferrer">
+                    <a
+                        href="https://github.com/sui-potatoes/ghosts"
+                        target="_blank"
+                        rel="noreferrer"
+                    >
                         Source
                     </a>
                 </footer>

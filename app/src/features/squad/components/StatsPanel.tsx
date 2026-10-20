@@ -69,7 +69,8 @@ export function StatsPanel({ recruit }: { recruit: Recruit }) {
                         const delta = group.delta ? value - RECRUIT_DEFAULT[row.key] : 0;
                         const parts = group.delta ? byStat[row.key] : [];
                         const base = group.delta ? RECRUIT_DEFAULT[row.key] : value;
-                        const pct = (n: number) => `${Math.max(0, Math.min(100, (n / row.max) * 100))}%`;
+                        const pct = (n: number) =>
+                            `${Math.max(0, Math.min(100, (n / row.max) * 100))}%`;
                         const bar = {
                             "--base": pct(Math.min(base, value)),
                             "--gain": pct(Math.max(0, value - base)),
@@ -90,7 +91,11 @@ export function StatsPanel({ recruit }: { recruit: Recruit }) {
                                             <span
                                                 className={`stat-delta-value ${delta > 0 ? "up" : delta < 0 ? "down" : ""}`}
                                             >
-                                                {delta > 0 ? `+${delta}` : delta < 0 ? String(delta) : "±0"}
+                                                {delta > 0
+                                                    ? `+${delta}`
+                                                    : delta < 0
+                                                      ? String(delta)
+                                                      : "±0"}
                                             </span>
                                         </Tooltip>
                                     )}

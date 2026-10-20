@@ -28,7 +28,6 @@
  * Amber (warn) is reserved for states that need attention, e.g. "no recovery".
  */
 
-
 @layer base {
     /*
      * Not a web page. No scrollbars (scrolling itself still works), no
@@ -65,8 +64,9 @@
         border-radius: 0;
     }
 
-    /* Mouse focus shows nothing; keyboard focus keeps the accent ring below. */
-    :focus:not(:focus-visible) {
+    /* No browser focus rings: selection is drawn by each control's own state. */
+    :focus,
+    :focus-visible {
         outline: none;
     }
 
@@ -150,11 +150,6 @@
         cursor: not-allowed;
     }
 
-    :focus-visible {
-        outline: 1px solid var(--accent-color);
-        outline-offset: 3px;
-    }
-
     /* Mono labels: the voice of the interface. */
     .label {
         font-family: var(--font-mono);
@@ -227,15 +222,8 @@
         text-align: left;
     }
 
-    .menu-item::before {
-        content: "›";
-        margin-right: 14px;
-        color: var(--disabled-color);
-        transition: color 0.15s ease;
-    }
-
-    .menu-item:hover:not(:disabled)::before,
-    .menu-item:focus-visible::before {
+    .menu-item:hover:not(:disabled),
+    .menu-item:focus-visible {
         color: var(--accent-color);
     }
 
@@ -262,7 +250,8 @@
             color 0.15s ease;
     }
 
-    .btn:hover:not(:disabled) {
+    .btn:hover:not(:disabled),
+    .btn:focus-visible:not(:disabled) {
         border-color: var(--accent-color);
         color: var(--accent-color);
     }
@@ -315,6 +304,11 @@
         text-transform: none;
         white-space: pre-line;
         pointer-events: none;
+    }
+
+    .tip-start .tip-bubble {
+        right: auto;
+        left: 0;
     }
 
     .tip:hover .tip-bubble,

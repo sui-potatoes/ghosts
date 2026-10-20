@@ -139,3 +139,31 @@ export function useSettings(): [Settings, typeof updateSettings] {
     const s = useSyncExternalStore(subscribeSettings, getSettings, getSettings);
     return [s, updateSettings];
 }
+
+/** One section of the settings, a patch for it and a reset to its defaults. */
+export function useSettingsSection<K extends keyof Settings>(
+    key: K,
+): [Settings[K], (patch: Partial<Settings[K]>) => void, () => void] {
+    const [settings] = useSettings();
+    return [
+        settings[key],
+        (patch) => updateSettings((s) => ({ ...s, [key]: { ...s[key], ...patch } })),
+        () => updateSettings((s) => ({ ...s, [key]: DEFAULTS[key] })),
+    ];
+}
+
+/**
+ * Up/Down through a wrapping list of `count` entries from index `i`: the
+ * next index (and the key is consumed), or null for any other key.
+ */
+export function listStep(
+    e: Parameters<typeof actionOf>[0] & { preventDefault(): void },
+    i: number,
+    count: number,
+): number | null {
+    const action = currentAction(e);
+    const dir = action === "down" ? 1 : action === "up" ? -1 : 0;
+    if (!dir) return null;
+    e.preventDefault();
+    return (i + dir + count) % count;
+}
