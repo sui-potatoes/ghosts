@@ -12,6 +12,7 @@ import { Briefing, Debrief } from "./Dialogs";
 import { Field, type FieldRefs } from "./Field";
 import { CommandDeck, IntelPanel } from "./Panels";
 import { useSession } from "./useSession";
+import "../host-reset.css";
 import "../style.css";
 import "../ghosts-theme.css";
 
