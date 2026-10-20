@@ -60,6 +60,8 @@ export function keyLabel(key: string): string {
             return "←";
         case "ArrowRight":
             return "→";
+        case "Tab":
+            return "tab";
         default:
             return key.length === 1 ? key.toUpperCase() : key.toLowerCase();
     }

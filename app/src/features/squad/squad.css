@@ -26,10 +26,6 @@
     color: var(--disabled-color);
     cursor: not-allowed;
 }
-/* Selection is shown by state, not by the keyboard focus ring. */
-.squad-screen :focus-visible {
-    outline: none;
-}
 .squad-header {
     min-height: 116px;
     display: flex;
@@ -62,7 +58,7 @@
 .squad-workspace {
     display: grid;
     grid-template-columns: 220px minmax(280px, 1fr) 360px;
-    height: calc(100svh - 156px);
+    height: calc(100svh - 116px);
     min-height: 560px;
     max-height: 1100px;
 }
@@ -89,7 +85,6 @@
 .inventory-heading,
 .equipment-stock,
 .equipment-stats,
-.squad-footer,
 .personnel-stamp > span,
 .personnel-stamp small {
     font-family: var(--font-mono);
@@ -746,16 +741,6 @@
     font-size: 12px;
     line-height: 1.6;
 }
-.squad-footer {
-    height: 40px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 15px;
-    border-top: 1px solid var(--border-color);
-    color: var(--disabled-color);
-    font-size: 8px;
-}
 .sq-dialog {
     position: fixed;
     inset: 0;
@@ -786,13 +771,6 @@
 }
 .sq-dialog > .sq-field {
     margin-bottom: 24px;
-}
-.sq-dialog-close {
-    position: absolute;
-    top: 18px;
-    right: 20px;
-    color: var(--disabled-color);
-    font-size: 20px;
 }
 .sq-dialog-actions {
     display: flex;
@@ -939,9 +917,6 @@
         flex-direction: column;
         align-items: flex-start;
     }
-    .squad-footer {
-        font-size: 7px;
-    }
 }
 @media (max-width: 620px) {
     .squad-screen {
@@ -1003,10 +978,6 @@
     .stage-toolbar {
         flex-direction: row;
         align-items: center;
-    }
-    .squad-footer {
-        font-size: 6px;
-        letter-spacing: 0.06em;
     }
     .inspector-appearance {
         height: 740px;
@@ -1077,17 +1048,83 @@
 }
 
 /* Motion review shares the character stage; the controls never cover the model. */
-.drills-open .recruit-canvas { bottom: 210px; }
-.motion-controls { position: absolute; bottom: 90px; left: 24px; right: 24px; z-index: 2; padding: 12px; border: 1px solid var(--border-color); background: var(--surface-color); font: 10px var(--font-mono); }
-.motion-picker { display: flex; align-items: center; gap: 12px; color: var(--text-secondary); }
-.motion-picker select { flex: 1; min-width: 0; }
-.motion-controls select, .motion-controls button { padding: 7px 9px; border: 1px solid var(--border-color); background: var(--background-color); color: var(--text-color); font: inherit; }
-.motion-controls button:hover { border-color: var(--accent-color); color: var(--accent-color); }
-.motion-controls button:disabled { opacity: .35; }
-.motion-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 9px; }
-.motion-actions label { display: flex; align-items: center; gap: 4px; margin-left: auto; }
-.motion-controls input { accent-color: var(--accent-color); }
-.motion-timeline { display: flex; gap: 12px; align-items: center; margin-top: 10px; color: var(--text-secondary); }
-.motion-timeline input { flex: 1; min-width: 0; }
-.motion-controls p { color: var(--warn-color); margin: 8px 0 0; }
-@media (max-width: 620px) { .drills-open .recruit-canvas { bottom: 240px; } .motion-controls { left: 12px; right: 12px; bottom: 100px; } }
+.drills-open .recruit-canvas {
+    bottom: 210px;
+}
+.motion-controls {
+    position: absolute;
+    bottom: 90px;
+    left: 24px;
+    right: 24px;
+    z-index: 2;
+    padding: 12px;
+    border: 1px solid var(--border-color);
+    background: var(--surface-color);
+    font: 10px var(--font-mono);
+}
+.motion-picker {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: var(--text-secondary);
+}
+.motion-picker select {
+    flex: 1;
+    min-width: 0;
+}
+.motion-controls select,
+.motion-controls button {
+    padding: 7px 9px;
+    border: 1px solid var(--border-color);
+    background: var(--background-color);
+    color: var(--text-color);
+    font: inherit;
+}
+.motion-controls button:hover {
+    border-color: var(--accent-color);
+    color: var(--accent-color);
+}
+.motion-controls button:disabled {
+    opacity: 0.35;
+}
+.motion-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-top: 9px;
+}
+.motion-actions label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+}
+.motion-controls input {
+    accent-color: var(--accent-color);
+}
+.motion-timeline {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    margin-top: 10px;
+    color: var(--text-secondary);
+}
+.motion-timeline input {
+    flex: 1;
+    min-width: 0;
+}
+.motion-controls p {
+    color: var(--warn-color);
+    margin: 8px 0 0;
+}
+@media (max-width: 620px) {
+    .drills-open .recruit-canvas {
+        bottom: 240px;
+    }
+    .motion-controls {
+        left: 12px;
+        right: 12px;
+        bottom: 100px;
+    }
+}

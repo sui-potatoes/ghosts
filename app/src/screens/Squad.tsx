@@ -177,10 +177,6 @@ export default function Squad() {
                     </div>
                 </section>
             </div>
-            <footer className="squad-footer">
-                <span>GHOSTS / SQUAD</span>
-                <span>FRONTEND PREVIEW · LOCAL SAVES</span>
-            </footer>
             <dialog ref={discard} className="sq-dialog" onCancel={() => setPending(null)}>
                 <span className="sq-eyebrow">UNSAVED APPEARANCE</span>
                 <h2>Keep this look?</h2>

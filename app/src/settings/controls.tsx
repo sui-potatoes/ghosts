@@ -3,41 +3,32 @@
 
 import type { ReactNode } from "react";
 
+import { Tooltip } from "../components/Tooltip";
 import { keyLabel, type Action } from "./keys";
 import { currentAction, useSettings } from "./store";
 
-/** A key cap in the hint line and the controls table. */
-export function Kbd({ children }: { children: ReactNode }) {
+/** A key cap in the controls table. */
+function Kbd({ children }: { children: ReactNode }) {
     return <kbd className="kbd">{children}</kbd>;
 }
 
-/** The keys bound to `action`, as key caps. */
-export function Keys({ action }: { action: Action }) {
+/** The keys bound to a menu `action`, or the given `keys`, as key caps. */
+export function Keys(props: { action: Action } | { keys: string[] }) {
     const [settings] = useSettings();
+    const keys = "keys" in props ? props.keys : settings.controls.bindings[props.action];
     return (
         <span className="inline-flex gap-1.5">
-            {settings.controls.bindings[action].map((key) => (
+            {keys.map((key) => (
                 <Kbd key={key}>{keyLabel(key)}</Kbd>
             ))}
         </span>
     );
 }
 
-/** Footer line of key hints: `[["back", "back"], ["up", "category"], ...]`. */
-export function Hint({ items }: { items: [Action, string][] }) {
-    return (
-        <p className="label flex flex-wrap gap-x-5 gap-y-2 text-muted">
-            {items.map(([action, what]) => (
-                <span key={action} className="inline-flex items-baseline gap-2">
-                    <Keys action={action} />
-                    {what}
-                </span>
-            ))}
-        </p>
-    );
-}
-
-/** A labelled row in a settings panel. The value side is whatever you pass. */
+/**
+ * A labelled row in a settings panel. The value side is whatever you pass;
+ * a `hint` shows as a tooltip on the label.
+ */
 export function Field({
     label,
     hint,
@@ -50,8 +41,13 @@ export function Field({
     return (
         <div className="ctl-row">
             <div className="flex min-w-0 flex-col gap-0.5">
-                <span className="label text-foreground">{label}</span>
-                {hint && <span className="text-[12px] leading-snug text-secondary">{hint}</span>}
+                {hint ? (
+                    <Tooltip text={hint} align="start">
+                        <span className="label text-foreground">{label}</span>
+                    </Tooltip>
+                ) : (
+                    <span className="label text-foreground">{label}</span>
+                )}
             </div>
             <div className="shrink-0 font-mono text-sm text-foreground">{children}</div>
         </div>

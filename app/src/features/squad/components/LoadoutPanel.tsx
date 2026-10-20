@@ -53,7 +53,6 @@ export function LoadoutPanel({ recruit, state, images, onEquip, onColors }: Prop
                         {ARMOR_FINISHES.map(({ name, colors }) => (
                             <button
                                 key={name}
-                                title={name}
                                 aria-label={`${name} armor finish`}
                                 aria-pressed={Object.entries(colors).every(
                                     ([key, value]) =>

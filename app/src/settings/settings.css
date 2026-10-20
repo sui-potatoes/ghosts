@@ -46,23 +46,12 @@ html[data-reduce-motion="on"] *::after {
     white-space: nowrap;
 }
 
-.settings-nav-item::before {
-    content: "›";
-    margin-right: 12px;
-    color: var(--disabled-color);
-    transition: color 0.15s ease;
-}
-
 .settings-nav-item:hover,
 .settings-nav-item:focus-visible {
     color: var(--text-color);
 }
 
 .settings-nav-item[aria-current="true"] {
-    color: var(--text-color);
-}
-
-.settings-nav-item[aria-current="true"]::before {
     color: var(--accent-color);
 }
 
