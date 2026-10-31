@@ -37,7 +37,7 @@ export function loadEquipmentPoses(sex: Sex) {
     if (!cache.has(sex)) {
         const request = (async () => {
             const response = await fetch(
-                `${import.meta.env.BASE_URL}squad/motions/${sex}-equipment.bin?v=1`,
+                `${import.meta.env.BASE_URL}squad/motions/${sex}-equipment.bin?v=3`,
             );
             if (!response.ok) throw Error("Equipment poses could not load.");
             const blob = await response.blob();

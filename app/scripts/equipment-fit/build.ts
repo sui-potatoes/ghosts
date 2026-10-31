@@ -11,6 +11,10 @@ import * as T from "three";
 import { motionSkeleton, armTo } from "@ghosts/squad/motion/clearance";
 import { nativeClip } from "@ghosts/squad/motion/clips";
 import { equipmentPose, type EquipmentPoses } from "@ghosts/squad/motion/equipment-poses";
+import { captureArmRest, distributeArmTwist } from "./arm-twist.ts";
+import { triggerGrip } from "./trigger-grip.ts";
+import { supportGrip } from "./support-grip.ts";
+import { mountHandEquipment } from "@ghosts/squad/studio/held-equipment";
 const read = (path: string) => JSON.parse(gunzipSync(fs.readFileSync(path)).toString());
 const references = JSON.parse(fs.readFileSync("scripts/equipment-fit/references.json", "utf8"));
 const holds = new Set([
@@ -62,6 +66,15 @@ for (const sex of ["female", "male"]) {
     const actions: EquipmentPoses = read(`scripts/equipment-fit/${sex}-actions.bin`);
     const file = fs.readFileSync(`public/squad/body/${sex}/skin.glb`),
         root = motionSkeleton(file.buffer.slice(file.byteOffset, file.byteOffset + file.length));
+    const armRest = captureArmRest(root);
+    const weapon = new T.Group();
+    weapon.userData.center = [0, 0, 0];
+    weapon.userData.model = "rifle";
+    mountHandEquipment(
+        weapon,
+        root.getObjectByName("mixamorigRightHand") as T.Bone,
+        JSON.parse(fs.readFileSync(`public/squad/body/${sex}/weapon-mount.json`, "utf8")),
+    );
     const bone = (name: string) => root.getObjectByName(name)!;
     const world = (name: string) => bone(name).getWorldPosition(new T.Vector3());
     const result: EquipmentPoses = { version: 1, sources: {}, clips: {} };
@@ -79,6 +92,9 @@ for (const sex of ["female", "male"]) {
         "../packages/squad/src/studio/sidearm.ts",
         "scripts/equipment-fit/references.json",
         "scripts/equipment-fit/build.ts",
+        "scripts/equipment-fit/support-grip.ts",
+        "scripts/equipment-fit/arm-twist.ts",
+        "scripts/equipment-fit/trigger-grip.ts",
         `scripts/equipment-fit/${sex}-actions.bin`,
     ];
     for (const path of sources)
@@ -159,6 +175,10 @@ for (const sex of ["female", "male"]) {
                     ),
                 );
             }
+            triggerGrip(root, weapon, sex, /shoot|shot|burst/.test(source.name));
+            supportGrip(root, weapon, sex);
+            distributeArmTwist(root, "Left", armRest);
+            distributeArmTwist(root, "Right", armRest);
             times.push(time);
             changed.forEach((b, i) => b.quaternion.toArray(values[i], values[i].length));
         }

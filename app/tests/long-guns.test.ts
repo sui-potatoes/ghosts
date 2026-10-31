@@ -11,7 +11,13 @@ import {
     LONG_GUN_GRIP,
     BORE_HEIGHT,
     WEAPON_MOUNTS,
+    sizedWeaponPoint,
 } from "@ghosts/squad/studio/long-guns";
+import {
+    createWeaponAttachment,
+    createStandardFurniture,
+} from "../../packages/squad/src/studio/weapon-attachments.ts";
+import { weaponFinish } from "../../packages/squad/src/studio/weapon-finish.ts";
 import { ATTACHMENTS } from "../../packages/squad/src/catalog.ts";
 import { createFieldSupply } from "../../packages/squad/src/studio/field-supplies.ts";
 import { motionSkeleton } from "@ghosts/squad/motion/clearance";
@@ -23,8 +29,8 @@ for (const kind of ["rifle", "sniper", "plasma"] as const) {
         const gun = createLongGun(kind);
         const bounds = new T.Box3().setFromObject(gun);
         const size = bounds.getSize(new T.Vector3());
-        assert.ok(size.y > (kind === "sniper" ? 0.93 : 0.7));
-        assert.ok(size.y < (kind === "sniper" ? 0.99 : 0.8));
+        assert.ok(size.y > (kind === "sniper" ? 0.83 : 0.63));
+        assert.ok(size.y < (kind === "sniper" ? 0.9 : 0.72));
         let triangles = 0;
         gun.traverse((part) => {
             if (!(part instanceof T.Mesh)) return;
@@ -37,7 +43,10 @@ for (const kind of ["rifle", "sniper", "plasma"] as const) {
         assert.equal(gun.getObjectByName("mount_scope")!.children.length, 0, "no scope by default");
         assert.equal(gun.getObjectByName("mount_laser")!.children.length, 0, "no laser by default");
         // A ray along the bore must meet the muzzle face at the advertised exit.
-        const ray = new T.Raycaster(new T.Vector3(0, 1, -BORE_HEIGHT), new T.Vector3(0, -1, 0));
+        const ray = new T.Raycaster(
+            new T.Vector3(0, 1, sizedWeaponPoint(new T.Vector3(0, 0, -BORE_HEIGHT)).z),
+            new T.Vector3(0, -1, 0),
+        );
         const hits = ray.intersectObject(gun);
         assert.ok(hits.length > 0);
         assert.ok(Math.abs(hits[0].point.y - gun.userData.muzzle[1]) < 0.003);
@@ -124,8 +133,8 @@ test("exported GLBs preserve every socket and contain texture-ready normals, tan
                     n.extras?.interface === `ghosts:${slot}:v1`,
             );
             assert.ok(mount, `${kind}/${slot} exists`);
-            const [x, y, z] = kind === "plasma" && slot === "laser" ? [0.23, 0.045, 0.052] : xyz;
-            const expected = [-z, x, -y];
+            const [x, y, z] = kind === "plasma" && slot === "laser" ? [0.27, 0.058, 0.052] : xyz;
+            const expected = sizedWeaponPoint(new T.Vector3(-z, x, -y)).toArray();
             assert.ok(mount.translation, `${kind}/${slot} must not lose its transform`);
             assert.ok(
                 mount.translation.every((v: number, i: number) => Math.abs(v - expected[i]) < 1e-6),
@@ -195,5 +204,44 @@ test("all fifteen exported assets have finite unit-range UVs and material channe
                         );
                     }
             }
+    }
+});
+
+test("compact optics and lasers, distinct magazine capacities, and current exported geometry", () => {
+    const box = (o: T.Object3D) => new T.Box3().setFromObject(o);
+    const size = (o: T.Object3D) => box(o).getSize(new T.Vector3());
+    const basic = createWeaponAttachment("scope", 1);
+    const opticSize = size(basic);
+    assert.ok(opticSize.x < 0.04 && opticSize.y < 0.045 && opticSize.z < 0.04);
+    const ray = new T.Raycaster(new T.Vector3(0, 0.1, -0.025 * 0.9), new T.Vector3(0, -1, 0));
+    const first = ray.intersectObject(basic)[0].object as T.Mesh;
+    assert.equal(
+        (first.material as T.Material).name,
+        "06_OpticalGlass",
+        "lens faces the bore axis",
+    );
+    let previous = size(createStandardFurniture("clip", "rifle", weaponFinish("rifle"))).z;
+    for (const tier of [1, 2, 3] as const) {
+        const height = size(createWeaponAttachment("clip", tier)).z;
+        assert.ok(height - previous > 0.011, "capacity changes the silhouette");
+        previous = height;
+        assert.ok(size(createWeaponAttachment("laser", tier)).y < 0.065, "laser stays compact");
+    }
+    for (const item of ATTACHMENTS) {
+        const expected = box(createWeaponAttachment(item.slot, item.tier));
+        const bytes = readFileSync(`public/squad/weapons/${item.id}.glb`);
+        const gltf = JSON.parse(bytes.subarray(20, 20 + bytes.readUInt32LE(12)).toString());
+        const actual = new T.Box3();
+        for (const mesh of gltf.meshes)
+            for (const primitive of mesh.primitives) {
+                const a = gltf.accessors[primitive.attributes.POSITION];
+                actual.expandByPoint(new T.Vector3(...a.min));
+                actual.expandByPoint(new T.Vector3(...a.max));
+            }
+        assert.ok(
+            actual.min.distanceTo(expected.min) < 2e-6 &&
+                actual.max.distanceTo(expected.max) < 2e-6,
+            `${item.id}: rebuild the GLB after changing its geometry`,
+        );
     }
 });

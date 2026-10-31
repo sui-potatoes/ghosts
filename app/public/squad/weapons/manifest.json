@@ -4,93 +4,93 @@
   "assets": [
     {
       "id": "rifle",
-      "triangles": 25572,
+      "triangles": 25556,
       "materials": 5,
-      "bytes": 2258820
+      "bytes": 2249712
     },
     {
       "id": "sniper",
-      "triangles": 24868,
+      "triangles": 24852,
       "materials": 6,
-      "bytes": 2438320
+      "bytes": 2415724
     },
     {
       "id": "plasma",
       "triangles": 26240,
       "materials": 7,
-      "bytes": 2515500
+      "bytes": 2509168
     },
     {
       "id": "clip-1",
-      "triangles": 956,
-      "materials": 4,
-      "bytes": 633812
+      "triangles": 1012,
+      "materials": 5,
+      "bytes": 828124
     },
     {
       "id": "clip-2",
-      "triangles": 2252,
-      "materials": 5,
-      "bytes": 885660
+      "triangles": 2180,
+      "materials": 6,
+      "bytes": 1078064
     },
     {
       "id": "clip-3",
-      "triangles": 2900,
+      "triangles": 2612,
       "materials": 6,
-      "bytes": 1105808
+      "bytes": 1099660
     },
     {
       "id": "stock-1",
       "triangles": 3020,
       "materials": 5,
-      "bytes": 934312
+      "bytes": 934320
     },
     {
       "id": "stock-2",
       "triangles": 3672,
       "materials": 6,
-      "bytes": 1161488
+      "bytes": 1161496
     },
     {
       "id": "stock-3",
       "triangles": 3844,
       "materials": 6,
-      "bytes": 1170680
+      "bytes": 1170688
     },
     {
       "id": "laser-1",
       "triangles": 896,
       "materials": 8,
-      "bytes": 1002476
+      "bytes": 1002300
     },
     {
       "id": "laser-2",
       "triangles": 1260,
       "materials": 8,
-      "bytes": 1023808
+      "bytes": 1023628
     },
     {
       "id": "laser-3",
       "triangles": 1908,
       "materials": 8,
-      "bytes": 1055344
+      "bytes": 1055168
     },
     {
       "id": "scope-1",
-      "triangles": 852,
+      "triangles": 1644,
       "materials": 7,
-      "bytes": 813620
+      "bytes": 853888
     },
     {
       "id": "scope-2",
       "triangles": 5860,
       "materials": 6,
-      "bytes": 1091820
+      "bytes": 1094904
     },
     {
       "id": "scope-3",
       "triangles": 6184,
       "materials": 7,
-      "bytes": 1110720
+      "bytes": 1113224
     }
   ]
 }
