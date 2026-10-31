@@ -101,6 +101,8 @@ const PAD_MENU: [PadButton, Action][] = [
     ["start", "back"],
     ["lb", "prev-tab"],
     ["rb", "next-tab"],
+    ["lt", "prev-section"],
+    ["rt", "next-section"],
     ["x", "reset"],
 ];
 

@@ -15,6 +15,12 @@
     color: var(--text-secondary);
 }
 
+/* The controller layout's side-by-side split (data-side on the panel root)
+   gives the drawing a whole flex column; let it grow into it. */
+[data-side] .ctl-svg {
+    max-width: 900px;
+}
+
 .ctl-svg path,
 .ctl-svg ellipse,
 .ctl-svg rect {
@@ -72,4 +78,77 @@
     margin-top: -16px;
     text-align: center;
     color: var(--disabled-color);
+}
+
+/* === Button test mode === */
+
+/* Replaces the caption while testing: the held controls named over a
+   persistent exit hint. */
+.ctl-test {
+    margin-top: -16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+}
+
+.ctl-test-line {
+    min-height: 1.6em;
+    font-family: var(--font-mono);
+    font-size: 15px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    text-align: center;
+    color: var(--accent-color);
+}
+
+.ctl-test-line[data-idle] {
+    color: var(--text-secondary);
+}
+
+.ctl-test-exit {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+/* The hold-to-exit pill: the fill behind the text is a width the pad frame
+   writes directly, not a CSS animation, so reduce-motion keeps the progress. */
+.ctl-test-hold {
+    position: relative;
+    display: inline-block;
+    padding: 4px 10px;
+    border: 1px solid var(--border-color);
+    overflow: hidden;
+}
+
+.ctl-test-hold-fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 0;
+    background: color-mix(in srgb, var(--accent-color) 35%, transparent);
+}
+
+.ctl-test-hold-text,
+.ctl-test-close {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+
+.ctl-test-hold-text {
+    position: relative;
+}
+
+.ctl-test-close:hover {
+    color: var(--accent-color);
+}
+
+/* While testing the rows hold still: the bus is swallowed above them and the
+   mouse is fenced off here. */
+.ctl-rows[data-testing] {
+    pointer-events: none;
+    opacity: 0.45;
 }

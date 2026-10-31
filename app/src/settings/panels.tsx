@@ -1,13 +1,11 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
-import { useCurrentAccount, useDAppKit } from "@mysten/dapp-kit-react";
+import { useCurrentAccount, useCurrentClient, useDAppKit } from "@mysten/dapp-kit-react";
 import { formatAddress, MIST_PER_SUI } from "@mysten/sui/utils";
 import { useState, useSyncExternalStore } from "react";
 
-import { useBalance, useSessionRows } from "../chain";
-// Type-only: chain/index.ts re-exports runtime symbols; the shape rides along.
-import type { SessionTermination } from "../chain/sessions";
+import { retireSessionKey, useBalance, useSessionRows, type SessionTermination } from "../chain";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { NETWORK } from "../constants";
 import { usePlayerName } from "../hooks/usePlayerName";
@@ -107,14 +105,23 @@ export function PlayerPanel() {
 export function AccountPanel() {
     const dAppKit = useDAppKit();
     const account = useCurrentAccount();
+    const client = useCurrentClient();
     const method = useSignInMethod();
     const { data: mist, isPending, isError } = useBalance();
     const [copied, setCopied] = useState(false);
     // A termination waits here while its confirmation dialog is up.
     const [termination, setTermination] = useState<SessionTermination | null>(null);
+    const [signingOut, setSigningOut] = useState(false);
     const sessionRows = useSessionRows(setTermination);
 
     if (!account) return <SettingList rows={[signedOutRow("your wallet and balance")]} />;
+
+    async function signOut() {
+        // Leave nothing signable behind: the session key removes its own alias
+        // and is wiped (best effort — retireSessionKey never blocks sign-out).
+        if (account) await retireSessionKey(client, account.address);
+        await dAppKit.disconnectWallet();
+    }
 
     async function copy() {
         if (!account) return;
@@ -209,8 +216,9 @@ export function AccountPanel() {
             id: "sign-out",
             label: "Sign out",
             value: "",
-            description: "Disconnect this wallet from the device. Local preferences stay.",
-            onConfirm: () => dAppKit.disconnectWallet(),
+            description:
+                "Disconnect this wallet from the device: a confirmation asks first, and this browser's session key is retired with it. Local preferences stay.",
+            onConfirm: () => setSigningOut(true),
         },
         ...sessionRows,
     ];
@@ -222,6 +230,7 @@ export function AccountPanel() {
                 open={termination !== null}
                 title="Terminate session"
                 confirmLabel="Terminate"
+                danger
                 onConfirm={() => {
                     termination?.run();
                     setTermination(null);
@@ -236,6 +245,21 @@ export function AccountPanel() {
                         passkey signature confirms the removal.
                     </>
                 )}
+            </ConfirmDialog>
+            <ConfirmDialog
+                open={signingOut}
+                title="Sign out"
+                confirmLabel="Sign out"
+                danger
+                onConfirm={() => {
+                    setSigningOut(false);
+                    void signOut();
+                }}
+                onClose={() => setSigningOut(false)}
+            >
+                Disconnects this wallet from the device. This browser's session key is removed from
+                the on-chain alias set and wiped; signing in again authorizes the device anew. Local
+                preferences stay.
             </ConfirmDialog>
         </>
     );

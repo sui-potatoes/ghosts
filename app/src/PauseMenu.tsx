@@ -58,7 +58,9 @@ export function PauseMenu({ open, onResume, onBriefing, onRestart, onQuit }: Pro
                 className={
                     view === "menu"
                         ? "flex max-h-[92vh] w-full max-w-md flex-col gap-6 overflow-y-auto border border-line bg-surface px-8 py-7"
-                        : "flex h-full min-h-0 w-full flex-col px-6 py-10 md:px-16 md:py-16"
+                        : // No padding here: SettingsOverlay carries it inside its
+                          // smoke root, so the smoke reaches the screen edges.
+                          "flex h-full min-h-0 w-full flex-col"
                 }
                 onClick={(e) => e.stopPropagation()}
                 role="dialog"

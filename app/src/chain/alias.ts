@@ -143,6 +143,37 @@ export async function expireSessionKey(client: Client, owner: string): Promise<v
 }
 
 /**
+ * Retire this device's session on sign-out: while its alias still stands, the
+ * key signs its own `remove` — dropping authority needs no ceremony — and the
+ * key is wiped either way. Unlike `expireSessionKey`, a failed removal does
+ * not keep the key for a retry: signing out must leave no usable key behind,
+ * and a dangling alias can still be terminated from the Sessions panel later.
+ */
+export async function retireSessionKey(client: Client, owner: string): Promise<void> {
+    const key = await loadSessionKey();
+    if (!key) return;
+    const address = sessionAddress(key);
+    const state = await aliasesState(client, owner).catch(() => null);
+    if (state?.members.includes(address)) {
+        try {
+            const tx = removeTx(state.ref, address);
+            tx.setSender(owner);
+            const result = await client.core.signAndExecuteTransaction({
+                transaction: tx,
+                signer: new SessionSigner(key),
+                include: { effects: true },
+            });
+            if (result.FailedTransaction)
+                console.warn("session retirement failed:", result.FailedTransaction.status.error);
+        } catch (e) {
+            console.warn("session retirement failed:", e);
+        }
+    }
+    await clearSessionKey();
+    forgetSessionStatus();
+}
+
+/**
  * Authorize this device for `owner`: create the session key if needed and
  * put its address into the on-chain alias set, `sign`ing the enable/add
  * transactions with the wallet (the passkey's one job). Returns the signer
