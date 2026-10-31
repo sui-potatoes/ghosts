@@ -4,11 +4,13 @@
 import { refresh, showBriefing } from "./actions";
 import { audio } from "./audio";
 import { bindControls } from "./controls";
+import { bindPadCombat } from "./pad-combat";
 import type { Cell } from "./game";
 import { humanTextureStats, loadOperatives } from "./humans";
 // @ts-ignore Native editor adapter is shared JavaScript.
 import { loadNativeIdentities } from "./mpfb-characters.js";
 import { Battlefield } from "./scene/battlefield";
+import { loadDestruction } from "./scene/destruction";
 import { mapView } from "./scene/maps";
 import type { Recruit } from "@ghosts/squad/types";
 import type { Session } from "./session";
@@ -34,6 +36,8 @@ const review =
     : null;
 
 function placeReviewUnits(s: Session) {
+  // The fixtures place Black Rain's units; other levels load as authored.
+  if (s.game.scenario.id !== "black-rain") return;
   const unit = (id: string) => s.game.unit(id)!;
   if (review === "corner") {
     unit("v").pos = [4, -3];
@@ -67,6 +71,7 @@ export function boot(options: BootOptions): () => void {
       await loadOperatives(renderer);
       await loadNativeIdentities(s.game.units, deploymentLooks(squad, s.game.units));
       await mapView(s.game.map.plan.id).load(renderer);
+      await loadDestruction();
       if (disposed) return;
       viewport.dataset.humanTextures = JSON.stringify(humanTextureStats());
       const battlefield = new Battlefield({ viewport, labels, reticle, game: s.game, renderer });
@@ -83,6 +88,7 @@ export function boot(options: BootOptions): () => void {
       if (disposed) return;
       for (const u of s.game.units.filter((u) => !u.enemy)) s.portraits.set(u.id, battlefield.portrait(u));
       cleanups.push(bindControls({ onPause }));
+      cleanups.push(bindPadCombat({ onPause }));
       if (import.meta.env.DEV && review?.startsWith("debrief")) {
         const { prepareDebriefReview } = await import("./aftermath/review");
         prepareDebriefReview(s.game, review);

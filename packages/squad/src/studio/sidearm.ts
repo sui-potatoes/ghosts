@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import * as T from "three";
+import { gearFinish } from "./gear-geometry.ts";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 
 /** Donor-weapon coordinates: +Y muzzle, -Z up. Reference point inside the grip. */
@@ -13,14 +14,20 @@ export const SIDEARM_MOUNT_OFFSET = [0, -0.042, 0.025] as const;
 export function createSidearm() {
     const gun = new T.Group();
     gun.name = "K12Sidearm";
-    const steel = new T.MeshStandardMaterial({ color: 0x414853, metalness: 0.4, roughness: 0.36 });
-    const polymer = new T.MeshStandardMaterial({
-        color: 0x222628,
-        metalness: 0.05,
-        roughness: 0.82,
+    const steel = gearFinish("K12 / machined slide", 0x414853, 0.4, 0.36);
+    const polymer = gearFinish(
+        "K12 / stippled polymer",
+        0x222628,
+        0.05,
+        0.82,
+        0.12,
+    );
+    const dark = gearFinish("K12 / recesses", 0x0c1012, 0.35, 0.55);
+    const sight = new T.MeshStandardMaterial({
+        color: 0xb6c3b2,
+        metalness: 0.1,
+        roughness: 0.45,
     });
-    const dark = new T.MeshStandardMaterial({ color: 0x0c1012, metalness: 0.35, roughness: 0.55 });
-    const sight = new T.MeshStandardMaterial({ color: 0xb6c3b2, metalness: 0.1, roughness: 0.45 });
     // Author the silhouette with X forward, Y up, Z across the slide.
     const basis = new T.Matrix4().makeBasis(
         new T.Vector3(0, 1, 0),
@@ -33,7 +40,10 @@ export function createSidearm() {
         position = [0, 0, 0],
         rotation?: T.Euler,
     ) => {
-        if (rotation) geometry.applyMatrix4(new T.Matrix4().makeRotationFromEuler(rotation));
+        if (rotation)
+            geometry.applyMatrix4(
+                new T.Matrix4().makeRotationFromEuler(rotation),
+            );
         geometry.translate(...(position as [number, number, number]));
         geometry.applyMatrix4(basis);
         gun.add(new T.Mesh(geometry, material));
@@ -48,7 +58,9 @@ export function createSidearm() {
     ) => {
         const shape = new T.Shape(points.map((p) => new T.Vector2(p[0], p[1])));
         for (const points of holes)
-            shape.holes.push(new T.Path(points.map((p) => new T.Vector2(p[0], p[1]))));
+            shape.holes.push(
+                new T.Path(points.map((p) => new T.Vector2(p[0], p[1]))),
+            );
         const geo = new T.ExtrudeGeometry(shape, {
             depth,
             bevelEnabled: bevel > 0,
@@ -124,7 +136,8 @@ export function createSidearm() {
         polymer,
         0.001,
     );
-    for (const x of [0.047, 0.061, 0.075]) box(x, 0.013, 0, 0.002, 0.002, 0.028, dark);
+    for (const x of [0.047, 0.061, 0.075])
+        box(x, 0.013, 0, 0.002, 0.002, 0.028, dark);
     // Rearward-raked grip, rounded backstrap, high beavertail and a flared magazine heel.
     profile(
         [
@@ -276,13 +289,25 @@ export function createSidearm() {
         [0.102, 0.048, 0],
         new T.Euler(0, Math.PI / 2, 0),
     );
-    add(new T.CircleGeometry(0.0041, 16), dark, [0.101, 0.048, 0], new T.Euler(0, Math.PI / 2, 0));
-    add(new T.CircleGeometry(0.0035, 12), dark, [0.101, 0.037, 0], new T.Euler(0, Math.PI / 2, 0));
+    add(
+        new T.CircleGeometry(0.0041, 16),
+        dark,
+        [0.101, 0.048, 0],
+        new T.Euler(0, Math.PI / 2, 0),
+    );
+    add(
+        new T.CircleGeometry(0.0035, 12),
+        dark,
+        [0.101, 0.037, 0],
+        new T.Euler(0, Math.PI / 2, 0),
+    );
     // Low-profile front blade and rear notch, with two discreet sight dots.
     box(0.078, 0.066, 0, 0.009, 0.006, 0.005, dark);
-    for (const z of [-0.008, 0.008]) box(-0.08, 0.066, z, 0.01, 0.007, 0.006, dark);
+    for (const z of [-0.008, 0.008])
+        box(-0.08, 0.066, z, 0.01, 0.007, 0.006, dark);
     box(-0.08, 0.063, 0, 0.01, 0.002, 0.022, dark);
-    for (const z of [-0.008, 0.008]) box(-0.0852, 0.067, z, 0.0007, 0.0018, 0.0018, sight);
+    for (const z of [-0.008, 0.008])
+        box(-0.0852, 0.067, z, 0.0007, 0.0018, 0.0018, sight);
     box(0.0732, 0.067, 0, 0.0007, 0.0018, 0.0018, sight);
 
     const batches = new Map<T.Material, T.BufferGeometry[]>();

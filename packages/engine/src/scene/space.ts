@@ -2,11 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import * as T from "three";
-import { CELL, type Cell, type TacticalMap } from "../map";
+import { CELL, type Cell, type TacticalMap } from "../map.ts";
 
 /** Cells and world points on one map: the ground under a cell, the cell under a point. */
 export class Space {
-  constructor(readonly map: TacticalMap) {}
+  map: TacticalMap;
+  constructor(map: TacticalMap) {
+    this.map = map;
+  }
 
   /** The world point on the ground of `cell`, `y` metres above the street surface. */
   vec(cell: Cell, y = 0) {

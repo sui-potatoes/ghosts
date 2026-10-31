@@ -9,8 +9,8 @@ def gv(p):return Vector((p.x,p.z,-p.y))
 def material(name,color,metal=0,rough=.75,emission=None):
  m=bpy.data.materials.new(name);m.diffuse_color=(*color,1);m.use_nodes=True
  bs=m.node_tree.nodes.get('Principled BSDF');bs.inputs['Base Color'].default_value=(*color,1);bs.inputs['Metallic'].default_value=metal;bs.inputs['Roughness'].default_value=rough
- if name.startswith('NYX') and ('weave' in name or 'ceramic' in name):
-  woven='weave' in name;size=128;pixels=bytearray()
+ if name.startswith(('NYX','Spectre','Field kit')) and ('weave' in name or 'webbing' in name or 'ceramic' in name or 'leather' in name):
+  woven='weave' in name or 'webbing' in name;size=128;pixels=bytearray()
   for y in range(size):
    pixels.append(0)
    for x in range(size):
@@ -46,6 +46,7 @@ class NativeGear:
   tris=[t for t in self.tri if all(sum(w for n,w in self.weights[i].items() if any(k in n for k in names))>.4 for i in t)]
   return BVHTree.FromPolygons(self.v,tris,all_triangles=True)
  def bind(self,o,rigid=None):
+  rigid=rigid or getattr(self,"binding_rigid",None)
   tree=self.tree;triangles=self.tri
   if self.binding_side:
    # Adjacent thighs touch in rest pose. Sampling the complete body can bind

@@ -3,6 +3,7 @@
 
 import * as T from "three";
 import type { Cell } from "../map";
+import type { PropAssets } from "./prop-assets";
 import type { Space } from "./space";
 
 /** Shared materials and the cover barriers and relay station the rules place. */
@@ -51,29 +52,15 @@ function cyl(parent: T.Object3D, x: number, y: number, z: number, r: number, h: 
   return o;
 }
 
-/** A striped concrete barrier on every low-cover cell. */
-export function buildCovers(scene: T.Scene, space: Space) {
+/** The catalog's striped barrier on any low-cover cell no prop claims. */
+export function buildCovers(scene: T.Scene, space: Space, assets: PropAssets) {
   for (const cell of space.map.covers) {
-    const g = new T.Group();
-    g.position.copy(space.vec(cell));
-    scene.add(g);
-    const barrier = new T.BoxGeometry(1.22, 0.86, 0.66);
-    const positions = barrier.attributes.position;
-    for (let i = 0; i < positions.count; i++)
-      if (positions.getY(i) > 0) positions.setZ(i, positions.getZ(i) * 0.4);
-    barrier.computeVertexNormals();
-    const body = new T.Mesh(barrier, mat(0x8f918d, 0.03, 0.94));
-    body.position.y = 0.47;
-    body.castShadow = true;
-    body.receiveShadow = true;
-    g.add(body);
-    box(g, 0, 0.09, 0, 1.3, 0.18, 0.72, mat(0x7b7f7d, 0.03, 0.94));
-    for (const side of [-1, 1]) {
-      box(g, 0, 0.77, side * 0.143, 1.15, 0.18, 0.025, mat(0xdd9b38, 0.05, 0.7));
-      for (let j = 0; j < 5; j++)
-        box(g, -0.45 + j * 0.225, 0.77, side * 0.161, 0.075, 0.17, 0.015, dark).rotation.z = -0.45;
-    }
-    for (const n of [-1, 1]) box(g, n * 0.43, 0.94, 0, 0.09, 0.08, 0.1, amber);
+    if (space.map.props.some((prop) => prop.cover?.[0] === cell[0] && prop.cover[1] === cell[1])) continue;
+    const barrier = assets
+      .get({ id: `cover-${cell[0]}-${cell[1]}`, kind: "barrier", x: 0, z: 0, yaw: 0, seed: 0 })
+      .intact.clone();
+    barrier.position.copy(space.vec(cell));
+    scene.add(barrier);
   }
 }
 

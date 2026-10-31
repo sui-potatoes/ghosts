@@ -3,6 +3,7 @@
 
 import { useEffect, useId, useState } from "react";
 
+import { useSubmitNameChange } from "./chain/names";
 import { useBack } from "./hooks/useBack";
 import { usePlayerName } from "./hooks/usePlayerName";
 import { NAME_MAX, normalizeName, validateName } from "./player/name";
@@ -11,11 +12,13 @@ type Props = { open: boolean; onClose: () => void };
 
 /**
  * Change the player name. Input is normalized live (lowercase, trimmed) and
- * checked against SuiNS label rules, so a name chosen here can be registered
- * as-is once names move on chain.
+ * checked against SuiNS label rules. Saving registers the name to the address
+ * on chain and closes only once that went through; the chain's refusal shows
+ * in place.
  */
 export function NameDialog({ open, onClose }: Props) {
-    const { name: current, setName } = usePlayerName();
+    const { name: current } = usePlayerName();
+    const { submit, pending } = useSubmitNameChange();
     const [draft, setDraft] = useState(current);
     const [error, setError] = useState<string | null>(null);
     const inputId = useId();
@@ -34,10 +37,12 @@ export function NameDialog({ open, onClose }: Props) {
     const problem = validateName(normalized);
     const unchanged = normalized === current;
 
-    function save() {
+    async function save() {
+        // Enter submits the form past the disabled button, so re-check here.
+        if (pending || unchanged) return;
         if (problem) return setError(problem);
         try {
-            setName(normalized);
+            await submit(normalized);
             onClose();
         } catch (e) {
             setError(e instanceof Error ? e.message : String(e));
@@ -66,8 +71,8 @@ export function NameDialog({ open, onClose }: Props) {
                             Player name
                         </h2>
                         <p className="text-[13px] text-secondary">
-                            What other players see. Lowercase letters, digits and hyphens: the same
-                            rules as a SuiNS name, which this will become.
+                            What other players see. Lowercase letters, digits and hyphens: a SuiNS
+                            name, registered to your address when you save.
                         </p>
                     </div>
                     <button
@@ -90,6 +95,7 @@ export function NameDialog({ open, onClose }: Props) {
                         autoComplete="off"
                         spellCheck={false}
                         maxLength={NAME_MAX}
+                        disabled={pending}
                         value={draft}
                         onChange={(e) => {
                             setDraft(e.target.value.toLowerCase());
@@ -106,8 +112,12 @@ export function NameDialog({ open, onClose }: Props) {
                     <button type="button" className="btn" onClick={onClose}>
                         Cancel
                     </button>
-                    <button type="submit" className="btn" disabled={!!problem || unchanged}>
-                        Save
+                    <button
+                        type="submit"
+                        className="btn"
+                        disabled={!!problem || unchanged || pending}
+                    >
+                        {pending ? "Signing…" : "Save"}
                     </button>
                 </div>
             </form>

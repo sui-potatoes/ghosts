@@ -41,12 +41,13 @@ function rotateWorld(bone: T.Object3D, q: T.Quaternion) {
     bone.updateMatrixWorld(true);
 }
 /** Preserve the captured elbow plane and wrist orientation while moving the hand. */
-function armTo(
+export function armTo(
     shoulder: T.Object3D,
     arm: T.Object3D,
     elbow: T.Object3D,
     hand: T.Object3D,
     goal: T.Vector3,
+    swivel = 0,
 ) {
     const wrist = hand.getWorldQuaternion(new T.Quaternion());
     const reach = world(arm).distanceTo(world(elbow)) + world(elbow).distanceTo(world(hand));
@@ -71,7 +72,11 @@ function armTo(
         ab.length() + bc.length() - 0.0001,
     );
     axis.normalize();
-    const pole = ab.clone().addScaledVector(axis, -ab.dot(axis)).normalize();
+    const pole = ab
+        .clone()
+        .addScaledVector(axis, -ab.dot(axis))
+        .normalize()
+        .applyAxisAngle(axis, swivel);
     const along = (ab.lengthSq() - bc.lengthSq() + length * length) / (2 * length);
     const bend = a
         .clone()

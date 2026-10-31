@@ -158,7 +158,7 @@
         text-transform: uppercase;
     }
 
-    /* Menu backdrop: image now, with the saved live scene using the same host. */
+    /* Fixed-camera Three.js set, with a photograph while WebGL starts. */
     .main-menu {
         position: relative;
         isolation: isolate;
@@ -177,6 +177,21 @@
 
     .main-menu-backdrop canvas {
         display: block;
+    }
+
+    .main-menu-scene {
+        opacity: 0;
+        transition: opacity 400ms ease;
+    }
+
+    .main-menu-scene[data-ready="true"] {
+        opacity: 1;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .main-menu-scene {
+            transition: none;
+        }
     }
 
     .main-menu-image {
@@ -222,8 +237,9 @@
         text-align: left;
     }
 
+    /* Plain :focus too: controller navigation focuses programmatically. */
     .menu-item:hover:not(:disabled),
-    .menu-item:focus-visible {
+    .menu-item:focus {
         color: var(--accent-color);
     }
 
@@ -235,6 +251,28 @@
         font-size: 10px;
         letter-spacing: 0.2em;
         color: var(--disabled-color);
+    }
+
+    /* Controller hints: one quiet line of pad glyphs while a pad is connected. */
+    .pad-hints {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 18px;
+        color: var(--text-secondary);
+    }
+
+    .pad-hints span {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    /* Screens without a footer of their own pin the hints to the corner. */
+    .squad-pad-hints {
+        position: fixed;
+        right: 24px;
+        bottom: 16px;
+        z-index: 30;
     }
 
     /* Outline button for secondary actions on the settings screen. */
@@ -337,130 +375,5 @@
         50% {
             opacity: 0.35;
         }
-    }
-}
-
-/* Isolated image-to-scene comparison; the normal menu keeps its static image. */
-.scene-study {
-    position: relative;
-    width: 100%;
-    min-height: 100svh;
-    height: 100svh;
-    overflow: hidden;
-    background: #080d12;
-}
-.study-source,
-.study-canvas {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-}
-.study-source {
-    object-fit: cover;
-    pointer-events: none;
-}
-.study-canvas {
-    cursor: grab;
-    touch-action: none;
-}
-.study-canvas:active {
-    cursor: grabbing;
-}
-.study-canvas canvas {
-    display: block;
-    width: 100%;
-    height: 100%;
-}
-.study-canvas-hidden {
-    visibility: hidden;
-}
-.study-header {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    padding: 30px 36px;
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 24px;
-    pointer-events: none;
-    background: linear-gradient(#080d1277, transparent);
-}
-.study-header a {
-    pointer-events: auto;
-}
-.study-header h1 {
-    font-family: var(--font-mono);
-    font-size: 28px;
-    letter-spacing: -0.04em;
-    font-weight: 300;
-    margin: 12px 0 0;
-}
-.study-header .label {
-    color: #c9d3d9;
-    font-size: 10px;
-}
-.study-controls {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    padding: 24px 36px;
-    background: linear-gradient(transparent, #080d12e8 35%);
-    display: flex;
-    align-items: flex-end;
-    flex-wrap: wrap;
-    gap: 18px;
-    justify-content: space-between;
-    pointer-events: none;
-}
-.study-caption {
-    max-width: 420px;
-}
-.study-caption .label {
-    color: #bbd1db;
-    font-size: 10px;
-}
-.study-caption p {
-    color: #aab4bd;
-    font-size: 12px;
-    line-height: 1.6;
-    margin: 8px 0 0;
-}
-.study-buttons {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    pointer-events: auto;
-}
-.study-buttons button {
-    border: 1px solid #71808a66;
-    padding: 10px 13px;
-    background: #0b121ade;
-    font: 11px var(--font-mono);
-    color: #b6c3cb;
-}
-.study-buttons button[aria-pressed="true"] {
-    border-color: #b0cedc;
-    color: #edf7fc;
-    background: #20313ce8;
-}
-.study-buttons button:disabled {
-    opacity: 0.4;
-}
-@media (max-width: 600px) {
-    .study-header {
-        padding: 22px;
-    }
-    .study-controls {
-        padding: 20px;
-    }
-    .study-header h1 {
-        font-size: 24px;
-    }
-    .study-caption p {
-        font-size: 11px;
     }
 }

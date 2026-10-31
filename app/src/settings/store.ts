@@ -14,10 +14,17 @@ import {
     sanitizeCombatBindings,
     type CombatBindings,
 } from "@ghosts/engine/keys";
-import { ACTIONS, DEFAULT_BINDINGS, actionOf, type Action, type Bindings } from "./keys";
+import { DEFAULT_BINDINGS, actionOf, type Action, type Bindings } from "./keys";
 
 export type Settings = {
-    audio: { master: number; music: number; sfx: number; voice: number; muted: boolean };
+    audio: {
+        master: number;
+        music: number;
+        sfx: number;
+        voice: number;
+        ui: number;
+        muted: boolean;
+    };
     display: {
         scanlines: boolean;
         vignette: boolean;
@@ -28,7 +35,7 @@ export type Settings = {
 };
 
 export const DEFAULTS: Settings = {
-    audio: { master: 80, music: 60, sfx: 80, voice: 80, muted: false },
+    audio: { master: 50, music: 50, sfx: 80, voice: 80, ui: 80, muted: false },
     display: { scanlines: true, vignette: true, reduceMotion: false, batterySaver: true },
     controls: { bindings: DEFAULT_BINDINGS, combat: DEFAULT_COMBAT_BINDINGS },
 };
@@ -46,17 +53,14 @@ function flag(v: unknown, fallback: boolean): boolean {
     return typeof v === "boolean" ? v : fallback;
 }
 
-function keys(v: unknown, fallback: string[]): string[] {
-    if (!Array.isArray(v)) return fallback;
-    const list = v.filter((k): k is string => typeof k === "string" && k.length > 0);
-    return list.length > 0 ? list : fallback;
-}
-
-function bindings(v: unknown): Bindings {
-    const b = (v ?? {}) as Partial<Record<Action, unknown>>;
-    const out = {} as Bindings;
-    for (const action of ACTIONS) out[action] = keys(b[action], DEFAULT_BINDINGS[action]);
-    return out;
+/**
+ * Menu bindings are not rebindable yet, so the defaults always win: a stored
+ * copy may predate newer actions or default keys (persisted settings freeze
+ * the whole section). Parse per-action from storage again once a rebind UI
+ * exists.
+ */
+function bindings(): Bindings {
+    return DEFAULT_BINDINGS;
 }
 
 /** Fill in anything missing or malformed from a stored object. */
@@ -75,6 +79,7 @@ function sanitize(raw: unknown): Settings {
             music: level(a.music, DEFAULTS.audio.music),
             sfx: level(a.sfx, DEFAULTS.audio.sfx),
             voice: level(a.voice, DEFAULTS.audio.voice),
+            ui: level(a.ui, DEFAULTS.audio.ui),
             muted: flag(a.muted, DEFAULTS.audio.muted),
         },
         display: {
@@ -83,7 +88,7 @@ function sanitize(raw: unknown): Settings {
             reduceMotion: flag(d.reduceMotion, DEFAULTS.display.reduceMotion),
             batterySaver: flag(d.batterySaver, DEFAULTS.display.batterySaver),
         },
-        controls: { bindings: bindings(c.bindings), combat: sanitizeCombatBindings(c.combat) },
+        controls: { bindings: bindings(), combat: sanitizeCombatBindings(c.combat) },
     };
 }
 
@@ -160,20 +165,4 @@ export function useSettingsSection<K extends keyof Settings>(
         (patch) => updateSettings((s) => ({ ...s, [key]: { ...s[key], ...patch } })),
         () => updateSettings((s) => ({ ...s, [key]: DEFAULTS[key] })),
     ];
-}
-
-/**
- * Up/Down through a wrapping list of `count` entries from index `i`: the
- * next index (and the key is consumed), or null for any other key.
- */
-export function listStep(
-    e: Parameters<typeof actionOf>[0] & { preventDefault(): void },
-    i: number,
-    count: number,
-): number | null {
-    const action = currentAction(e);
-    const dir = action === "down" ? 1 : action === "up" ? -1 : 0;
-    if (!dir) return null;
-    e.preventDefault();
-    return (i + dir + count) % count;
 }

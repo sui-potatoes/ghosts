@@ -4,18 +4,23 @@
 import type { CSSProperties } from "react";
 
 import { Tooltip } from "../../../components/Tooltip";
-import { itemById } from "@ghosts/squad/catalog";
+import { attachmentById, itemById } from "@ghosts/squad/catalog";
 import { contributions, formatStat, RECRUIT_DEFAULT, VISIBLE } from "@ghosts/squad/stats";
 import type { Contribution, StatRow } from "@ghosts/squad/stats";
 import type { Recruit } from "@ghosts/squad/types";
 
-const SOURCE_NAMES = { weapon: "Primary weapon", armor: "Body armor" } as const;
+const SOURCE_NAMES = {
+    weapon: "Primary weapon",
+    attachment: "Attachment",
+    armor: "Body armor",
+} as const;
 
 /** One line per gear piece: "Spectre Carrier (body armor): +10% dodge". */
 function explain(row: StatRow, parts: Contribution[]): string {
     return parts
         .map((p) => {
-            const name = itemById(p.item)?.name ?? SOURCE_NAMES[p.source];
+            const name =
+                itemById(p.item)?.name ?? attachmentById(p.item)?.name ?? SOURCE_NAMES[p.source];
             const unit = row.unit === "%" ? "%" : "";
             const sign = (n: number) => (n > 0 ? `+${n}` : String(n));
             const note =

@@ -4,9 +4,10 @@
 import { useCurrentAccount } from "@mysten/dapp-kit-react";
 import { useNavigate } from "react-router-dom";
 
-import nightScene from "../assets/menu-night-1672.webp";
-import nightSceneSmall from "../assets/menu-night-960.webp";
+import { TitleBackdrop } from "../components/TitleBackdrop";
+import { PadHints } from "../components/PadHints";
 import { NETWORK } from "../constants";
+import { useMenuNav } from "../hooks/useMenuNav";
 import { requestSignIn } from "../signIn";
 
 type Entry = {
@@ -24,32 +25,31 @@ type Entry = {
 export default function MainMenu() {
     const navigate = useNavigate();
     const account = useCurrentAccount();
+    // Up/Down and Confirm come off the input bus, whatever produced them.
+    const items = useMenuNav(true);
 
     // The local playtest is available with or without a connected account.
     const entries: Entry[] = [
-        { label: "Demo", onClick: () => navigate("/demo") },
+        // The playable contracts, named like the briefings name them: the
+        // operation, with the location as the tag (scenario.ts carries both).
+        { label: "Demo: Black Rain", tag: "Tokyo / Sector 09", onClick: () => navigate("/demo") },
+        {
+            label: "Demo: Paper Trail",
+            tag: "Kōra HQ / Floor 07",
+            onClick: () => navigate("/demo-2"),
+        },
         ...(account ? [] : [{ label: "Login", onClick: requestSignIn }]),
         { label: "Ranked", tag: "soon", disabled: true },
         { label: "Public", tag: "soon", disabled: true },
         { label: "Squad", onClick: () => navigate("/squad") },
+        { label: "Level Editor", tag: "tool", onClick: () => navigate("/editor") },
         { label: "Leaderboard", tag: "soon", disabled: true },
         { label: "Settings", onClick: () => navigate("/settings") },
     ];
 
     return (
         <main className="main-menu flex min-h-screen flex-col justify-center px-6 py-16 md:px-16">
-            <img
-                className="main-menu-backdrop main-menu-image"
-                src={nightScene}
-                srcSet={`${nightSceneSmall} 960w, ${nightScene} 1672w`}
-                sizes="100vw"
-                width={1672}
-                height={941}
-                alt=""
-                aria-hidden="true"
-                fetchPriority="high"
-                decoding="async"
-            />
+            <TitleBackdrop />
             <div className="relative z-10 flex w-full max-w-xl flex-col gap-12">
                 <header className="flex flex-col gap-5">
                     <h1 className="font-mono text-6xl font-light tracking-[0.3em] text-foreground md:text-7xl">
@@ -62,9 +62,12 @@ export default function MainMenu() {
                 </header>
 
                 <nav aria-label="Main menu" className="flex flex-col border-t border-line">
-                    {entries.map((e) => (
+                    {entries.map((e, i) => (
                         <button
                             key={e.label}
+                            ref={(el) => {
+                                items.current[i] = el;
+                            }}
                             className="menu-item"
                             disabled={e.disabled}
                             aria-disabled={e.disabled}
@@ -75,6 +78,13 @@ export default function MainMenu() {
                         </button>
                     ))}
                 </nav>
+
+                <PadHints
+                    entries={[
+                        ["dpad", "Navigate"],
+                        ["a", "Select"],
+                    ]}
+                />
 
                 <footer className="label flex flex-wrap gap-x-6 gap-y-2 text-muted">
                     <span>

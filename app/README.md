@@ -23,6 +23,15 @@ zkLogin. Passkey sign-in works without it.
 
 ## What is here
 
+The main menu uses a lazy-loaded Three.js city with a poster while it loads or
+when WebGL is unavailable. Animation runs at up to 30 fps, pauses when hidden or offscreen,
+and stops for reduced motion. The patrol uses a compact copy of the shared rifle
+idle: run `pnpm build:title-motion` after changing the motion captures, then
+`pnpm test:title-motion` to check that both copies match their source clips.
+The loading posters capture the first fully loaded frame at animation time zero.
+Keep this exact timing when refreshing them: the live scene holds that pose through
+the poster-to-canvas fade before advancing its animation clock.
+
 Local squad management lives at `/squad`: appearance, armor, equipment, names,
 and motion drills. It is available without a wallet. Motion previews offer 38
 captured actions, pause/scrub, loop, speed and reset; `pnpm test:motion` checks
@@ -48,10 +57,10 @@ documents). It is served by Cloudflare as a Worker with static assets:
 Cloudflare builds and deploys from GitHub (Workers & Pages → Create →
 Connect to Git). Project settings:
 
-| Setting | Value |
-| --- | --- |
-| Root directory | `app` |
-| Build command | `pnpm build` |
+| Setting        | Value        |
+| -------------- | ------------ |
+| Root directory | `app`        |
+| Build command  | `pnpm build` |
 
 pnpm finds the workspace root above `app/`, so the install there also links
 `packages/engine` and `packages/squad`.

@@ -7,6 +7,7 @@ export const motions = [
     ["rifle_run", "Rifle combat run", "Movement"],
     ["idle", "Low-ready scan", "Ready"],
     ["idle_weight_shift", "Relaxed weight shift", "Ready"],
+    ["standing_smoking", "Standing smoking", "Ambient"],
     ["pistol_idle", "Sidearm low ready", "Ready"],
     ["overwatch_ready", "Raise weapon", "Ready"],
     ["pistol_ready", "Sidearm ready", "Ready"],

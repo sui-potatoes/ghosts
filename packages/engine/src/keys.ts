@@ -104,6 +104,11 @@ export function sanitizeCombatBindings(raw: unknown): CombatBindings {
   return out;
 }
 
+/** True when typing into `target` should win over game bindings. */
+export function isEditable(target: unknown): boolean {
+  return target instanceof Element && !!target.closest("input, select, textarea, [contenteditable]");
+}
+
 /** Short display form of a key for key caps. */
 export function keyCap(key: string): string {
   switch (key) {

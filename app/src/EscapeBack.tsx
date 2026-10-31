@@ -6,8 +6,8 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { useBack } from "./hooks/useBack";
 
 /** Screens that handle the back action themselves: the menu has nowhere to
- * go, and the encounter opens its pause menu instead of leaving. */
-const OWN_BACK = new Set(["/", "/demo"]);
+ * go, the encounter opens its pause menu, and the editor asks before leaving. */
+const OWN_BACK = new Set(["/", "/demo", "/demo-2", "/editor"]);
 
 /**
  * The back action (Escape by default) on any other screen goes back one

@@ -67,6 +67,18 @@ test("overwatch reacts once, out of turn, and only within reach", () => {
   assert.equal(g.reactionFire(ally, enemy), null);
 });
 
+test("a watch with no shot is spent, and the journal records it", () => {
+  const g = hostileTurn(),
+    [ally] = g.allies,
+    enemy = g.enemies[0];
+  ally.overwatch = true;
+  enemy.pos = [ally.pos[0], ally.pos[1] - (ally.range + 4)];
+  assert.equal(g.reactionFire(ally, enemy), null);
+  assert.equal(ally.overwatch, false);
+  assert.equal(ally.ap, 0);
+  assert.deepEqual(g.events.at(-1), { type: "watch-spent", unit: ally.id });
+});
+
 test("reaction fire needs the hostile turn and a watching ally", () => {
   const g = new Encounter(),
     [ally] = g.allies,

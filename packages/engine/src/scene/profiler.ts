@@ -65,6 +65,7 @@ export class RenderProfiler {
       host.dataset.renderMode = mode;
       host.dataset.renderCalls = String(renderer.info.render.calls);
       host.dataset.renderTriangles = String(renderer.info.render.triangles);
+      host.dataset.renderPoints = String(renderer.info.render.points);
       host.dataset.renderTextures = String(renderer.info.memory.textures);
     }
   }

@@ -6,17 +6,39 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
 import * as T from "three";
-import { motionSkeleton, clearEquipment } from "@ghosts/squad/motion/clearance";
+import { motionSkeleton } from "@ghosts/squad/motion/clearance";
 import { nativeClip } from "@ghosts/squad/motion/clips";
+import { equipmentPose, type EquipmentPoses } from "@ghosts/squad/motion/equipment-poses";
 
 // Read geometry without loading texture images or requiring a WebGL context.
 for (const sex of ["female", "male"])
-    for (const kind of ["nyx", "nyx-mid", "nyx-heavy"])
-        test(`${kind}/${sex}: raising the rifle cannot pull armor triangles across the back`, () => {
+    for (const kind of ["spectre", "nyx", "nyx-mid", "nyx-heavy", "field-kit"])
+        test(`${kind}/${sex}: equipment retains its shape through all 38 poses`, () => {
             const file = readFileSync(`public/squad/armor/${kind}-${sex}.glb`),
                 data = file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength);
             const json = JSON.parse(file.subarray(20, 20 + file.readUInt32LE(12)).toString()),
                 binary = 28 + file.readUInt32LE(12);
+            if (kind === "spectre") {
+                assert.equal(
+                    json.meshes[0].primitives.length,
+                    4,
+                    "surface detail keeps four material batches",
+                );
+                assert.equal(
+                    json.materials.filter((m: { normalTexture?: unknown }) => m.normalTexture)
+                        .length,
+                    2,
+                    "cloth and ceramic both carry embedded normal textures",
+                );
+                assert(
+                    json.meshes[0].primitives.every(
+                        (p: { material: number; attributes: Record<string, number> }) =>
+                            !json.materials[p.material].normalTexture ||
+                            p.attributes.TEXCOORD_0 !== undefined,
+                    ),
+                    "surface detail has authored UV coordinates",
+                );
+            }
             const root = motionSkeleton(data);
             const attr = (id: number) => {
                 const a = json.accessors[id],
@@ -72,52 +94,48 @@ for (const sex of ["female", "male"])
             const source = JSON.parse(
                 gunzipSync(readFileSync(`public/squad/motions/${sex}.bin`)).toString(),
             );
-            const mount = JSON.parse(
-                readFileSync(`public/squad/body/${sex}/weapon-mount.json`, "utf8"),
+            const fitted: EquipmentPoses = JSON.parse(
+                gunzipSync(readFileSync(`public/squad/motions/${sex}-equipment.bin`)).toString(),
             );
-            const clip = clearEquipment(
-                nativeClip(
-                    T.AnimationClip.parse(
-                        source.find((c: { name: string }) => c.name === "stand_cover_emerge"),
+            for (const raw of source) {
+                const motion = raw.name;
+                const clip = equipmentPose(nativeClip(T.AnimationClip.parse(raw)), fitted);
+                const original = meshes.map((mesh) =>
+                    Array.from({ length: mesh.geometry.attributes.position.count }, (_, i) =>
+                        new T.Vector3().fromBufferAttribute(mesh.geometry.attributes.position, i),
                     ),
-                ),
-                root,
-                mount,
-            );
-            const original = meshes.map((mesh) =>
-                Array.from({ length: mesh.geometry.attributes.position.count }, (_, i) =>
-                    new T.Vector3().fromBufferAttribute(mesh.geometry.attributes.position, i),
-                ),
-            );
-            const mixer = new T.AnimationMixer(root),
-                action = mixer.clipAction(clip).play();
-            for (const fraction of [0, 0.35, 0.7, 0.999]) {
-                action.time = clip.duration * fraction;
-                mixer.update(0);
-                root.updateMatrixWorld(true);
-                skeleton.update();
-                meshes.forEach((mesh, n) => {
-                    const rest = original[n],
-                        posed = rest.map((p, i) => mesh.applyBoneTransform(i, p.clone())),
-                        index = mesh.geometry.index!;
-                    for (let i = 0; i < index.count; i += 3)
-                        for (const [a, b] of [
-                            [0, 1],
-                            [1, 2],
-                            [2, 0],
-                        ]) {
-                            const x = index.getX(i + a),
-                                y = index.getX(i + b);
-                            if (rest[x].y < 1.05 || rest[y].y < 1.05) continue;
-                            const extension =
-                                posed[x].distanceTo(posed[y]) - rest[x].distanceTo(rest[y]);
-                            assert.ok(
-                                extension < 0.04,
-                                `Armor edge stretched by ${extension}m at ${fraction}`,
-                            );
-                        }
-                });
+                );
+                const mixer = new T.AnimationMixer(root),
+                    action = mixer.clipAction(clip).play();
+                for (const fraction of [0, 0.35, 0.7, 0.999]) {
+                    action.time = clip.duration * fraction;
+                    mixer.update(0);
+                    root.updateMatrixWorld(true);
+                    skeleton.update();
+                    meshes.forEach((mesh, n) => {
+                        const rest = original[n],
+                            posed = rest.map((p, i) => mesh.applyBoneTransform(i, p.clone())),
+                            index = mesh.geometry.index!;
+                        for (let i = 0; i < index.count; i += 3)
+                            for (const [a, b] of [
+                                [0, 1],
+                                [1, 2],
+                                [2, 0],
+                            ]) {
+                                const x = index.getX(i + a),
+                                    y = index.getX(i + b);
+                                if (kind !== "field-kit" && (rest[x].y < 1.05 || rest[y].y < 1.05))
+                                    continue;
+                                const extension =
+                                    posed[x].distanceTo(posed[y]) - rest[x].distanceTo(rest[y]);
+                                assert.ok(
+                                    extension < 0.04,
+                                    `${motion}: ${json.materials[json.meshes[0].primitives[n].material].name} edge ${x}-${y} stretched by ${extension}m at ${fraction}, rest ${rest[x].toArray()} / ${rest[y].toArray()}`,
+                                );
+                            }
+                    });
+                }
+                mixer.stopAllAction();
+                mixer.uncacheRoot(root);
             }
-            mixer.stopAllAction();
-            mixer.uncacheRoot(root);
         });

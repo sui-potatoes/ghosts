@@ -42,3 +42,8 @@ export function engineSettings(): EngineSettings {
 export function provideSettings(settings: EngineSettings) {
   current = settings;
 }
+
+// This module is live mutable state: a hot re-execution would hand the UI a
+// fresh instance while the running encounter still drives the old one (dead
+// input, unselectable units). Edits here reload the page instead.
+if (import.meta.hot) import.meta.hot.accept(() => location.reload());

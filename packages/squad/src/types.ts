@@ -1,6 +1,8 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
+import type { BodyShape } from "./body";
+
 export type Sex = "female" | "male";
 export interface Appearance {
     version: number;
@@ -9,6 +11,7 @@ export interface Appearance {
     shape: string;
     shapeAmount: number;
     values: Record<string, number>;
+    body: BodyShape;
     skin: string;
     skinTint: string;
     warmth: number;
@@ -53,6 +56,16 @@ export interface Schema {
     shapes: string[];
 }
 export type Slot = "primary" | "sidearm" | "armor" | "utility";
+export type AttachmentSlot = "clip" | "stock" | "laser" | "scope";
+export type WeaponAttachments = Partial<Record<AttachmentSlot, string | null>>;
+export interface Attachment {
+    id: string;
+    name: string;
+    slot: AttachmentSlot;
+    tier: 1 | 2 | 3;
+    packed: bigint;
+    stat: string;
+}
 export type Role = "Assault" | "Recon" | "Support" | "Marksman";
 export interface ArmorColors {
     primary: string;
@@ -67,6 +80,8 @@ export interface Recruit {
     appearance: Appearance;
     armorColors: ArmorColors;
     equipment: Record<Slot, string | null>;
+    /** Attachments fitted to the primary weapon; absent in older saves. */
+    attachments?: WeaponAttachments;
 }
 export interface SquadState {
     version: 1;
@@ -84,6 +99,7 @@ export interface Equipment {
     model:
         | "rifle"
         | "sniper"
+        | "plasma"
         | "pistol"
         | "armor"
         | "assassin-armor"

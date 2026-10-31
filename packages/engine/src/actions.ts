@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import { audio } from "./audio";
-import { hostilePhase } from "./ai";
 import type { Command, GameEvent } from "./events";
 import { Encounter, type Cell } from "./game";
 import { applyDeploymentNames } from "./squad-bridge";
@@ -10,7 +9,7 @@ import { applyDeploymentNames } from "./squad-bridge";
 import { deployment } from "./mpfb-characters.js";
 import { present } from "./presenter";
 import { session } from "./session";
-import { bestShotTarget, defaultGrenadeTarget, grenadeBlockReason } from "./targeting";
+import { bestShotTarget, damagePreview, defaultGrenadeTarget, grenadeBlockReason } from "./targeting";
 
 /**
  * Everything that changes the encounter: player orders, the hostile phase,
@@ -32,6 +31,12 @@ function syncScene() {
   const u = s.selectedUnit(),
     t = s.targetUnit();
   battlefield.sync();
+  // The aimed hostile's plate carries the odds and the predicted hp cut.
+  const aimed = s.mode === "fire" && !game.result ? t : undefined;
+  battlefield.setAimReadout(
+    aimed ?? null,
+    aimed && { chance: game.chance(u, aimed), ...damagePreview(u, aimed) },
+  );
   battlefield.showRange(u, s.mode === "move" && !s.busy);
   if (s.mode === "grenade" && !s.busy) battlefield.showGrenadeRange(u);
   battlefield.setHover(false);
@@ -78,18 +83,30 @@ export function closeDebrief() {
   refresh();
 }
 
-/** Present events in order, redrawing after each; the iterable may be lazy. */
-async function play(events: Iterable<GameEvent>) {
-  for (const event of events) {
+/** Present events in order, redrawing after each; the iterable may be lazy or async. */
+async function play(events: Iterable<GameEvent> | AsyncIterable<GameEvent>) {
+  for await (const event of events) {
     await present(event);
     session.battlefield.sync();
     refresh();
   }
 }
 
+/** Ask the driver what an order does; `resolving` is up while a transaction may be in flight. */
+async function resolve(command: Command): Promise<GameEvent[]> {
+  const s = session;
+  s.resolving = true;
+  s.changed();
+  try {
+    return await s.driver.resolve(command);
+  } finally {
+    s.resolving = false;
+  }
+}
+
 /** Send an order for the selected unit and play the result; false when the rules refuse it. */
 async function order(command: Command): Promise<boolean> {
-  const events = session.game.apply(command);
+  const events = await resolve(command);
   await play(events);
   return events.length > 0;
 }
@@ -101,6 +118,10 @@ async function perform(fn: () => Promise<void>) {
   refresh();
   try {
     await fn();
+  } catch (error) {
+    // A driver that could not answer (a failed transaction) leaves the rules unchanged.
+    console.error(error);
+    notify("ORDER FAILED / LINK DOWN", "miss");
   } finally {
     session.busy = false;
     refresh();
@@ -143,7 +164,7 @@ export async function fire() {
     b = s.targetUnit();
   if (!b) return;
   await perform(async () => {
-    const [shot] = s.game.apply({ type: "fire", unit: a.id, target: b.id });
+    const [shot] = await resolve({ type: "fire", unit: a.id, target: b.id });
     if (shot?.type !== "shot") {
       notify("NO SHOT AVAILABLE");
       return;
@@ -240,7 +261,7 @@ export async function endTurn() {
   s.mode = "move";
   s.grenadeTarget = null;
   await battlefield.leaveAim();
-  await perform(() => play(hostilePhase(game)));
+  await perform(() => play(s.driver.hostilePhase()));
 }
 
 /** A fresh encounter with the same deployed squad, then the deployment briefing. */
@@ -250,6 +271,7 @@ export function reset() {
   void s.battlefield.leaveAim();
   audio.stopVoice();
   s.game = new Encounter(s.game.scenario);
+  s.driver = s.makeDriver(s.game);
   applyDeploymentNames(s.game.units, deployment);
   s.battlefield.redeploy(s.game);
   s.resetSelection();

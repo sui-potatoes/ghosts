@@ -9,6 +9,13 @@ import { clearGroup, type Space } from "./space";
 const flat = (color: number, opacity: number) =>
   new T.MeshBasicMaterial({ color, transparent: true, opacity, side: T.DoubleSide, depthWrite: false });
 
+/** A flat tile that adds light instead of tinting: readable on dark ground. */
+const glow = (color: number, opacity: number) => {
+  const material = flat(color, opacity);
+  material.blending = T.AdditiveBlending;
+  return material;
+};
+
 /**
  * Everything drawn on the ground for the player: the tactical grid, the
  * movement or throw range, the planned path, the hovered tile and the ring
@@ -80,7 +87,7 @@ export class Overlays {
     if (!show || u.ap <= 0) return;
     const paths = game.paths(u);
     this.movementPaths = paths;
-    const tiles = new T.InstancedMesh(new T.PlaneGeometry(CELL * 0.9, CELL * 0.9), flat(0xa3c9cb, 0.065), paths.size);
+    const tiles = new T.InstancedMesh(new T.PlaneGeometry(CELL * 0.9, CELL * 0.9), glow(0x9fd9dd, 0.34), paths.size);
     const d = new T.Object3D();
     let i = 0;
     for (const path of paths.values()) {

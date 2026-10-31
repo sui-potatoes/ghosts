@@ -2,3 +2,13 @@ Additional skeletal motion: Quaternius Universal Animation Library, CC0 1.0.
 https://quaternius.com/packs/universalanimationlibrary.html
 Pistol_Aim_Neutral, Pistol_Shoot, Pistol_Reload, Pistol_Idle_Loop, Idle_Loop.
 Retargeted offline to the existing character skeleton.
+
+Standing smoking: Adobe Mixamo, Smoking / Idle Smoking, supplied by the user.
+https://www.mixamo.com/#/?page=1&query=smoking&type=Motion
+17.9-second capture, retargeted offline to the native female and male rigs.
+Adobe Mixamo terms apply. No reference character meshes or textures are shipped.
+
+VIP crossed-arms hold: Umplix, Lowpoly Dummy Character / Cross Arms, CC0.
+https://opengameart.org/content/lowpoly-dummy-character10-animations
+Source frame 61, retargeted by limb direction with native wrist fitting and a breathing loop.
+No reference meshes or textures are shipped. Source extraction: app/scripts/crossed-arms/.

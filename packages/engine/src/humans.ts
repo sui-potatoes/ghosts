@@ -1,8 +1,10 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
+import { SmokingEffect } from "@ghosts/squad/motion/smoking";
 import {WeaponCarry} from "@ghosts/squad/motion/weapon-carry";
 import {coverStepClips} from './cover-step';
+import {demoAsset} from './demo-assets';
 // @ts-ignore Native contact helpers.
 import {restoreTerrainPose,fitTerrainFeet} from './terrain-contact.js';
 // @ts-ignore Shared native skinning contact helper.
@@ -14,7 +16,9 @@ import {
   type IdleContext,
   type IdleChoice,
 } from "./idle-behavior";
-import { createSidearm, SIDEARM_MOUNT_OFFSET } from "./sidearm";
+// One model and one grip calibration for Squad, inventory thumbnails and combat.
+import { createLongGun } from "@ghosts/squad/studio/long-guns";
+import { createSidearm, SIDEARM_MOUNT_OFFSET } from "@ghosts/squad/studio/sidearm";
 import { aimClip, combatClips } from "./combat-pose";
 import { createWeaponMount } from "./weapon-mount";
 import * as T from "three";
@@ -27,13 +31,13 @@ let asset: GLTF;
 const idleDirector = new IdleDirector();
 export async function loadOperatives(renderer: T.WebGLRenderer) {
   const ktx = new KTX2Loader()
-    .setTranscoderPath("/demo-assets/basis/")
+    .setTranscoderPath(demoAsset("basis/"))
     .setWorkerLimit(1)
     .detectSupport(renderer);
   try {
     asset = await new GLTFLoader()
       .setKTX2Loader(ktx)
-      .loadAsync("/demo-assets/models/blackline-operative.glb");
+      .loadAsync(demoAsset("models/blackline-operative.glb"));
   } finally {
     ktx.dispose();
   }
@@ -45,13 +49,14 @@ export interface Rig {
   clips: Map<string, T.AnimationClip>;
   action: T.AnimationAction | null;
   fading?: T.AnimationAction;
+  smoking?: SmokingEffect;
   busy: boolean;
   dead: boolean;
   weapon: Weapon;
   gun: T.Object3D;
   rifle: T.Object3D;
   pistol: T.Group;
-  scope: T.Group;
+  sniper: T.Group;
   hand: T.Object3D;
   leftHand: T.Object3D;
   rightPalm: T.Object3D;
@@ -71,20 +76,6 @@ export interface Rig {
     choice: IdleChoice;
     remaining: number;
   };
-}
-function detail(
-  parent: T.Object3D,
-  pos: number[],
-  size: number[],
-  color: number,
-) {
-  const m = new T.Mesh(
-    new T.BoxGeometry(...(size as [number, number, number])),
-    new T.MeshStandardMaterial({ color, metalness: 0.7, roughness: 0.38 }),
-  );
-  m.position.fromArray(pos);
-  parent.add(m);
-  return m;
 }
 export function soldier(u: Unit): Rig {
   const root = new T.Group(),
@@ -166,34 +157,23 @@ export function soldier(u: Unit): Rig {
   aim.stop();
   initial.reset().play();
   mixer.update(0.3);
-  model.scale.setScalar(0.96);
+  model.scale.setScalar(0.96 * (model.userData.bodyHeightScale ?? 1));
   root.updateMatrixWorld(true);
   // Native clips bake sole contact at local Y=0. Bounding-box grounding from
   // one arbitrary idle frame would offset every other pose and identity.
   model.position.y = 0;
   root.updateMatrixWorld(true);
-  const rifle = model.getObjectByName("Rifle")!;
-  const gun = createWeaponMount(rifle);
+  const donorRifle = model.getObjectByName("Rifle")!;
+  const gun = createWeaponMount(donorRifle);
+  donorRifle.removeFromParent();
+  const rifle = createLongGun("rifle"), sniper = createLongGun("sniper");
+  gun.add(rifle, sniper);
   model.userData.weaponCarry=new WeaponCarry(gun,find("LeftHand"));
   const pistol = createSidearm();
   pistol.visible = false;
   pistol.position.set(...SIDEARM_MOUNT_OFFSET);
   gun.add(pistol);
-  const scope = new T.Group();
-  scope.visible = false;
-  rifle.add(scope);
-  const tube = new T.Mesh(
-    new T.CylinderGeometry(0.028, 0.028, 0.2, 16),
-    new T.MeshStandardMaterial({
-      color: 0x11191a,
-      metalness: 0.8,
-      roughness: 0.3,
-    }),
-  );
-
-  tube.position.set(0, -0.05, -0.1);
-  scope.add(tube);
-  detail(scope, [0, -0.05, -0.07], [0.04, 0.06, 0.07], 0x343a3a);
+  sniper.visible = false;
   root.updateMatrixWorld(true);
   const rig: Rig = {
     root,
@@ -207,7 +187,7 @@ export function soldier(u: Unit): Rig {
     gun,
     rifle,
     pistol,
-    scope,
+    sniper,
     hand,
     leftHand: find("LeftHand"),
     rightPalm: find("RightHandMiddle1"),
@@ -247,7 +227,11 @@ export function play(
   const next = r.mixer.clipAction(clip);
   if (r.action === next && next.isRunning() && !once)
     return clip.duration / speed;
+  if (name === "toss_grenade") r.model.userData.weaponCarry?.prepare(clip, r.model);
   r.model.userData.weaponCarry?.update(name === "toss_grenade");
+  if (name === "standing_smoking") r.smoking ??= new SmokingEffect(r.root);
+  else r.smoking?.clear();
+  r.gun.visible = name !== "standing_smoking";
   const previous = r.action;
   if (r.fading && r.fading !== previous && r.fading !== next) r.fading.stop();
   r.fading = previous !== next ? (previous ?? undefined) : undefined;
@@ -268,9 +252,9 @@ export function play(
 }
 export function setWeapon(r: Rig, w: Weapon) {
   r.weapon = w;
-  r.rifle.visible = w !== "pistol";
+  r.rifle.visible = w === "rifle";
   r.pistol.visible = w === "pistol";
-  r.scope.visible = w === "sniper";
+  r.sniper.visible = w === "sniper";
 }
 export function updateHuman(r: Rig, dt: number, terrain?: (x: number, z: number) => number) {
   restoreTerrainPose(r.model);
@@ -295,6 +279,7 @@ export function updateHuman(r: Rig, dt: number, terrain?: (x: number, z: number)
   r.model.position.x += r.hipAnchor.x - hip.x;
   r.model.position.z += r.hipAnchor.z - hip.z;
   if (terrain && !r.dead) fitTerrainFeet(r.model, r.root, terrain);
+  r.smoking?.update(r.action?.getClip().name === "standing_smoking", r.action?.time ?? 0, r.action?.paused ? 0 : dt * (r.action?.getEffectiveTimeScale() ?? 1));
   // Captured skeletal tracks own the pose, including both hands.
 }
 export function resetHuman(r: Rig) {
@@ -359,6 +344,7 @@ export function humanTextureStats() {
 
 /** Portraits borrow shared assets but own their skeletons, tinted materials, and weapon details. */
 export function disposePortrait(r: Rig) {
+  r.smoking?.dispose();
   const sharedGeometry = new Set<T.BufferGeometry>(),
     sharedMaterials = new Set<T.Material>();
   asset.scene.traverse((o) => {
@@ -373,7 +359,11 @@ export function disposePortrait(r: Rig) {
     if (o instanceof T.Mesh) {
       if (!sharedGeometry.has(o.geometry)) o.geometry.dispose();
       for (const m of Array.isArray(o.material) ? o.material : [o.material])
-        if (!sharedMaterials.has(m)) m.dispose();
+        if (!sharedMaterials.has(m)) {
+          if (o.userData.weaponPart)
+            for (const value of Object.values(m)) if (value instanceof T.Texture) value.dispose();
+          m.dispose();
+        }
       if (o instanceof T.SkinnedMesh) skeletons.add(o.skeleton);
     }
   });

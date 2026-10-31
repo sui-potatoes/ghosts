@@ -1,765 +1,765 @@
 {
-  "voice": "Ghosts: grim cyberpunk noir, mercenaries on a corporate contract, radio-clipped",
-  "groups": [
-    {
-      "id": "01-calm-acknowledgment",
-      "emotion": "Calm acknowledgment",
-      "delivery": "flat, professional, low volume, no rise at the end.",
-      "lines": [
+    "voice": "Ghosts: grim cyberpunk noir, mercenaries on a corporate contract, radio-clipped",
+    "groups": [
         {
-          "id": "01-01",
-          "text": "Copy."
+            "id": "01-calm-acknowledgment",
+            "emotion": "Calm acknowledgment",
+            "delivery": "flat, professional, low volume, no rise at the end.",
+            "lines": [
+                {
+                    "id": "01-01",
+                    "text": "Copy."
+                },
+                {
+                    "id": "01-02",
+                    "text": "Moving."
+                },
+                {
+                    "id": "01-03",
+                    "text": "On it. Keep the lane clear."
+                },
+                {
+                    "id": "01-04",
+                    "text": "Understood. Holding this corner."
+                },
+                {
+                    "id": "01-05",
+                    "text": "Reading you. Two steps, then I set."
+                },
+                {
+                    "id": "01-06",
+                    "text": "Orders received. Nothing here but rain."
+                }
+            ]
         },
         {
-          "id": "01-02",
-          "text": "Moving."
+            "id": "02-alert-contact-spotted",
+            "emotion": "Alert, contact spotted",
+            "delivery": "sharp intake, faster, clipped consonants, still controlled.",
+            "lines": [
+                {
+                    "id": "02-01",
+                    "text": "Contact."
+                },
+                {
+                    "id": "02-02",
+                    "text": "Movement, left. Second floor."
+                },
+                {
+                    "id": "02-03",
+                    "text": "Eyes on one. Armed. He hasn't seen us."
+                },
+                {
+                    "id": "02-04",
+                    "text": "Two hostiles, forty meters, behind the van."
+                },
+                {
+                    "id": "02-05",
+                    "text": "Hold. Hold. Something's wrong with that doorway."
+                },
+                {
+                    "id": "02-06",
+                    "text": "Three of them. They're already spreading out. We're late."
+                }
+            ]
         },
         {
-          "id": "01-03",
-          "text": "On it. Keep the lane clear."
+            "id": "03-fear-pinned-down",
+            "emotion": "Fear, pinned down",
+            "delivery": "breath audible, words tumbling, pitch up, cracks on the loud ones.",
+            "lines": [
+                {
+                    "id": "03-01",
+                    "text": "They've got the angle."
+                },
+                {
+                    "id": "03-02",
+                    "text": "I can't move from here."
+                },
+                {
+                    "id": "03-03",
+                    "text": "Rounds in the wall, right by my head."
+                },
+                {
+                    "id": "03-04",
+                    "text": "Somebody put fire on that window, please."
+                },
+                {
+                    "id": "03-05",
+                    "text": "I'm pinned, I'm pinned, I'm pinned!"
+                },
+                {
+                    "id": "03-06",
+                    "text": "Get me out of this. Get me out of this now!"
+                }
+            ]
         },
         {
-          "id": "01-04",
-          "text": "Understood. Holding this corner."
+            "id": "04-pain-wounded",
+            "emotion": "Pain, wounded",
+            "delivery": "grunt first, then speech through clenched teeth, uneven pacing.",
+            "lines": [
+                {
+                    "id": "04-01",
+                    "text": "Agh."
+                },
+                {
+                    "id": "04-02",
+                    "text": "Took one. Still up."
+                },
+                {
+                    "id": "04-03",
+                    "text": "Leg. It's the leg. I'll walk it off."
+                },
+                {
+                    "id": "04-04",
+                    "text": "That's through the plate. That's bad."
+                },
+                {
+                    "id": "04-05",
+                    "text": "Okay. Okay. Don't look at it. Keep moving."
+                },
+                {
+                    "id": "04-06",
+                    "text": "Can't feel my hand. Someone take my spot."
+                }
+            ]
         },
         {
-          "id": "01-05",
-          "text": "Reading you. Two steps, then I set."
+            "id": "05-anger",
+            "emotion": "Anger",
+            "delivery": "low and hard, then full voice. Consonants hit.",
+            "lines": [
+                {
+                    "id": "05-01",
+                    "text": "Enough."
+                },
+                {
+                    "id": "05-02",
+                    "text": "You picked the wrong street."
+                },
+                {
+                    "id": "05-03",
+                    "text": "Come on, then. Come on!"
+                },
+                {
+                    "id": "05-04",
+                    "text": "They shot her. They shot her and laughed."
+                },
+                {
+                    "id": "05-05",
+                    "text": "I am done being careful with these people."
+                },
+                {
+                    "id": "05-06",
+                    "text": "Burn it. Burn the whole relay. I don't care what Helios pays."
+                }
+            ]
         },
         {
-          "id": "01-06",
-          "text": "Orders received. Nothing here but rain."
+            "id": "06-grief-ally-down",
+            "emotion": "Grief, ally down",
+            "delivery": "very quiet, slow, long pauses. No crying, the opposite of crying.",
+            "lines": [
+                {
+                    "id": "06-01",
+                    "text": "Bishop's down."
+                },
+                {
+                    "id": "06-02",
+                    "text": "He's not moving. He's not moving."
+                },
+                {
+                    "id": "06-03",
+                    "text": "Stay with me. Stay with me. No. No."
+                },
+                {
+                    "id": "06-04",
+                    "text": "Copy. Leaving her. We don't leave people."
+                },
+                {
+                    "id": "06-05",
+                    "text": "I had the shot. I had the shot and I waited."
+                },
+                {
+                    "id": "06-06",
+                    "text": "Mark the body. We'll come back for him. We won't. Mark it anyway."
+                }
+            ]
+        },
+        {
+            "id": "07-relief",
+            "emotion": "Relief",
+            "delivery": "one long exhale, then warmer tone, half a laugh allowed.",
+            "lines": [
+                {
+                    "id": "07-01",
+                    "text": "Clear."
+                },
+                {
+                    "id": "07-02",
+                    "text": "That's the last one."
+                },
+                {
+                    "id": "07-03",
+                    "text": "We're good. We're actually good."
+                },
+                {
+                    "id": "07-04",
+                    "text": "Hah. I thought that was it for me."
+                },
+                {
+                    "id": "07-05",
+                    "text": "Okay. Okay. Everybody breathe."
+                },
+                {
+                    "id": "07-06",
+                    "text": "Ghost, you beautiful lunatic, you hit that from where?"
+                }
+            ]
+        },
+        {
+            "id": "08-triumph-cocky",
+            "emotion": "Triumph, cocky",
+            "delivery": "grin audible, slight swagger, dry not loud.",
+            "lines": [
+                {
+                    "id": "08-01",
+                    "text": "Down."
+                },
+                {
+                    "id": "08-02",
+                    "text": "Clean. Next."
+                },
+                {
+                    "id": "08-03",
+                    "text": "Told you I'd make it."
+                },
+                {
+                    "id": "08-04",
+                    "text": "That's one for the invoice."
+                },
+                {
+                    "id": "08-05",
+                    "text": "Thirty meters, moving target, rain. Put it in the report."
+                },
+                {
+                    "id": "08-06",
+                    "text": "Tell Helios they owe me a drink. Tell them twice."
+                }
+            ]
+        },
+        {
+            "id": "09-dry-humor-sarcasm",
+            "emotion": "Dry humor, sarcasm",
+            "delivery": "deadpan, slower, a little tired. The joke is in the pause.",
+            "lines": [
+                {
+                    "id": "09-01",
+                    "text": "Lovely weather."
+                },
+                {
+                    "id": "09-02",
+                    "text": "Great plan. Loved the plan."
+                },
+                {
+                    "id": "09-03",
+                    "text": "Oh good. More of them."
+                },
+                {
+                    "id": "09-04",
+                    "text": "Nobody said anything about a second team."
+                },
+                {
+                    "id": "09-05",
+                    "text": "Sure. I'll just walk through the open street. What could happen."
+                },
+                {
+                    "id": "09-06",
+                    "text": "Contract says \"light resistance.\" Someone should tell the resistance."
+                }
+            ]
+        },
+        {
+            "id": "10-doubt-hesitation",
+            "emotion": "Doubt, hesitation",
+            "delivery": "unsure, trailing off, questions that aren't really questions.",
+            "lines": [
+                {
+                    "id": "10-01",
+                    "text": "Are we sure about this?"
+                },
+                {
+                    "id": "10-02",
+                    "text": "That's a long way across open ground."
+                },
+                {
+                    "id": "10-03",
+                    "text": "I don't like it. I don't know why. I don't like it."
+                },
+                {
+                    "id": "10-04",
+                    "text": "If we go now, we go without Echo."
+                },
+                {
+                    "id": "10-05",
+                    "text": "Say again? You want me where?"
+                },
+                {
+                    "id": "10-06",
+                    "text": "I'll do it. I'm just saying, on record, that this is a bad idea."
+                }
+            ]
+        },
+        {
+            "id": "11-determination",
+            "emotion": "Determination",
+            "delivery": "steady, chest voice, each sentence lands and stops.",
+            "lines": [
+                {
+                    "id": "11-01",
+                    "text": "We finish this."
+                },
+                {
+                    "id": "11-02",
+                    "text": "One more push. That's all it is."
+                },
+                {
+                    "id": "11-03",
+                    "text": "I'm not leaving without the core."
+                },
+                {
+                    "id": "11-04",
+                    "text": "Whatever's in that building, it's ours now."
+                },
+                {
+                    "id": "11-05",
+                    "text": "Stay on me. Short bounds. Nobody gets fancy."
+                },
+                {
+                    "id": "11-06",
+                    "text": "They have the numbers. We have each other. That's going to be enough."
+                }
+            ]
+        },
+        {
+            "id": "12-exhaustion",
+            "emotion": "Exhaustion",
+            "delivery": "hoarse, slower, sentences lose energy at the end.",
+            "lines": [
+                {
+                    "id": "12-01",
+                    "text": "Still here."
+                },
+                {
+                    "id": "12-02",
+                    "text": "Yeah. Yeah, I'm moving."
+                },
+                {
+                    "id": "12-03",
+                    "text": "Three nights. Three nights of this."
+                },
+                {
+                    "id": "12-04",
+                    "text": "I'll sleep when the invoice clears."
+                },
+                {
+                    "id": "12-05",
+                    "text": "Just tell me where to stand."
+                },
+                {
+                    "id": "12-06",
+                    "text": "Keep talking. If you keep talking I keep walking."
+                }
+            ]
+        },
+        {
+            "id": "13-urgency-shouting-commands",
+            "emotion": "Urgency, shouting commands",
+            "delivery": "full voice, projected, fast, every line an order.",
+            "lines": [
+                {
+                    "id": "13-01",
+                    "text": "Move! Move!"
+                },
+                {
+                    "id": "13-02",
+                    "text": "Grenade! Get down!"
+                },
+                {
+                    "id": "13-03",
+                    "text": "Flank right, now, go!"
+                },
+                {
+                    "id": "13-04",
+                    "text": "Covering fire! Cross the street!"
+                },
+                {
+                    "id": "13-05",
+                    "text": "Fall back to the truck! Everyone, back to the truck!"
+                },
+                {
+                    "id": "13-06",
+                    "text": "Medic! Vex is hit, I need a medic on the corner!"
+                }
+            ]
+        },
+        {
+            "id": "14-whisper-stealth",
+            "emotion": "Whisper, stealth",
+            "delivery": "whispered, breathy, close to the mic, barely any pitch.",
+            "lines": [
+                {
+                    "id": "14-01",
+                    "text": "Quiet."
+                },
+                {
+                    "id": "14-02",
+                    "text": "Guard. Ten meters. Facing away."
+                },
+                {
+                    "id": "14-03",
+                    "text": "Don't. Wait for him to turn."
+                },
+                {
+                    "id": "14-04",
+                    "text": "Camera on the wall. Swinging left. Now."
+                },
+                {
+                    "id": "14-05",
+                    "text": "I'm at the door. I can hear them inside."
+                },
+                {
+                    "id": "14-06",
+                    "text": "On three. One. Two."
+                }
+            ]
+        },
+        {
+            "id": "15-dying-last-words",
+            "emotion": "Dying, last words",
+            "delivery": "breath shallow, words spaced, fading, no drama.",
+            "lines": [
+                {
+                    "id": "15-01",
+                    "text": "Keep going."
+                },
+                {
+                    "id": "15-02",
+                    "text": "Tell them it was quick."
+                },
+                {
+                    "id": "15-03",
+                    "text": "Didn't think it'd be rain."
+                },
+                {
+                    "id": "15-04",
+                    "text": "Take my tags. Take my tags."
+                },
+                {
+                    "id": "15-05",
+                    "text": "It's fine. It's fine. Finish the job."
+                },
+                {
+                    "id": "15-06",
+                    "text": "Hey. Hey. I can't hear the city anymore."
+                }
+            ]
+        },
+        {
+            "id": "16-attack-charge",
+            "emotion": "Attack, charge",
+            "delivery": "rising aggression, forward momentum, breath driving the words. Starts as a decision, ends as a roar.",
+            "lines": [
+                {
+                    "id": "16-01",
+                    "text": "Going in."
+                },
+                {
+                    "id": "16-02",
+                    "text": "Push. Push now, while they're reloading."
+                },
+                {
+                    "id": "16-03",
+                    "text": "On me. Straight through the gate. Don't stop."
+                },
+                {
+                    "id": "16-04",
+                    "text": "They're breaking, they're breaking, hit them!"
+                },
+                {
+                    "id": "16-05",
+                    "text": "Charge! All of you, charge!"
+                },
+                {
+                    "id": "16-06",
+                    "text": "Come get it! Come get it, Kōra! I'm right here!"
+                }
+            ]
+        },
+        {
+            "id": "17-firing-calling-the-shot",
+            "emotion": "Firing, calling the shot",
+            "delivery": "controlled aggression, breath held then released on the shot. Short, percussive, no shouting until the target drops.",
+            "lines": [
+                {
+                    "id": "17-01",
+                    "text": "Taking the shot."
+                },
+                {
+                    "id": "17-02",
+                    "text": "Lined up. Firing."
+                },
+                {
+                    "id": "17-03",
+                    "text": "Target. Breathe. Squeeze."
+                },
+                {
+                    "id": "17-04",
+                    "text": "Hit. He's still up. Again."
+                },
+                {
+                    "id": "17-05",
+                    "text": "Burst, burst, burst. Down. Next one."
+                },
+                {
+                    "id": "17-06",
+                    "text": "That's a kill. That's a kill. Hostile at the van is done."
+                }
+            ]
+        },
+        {
+            "id": "18-grenade-toss",
+            "emotion": "Grenade toss",
+            "delivery": "a warning shouted to friends, then the throw with effort in the voice, then a beat of waiting before the blast.",
+            "lines": [
+                {
+                    "id": "18-01",
+                    "text": "Frag out."
+                },
+                {
+                    "id": "18-02",
+                    "text": "Grenade! Heads down!"
+                },
+                {
+                    "id": "18-03",
+                    "text": "Cooking it. Three. Two. Away."
+                },
+                {
+                    "id": "18-04",
+                    "text": "Over the van. Watch the splash, Bishop, you're close."
+                },
+                {
+                    "id": "18-05",
+                    "text": "Eat this! Eat this!"
+                },
+                {
+                    "id": "18-06",
+                    "text": "Thrown. Thrown. Wait for it. Wait for it. There."
+                }
+            ]
+        },
+        {
+            "id": "19-reload",
+            "emotion": "Reload",
+            "delivery": "matter-of-fact under pressure, hands busy, words in the gaps.",
+            "lines": [
+                {
+                    "id": "19-01",
+                    "text": "Reloading."
+                },
+                {
+                    "id": "19-02",
+                    "text": "Dry. Swapping mag."
+                },
+                {
+                    "id": "19-03",
+                    "text": "Cover me, I'm empty."
+                },
+                {
+                    "id": "19-04",
+                    "text": "Last magazine. Last one. Make it count."
+                },
+                {
+                    "id": "19-05",
+                    "text": "Come on, come on, seat, seat. Good. Up."
+                },
+                {
+                    "id": "19-06",
+                    "text": "Reloaded. Back in it. Sorry, where were we."
+                }
+            ]
+        },
+        {
+            "id": "20-overwatch-armed-and-triggered",
+            "emotion": "Overwatch, armed and triggered",
+            "delivery": "armed lines are patient and low. Triggered lines snap, surprised into action.",
+            "lines": [
+                {
+                    "id": "20-01",
+                    "text": "Overwatch set."
+                },
+                {
+                    "id": "20-02",
+                    "text": "Watching the street. Nothing moves without me knowing."
+                },
+                {
+                    "id": "20-03",
+                    "text": "Anyone steps into that lane, they're mine."
+                },
+                {
+                    "id": "20-04",
+                    "text": "Movement. Taking it."
+                },
+                {
+                    "id": "20-05",
+                    "text": "There! Got him on the crossing!"
+                },
+                {
+                    "id": "20-06",
+                    "text": "Reaction shot, reaction shot, he's down, he never saw the lane!"
+                }
+            ]
+        },
+        {
+            "id": "21-hunker-down",
+            "emotion": "Hunker down",
+            "delivery": "braced, compressed, speaking from behind something solid.",
+            "lines": [
+                {
+                    "id": "21-01",
+                    "text": "Hunkering."
+                },
+                {
+                    "id": "21-02",
+                    "text": "Going low. Wake me when it's over."
+                },
+                {
+                    "id": "21-03",
+                    "text": "Head down, back to the wall, let them waste it."
+                },
+                {
+                    "id": "21-04",
+                    "text": "I'll be a brick for a turn. Don't need me, don't call me."
+                },
+                {
+                    "id": "21-05",
+                    "text": "Plates toward the noise. Breathing slow. Still here."
+                },
+                {
+                    "id": "21-06",
+                    "text": "Let them shoot the concrete. Concrete's on the client's bill."
+                }
+            ]
+        },
+        {
+            "id": "22-move-and-vault",
+            "emotion": "Move and vault",
+            "delivery": "motion in the voice, breath on the climb, feet on wet ground.",
+            "lines": [
+                {
+                    "id": "22-01",
+                    "text": "Moving up."
+                },
+                {
+                    "id": "22-02",
+                    "text": "Bounding. Cover me."
+                },
+                {
+                    "id": "22-03",
+                    "text": "Over the barrier, hup, down."
+                },
+                {
+                    "id": "22-04",
+                    "text": "Crossing. Crossing. Don't shoot me, I'm the one running."
+                },
+                {
+                    "id": "22-05",
+                    "text": "Vaulting the rail, coming down hard, I'm set, go."
+                },
+                {
+                    "id": "22-06",
+                    "text": "Through the gap, past the car, into the doorway. Made it. Next."
+                }
+            ]
+        },
+        {
+            "id": "23-extract-objective-secured",
+            "emotion": "Extract, objective secured",
+            "delivery": "focused and fast at the start, then the satisfaction of a thing done.",
+            "lines": [
+                {
+                    "id": "23-01",
+                    "text": "On the relay."
+                },
+                {
+                    "id": "23-02",
+                    "text": "Pulling the core. Give me a second."
+                },
+                {
+                    "id": "23-03",
+                    "text": "Cover the door, I'm at the console, almost there."
+                },
+                {
+                    "id": "23-04",
+                    "text": "Transfer's running. Nobody breathes on me."
+                },
+                {
+                    "id": "23-05",
+                    "text": "Got it. Got it! Core's out, the manifest's ours!"
+                },
+                {
+                    "id": "23-06",
+                    "text": "Relay secured. Helios gets its evidence. We get paid. Let's go home."
+                }
+            ]
+        },
+        {
+            "id": "24-prosody-stress-set",
+            "emotion": "Prosody stress set",
+            "delivery": null,
+            "lines": [
+                {
+                    "id": "24-01",
+                    "text": "Wraith zero-one, Wraith zero-two, both down, zero-three is running."
+                },
+                {
+                    "id": "24-02",
+                    "text": "Relay core at grid nine, four. Nine, four. Not nine, forty."
+                },
+                {
+                    "id": "24-03",
+                    "text": "AP's gone. Two rounds left. Reloading. Reloaded."
+                },
+                {
+                    "id": "24-04",
+                    "text": "Kōra Systems, Helios Strategic, same money, different logo."
+                },
+                {
+                    "id": "24-05",
+                    "text": "I said left, your other, no, that's, forget it, I'm going."
+                },
+                {
+                    "id": "24-06",
+                    "text": "Forty-eight thousand credits. For this. For this?"
+                },
+                {
+                    "id": "24-07",
+                    "text": "Echo, Ghost, Bishop, Vex. Sound off."
+                },
+                {
+                    "id": "24-08",
+                    "text": "Hm. Mm-hm. No. Nope. Absolutely not."
+                },
+                {
+                    "id": "24-09",
+                    "text": "Rain's picking up, visibility's maybe twenty, overwatch is useless, so, plan B."
+                },
+                {
+                    "id": "24-10",
+                    "text": "Extract. Extract. Extract. Why is nobody extracting?"
+                }
+            ]
         }
-      ]
-    },
-    {
-      "id": "02-alert-contact-spotted",
-      "emotion": "Alert, contact spotted",
-      "delivery": "sharp intake, faster, clipped consonants, still controlled.",
-      "lines": [
-        {
-          "id": "02-01",
-          "text": "Contact."
-        },
-        {
-          "id": "02-02",
-          "text": "Movement, left. Second floor."
-        },
-        {
-          "id": "02-03",
-          "text": "Eyes on one. Armed. He hasn't seen us."
-        },
-        {
-          "id": "02-04",
-          "text": "Two hostiles, forty meters, behind the van."
-        },
-        {
-          "id": "02-05",
-          "text": "Hold. Hold. Something's wrong with that doorway."
-        },
-        {
-          "id": "02-06",
-          "text": "Three of them. They're already spreading out. We're late."
-        }
-      ]
-    },
-    {
-      "id": "03-fear-pinned-down",
-      "emotion": "Fear, pinned down",
-      "delivery": "breath audible, words tumbling, pitch up, cracks on the loud ones.",
-      "lines": [
-        {
-          "id": "03-01",
-          "text": "They've got the angle."
-        },
-        {
-          "id": "03-02",
-          "text": "I can't move from here."
-        },
-        {
-          "id": "03-03",
-          "text": "Rounds in the wall, right by my head."
-        },
-        {
-          "id": "03-04",
-          "text": "Somebody put fire on that window, please."
-        },
-        {
-          "id": "03-05",
-          "text": "I'm pinned, I'm pinned, I'm pinned!"
-        },
-        {
-          "id": "03-06",
-          "text": "Get me out of this. Get me out of this now!"
-        }
-      ]
-    },
-    {
-      "id": "04-pain-wounded",
-      "emotion": "Pain, wounded",
-      "delivery": "grunt first, then speech through clenched teeth, uneven pacing.",
-      "lines": [
-        {
-          "id": "04-01",
-          "text": "Agh."
-        },
-        {
-          "id": "04-02",
-          "text": "Took one. Still up."
-        },
-        {
-          "id": "04-03",
-          "text": "Leg. It's the leg. I'll walk it off."
-        },
-        {
-          "id": "04-04",
-          "text": "That's through the plate. That's bad."
-        },
-        {
-          "id": "04-05",
-          "text": "Okay. Okay. Don't look at it. Keep moving."
-        },
-        {
-          "id": "04-06",
-          "text": "Can't feel my hand. Someone take my spot."
-        }
-      ]
-    },
-    {
-      "id": "05-anger",
-      "emotion": "Anger",
-      "delivery": "low and hard, then full voice. Consonants hit.",
-      "lines": [
-        {
-          "id": "05-01",
-          "text": "Enough."
-        },
-        {
-          "id": "05-02",
-          "text": "You picked the wrong street."
-        },
-        {
-          "id": "05-03",
-          "text": "Come on, then. Come on!"
-        },
-        {
-          "id": "05-04",
-          "text": "They shot her. They shot her and laughed."
-        },
-        {
-          "id": "05-05",
-          "text": "I am done being careful with these people."
-        },
-        {
-          "id": "05-06",
-          "text": "Burn it. Burn the whole relay. I don't care what Helios pays."
-        }
-      ]
-    },
-    {
-      "id": "06-grief-ally-down",
-      "emotion": "Grief, ally down",
-      "delivery": "very quiet, slow, long pauses. No crying, the opposite of crying.",
-      "lines": [
-        {
-          "id": "06-01",
-          "text": "Bishop's down."
-        },
-        {
-          "id": "06-02",
-          "text": "He's not moving. He's not moving."
-        },
-        {
-          "id": "06-03",
-          "text": "Stay with me. Stay with me. No. No."
-        },
-        {
-          "id": "06-04",
-          "text": "Copy. Leaving her. We don't leave people."
-        },
-        {
-          "id": "06-05",
-          "text": "I had the shot. I had the shot and I waited."
-        },
-        {
-          "id": "06-06",
-          "text": "Mark the body. We'll come back for him. We won't. Mark it anyway."
-        }
-      ]
-    },
-    {
-      "id": "07-relief",
-      "emotion": "Relief",
-      "delivery": "one long exhale, then warmer tone, half a laugh allowed.",
-      "lines": [
-        {
-          "id": "07-01",
-          "text": "Clear."
-        },
-        {
-          "id": "07-02",
-          "text": "That's the last one."
-        },
-        {
-          "id": "07-03",
-          "text": "We're good. We're actually good."
-        },
-        {
-          "id": "07-04",
-          "text": "Hah. I thought that was it for me."
-        },
-        {
-          "id": "07-05",
-          "text": "Okay. Okay. Everybody breathe."
-        },
-        {
-          "id": "07-06",
-          "text": "Ghost, you beautiful lunatic, you hit that from where?"
-        }
-      ]
-    },
-    {
-      "id": "08-triumph-cocky",
-      "emotion": "Triumph, cocky",
-      "delivery": "grin audible, slight swagger, dry not loud.",
-      "lines": [
-        {
-          "id": "08-01",
-          "text": "Down."
-        },
-        {
-          "id": "08-02",
-          "text": "Clean. Next."
-        },
-        {
-          "id": "08-03",
-          "text": "Told you I'd make it."
-        },
-        {
-          "id": "08-04",
-          "text": "That's one for the invoice."
-        },
-        {
-          "id": "08-05",
-          "text": "Thirty meters, moving target, rain. Put it in the report."
-        },
-        {
-          "id": "08-06",
-          "text": "Tell Helios they owe me a drink. Tell them twice."
-        }
-      ]
-    },
-    {
-      "id": "09-dry-humor-sarcasm",
-      "emotion": "Dry humor, sarcasm",
-      "delivery": "deadpan, slower, a little tired. The joke is in the pause.",
-      "lines": [
-        {
-          "id": "09-01",
-          "text": "Lovely weather."
-        },
-        {
-          "id": "09-02",
-          "text": "Great plan. Loved the plan."
-        },
-        {
-          "id": "09-03",
-          "text": "Oh good. More of them."
-        },
-        {
-          "id": "09-04",
-          "text": "Nobody said anything about a second team."
-        },
-        {
-          "id": "09-05",
-          "text": "Sure. I'll just walk through the open street. What could happen."
-        },
-        {
-          "id": "09-06",
-          "text": "Contract says \"light resistance.\" Someone should tell the resistance."
-        }
-      ]
-    },
-    {
-      "id": "10-doubt-hesitation",
-      "emotion": "Doubt, hesitation",
-      "delivery": "unsure, trailing off, questions that aren't really questions.",
-      "lines": [
-        {
-          "id": "10-01",
-          "text": "Are we sure about this?"
-        },
-        {
-          "id": "10-02",
-          "text": "That's a long way across open ground."
-        },
-        {
-          "id": "10-03",
-          "text": "I don't like it. I don't know why. I don't like it."
-        },
-        {
-          "id": "10-04",
-          "text": "If we go now, we go without Echo."
-        },
-        {
-          "id": "10-05",
-          "text": "Say again? You want me where?"
-        },
-        {
-          "id": "10-06",
-          "text": "I'll do it. I'm just saying, on record, that this is a bad idea."
-        }
-      ]
-    },
-    {
-      "id": "11-determination",
-      "emotion": "Determination",
-      "delivery": "steady, chest voice, each sentence lands and stops.",
-      "lines": [
-        {
-          "id": "11-01",
-          "text": "We finish this."
-        },
-        {
-          "id": "11-02",
-          "text": "One more push. That's all it is."
-        },
-        {
-          "id": "11-03",
-          "text": "I'm not leaving without the core."
-        },
-        {
-          "id": "11-04",
-          "text": "Whatever's in that building, it's ours now."
-        },
-        {
-          "id": "11-05",
-          "text": "Stay on me. Short bounds. Nobody gets fancy."
-        },
-        {
-          "id": "11-06",
-          "text": "They have the numbers. We have each other. That's going to be enough."
-        }
-      ]
-    },
-    {
-      "id": "12-exhaustion",
-      "emotion": "Exhaustion",
-      "delivery": "hoarse, slower, sentences lose energy at the end.",
-      "lines": [
-        {
-          "id": "12-01",
-          "text": "Still here."
-        },
-        {
-          "id": "12-02",
-          "text": "Yeah. Yeah, I'm moving."
-        },
-        {
-          "id": "12-03",
-          "text": "Three nights. Three nights of this."
-        },
-        {
-          "id": "12-04",
-          "text": "I'll sleep when the invoice clears."
-        },
-        {
-          "id": "12-05",
-          "text": "Just tell me where to stand."
-        },
-        {
-          "id": "12-06",
-          "text": "Keep talking. If you keep talking I keep walking."
-        }
-      ]
-    },
-    {
-      "id": "13-urgency-shouting-commands",
-      "emotion": "Urgency, shouting commands",
-      "delivery": "full voice, projected, fast, every line an order.",
-      "lines": [
-        {
-          "id": "13-01",
-          "text": "Move! Move!"
-        },
-        {
-          "id": "13-02",
-          "text": "Grenade! Get down!"
-        },
-        {
-          "id": "13-03",
-          "text": "Flank right, now, go!"
-        },
-        {
-          "id": "13-04",
-          "text": "Covering fire! Cross the street!"
-        },
-        {
-          "id": "13-05",
-          "text": "Fall back to the truck! Everyone, back to the truck!"
-        },
-        {
-          "id": "13-06",
-          "text": "Medic! Vex is hit, I need a medic on the corner!"
-        }
-      ]
-    },
-    {
-      "id": "14-whisper-stealth",
-      "emotion": "Whisper, stealth",
-      "delivery": "whispered, breathy, close to the mic, barely any pitch.",
-      "lines": [
-        {
-          "id": "14-01",
-          "text": "Quiet."
-        },
-        {
-          "id": "14-02",
-          "text": "Guard. Ten meters. Facing away."
-        },
-        {
-          "id": "14-03",
-          "text": "Don't. Wait for him to turn."
-        },
-        {
-          "id": "14-04",
-          "text": "Camera on the wall. Swinging left. Now."
-        },
-        {
-          "id": "14-05",
-          "text": "I'm at the door. I can hear them inside."
-        },
-        {
-          "id": "14-06",
-          "text": "On three. One. Two."
-        }
-      ]
-    },
-    {
-      "id": "15-dying-last-words",
-      "emotion": "Dying, last words",
-      "delivery": "breath shallow, words spaced, fading, no drama.",
-      "lines": [
-        {
-          "id": "15-01",
-          "text": "Keep going."
-        },
-        {
-          "id": "15-02",
-          "text": "Tell them it was quick."
-        },
-        {
-          "id": "15-03",
-          "text": "Didn't think it'd be rain."
-        },
-        {
-          "id": "15-04",
-          "text": "Take my tags. Take my tags."
-        },
-        {
-          "id": "15-05",
-          "text": "It's fine. It's fine. Finish the job."
-        },
-        {
-          "id": "15-06",
-          "text": "Hey. Hey. I can't hear the city anymore."
-        }
-      ]
-    },
-    {
-      "id": "16-attack-charge",
-      "emotion": "Attack, charge",
-      "delivery": "rising aggression, forward momentum, breath driving the words. Starts as a decision, ends as a roar.",
-      "lines": [
-        {
-          "id": "16-01",
-          "text": "Going in."
-        },
-        {
-          "id": "16-02",
-          "text": "Push. Push now, while they're reloading."
-        },
-        {
-          "id": "16-03",
-          "text": "On me. Straight through the gate. Don't stop."
-        },
-        {
-          "id": "16-04",
-          "text": "They're breaking, they're breaking, hit them!"
-        },
-        {
-          "id": "16-05",
-          "text": "Charge! All of you, charge!"
-        },
-        {
-          "id": "16-06",
-          "text": "Come get it! Come get it, Kōra! I'm right here!"
-        }
-      ]
-    },
-    {
-      "id": "17-firing-calling-the-shot",
-      "emotion": "Firing, calling the shot",
-      "delivery": "controlled aggression, breath held then released on the shot. Short, percussive, no shouting until the target drops.",
-      "lines": [
-        {
-          "id": "17-01",
-          "text": "Taking the shot."
-        },
-        {
-          "id": "17-02",
-          "text": "Lined up. Firing."
-        },
-        {
-          "id": "17-03",
-          "text": "Target. Breathe. Squeeze."
-        },
-        {
-          "id": "17-04",
-          "text": "Hit. He's still up. Again."
-        },
-        {
-          "id": "17-05",
-          "text": "Burst, burst, burst. Down. Next one."
-        },
-        {
-          "id": "17-06",
-          "text": "That's a kill. That's a kill. Hostile at the van is done."
-        }
-      ]
-    },
-    {
-      "id": "18-grenade-toss",
-      "emotion": "Grenade toss",
-      "delivery": "a warning shouted to friends, then the throw with effort in the voice, then a beat of waiting before the blast.",
-      "lines": [
-        {
-          "id": "18-01",
-          "text": "Frag out."
-        },
-        {
-          "id": "18-02",
-          "text": "Grenade! Heads down!"
-        },
-        {
-          "id": "18-03",
-          "text": "Cooking it. Three. Two. Away."
-        },
-        {
-          "id": "18-04",
-          "text": "Over the van. Watch the splash, Bishop, you're close."
-        },
-        {
-          "id": "18-05",
-          "text": "Eat this! Eat this!"
-        },
-        {
-          "id": "18-06",
-          "text": "Thrown. Thrown. Wait for it. Wait for it. There."
-        }
-      ]
-    },
-    {
-      "id": "19-reload",
-      "emotion": "Reload",
-      "delivery": "matter-of-fact under pressure, hands busy, words in the gaps.",
-      "lines": [
-        {
-          "id": "19-01",
-          "text": "Reloading."
-        },
-        {
-          "id": "19-02",
-          "text": "Dry. Swapping mag."
-        },
-        {
-          "id": "19-03",
-          "text": "Cover me, I'm empty."
-        },
-        {
-          "id": "19-04",
-          "text": "Last magazine. Last one. Make it count."
-        },
-        {
-          "id": "19-05",
-          "text": "Come on, come on, seat, seat. Good. Up."
-        },
-        {
-          "id": "19-06",
-          "text": "Reloaded. Back in it. Sorry, where were we."
-        }
-      ]
-    },
-    {
-      "id": "20-overwatch-armed-and-triggered",
-      "emotion": "Overwatch, armed and triggered",
-      "delivery": "armed lines are patient and low. Triggered lines snap, surprised into action.",
-      "lines": [
-        {
-          "id": "20-01",
-          "text": "Overwatch set."
-        },
-        {
-          "id": "20-02",
-          "text": "Watching the street. Nothing moves without me knowing."
-        },
-        {
-          "id": "20-03",
-          "text": "Anyone steps into that lane, they're mine."
-        },
-        {
-          "id": "20-04",
-          "text": "Movement. Taking it."
-        },
-        {
-          "id": "20-05",
-          "text": "There! Got him on the crossing!"
-        },
-        {
-          "id": "20-06",
-          "text": "Reaction shot, reaction shot, he's down, he never saw the lane!"
-        }
-      ]
-    },
-    {
-      "id": "21-hunker-down",
-      "emotion": "Hunker down",
-      "delivery": "braced, compressed, speaking from behind something solid.",
-      "lines": [
-        {
-          "id": "21-01",
-          "text": "Hunkering."
-        },
-        {
-          "id": "21-02",
-          "text": "Going low. Wake me when it's over."
-        },
-        {
-          "id": "21-03",
-          "text": "Head down, back to the wall, let them waste it."
-        },
-        {
-          "id": "21-04",
-          "text": "I'll be a brick for a turn. Don't need me, don't call me."
-        },
-        {
-          "id": "21-05",
-          "text": "Plates toward the noise. Breathing slow. Still here."
-        },
-        {
-          "id": "21-06",
-          "text": "Let them shoot the concrete. Concrete's on the client's bill."
-        }
-      ]
-    },
-    {
-      "id": "22-move-and-vault",
-      "emotion": "Move and vault",
-      "delivery": "motion in the voice, breath on the climb, feet on wet ground.",
-      "lines": [
-        {
-          "id": "22-01",
-          "text": "Moving up."
-        },
-        {
-          "id": "22-02",
-          "text": "Bounding. Cover me."
-        },
-        {
-          "id": "22-03",
-          "text": "Over the barrier, hup, down."
-        },
-        {
-          "id": "22-04",
-          "text": "Crossing. Crossing. Don't shoot me, I'm the one running."
-        },
-        {
-          "id": "22-05",
-          "text": "Vaulting the rail, coming down hard, I'm set, go."
-        },
-        {
-          "id": "22-06",
-          "text": "Through the gap, past the car, into the doorway. Made it. Next."
-        }
-      ]
-    },
-    {
-      "id": "23-extract-objective-secured",
-      "emotion": "Extract, objective secured",
-      "delivery": "focused and fast at the start, then the satisfaction of a thing done.",
-      "lines": [
-        {
-          "id": "23-01",
-          "text": "On the relay."
-        },
-        {
-          "id": "23-02",
-          "text": "Pulling the core. Give me a second."
-        },
-        {
-          "id": "23-03",
-          "text": "Cover the door, I'm at the console, almost there."
-        },
-        {
-          "id": "23-04",
-          "text": "Transfer's running. Nobody breathes on me."
-        },
-        {
-          "id": "23-05",
-          "text": "Got it. Got it! Core's out, the manifest's ours!"
-        },
-        {
-          "id": "23-06",
-          "text": "Relay secured. Helios gets its evidence. We get paid. Let's go home."
-        }
-      ]
-    },
-    {
-      "id": "24-prosody-stress-set",
-      "emotion": "Prosody stress set",
-      "delivery": null,
-      "lines": [
-        {
-          "id": "24-01",
-          "text": "Wraith zero-one, Wraith zero-two, both down, zero-three is running."
-        },
-        {
-          "id": "24-02",
-          "text": "Relay core at grid nine, four. Nine, four. Not nine, forty."
-        },
-        {
-          "id": "24-03",
-          "text": "AP's gone. Two rounds left. Reloading. Reloaded."
-        },
-        {
-          "id": "24-04",
-          "text": "Kōra Systems, Helios Strategic, same money, different logo."
-        },
-        {
-          "id": "24-05",
-          "text": "I said left, your other, no, that's, forget it, I'm going."
-        },
-        {
-          "id": "24-06",
-          "text": "Forty-eight thousand credits. For this. For this?"
-        },
-        {
-          "id": "24-07",
-          "text": "Echo, Ghost, Bishop, Vex. Sound off."
-        },
-        {
-          "id": "24-08",
-          "text": "Hm. Mm-hm. No. Nope. Absolutely not."
-        },
-        {
-          "id": "24-09",
-          "text": "Rain's picking up, visibility's maybe twenty, overwatch is useless, so, plan B."
-        },
-        {
-          "id": "24-10",
-          "text": "Extract. Extract. Extract. Why is nobody extracting?"
-        }
-      ]
-    }
-  ]
+    ]
 }

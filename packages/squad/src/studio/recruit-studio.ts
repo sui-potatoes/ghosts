@@ -8,13 +8,13 @@ import { loadMotions } from "../motion/clips";
 import { MotionPlayer, type MotionState } from "../motion/player";
 import type { Motion } from "../motion/catalog";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { CharacterAssets, type Character } from "./character-assets";
+import { CharacterAssets, type Character, type CharacterLook } from "./character-assets";
 import { EquipmentAssets } from "./equipment-assets";
-import { EQUIPMENT, itemById } from "../catalog";
+import { ATTACHMENTS, EQUIPMENT, itemById } from "../catalog";
 import type { Appearance, Recruit } from "../types";
 export type Focus = "body" | "face";
 export interface RecruitStudio {
-    apply(recruit: Recruit, appearance?: Appearance): Promise<void>;
+    apply(recruit: Recruit, appearance?: Appearance, look?: CharacterLook): Promise<void>;
     focus(value: Focus): void;
     view(angle: number): void;
     portrait(appearance: Appearance): Promise<string>;
@@ -96,7 +96,11 @@ export function createRecruitStudio(
     const shadowMap = new T.CanvasTexture(shadowCanvas);
     const shadow = new T.Mesh(
         new T.PlaneGeometry(1.2, 0.8),
-        new T.MeshBasicMaterial({ map: shadowMap, transparent: true, depthWrite: false }),
+        new T.MeshBasicMaterial({
+            map: shadowMap,
+            transparent: true,
+            depthWrite: false,
+        }),
     );
     shadow.rotation.x = -Math.PI / 2;
     shadow.position.y = 0.004;
@@ -104,10 +108,13 @@ export function createRecruitStudio(
     const assets = new CharacterAssets(),
         equipment = new EquipmentAssets();
     let displayedKey = "";
+    let displayedAttachments = "";
     let player: MotionPlayer | undefined;
     let carry: WeaponCarry | undefined;
+    let activeMotion: string | undefined;
     let currentRecruit: Recruit | undefined;
     let currentSex: Appearance["sex"] = "female";
+    let currentLook: CharacterLook = "operative";
     let motionEpoch = 0;
     let current: Character | undefined,
         weapon: T.Group | undefined,
@@ -156,7 +163,7 @@ export function createRecruitStudio(
         controls.update();
         schedule();
         set.visible = focus === "body";
-        if (weapon) weapon.visible = focus === "body";
+        if (weapon) weapon.visible = focus === "body" && activeMotion !== "standing_smoking";
     };
     const resize = () => {
         const { width, height } = host.getBoundingClientRect();
@@ -212,35 +219,45 @@ export function createRecruitStudio(
             mountHandEquipment(gun, person.hand, person.mount);
             carry = new WeaponCarry(gun, person.root.getObjectByName("mixamorigLeftHand")!);
         }
-        if (weapon) weapon.visible = focus === "body";
+        if (weapon) weapon.visible = focus === "body" && activeMotion !== "standing_smoking";
     }
     async function previewWeapon(pistol: boolean) {
         const person = current,
             ticket = motionEpoch;
-        if (!person || !currentRecruit) return;
+        if (!person || !currentRecruit || currentLook === "office-worker") return;
         const item = itemById(
             pistol ? currentRecruit.equipment.sidearm : currentRecruit.equipment.primary,
         );
-        const gun = item ? await equipment.get(item.model) : undefined;
+        const gun = item ? await equipment.get(item.model, pistol ? {} : currentRecruit.attachments) : undefined;
         if (disposed || ticket !== motionEpoch || person !== current) return;
         attachGun(person, gun);
     }
     return {
-        async apply(recruit, appearance = recruit.appearance) {
+        async apply(recruit, appearance = recruit.appearance, look = "operative") {
             const ticket = ++epoch;
-            const key = JSON.stringify([recruit.id, appearance, recruit.equipment]);
+            const key = JSON.stringify([recruit.id, appearance, recruit.equipment, look]);
+            const attachmentKey = JSON.stringify(recruit.attachments ?? {});
             if (current && displayedKey === key) {
+                const person = current;
+                currentRecruit = recruit;
                 current.setArmorColors(recruit.armorColors);
+                if (displayedAttachments !== attachmentKey) {
+                    const item = look === "office-worker" ? undefined : itemById(recruit.equipment.primary);
+                    const gun = item ? await equipment.get(item.model, recruit.attachments) : undefined;
+                    if (disposed || ticket !== epoch || person !== current) return;
+                    attachGun(person, gun);
+                    displayedAttachments = attachmentKey;
+                }
                 draw();
                 return;
             }
-            const next = await assets.create(appearance, recruit.equipment.armor);
+            const next = await assets.create(appearance, recruit.equipment.armor, "idle", look);
             if (disposed || ticket !== epoch) {
                 next.dispose();
                 return;
             }
-            const item = itemById(recruit.equipment.primary);
-            const gun = item ? await equipment.get(item.model) : undefined;
+            const item = look === "office-worker" ? undefined : itemById(recruit.equipment.primary);
+            const gun = item ? await equipment.get(item.model, recruit.attachments) : undefined;
             if (disposed || ticket !== epoch) {
                 next.dispose();
                 return;
@@ -248,20 +265,24 @@ export function createRecruitStudio(
             motionEpoch++;
             player?.dispose();
             currentRecruit = recruit;
+            currentLook = look;
             currentSex = appearance.sex;
             weapon?.removeFromParent();
             current?.root.removeFromParent();
             current?.dispose();
             current = next;
             displayedKey = key;
+            displayedAttachments = attachmentKey;
             next.setArmorColors(recruit.armorColors);
             scene.add(next.root);
             weapon?.removeFromParent();
             weapon = gun;
             attachGun(next, gun);
-            player = new MotionPlayer(next.root, draw, onMotion, (name) =>
-                carry?.update(name === "toss_grenade"),
-            );
+            player = new MotionPlayer(next.root, draw, onMotion, (name) => {
+                activeMotion = name;
+                carry?.update(name === "toss_grenade");
+                if (weapon) weapon.visible = focus === "body" && name !== "standing_smoking";
+            });
             framing(undefined, focus === "body");
             draw();
         },
@@ -270,7 +291,10 @@ export function createRecruitStudio(
             const ticket = ++motionEpoch;
             const library = await loadMotions(currentSex);
             if (disposed || ticket !== motionEpoch) return;
-            const clip = library.get(name);
+            const clip =
+                currentLook === "office-worker" && name === "idle_weight_shift"
+                    ? current.idleClip
+                    : library.get(name);
             if (!clip) throw Error("This motion is unavailable.");
             await previewWeapon(name.startsWith("pistol"));
             if (disposed || ticket !== motionEpoch) return;
@@ -281,6 +305,7 @@ export function createRecruitStudio(
                     hips.values[i] = 0;
                     hips.values[i + 2] = 0;
                 }
+            if (name === "toss_grenade") carry?.prepare(preview, current.root);
             player?.play(preview, loop, speed);
         },
         pauseMotion() {
@@ -325,6 +350,14 @@ export function createRecruitStudio(
             for (const item of EQUIPMENT) {
                 const object = await equipment.get(item.model);
                 if (disposed) return result;
+                result[item.id] = capture(object);
+            }
+            for (const item of ATTACHMENTS) {
+                const object = await equipment.attachment(item.id);
+                if (disposed) return result;
+                object.quaternion.setFromRotationMatrix(new T.Matrix4().makeBasis(
+                    new T.Vector3(0, 0, -1), new T.Vector3(1, 0, 0), new T.Vector3(0, -1, 0),
+                ));
                 result[item.id] = capture(object);
             }
             return result;

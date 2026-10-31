@@ -42,16 +42,63 @@ with the tests, the build, lint and a play-through green.
    pipeline) moved out of the app because the Squad screen and the engine
    both build characters with it; the engine depends on it, the app on both,
    and nothing on the app. The host passes the saved roster in as `squad`.
+8. **Events are the record.** Every state change the rules make is an event:
+   each command handler decides (legality, paths, dice), emits, and a reducer
+   (`applyEvent`) carries the outcome into the units. `ingest(event)` takes in
+   an event decided elsewhere and `replayEncounter(scenario, events)` rebuilds
+   a whole encounter from its journal — a replay, a server or the chain can
+   drive the scene without re-running commands.
+9. **The driver seam.** Orders reach the rules through an `EncounterDriver`
+   (`driver.ts`): `resolve(command)` is async and `hostilePhase()` may be lazy
+   or async. `localDriver` (the default) is the bundled rules; a chain driver
+   submits the order as a transaction, decodes its effects into `GameEvent`s,
+   ingests them and resolves — in-engine actions then follow what the
+   transaction decided. Hosts pass theirs as `<Encounter driver={...}>`;
+   `session.resolving` is up while an order is out.
+10. **Levels as data.** `scenarios.ts` is the registry (`scenarios`,
+    `scenarioById`); the session derives its opening selection from the
+    scenario instead of fixed unit ids; the street's curb-cut geometry moved
+    from the ground formula into the `MapPlan` (`street.cuts`); scenery is
+    registered per map id (`registerMapView`). A new level is a `Scenario`,
+    its scenery, and a registry entry.
+11. **Asset catalog and level editor.** `catalog.ts` is the one roster of
+    placeable assets — stable uids (saves never store kind names), display
+    names, seats and tactical footprints (`cover`/`solid`/`obstacle`/`none`)
+    and durability; `environment.ts` derives `propHealth`, `resistsGunfire`
+    and `propBlastMultiplier` from it, and typed stand-in blocks (`block-*`,
+    plain meshes) carry semantics without a model. Walls, glazing, doors,
+    fences and low cover — the typed cover/high/weak blocks included — seat
+    on cell EDGES (`place: "edge"`, one per edge, turn = side; `block-fill`
+    is the cell-filling building stand-in); desktop clutter mounts on
+    surfaces (`mount: "surface"` on a host with `top`), keypads on walls;
+    `floorCatalog` paints per-cell finishes — the office textures and the
+    street demo's own materials (KTX2 asphalt/concrete, pavement slabs,
+    zebra-paint crosswalks; a `raise` lifts what stands there) — and
+    lighting offers the outdoor presets, the office demo's `interior` rig
+    and placed point lights (`Level.lights`: per-cell color, intensity,
+    height). A model's `anchor` names where its authored origin sits in the
+    footprint (the corner desk), `offset` carries the demo's workstation
+    arrangement so desk clutter composes, and the street-life entourage
+    (vending machine, bicycle, pallet stack, utility pole) is placeable.
+    `editor/` holds the level model (placements, floors, unwalkable tiles,
+    markers, lighting as a preset with deviations), same-seat redressing
+    (`replacementsFor`/`swapAsset`), the twofold export — a Move-`Map`-shaped
+    tile grid where edges become Cover sides (provisional until the ghosts
+    package lands) plus render placements by uid — the shipped demos
+    reconstructed as editable levels (`demoLevels`, `levelFromPlan`), and the
+    three.js editing viewport; the React screen is the app's `/editor`.
 
 ## Next
 
-- **Replays.** Events are journaled and the rules are seeded, but units are
-  still mutated in place; a reducer from events to state would let a replay,
-  a server or a chain drive the scene without re-running commands.
+- **Chain driver.** The app side of the seam: BCS schemas for the ghosts Move
+  package, object reads (`app/src/chain/objects.ts`), the transaction executor
+  (`app/src/chain/executor.ts`), and an `EncounterDriver` that maps
+  transaction effects to `GameEvent`s (see `app/src/chain/README.md`).
 - **One encounter at a time.** The session, audio and settings provider are
   module singletons; a second mounted encounter needs them per instance.
-- **More maps.** Only Kōra has scenery (`district.ts`), and the ground formula
-  assumes its crossing ramps; a second map needs its own scenery and surface.
+- **More maps.** Only Kōra has scenery (`district.ts`); a second map needs its
+  own scenery registered for its plan id, and a surface beyond the street
+  grid's curbs and cuts if it is not a street.
 - **Legacy view code.** `humans.ts`, `district.ts`, `mpfb-characters.js` and
   `style.css` are still the migrated originals in their dense style; the
   debrief still renders HTML strings into its dialog.

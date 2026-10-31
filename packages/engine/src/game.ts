@@ -1,7 +1,7 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
-import { CELL, tacticalMap, type Cell, type TacticalMap } from "./map.ts";
+import { CELL, TacticalMap, type Cell } from "./map.ts";
 import { describe, type Command, type GameEvent } from "./events.ts";
 import { blackRain, type Scenario } from "./scenario.ts";
 // Local presentation simulation. Rules reference commander::{unit,map,stats}; no chain imports.
@@ -46,6 +46,13 @@ export interface Unit {
 export const key = (p: Cell) => p.join(",");
 export const distance = (a: Cell, b: Cell) =>
   Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]);
+/**
+ * Damage one hit deals: the attacker's equipped weapon against the target's
+ * armor. The rules roll with it; the aim HUD previews it on the health bar.
+ */
+export function shotDamage(a: Unit, b: Unit, crit = false): number {
+  return Math.max(1, a.damage + (crit ? Math.floor(a.damage / 2) : 0) - b.armor);
+}
 /** Units as `scenario` deploys them, with stats from role and weapon. */
 export function initialUnits(scenario: Scenario = blackRain): Unit[] {
   return scenario.units.map(({ id, name, full, role, pos, color, enemy = false }) => {
@@ -89,7 +96,7 @@ export class Encounter {
   seed = 731;
   constructor(scenario: Scenario = blackRain) {
     this.scenario = scenario;
-    this.map = tacticalMap(scenario.map);
+    this.map = new TacticalMap(scenario.map);
     this.units = initialUnits(scenario);
     this.log = [scenario.lines.opening];
   }
@@ -128,14 +135,121 @@ export class Encounter {
   unit(id: string): Unit | undefined {
     return this.units.find((u) => u.id === id);
   }
-  /** Record an event and write its feed line. */
+  /** Apply an event, record it and write its feed line. */
   private emit(event: GameEvent) {
+    this.applyEvent(event);
     this.events.push(event);
     const line =
       event.type === "secure"
         ? this.scenario.lines.secured
         : describe(event, (id) => this.unit(id)?.name ?? id);
     if (line) this.add(line);
+  }
+  /**
+   * Take in an event decided elsewhere — a replay, a server, the chain — as
+   * `emit` would a local one: applied, journaled, on the feed. The caller
+   * vouches for the event; nothing is validated or rolled again.
+   */
+  ingest(event: GameEvent) {
+    this.emit(event);
+  }
+  /**
+   * State from one event, deterministically: the reducer behind both local
+   * play and `ingest`. Every decision — legality, paths, dice — has already
+   * been made; this only carries the outcome into the units.
+   */
+  private applyEvent(event: GameEvent) {
+    if (event.type === "shot" || event.type === "grenade")
+      this.map.applyPropDamage(event.environment ?? []);
+    switch (event.type) {
+      case "move": {
+        const u = this.unit(event.unit)!;
+        u.pos = [...event.path.at(-1)!];
+        u.ap--;
+        u.hunkered = false;
+        u.overwatch = false;
+        return;
+      }
+      case "shot": {
+        const a = this.unit(event.unit)!,
+          b = this.unit(event.target)!;
+        a.ap = event.reaction || a.weapon !== "pistol" ? 0 : a.ap - 1;
+        a.hunkered = false;
+        a.overwatch = false;
+        a.ammo--;
+        a.magazines[a.weapon] = a.ammo;
+        b.hp = Math.max(0, b.hp - event.damage);
+        if (event.killed) this.creditKill(a, b);
+        return;
+      }
+      case "reload": {
+        const u = this.unit(event.unit)!;
+        u.ammo = u.clip;
+        u.magazines[u.weapon] = u.ammo;
+        u.ap--;
+        return;
+      }
+      case "grenade": {
+        const u = this.unit(event.unit)!;
+        u.ap--;
+        u.grenade = true;
+        for (const { unit, damage, killed } of event.casualties) {
+          const target = this.unit(unit)!;
+          target.hp -= damage;
+          if (killed) this.creditKill(u, target);
+        }
+        return;
+      }
+      case "hunker": {
+        const u = this.unit(event.unit)!;
+        u.ap = 0;
+        u.hunkered = true;
+        u.overwatch = false;
+        return;
+      }
+      case "overwatch": {
+        const u = this.unit(event.unit)!;
+        u.ap = 0;
+        u.overwatch = true;
+        u.hunkered = false;
+        return;
+      }
+      case "switch-weapon": {
+        const u = this.unit(event.unit)!;
+        u.magazines[u.weapon] = u.ammo;
+        u.weapon = event.weapon;
+        const stats = weapons[event.weapon];
+        u.damage = stats.damage;
+        u.range = stats.range;
+        u.clip = stats.clip;
+        u.aim = stats.aim;
+        u.ammo = u.magazines[event.weapon];
+        return;
+      }
+      case "watch-spent": {
+        const u = this.unit(event.unit)!;
+        u.overwatch = false;
+        u.ap = 0;
+        return;
+      }
+      case "secure":
+        this.unit(event.unit)!.ap--;
+        this.secured = true;
+        return;
+      case "hostile-phase":
+        this.phase = "enemy";
+        for (const u of this.enemies) u.ap = 2;
+        return;
+      case "turn":
+        this.phase = "player";
+        this.turn = event.turn;
+        for (const u of this.allies) {
+          u.ap = 2;
+          u.overwatch = false;
+          u.hunkered = false;
+        }
+        return;
+    }
   }
   /** Run `fn` and return the events it emitted. */
   private record(fn: () => unknown): GameEvent[] {
@@ -165,6 +279,8 @@ export class Encounter {
           return this.watch(u);
         case "secure":
           return this.secure(u);
+        case "switch-weapon":
+          return this.switchWeapon(u, command.weapon);
       }
     });
   }
@@ -220,35 +336,34 @@ export class Encounter {
     if (!this.canAct(u)) return null;
     const path = this.paths(u).get(key(p));
     if (!path || path.length < 2) return null;
-    u.pos = [...p];
-    u.ap--;
-    u.hunkered = false;
-    u.overwatch = false;
     this.emit({
       type: "move",
       unit: u.id,
       path,
       vault: path.some((c) => this.map.isCover(c)),
-      cover: this.cover(u) > 0,
+      cover: this.coverValue(p, false) > 0,
     });
     return path;
   }
   /** Defense against `attacker` (or against anyone, without one): walls, barriers, hunkering. */
   cover(u: Unit, attacker?: Unit) {
+    return this.coverValue(u.pos, u.hunkered, attacker);
+  }
+  private coverValue(pos: Cell, hunkered: boolean, attacker?: Unit) {
     const map = this.map;
     const behindWall = attacker
       ? !map.clearBuildingShot(
           [attacker.pos[0] * CELL, attacker.pos[1] * CELL],
-          [u.pos[0] * CELL, u.pos[1] * CELL],
+          [pos[0] * CELL, pos[1] * CELL],
         )
-      : map.physicalCover(u.pos) === "high";
-    if (map.highCoverAt(u.pos) && behindWall) return u.hunkered ? 60 : 40;
+      : map.physicalCover(pos) === "high";
+    if (map.highCoverAt(pos) && behindWall) return hunkered ? 60 : 40;
     const barrier = map.covers.some(
       (c) =>
-        distance(c, u.pos) === 1 &&
-        (!attacker || distance(c, attacker.pos) < distance(u.pos, attacker.pos)),
+        distance(c, pos) === 1 &&
+        (!attacker || distance(c, attacker.pos) < distance(pos, attacker.pos)),
     );
-    return barrier ? (u.hunkered ? 50 : 25) : u.hunkered ? 20 : 0;
+    return barrier ? (hunkered ? 50 : 25) : hunkered ? 20 : 0;
   }
   chance(a: Unit, b: Unit) {
     const d = distance(a.pos, b.pos);
@@ -273,7 +388,6 @@ export class Encounter {
   }
   attack(a: Unit, b: Unit) {
     if (!this.canAct(a) || !this.canShoot(a, b)) return null;
-    a.ap = a.weapon === "pistol" ? a.ap - 1 : 0;
     return this.shoot(a, b, false);
   }
   /**
@@ -282,102 +396,80 @@ export class Encounter {
    */
   reactionFire(ally: Unit, enemy: Unit) {
     if (!ally.overwatch || ally.hp <= 0 || this.phase !== "enemy") return null;
-    ally.overwatch = false;
-    ally.ap = 0;
-    return this.canShoot(ally, enemy) ? this.shoot(ally, enemy, true) : null;
+    if (!this.canShoot(ally, enemy)) {
+      this.emit({ type: "watch-spent", unit: ally.id });
+      return null;
+    }
+    return this.shoot(ally, enemy, true);
   }
   private shoot(a: Unit, b: Unit, reaction: boolean) {
     const chance = this.chance(a, b);
-    a.hunkered = false;
-    a.overwatch = false;
-    a.ammo--;
-    a.magazines[a.weapon] = a.ammo;
     const hit = this.random() * 100 < chance;
     const crit = hit && this.random() < 0.1;
-    const damage = hit
-      ? Math.max(1, a.damage + (crit ? Math.floor(a.damage / 2) : 0) - b.armor)
-      : 0;
-    b.hp = Math.max(0, b.hp - damage);
-    const killed = hit && b.hp === 0;
-    if (killed) this.creditKill(a, b);
-    this.emit({ type: "shot", unit: a.id, target: b.id, hit, crit, damage, killed, reaction });
+    const damage = hit ? shotDamage(a, b, crit) : 0;
+    const killed = hit && b.hp - damage <= 0;
+    const cover = !hit && this.map.props.find((p) =>
+      this.map.health(p.id) > 0 && (p.covers ?? (p.cover ? [p.cover] : [])).some(cell =>
+        this.map.isCover(cell) && distance(cell, b.pos) === 1 && distance(cell, a.pos) < distance(b.pos, a.pos)));
+    const propDamage = a.weapon === "sniper" ? 45 : 28;
+    const environment = hit ? [] : cover ? this.map.damageProp(cover.id, propDamage) :
+      this.map.strayShotProps(a.pos, b.pos, propDamage);
+    this.emit({ type: "shot", unit: a.id, target: b.id, hit, crit, damage, killed, reaction, environment });
     return { hit, damage, crit };
   }
   reload(u: Unit) {
     if (!this.canAct(u) || u.ammo === u.clip) return false;
-    u.ammo = u.clip;
-    u.magazines[u.weapon] = u.ammo;
-    u.ap--;
     this.emit({ type: "reload", unit: u.id });
     return true;
   }
   throwGrenade(u: Unit, p: Cell) {
     if (!this.canAct(u) || u.grenade || distance(u.pos, p) > 5) return false;
-    u.ap--;
-    u.grenade = true;
-    const casualties: { unit: string; damage: number; killed: boolean }[] = [];
-    for (const target of this.units.filter((t) => t.hp > 0 && distance(t.pos, p) <= 2)) {
-      const damage = Math.min(target.hp, Math.max(1, 6 - target.armor));
-      target.hp -= damage;
-      if (target.hp === 0) this.creditKill(u, target);
-      casualties.push({ unit: target.id, damage, killed: target.hp === 0 });
-    }
-    this.emit({ type: "grenade", unit: u.id, at: [...p], casualties });
+    const casualties = this.units
+      .filter((t) => t.hp > 0 && distance(t.pos, p) <= 2)
+      .map((t) => {
+        const damage = Math.min(t.hp, Math.max(1, 6 - t.armor));
+        return { unit: t.id, damage, killed: t.hp - damage === 0 };
+      });
+    const environment = this.map.blastProps(p);
+    this.emit({ type: "grenade", unit: u.id, at: [...p], casualties, environment });
     return true;
   }
   secure(u: Unit) {
     if (!this.canAct(u) || this.secured || distance(u.pos, this.relay) > 0)
       return false;
-    u.ap--;
-    this.secured = true;
     this.emit({ type: "secure", unit: u.id });
     return true;
   }
   switchWeapon(u: Unit, w: Weapon) {
-    if (!this.canAct(u)) return false;
-    u.magazines[u.weapon] = u.ammo;
-    u.weapon = w;
-    const stats = weapons[w];
-    u.damage = stats.damage;
-    u.range = stats.range;
-    u.clip = stats.clip;
-    u.aim = stats.aim;
-    u.ammo = u.magazines[w];
+    if (!this.canAct(u) || u.weapon === w) return false;
+    this.emit({ type: "switch-weapon", unit: u.id, weapon: w });
     return true;
   }
   hunker(u: Unit) {
     if (!this.canAct(u)) return false;
-    u.ap = 0;
-    u.hunkered = true;
-    u.overwatch = false;
     this.emit({ type: "hunker", unit: u.id });
     return true;
   }
   watch(u: Unit) {
     if (!this.canAct(u) || u.ammo < 1) return false;
-    u.ap = 0;
-    u.overwatch = true;
-    u.hunkered = false;
     this.emit({ type: "overwatch", unit: u.id });
     return true;
   }
   beginEnemy() {
-    this.phase = "enemy";
-    for (const u of this.enemies) u.ap = 2;
     this.emit({ type: "hostile-phase" });
   }
   nextTurn() {
-    this.phase = "player";
-    this.turn++;
-    for (const u of this.allies) {
-      u.ap = 2;
-      u.overwatch = false;
-      u.hunkered = false;
-    }
-    this.emit({ type: "turn", turn: this.turn });
+    this.emit({ type: "turn", turn: this.turn + 1 });
   }
   /** `reactionFire` as events, for the hostile phase. */
   react(ally: Unit, enemy: Unit): GameEvent[] {
     return this.record(() => this.reactionFire(ally, enemy));
   }
+}
+
+/** The encounter a journal describes, rebuilt without re-running any command. */
+export function replayEncounter(scenario: Scenario, events: Iterable<GameEvent>): Encounter {
+  const game = new Encounter(scenario);
+  for (const event of events) game.ingest(event);
+  return game;
 }
