@@ -5,9 +5,8 @@ import { useCurrentAccount, useDAppKit } from "@mysten/dapp-kit-react";
 import { formatAddress, MIST_PER_SUI } from "@mysten/sui/utils";
 import { useState, useSyncExternalStore } from "react";
 
-import { useSessionRows } from "../chain";
+import { useBalance, useSessionRows } from "../chain";
 import { NETWORK } from "../constants";
-import { useBalance } from "../hooks/useBalance";
 import { usePlayerName } from "../hooks/usePlayerName";
 import { useSignInMethod } from "../hooks/useSignInMethod";
 import { NameDialog } from "../NameDialog";

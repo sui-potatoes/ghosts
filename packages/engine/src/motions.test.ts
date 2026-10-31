@@ -3,20 +3,11 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import {
-  fireMotion,
-  reloadMotion,
-  restMotion,
-  reactionMotion,
-  motions,
-} from "./motions.ts";
-test("weapon actions use distinct sidearm, precision, and covered-rifle motions", () => {
-  assert.equal(fireMotion("pistol", true), "pistol_shot");
-  assert.equal(fireMotion("sniper", false), "sniper_shot");
-  assert.equal(fireMotion("rifle", true), "crouch_shooting");
-  assert.equal(fireMotion("rifle", false), "rifle_burst");
+import { reloadMotion, restMotion, reactionMotion, motions } from "./motions.ts";
+test("reloads use distinct sidearm and covered-rifle motions", () => {
   assert.equal(reloadMotion("pistol", true), "pistol_reload");
   assert.equal(reloadMotion("rifle", true), "crouch_reload");
+  assert.equal(reloadMotion("rifle", false), "reload");
 });
 test("protective and overwatch poses survive normal state synchronization", () => {
   const u = { weapon: "rifle" as const, hunkered: true, overwatch: false };

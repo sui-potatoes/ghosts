@@ -87,11 +87,6 @@ export function setPlayerName(address: string, name: string) {
     write(address, name);
 }
 
-/** Drop the stored name; the fallback applies again. */
-export function clearPlayerName(address: string) {
-    write(address, null);
-}
-
 /** Subscribe to name changes made in this tab. */
 export function subscribePlayerName(listener: () => void): () => void {
     LISTENERS.add(listener);

@@ -7,15 +7,11 @@
     "exports": {
         "./body": "./src/body.ts",
         "./appearance/body-shape": "./src/appearance/body-shape.ts",
-        "./appearance/brow-shape": "./src/appearance/brow-shape.js",
         "./appearance/editor-state": "./src/appearance/editor-state.js",
-        "./appearance/eyewear": "./src/appearance/eyewear.js",
-        "./appearance/mpfb-tattoo": "./src/appearance/mpfb-tattoo.js",
         "./appearance/native-body-binding": "./src/appearance/native-body-binding.js",
         "./appearance/schema": "./src/appearance/schema.ts",
         "./appearance/skin-blush": "./src/appearance/skin-blush.js",
         "./appearance/skin-scars": "./src/appearance/skin-scars.js",
-        "./appearance/tattoo-placement": "./src/appearance/tattoo-placement.js",
         "./armor-colors": "./src/armor-colors.ts",
         "./catalog": "./src/catalog.ts",
         "./model": "./src/model.ts",
@@ -45,6 +41,7 @@
         "three": "^0.174.0"
     },
     "devDependencies": {
+        "@types/node": "^22",
         "@types/three": "^0.174.0",
         "typescript": "^5.8.3"
     }

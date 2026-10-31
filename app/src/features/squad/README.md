@@ -135,7 +135,7 @@ across the side of the chest. Authoring rejects nonpositive radial sections.
 
 ## Motion drills
 
-`@ghosts/squad/motion` owns the 38-action catalog, lazy per-body-type compressed clip loading,
+`@ghosts/squad/motion/*` owns the captured action catalog, lazy per-body-type compressed clip loading,
 centimetre/Z-up to metre/Y-up conversion, in-place root movement and boot contact.
 `MotionPlayer` has no combat state. Pause/scrub/reset are local previews and never
 save appearance/equipment. Changing the character stops the old player; closing

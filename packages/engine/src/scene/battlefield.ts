@@ -622,7 +622,6 @@ export class Battlefield {
   setWeather(weather: Weather) {
     this.precipitation.setKind(weather);
     this.host.dataset.weather = weather;
-    this.host.dataset.rain = String(weather === "rain");
     this.host.dataset.snowParticles = String(this.precipitation.particles);
     this.invalidate();
   }

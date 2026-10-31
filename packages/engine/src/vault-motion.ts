@@ -4,7 +4,6 @@
 /** Horizontal travel synchronized to the authored contact and landing keys.
  * Vertical motion belongs to the skeleton's pelvis/legs, never the scene root.
  */
-export const VAULT_SECONDS = 1.65;
 export const VAULT_TRAVEL = [
   [0, 0],
   [0.16, 0.1],

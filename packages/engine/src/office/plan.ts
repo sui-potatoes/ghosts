@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CELL, type Cell, type MapPlan } from "../map.ts";
-import type { OfficeFinish, OfficeKind } from "./assets.ts";
+import type { OfficeFinish, OfficeKind } from "./catalog.ts";
 import type { MapProp } from "../environment.ts";
 
 export interface OfficePlacement {

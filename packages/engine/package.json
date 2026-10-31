@@ -7,6 +7,7 @@
     "exports": {
         ".": "./src/index.ts",
         "./keys": "./src/keys.ts",
+ "./demo-assets": "./src/demo-assets.ts",
         "./gamepad": "./src/gamepad.ts",
         "./sounds": "./src/sounds.ts",
         "./editor": "./src/editor/index.ts"

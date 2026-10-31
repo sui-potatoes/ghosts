@@ -30,9 +30,6 @@ html[data-reduce-motion="on"] *::after {
 
 /* === Settings menu (Sifu-style) === */
 
-/* Dimmed white smoke drifting behind the menu, Sifu-style. Three large soft
-   blobs on slow transform loops; the reduce-motion rule freezes them. The
-   host has `isolation: isolate`, so z-index -1 stays above its backdrop. */
 /* Canvas ground smoke (drawn by settings/smoke.ts). Placement lives on the
    element as utility classes; this only disperses it upward. */
 .set-smoke {

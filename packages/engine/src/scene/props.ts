@@ -9,19 +9,19 @@ import type { Space } from "./space";
 /** Shared materials and the cover barriers and relay station the rules place. */
 
 const materialCache = new Map<string, T.MeshStandardMaterial>();
-export function mat(color: T.ColorRepresentation, metalness = 0.35, roughness = 0.65) {
+function mat(color: T.ColorRepresentation, metalness = 0.35, roughness = 0.65) {
   const key = `${color}:${metalness}:${roughness}`;
   if (!materialCache.has(key))
     materialCache.set(key, new T.MeshStandardMaterial({ color, metalness, roughness }));
   return materialCache.get(key)!;
 }
 
-export const concrete = mat(0x343842),
+const concrete = mat(0x343842),
   edge = mat(0x626672),
-  metal = mat(0x242833, 0.75, 0.3),
   dark = mat(0x11151e),
-  amber = new T.MeshStandardMaterial({ color: 0xffc476, emissive: 0xff9b33, emissiveIntensity: 2.4 }),
   cyan = new T.MeshStandardMaterial({ color: 0xd8e2ff, emissive: 0x829bdf, emissiveIntensity: 2.1 });
+export const metal = mat(0x242833, 0.75, 0.3);
+export const amber = new T.MeshStandardMaterial({ color: 0xffc476, emissive: 0xff9b33, emissiveIntensity: 2.4 });
 
 const cube = new T.BoxGeometry(1, 1, 1);
 

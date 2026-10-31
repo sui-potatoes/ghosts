@@ -1,5 +1,6 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
+import { demoAsset } from "@ghosts/engine/demo-assets";
 import * as THREE from "three";
 import { KTX2Loader } from "three/examples/jsm/loaders/KTX2Loader.js";
 
@@ -9,7 +10,7 @@ type Maps = { color: THREE.Texture; normal: THREE.Texture; rough: THREE.Texture 
 /** The game's existing surface-only PBR assets, owned by this scene. */
 export function createTitleSurfaces(renderer: THREE.WebGLRenderer, changed: () => void) {
     const loader = new KTX2Loader()
-        .setTranscoderPath("/demo-assets/basis/")
+        .setTranscoderPath(demoAsset("basis/"))
         .setWorkerLimit(1)
         .detectSupport(renderer);
     const textures: THREE.Texture[] = [];
@@ -21,7 +22,7 @@ export function createTitleSurfaces(renderer: THREE.WebGLRenderer, changed: () =
             result = Promise.all(
                 ["color", "normal", "rough"].map(async (type) => {
                     const texture = await loader.loadAsync(
-                        `/demo-assets/textures/district/${kind}-${type}.ktx2`,
+                        demoAsset(`textures/district/${kind}-${type}.ktx2`),
                     );
                     texture.colorSpace =
                         type === "color" ? THREE.SRGBColorSpace : THREE.NoColorSpace;

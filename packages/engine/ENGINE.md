@@ -59,8 +59,8 @@ with the tests, the build, lint and a play-through green.
     `scenarioById`); the session derives its opening selection from the
     scenario instead of fixed unit ids; the street's curb-cut geometry moved
     from the ground formula into the `MapPlan` (`street.cuts`); scenery is
-    registered per map id (`registerMapView`). A new level is a `Scenario`,
-    its scenery, and a registry entry.
+    looked up per map id (the `views` table in `scene/maps.ts`). A new level
+    is a `Scenario`, its scenery, and a registry entry.
 11. **Asset catalog and level editor.** `catalog.ts` is the one roster of
     placeable assets — stable uids (saves never store kind names), display
     names, seats and tactical footprints (`cover`/`solid`/`obstacle`/`none`)
@@ -96,9 +96,9 @@ with the tests, the build, lint and a play-through green.
   transaction effects to `GameEvent`s (see `app/src/chain/README.md`).
 - **One encounter at a time.** The session, audio and settings provider are
   module singletons; a second mounted encounter needs them per instance.
-- **More maps.** Only Kōra has scenery (`district.ts`); a second map needs its
-  own scenery registered for its plan id, and a surface beyond the street
-  grid's curbs and cuts if it is not a street.
+- **More maps.** Kōra (`district.ts`) and the office (`office/scene.ts`) have
+  scenery; a further map needs its own entry in the `views` table, and a
+  surface beyond the street grid's curbs and cuts if it is not a street.
 - **Legacy view code.** `humans.ts`, `district.ts`, `mpfb-characters.js` and
   `style.css` are still the migrated originals in their dense style; the
   debrief still renders HTML strings into its dialog.

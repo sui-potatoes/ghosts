@@ -13,4 +13,4 @@ for(const [side,suffix] of [['Left','.L'],['Right','.R']]) {
  }
 }
 writeFileSync(new URL('../../../packages/squad/src/studio/crossed-arms-reference.ts',import.meta.url),
- '// Derived from Umplix / Cross Arms, CC0. Source frame 61.\n// Regenerate: node app/scripts/crossed-arms/build-reference.mjs\nexport default '+JSON.stringify(reference,null,4)+';\n');
+ '// Copyright (c) Sui Potatoes\n// SPDX-License-Identifier: MIT\n\n// Derived from Umplix / Cross Arms, CC0. Source frame 61.\n// Regenerate: node app/scripts/crossed-arms/build-reference.mjs\nexport default '+JSON.stringify(reference,null,4)+';\n');

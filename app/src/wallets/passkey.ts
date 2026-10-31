@@ -238,8 +238,8 @@ class PasskeyWallet implements Wallet {
         return { accounts: this.#accounts };
     };
 
-    // Disconnect only ends the dApp Kit session. The stored public key stays, so
-    // the next sign-in is one click; `forgetPasskey` removes it explicitly.
+    // Disconnect only ends the dApp Kit session. The stored public key stays,
+    // so the next sign-in is one click.
     #disconnect: StandardDisconnectMethod = async () => {};
 
     #signerFor(chain: Chain, account: WalletAccount) {
@@ -317,11 +317,6 @@ export function passkeyWalletInitializer(): WalletInitializer {
     };
 }
 
-/** Whether a passkey public key is stored on this device. */
-export function hasStoredPasskey(): boolean {
-    return loadStoredPasskey() !== null;
-}
-
 /** Create a fresh credential on the authenticator and make it the wallet's account. */
 export async function createPasskey(attachment: Attachment): Promise<PasskeyKeypair> {
     const keypair = await PasskeyKeypair.getPasskeyInstance(makePasskeyProvider(attachment));
@@ -350,10 +345,4 @@ export async function recoverPasskey(): Promise<PasskeyKeypair> {
     persist(keypair);
     getPasskeyWallet().setKeypair(keypair);
     return keypair;
-}
-
-/** Drop the stored public key. The credential itself stays in the authenticator. */
-export function forgetPasskey() {
-    saveStoredPasskey(null);
-    getPasskeyWallet().setKeypair(null);
 }

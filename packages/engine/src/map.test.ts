@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {test} from 'node:test';import assert from 'node:assert/strict';import {kora} from './district-plan.ts';
+import {Encounter} from './game.ts';import {blackRain} from './scenario.ts';import {TacticalMap} from './map.ts';
 type P=readonly [number,number];
 const coverPeek=(a:P,b:P)=>kora.coverPeek(a,b),highCoverAt=(c:P)=>kora.highCoverAt(c),clearBuildingShot=(a:P,b:P)=>kora.clearBuildingShot(a,b),coverStep=(c:P,a:P,b:P)=>kora.coverStep(c,a,b);
 const physicalCover=(c:P)=>kora.physicalCover(c),wallTravel=(a:P,b:P)=>kora.wallTravel(a,b),coverStance=(c:P)=>kora.coverStance(c);
@@ -9,7 +10,6 @@ test('building corner exposes shooter on a clear side without walking through wa
 test('middle of a solid facade cannot shoot through the building',()=>{assert(coverPeek([-4,-5],[-9,-5]).blocked);assert(!clearBuildingShot([-5.4,-6.75],[-12.15,-6.75]));});
 test('open roadway does not force a peek',()=>{assert.equal(coverPeek([0,0],[0,4]).high,false);assert(!coverPeek([0,0],[0,4]).blocked);});
 
-import {Encounter} from './game.ts';
 test('blocked wall shots consume neither AP nor ammunition',()=>{const game=new Encounter(),a=game.allies[0],b=game.enemies[0];a.pos=[-4,-5];b.pos=[-10,-5];const ap=a.ap,ammo=a.ammo;assert.equal(game.attack(a,b),null);assert.equal(a.ap,ap);assert.equal(a.ammo,ammo);});
 test('high cover protects only the wall-facing direction',()=>{const game=new Encounter(),a=game.allies[0],b=game.enemies[0];a.pos=[-4,-5];b.pos=[-10,-5];assert.equal(game.cover(a,b),40);b.pos=[0,-5];assert.equal(game.cover(a,b),0);});
 
@@ -65,8 +65,6 @@ test('storefront barrier keeps a low-cover stance even with a building immediate
  const game=new Encounter();game.allies[0].pos=cell;assert.equal(game.cover(game.allies[0]),25);
 });
 
-import {blackRain} from './scenario.ts';
-import {TacticalMap} from './map.ts';
 test('a scenario can bring its own map: bounds, buildings and cover all come from the plan', () => {
  const yard = {id: 'yard', bounds: {minX: -3, maxX: 3, minZ: -3, maxZ: 3}, buildings: [], covers: [[0, 0]] as [number, number][], street: {avenueHalf: 99, crossHalf: 99, curb: 0, reach: 10}};
  const units = blackRain.units.filter(u => u.id === 'v' || u.id === 'h1').map((u, i) => ({...u, pos: [i ? 2 : -2, 0] as [number, number]}));

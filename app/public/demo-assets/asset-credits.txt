@@ -1,10 +1,5 @@
 BLACKLINE ASSET CREDITS
 
-Full beard and moustache by grinsegold — CC-BY.
-Source: https://static.makehumancommunity.org/assets/assetpacks/bodyparts06.html
-Originals: http://www.makehumancommunity.org/node/188 and http://www.makehumancommunity.org/node/187
-Adapted for Blackline: face fitting, skin weights and morphs, texture normalization/compression, dye and cut variants.
-
 Hair: MakeHuman Community system assets — CC0 1.0.
 https://static.makehumancommunity.org/assets/assetpacks/makehuman_system_assets.html
 

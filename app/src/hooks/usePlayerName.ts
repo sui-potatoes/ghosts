@@ -4,7 +4,7 @@
 import { useCurrentAccount } from "@mysten/dapp-kit-react";
 import { useSyncExternalStore } from "react";
 
-import { useAssignedName } from "../chain/names";
+import { useAssignedName } from "../chain";
 import { getPlayerName, subscribePlayerName, type PlayerName } from "../player/name";
 
 const SIGNED_OUT: PlayerName = { name: "", source: null };

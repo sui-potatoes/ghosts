@@ -30,8 +30,6 @@ export interface Appearance {
     browArch: number;
     browTail: number;
     browDensity: number;
-    beard: string;
-    beardColor: string;
     tattoo: string;
     tattooPlace: string;
     tattooColor: string;

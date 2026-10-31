@@ -10,6 +10,5 @@
     "allowJs": true,
     "allowImportingTsExtensions": true
   },
-  "include": ["src/**/*.ts", "src/**/*.js"],
-  "exclude": ["src/**/*.test.ts"]
+  "include": ["src/**/*.ts", "src/**/*.js", "tests/**/*.ts"]
 }
