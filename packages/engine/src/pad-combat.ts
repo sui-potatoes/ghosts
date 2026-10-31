@@ -6,11 +6,15 @@ import { audio } from "./audio";
 import { runCombatAction, type ControlOptions } from "./controls";
 import type { Cell } from "./game";
 import { cancelDialog, onPad, type PadDir, type PadInput } from "./gamepad";
+import type { PadBindable, PadCombatAction } from "./keys";
 import { session } from "./session";
+import { engineSettings } from "./settings";
 
 /**
  * The controller on the field. Buttons map to the same `CombatAction`s the
- * keyboard produces and run through `runCombatAction`; only the input shapes
+ * keyboard produces and run through `runCombatAction` — the bindable ones
+ * through the player's `padCombat` record (keys.ts), the fixed grammar (A, B,
+ * start, the d-pad and the sticks) literally. Only the input shapes
  * that keys do not have live here: the tile cursor, target walking, the
  * radial action wheel and focus inside the engine's dialogs. Registered
  * above the app's menu bus — while the encounter owns the screen, menus see
@@ -75,10 +79,10 @@ function dialogInput(pad: PadInput) {
   else if (pad.pressed("a")) (i < 0 ? buttons[0] : buttons[i]).click();
 }
 
-function wheelInput(pad: PadInput) {
+function wheelInput(pad: PadInput, close: PadBindable | "") {
   const s = session;
   const n = WHEEL_ACTIONS.length;
-  if (pad.pressed("b") || pad.pressed("y")) {
+  if (pad.pressed("b") || (close && pad.pressed(close))) {
     closeWheel();
     return;
   }
@@ -133,6 +137,14 @@ export function bindPadCombat({ onPause }: ControlOptions = {}): () => void {
     }
     const { game, battlefield } = s;
 
+    // The bindable buttons, from the player's settings; the fixed grammar
+    // (A, B, start, the d-pad, the sticks) stays literal below.
+    const binds = engineSettings().padCombat();
+    const bound = (a: PadCombatAction) => {
+      const b = binds[a];
+      return !!b && pad.pressed(b);
+    };
+
     // The right stick drives the camera, even mid-animation: sideways
     // orbits, up and down dolly in and out, both smooth and frame-timed.
     const rx = pad.axis(2);
@@ -142,7 +154,7 @@ export function bindPadCombat({ onPause }: ControlOptions = {}): () => void {
 
     if (s.busy || s.resolving) return true;
     if (s.wheel) {
-      wheelInput(pad);
+      wheelInput(pad, binds.wheel);
       return true;
     }
 
@@ -150,12 +162,12 @@ export function bindPadCombat({ onPause }: ControlOptions = {}): () => void {
       onPause?.();
       return true;
     }
-    if (pad.pressed("select")) {
+    if (bound("grid")) {
       runCombatAction("grid");
       return true;
     }
     if (game.result || game.phase !== "player") return true;
-    if (pad.pressed("y")) {
+    if (bound("wheel")) {
       s.wheel = true;
       s.wheelIndex = 0;
       audio.tone("click");
@@ -166,27 +178,27 @@ export function bindPadCombat({ onPause }: ControlOptions = {}): () => void {
       runCombatAction("cancel", { onPause });
       return true;
     }
-    if (pad.pressed("lb")) {
+    if (bound("prev-operator")) {
       runCombatAction("next-operator", { reverse: true });
       return true;
     }
-    if (pad.pressed("rb")) {
+    if (bound("next-operator")) {
       runCombatAction("next-operator");
       return true;
     }
-    if (pad.pressed("rt")) {
+    if (bound("fire")) {
       runCombatAction("fire");
       return true;
     }
-    if (pad.pressed("lt")) {
+    if (bound("grenade")) {
       runCombatAction("grenade");
       return true;
     }
-    if (pad.pressed("x")) {
+    if (bound("reload")) {
       runCombatAction("reload");
       return true;
     }
-    if (pad.pressed("r3")) {
+    if (bound("focus")) {
       runCombatAction("focus");
       return true;
     }

@@ -1,16 +1,16 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
-import { useEffect, useState, useSyncExternalStore, type RefObject } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type RefObject } from "react";
 import { cancelTargeting, fire, pick, select, throwGrenade } from "../actions";
-import { distance, weapons, type Unit } from "../game";
+import { distance, weapons, type Encounter, type Unit } from "../game";
 import { padActive, padGlyph, padKind, subscribePad } from "../gamepad";
 import { pad2 } from "../html";
 import { confirmWheel, WHEEL_ACTIONS } from "../pad-combat";
 import { timePresets, type TimeOfDay } from "../scene-weather";
 import type { Weather } from "../scene/precipitation";
 import { damagePreview, grenadeBlockReason, shotBlockReason } from "../targeting";
-import { Icon, Logo } from "./icons";
+import { Icon, Logo, type IconName } from "./icons";
 import { useSession } from "./useSession";
 import { cap, toggleGrid, toggleView } from "./view";
 import { DestructionPreview } from "./DestructionPreview";
@@ -69,38 +69,153 @@ function usePad(): string {
   return useSyncExternalStore(subscribePad, () => (padActive() ? padKind() : ""));
 }
 
+/** Wheel geometry: a square SVG box, filled wedges between the hub and the rim. */
+const WHEEL_BOX = 460;
+const WHEEL_STEP = 360 / WHEEL_ACTIONS.length;
+const W_CX = WHEEL_BOX / 2;
+const W_OUTER = 212;
+const W_INNER = 92;
+/** Degrees shaved off each wedge side; the dark channel between segments. */
+const W_GAP = 1.6;
+
+function polar(r: number, deg: number): string {
+  const rad = (deg * Math.PI) / 180;
+  return `${(W_CX + r * Math.cos(rad)).toFixed(1)} ${(W_CX + r * Math.sin(rad)).toFixed(1)}`;
+}
+
+/** A filled donut sector from `a0` to `a1` degrees, angles clockwise from 3 o'clock. */
+function wedgePath(a0: number, a1: number): string {
+  return [
+    `M ${polar(W_OUTER, a0)}`,
+    `A ${W_OUTER} ${W_OUTER} 0 0 1 ${polar(W_OUTER, a1)}`,
+    `L ${polar(W_INNER, a1)}`,
+    `A ${W_INNER} ${W_INNER} 0 0 0 ${polar(W_INNER, a0)}`,
+    "Z",
+  ].join(" ");
+}
+
+const WEDGES = WHEEL_ACTIONS.map((_, i) => {
+  const mid = i * WHEEL_STEP - 90;
+  return wedgePath(mid - WHEEL_STEP / 2 + W_GAP, mid + WHEEL_STEP / 2 - W_GAP);
+});
+
+/** The selector arc rides outside the rim over wedge 0; a rotation moves it. */
+const SELECTOR_ARC = (() => {
+  const r = W_OUTER + 9;
+  const half = WHEEL_STEP / 2 - W_GAP;
+  return `M ${polar(r, -90 - half)} A ${r} ${r} 0 0 1 ${polar(r, -90 + half)}`;
+})();
+
+type WheelId = (typeof WHEEL_ACTIONS)[number]["id"];
+
+const WHEEL_ICONS: Record<WheelId, IconName> = {
+  fire: "gun",
+  grenade: "grenade",
+  reload: "reload",
+  overwatch: "eye",
+  hunker: "shield",
+  secure: "extract",
+  "end-turn": "hourglass",
+};
+
+/** Whether the order would land right now, and the hub's one-line reading of it. */
+function wheelStatus(game: Encounter, u: Unit, id: WheelId): { locked: boolean; note: string } {
+  if (id === "end-turn") return { locked: false, note: "PASS INITIATIVE" };
+  if (!game.canAct(u)) return { locked: true, note: "NO AP" };
+  switch (id) {
+    case "fire":
+      return u.ammo
+        ? { locked: false, note: `AMMO ${u.ammo}/${u.clip}` }
+        : { locked: true, note: "NO AMMO" };
+    case "grenade":
+      return u.grenade
+        ? { locked: true, note: "EXPENDED" }
+        : { locked: false, note: "FRAG · RANGE 5" };
+    case "reload":
+      return u.ammo === u.clip
+        ? { locked: true, note: "MAG FULL" }
+        : { locked: false, note: `MAG ${u.ammo}/${u.clip}` };
+    case "overwatch":
+      return u.ammo ? { locked: false, note: "HOLD FIRE" } : { locked: true, note: "NO AMMO" };
+    case "hunker":
+      return { locked: false, note: "BRACE · +COVER" };
+    case "secure":
+      return game.secured
+        ? { locked: true, note: "SECURED" }
+        : distance(u.pos, game.relay) > 0
+          ? { locked: true, note: "NOT ON SITE" }
+          : { locked: false, note: "ON SITE" };
+  }
+}
+
 /** The controller's radial action menu, driven by the pad or the mouse. */
 function ActionWheel() {
   const s = useSession();
+  /** The selector's unwrapped rotation, so 6 → 0 is one step on, not a lap back. */
+  const turned = useRef(0);
+  const last = useRef(0);
   if (!s.wheel) return null;
-  const n = WHEEL_ACTIONS.length;
+  if (s.wheelIndex !== last.current) {
+    const step = (((s.wheelIndex - last.current) * WHEEL_STEP) % 360) + 540;
+    turned.current += (step % 360) - 180;
+    last.current = s.wheelIndex;
+  }
+  const u = s.selectedUnit();
+  const status = WHEEL_ACTIONS.map((a) => wheelStatus(s.game, u, a.id));
+  const focused = status[s.wheelIndex];
+  const point = (i: number) => {
+    if (s.wheelIndex === i) return;
+    s.wheelIndex = i;
+    s.changed();
+  };
   return (
     <div id="action-wheel" role="menu" aria-label="Actions">
       <div className="wheel-ring">
+        <svg viewBox={`0 0 ${WHEEL_BOX} ${WHEEL_BOX}`} aria-hidden="true">
+          <circle className="wheel-rim" cx={W_CX} cy={W_CX} r={W_OUTER + 14} />
+          <circle className="wheel-hub" cx={W_CX} cy={W_CX} r={W_INNER - 8} />
+          {WHEEL_ACTIONS.map((a, i) => (
+            <path
+              key={a.id}
+              className={`wheel-seg ${i === s.wheelIndex ? "focused" : ""} ${status[i].locked ? "locked" : ""}`}
+              d={WEDGES[i]}
+              onMouseEnter={() => point(i)}
+              onClick={() => confirmWheel(i)}
+            />
+          ))}
+          <g className="wheel-selector" style={{ transform: `rotate(${turned.current}deg)` }}>
+            <path className="wheel-selector-arc" d={SELECTOR_ARC} />
+            <path className="wheel-selector-tick" d={`M ${polar(W_INNER - 8, -90)} l 5 9 h -10 Z`} />
+          </g>
+        </svg>
         {WHEEL_ACTIONS.map((a, i) => {
-          const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
-          const x = Math.round(Math.cos(angle) * 140);
-          const y = Math.round(Math.sin(angle) * 140);
+          const rad = ((i * WHEEL_STEP - 90) * Math.PI) / 180;
+          const x = Math.round(Math.cos(rad) * ((W_OUTER + W_INNER) / 2));
+          const y = Math.round(Math.sin(rad) * ((W_OUTER + W_INNER) / 2));
           return (
             <button
               key={a.id}
               role="menuitem"
-              className={i === s.wheelIndex ? "active" : ""}
+              className={`${i === s.wheelIndex ? "active" : ""} ${status[i].locked ? "locked" : ""}`}
+              aria-disabled={status[i].locked || undefined}
               style={{ translate: `${x}px ${y}px` }}
-              onMouseEnter={() => {
-                if (s.wheelIndex === i) return;
-                s.wheelIndex = i;
-                s.changed();
-              }}
               onClick={() => confirmWheel(i)}
             >
-              {a.label}
+              <Icon name={WHEEL_ICONS[a.id]} />
+              <span>{a.label}</span>
             </button>
           );
         })}
-        <span className="wheel-center" aria-hidden>
-          {WHEEL_ACTIONS[s.wheelIndex]?.label}
-        </span>
+        <div className="wheel-center" aria-hidden="true">
+          <small>{u.name}</small>
+          <strong>{WHEEL_ACTIONS[s.wheelIndex].label}</strong>
+          <span className={focused.locked ? "locked" : ""}>{focused.note}</span>
+          <span className="wheel-ap">
+            {[0, 1].map((j) => (
+              <i key={j} className={u.ap > j ? "filled" : ""} />
+            ))}
+          </span>
+        </div>
       </div>
     </div>
   );

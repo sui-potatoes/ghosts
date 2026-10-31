@@ -15,10 +15,17 @@
     color: var(--text-secondary);
 }
 
-/* The controller layout's side-by-side split (data-side on the panel root)
-   gives the drawing a whole flex column; let it grow into it. */
-[data-side] .ctl-svg {
-    max-width: 900px;
+/* The controller layout's side-by-side split (data-side on the panel root,
+   active from the xl breakpoint) hands the drawing a whole flex column:
+   fill it, height as well as width — the viewBox centers the art in the box
+   and the labels scale with it. Below xl the split stacks and the base cap
+   above applies. */
+@media (min-width: 1280px) {
+    [data-side] .ctl-svg {
+        flex: 1 1 0;
+        min-height: 0;
+        max-width: none;
+    }
 }
 
 .ctl-svg path,
@@ -63,6 +70,14 @@
 
 .ctl-svg .ctl-glyph {
     opacity: 0.55;
+}
+
+/* The grown split-layout diagram would grow the labels with it, past the
+   binding list's own type size; hold them near it instead. */
+@media (min-width: 1280px) {
+    [data-side] .ctl-svg text {
+        font-size: 2.1px;
+    }
 }
 
 /* A held button recolors its group and its label. */

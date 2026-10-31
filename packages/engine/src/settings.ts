@@ -1,7 +1,12 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
-import { DEFAULT_COMBAT_BINDINGS, type CombatBindings } from "./keys.ts";
+import {
+  DEFAULT_COMBAT_BINDINGS,
+  DEFAULT_PAD_COMBAT_BINDINGS,
+  type CombatBindings,
+  type PadCombatBindings,
+} from "./keys.ts";
 
 /** Levels 0–100, as the shell's audio settings keep them. */
 export interface AudioLevels {
@@ -21,6 +26,8 @@ export interface EngineSettings {
   /** Lower render cadence and resolution. */
   batterySaver(): boolean;
   combatKeys(): CombatBindings;
+  /** The pad's combat bindings; the fixed buttons never appear in the record. */
+  padCombat(): PadCombatBindings;
   subscribe(listener: () => void): () => void;
 }
 
@@ -29,6 +36,7 @@ export const defaultSettings: EngineSettings = {
   audio: () => ({ muted: false, master: 80, sfx: 80, voice: 80 }),
   batterySaver: () => true,
   combatKeys: () => DEFAULT_COMBAT_BINDINGS,
+  padCombat: () => DEFAULT_PAD_COMBAT_BINDINGS,
   subscribe: () => () => {},
 };
 

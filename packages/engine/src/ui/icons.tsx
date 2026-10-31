@@ -46,6 +46,13 @@ const PATHS = {
     </>
   ),
   download: <path d="M12 3v13m-5-5 5 5 5-5M4 17v4h16v-4" />,
+  extract: <path d="M12 16V3m-5 5 5-5 5 5M4 17v4h16v-4" />,
+  hourglass: (
+    <>
+      <path d="M6 3h12M6 21h12" />
+      <path d="M8 3v3l4 5 4-5V3M8 21v-3l4-5 4 5v3" />
+    </>
+  ),
   close: <path d="m6 6 12 12M6 18 18 6" />,
 } satisfies Record<string, ReactNode>;
 

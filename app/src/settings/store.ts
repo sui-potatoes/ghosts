@@ -11,8 +11,11 @@ import { useSyncExternalStore } from "react";
 
 import {
     DEFAULT_COMBAT_BINDINGS,
+    DEFAULT_PAD_COMBAT_BINDINGS,
     sanitizeCombatBindings,
+    sanitizePadCombatBindings,
     type CombatBindings,
+    type PadCombatBindings,
 } from "@ghosts/engine/keys";
 import { DEFAULT_BINDINGS, actionOf, type Action, type Bindings } from "./keys";
 
@@ -38,6 +41,7 @@ export type Settings = {
     controls: {
         bindings: Bindings;
         combat: CombatBindings;
+        padCombat: PadCombatBindings;
         layout: LayoutChoice;
         /** The "controller connected" prompt was answered; never ask again. */
         layoutAnswered: boolean;
@@ -50,6 +54,7 @@ export const DEFAULTS: Settings = {
     controls: {
         bindings: DEFAULT_BINDINGS,
         combat: DEFAULT_COMBAT_BINDINGS,
+        padCombat: DEFAULT_PAD_COMBAT_BINDINGS,
         layout: "auto",
         layoutAnswered: false,
     },
@@ -110,6 +115,7 @@ function sanitize(raw: unknown): Settings {
         controls: {
             bindings: bindings(),
             combat: sanitizeCombatBindings(c.combat),
+            padCombat: sanitizePadCombatBindings(c.padCombat),
             layout: layoutChoice(c.layout),
             layoutAnswered: flag(c.layoutAnswered, DEFAULTS.controls.layoutAnswered),
         },

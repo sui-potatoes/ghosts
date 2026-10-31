@@ -2992,43 +2992,145 @@
   z-index: 40;
   display: grid;
   place-items: center;
-  background: #05060a99;
+  background: radial-gradient(circle at 50% 50%, #05060a66, #05060ac4 70%);
   backdrop-filter: blur(2px);
 }
 .encounter .wheel-ring {
   position: relative;
-  width: 420px;
-  height: 420px;
+  width: 460px;
+  height: 460px;
   display: grid;
   place-items: center;
+  animation: wheel-in 0.16s ease-out;
 }
-.encounter .wheel-ring::before {
-  content: "";
+@keyframes wheel-in {
+  from {
+    opacity: 0;
+    scale: 0.94;
+  }
+}
+.encounter .wheel-ring > svg {
   position: absolute;
-  inset: 72px;
-  border: 1px solid #b9bdc625;
-  border-radius: 50%;
+  inset: 0;
+  width: 100%;
+  height: 100%;
 }
+.encounter .wheel-rim {
+  fill: none;
+  stroke: #b9bdc61c;
+  stroke-width: 1;
+  stroke-dasharray: 2 5;
+}
+.encounter .wheel-hub {
+  fill: #0a0c12f2;
+  stroke: #b9bdc628;
+  stroke-width: 1;
+}
+.encounter .wheel-seg {
+  fill: #10151cee;
+  stroke: #b9bdc622;
+  stroke-width: 1;
+  cursor: pointer;
+  transition:
+    fill 0.12s,
+    stroke 0.12s;
+}
+.encounter .wheel-seg.locked {
+  fill: #0b0e14d8;
+}
+.encounter .wheel-seg.focused {
+  fill: color-mix(in srgb, var(--amber) 14%, #0e1319ee);
+  stroke: var(--amber);
+}
+.encounter .wheel-seg.focused.locked {
+  fill: color-mix(in srgb, var(--amber) 7%, #0b0f15e8);
+  stroke: var(--amber-dark);
+}
+/* The rotating piece: the arc outside the rim and the hub tick turn together. */
+.encounter .wheel-selector {
+  pointer-events: none;
+  transform-origin: 50% 50%;
+  transform-box: view-box;
+  transition: transform 0.16s ease;
+}
+.encounter .wheel-selector-arc {
+  fill: none;
+  stroke: var(--amber);
+  stroke-width: 3;
+}
+.encounter .wheel-selector-tick {
+  fill: var(--amber);
+}
+/* Wedge content; the wedge path below is the mouse surface. */
 .encounter .wheel-ring button {
   position: absolute;
+  display: grid;
+  justify-items: center;
+  gap: 7px;
+  pointer-events: none;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 10px;
   letter-spacing: 0.14em;
   color: #9da1aa;
-  border: 1px solid #b9bdc630;
-  background: #0a0c12f2;
-  padding: 8px 14px;
   white-space: nowrap;
+}
+.encounter .wheel-ring button svg {
+  width: 21px;
+  height: 21px;
+}
+.encounter .wheel-ring button.locked {
+  color: #51565f;
 }
 .encounter .wheel-ring button.active {
   color: var(--amber);
-  border-color: var(--amber);
-  background: #141009f2;
+}
+.encounter .wheel-ring button.active.locked {
+  color: var(--amber-dark);
 }
 .encounter .wheel-center {
-  font: 10px/1 var(--mono);
+  position: relative; /* paints above the absolutely positioned hub SVG */
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  width: 150px;
+  text-align: center;
+  pointer-events: none;
+}
+.encounter .wheel-center small {
+  font: 8px/1 var(--mono);
+  letter-spacing: 0.2em;
+  color: var(--muted);
+}
+.encounter .wheel-center strong {
+  font: 600 13px/1 var(--mono);
   letter-spacing: 0.22em;
   color: var(--amber);
+}
+.encounter .wheel-center > span {
+  font: 8px/1.4 var(--mono);
+  letter-spacing: 0.16em;
+  color: #9da1aa;
+}
+.encounter .wheel-center > span.locked {
+  color: var(--red);
+}
+.encounter .wheel-ap {
+  display: inline-flex;
+  gap: 4px;
+  margin-top: 2px;
+}
+.encounter .wheel-ap i {
+  width: 14px;
+  height: 3px;
+  background: #3a3f47;
+}
+.encounter .wheel-ap i.filled {
+  background: var(--amber);
+}
+@media (max-width: 560px), (max-height: 560px) {
+  .encounter .wheel-ring {
+    scale: 0.72;
+  }
 }
 .encounter #pad-hints {
   position: absolute;
