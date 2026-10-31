@@ -11,6 +11,8 @@
  * 3D engine (`@ghosts/engine/gamepad`).
  */
 
+import { isEditable } from "./keys.ts";
+
 export type PadButton =
   | "a"
   | "b"
@@ -273,9 +275,13 @@ if (typeof window !== "undefined") {
   window.addEventListener("gamepaddisconnected", () => {
     if (!firstPad()) setConnected(false);
   });
-  // Real mouse or key input hands the UI back to the pointer mode.
+  // Real mouse or key input hands the UI back to the pointer mode — except
+  // typing into a field: a pad user enters text on the keyboard without
+  // surrendering the pad, so the glyph hints hold through it.
   const byHand = (e: Event) => {
-    if (e.isTrusted) setActive(false);
+    if (!e.isTrusted) return;
+    if (e.type === "keydown" && isEditable(e.target)) return;
+    setActive(false);
   };
   window.addEventListener("pointerdown", byHand, true);
   window.addEventListener("keydown", byHand, true);

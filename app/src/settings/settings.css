@@ -105,7 +105,8 @@ html[data-reduce-motion="on"] *::after {
 }
 
 /* The location, folded into the tab row (the controller layout has no header
-   row). Hidden where the tabs already need the full width. */
+   row). Hidden wherever the centered tabs could reach it: the full row runs
+   ~950px wide, the location ~200px, so they meet below ~1360px. */
 .set-tabs-loc {
     position: absolute;
     right: 0;
@@ -114,7 +115,7 @@ html[data-reduce-motion="on"] *::after {
     font-size: 14px;
 }
 
-@media (max-width: 1279px) {
+@media (max-width: 1439px) {
     .set-tabs-loc {
         display: none;
     }
@@ -358,6 +359,14 @@ html[data-reduce-motion="on"] *::after {
 
 .set-hint[data-dim] .kbd {
     color: var(--disabled-color);
+}
+
+/* A rebind row while it listens: the value cell lights until the next press. */
+.set-capture {
+    font-size: 12.5px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent-color);
 }
 
 /* Key cap: deliberately small, a cap, not a button. */

@@ -14,5 +14,6 @@ export const engineSettings: EngineSettings = {
     audio: engineAudio,
     batterySaver: () => getSettings().display.batterySaver,
     combatKeys: () => getSettings().controls.combat,
+    padCombat: () => getSettings().controls.padCombat,
     subscribe: subscribeSettings,
 };

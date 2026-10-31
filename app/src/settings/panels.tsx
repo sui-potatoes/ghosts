@@ -3,7 +3,7 @@
 
 import { useCurrentAccount, useCurrentClient, useDAppKit } from "@mysten/dapp-kit-react";
 import { formatAddress, MIST_PER_SUI } from "@mysten/sui/utils";
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { retireSessionKey, useBalance, useSessionRows, type SessionTermination } from "../chain";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -12,10 +12,18 @@ import { usePlayerName } from "../hooks/usePlayerName";
 import { useSignInMethod } from "../hooks/useSignInMethod";
 import { NameDialog } from "../NameDialog";
 import { requestSignIn } from "../signIn";
-import { Keys } from "./controls";
+import { Kbd, Keys } from "./controls";
 import { previewDialogue, previewEffect } from "../audio";
-import { COMBAT_ACTIONS, COMBAT_LABELS } from "@ghosts/engine/keys";
+import { onAction } from "../input";
+import {
+    COMBAT_ACTIONS,
+    COMBAT_LABELS,
+    DEFAULT_COMBAT_BINDINGS,
+    keyCap,
+    type CombatAction,
+} from "@ghosts/engine/keys";
 import { ACTION_LABELS, ACTIONS } from "./keys";
+import { useLayoutRow } from "./layoutMode";
 import { SettingList, type SettingRow } from "./SettingList";
 import { DEFAULTS, useSettingsSection } from "./store";
 
@@ -362,6 +370,7 @@ function useFullscreen(): [boolean, (on: boolean) => void] {
 export function DisplayPanel() {
     const [display, setDisplay] = useSettingsSection("display");
     const [fullscreen, setFullscreen] = useFullscreen();
+    const layoutRow = useLayoutRow();
 
     const flag = (
         key: "batterySaver" | "scanlines" | "vignette" | "reduceMotion",
@@ -387,6 +396,7 @@ export function DisplayPanel() {
             defaultValue: false,
             set: setFullscreen,
         }),
+        layoutRow,
         flag(
             "batterySaver",
             "Battery saver",
@@ -405,7 +415,60 @@ export function DisplayPanel() {
 }
 
 export function ControlsPanel() {
-    const [controls] = useSettingsSection("controls");
+    const [controls, setControls] = useSettingsSection("controls");
+    /** The combat action whose next key a capture is listening for. */
+    const [capturing, setCapturing] = useState<CombatAction | null>(null);
+
+    // Hand `keys` to `action`; an action already holding one of them takes
+    // this action's old keys instead — a swap, so no key serves two orders.
+    const assign = (action: CombatAction, keys: string[]) => {
+        const next = { ...controls.combat };
+        const prev = next[action];
+        for (const other of COMBAT_ACTIONS) {
+            if (other !== action && next[other].some((k) => keys.includes(k))) next[other] = prev;
+        }
+        next[action] = keys;
+        setControls({ combat: next });
+    };
+    const assignRef = useRef(assign);
+    assignRef.current = assign;
+
+    // Capture: one raw keydown listener above the bus takes the next key —
+    // Escape cancels — while a bus swallow keeps menu actions (the pad's
+    // too) off the list behind it.
+    useEffect(() => {
+        if (!capturing) return;
+        const unbindActions = onAction(() => true);
+        const onKey = (e: KeyboardEvent) => {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            if (e.key === "Escape") {
+                setCapturing(null);
+                return;
+            }
+            // A lone modifier waits for the key it chords; chords and digits
+            // (the squad numbers) cannot become bindings.
+            if (["Shift", "Control", "Alt", "Meta"].includes(e.key)) return;
+            if (e.ctrlKey || e.metaKey || e.altKey) return;
+            const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+            if (/^[1-9]$/.test(key)) return;
+            assignRef.current(capturing, [key]);
+            setCapturing(null);
+        };
+        window.addEventListener("keydown", onKey, true);
+        return () => {
+            window.removeEventListener("keydown", onKey, true);
+            unbindActions();
+        };
+    }, [capturing]);
+
+    const combatKeys = (action: CombatAction) => (
+        <span className="inline-flex gap-1.5">
+            {controls.combat[action].map((key) => (
+                <Kbd key={key}>{keyCap(key)}</Kbd>
+            ))}
+        </span>
+    );
 
     const rows: SettingRow[] = [
         { kind: "section", id: "menus", label: "Menus" },
@@ -418,12 +481,19 @@ export function ControlsPanel() {
         })),
         { kind: "section", id: "combat", label: "Combat" },
         ...COMBAT_ACTIONS.map((action): SettingRow => ({
-            kind: "static",
+            kind: "action",
             id: `combat-${action}`,
             label: COMBAT_LABELS[action],
-            value: <Keys keys={controls.combat[action]} />,
+            value:
+                capturing === action ? (
+                    <span className="set-capture">press a key</span>
+                ) : (
+                    combatKeys(action)
+                ),
             description:
-                "Combat binding, defined by the engine. Rebinding arrives with a later update.",
+                "Combat binding. Confirm, then press the new key — a key already in use swaps over. Esc cancels; digits stay the squad numbers.",
+            onConfirm: () => setCapturing(action),
+            onReset: () => assign(action, DEFAULT_COMBAT_BINDINGS[action]),
         })),
         {
             kind: "static",
@@ -431,6 +501,14 @@ export function ControlsPanel() {
             label: "Select operator",
             value: <Keys keys={["1", "–", "9"]} />,
             description: "Operators answer to their squad number, one through nine.",
+        },
+        {
+            kind: "action",
+            id: "combat-reset",
+            label: "Reset combat bindings",
+            value: "",
+            description: "Return every combat key to its default.",
+            onConfirm: () => setControls({ combat: DEFAULT_COMBAT_BINDINGS }),
         },
     ];
 
