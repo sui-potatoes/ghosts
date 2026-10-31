@@ -135,18 +135,18 @@ def limb_details(g, tier, side, cap, arm, thigh, knee, shin, ceramic, trim, dark
     for k in [1.2, 1.8, 2.4]:
         rail(g, 'NYX / shoulder intake blade', [(k, 5.8), (k, 8.4)],
              limb_surface(cap, .023 + tier * .003), .12, .005, ceramic)
-    forearm = limb_surface(arm, .020)
+    forearm = limb_surface(arm, .010)
     relief(g, 'NYX / gauntlet dorsal module',
            [(.45, 16), (.65, 20), (2.9, 20.5), (3.7, 19.3), (3.4, 16), (1.6, 15.5)],
-           forearm, .012 + tier * .004, ceramic, trim, dark if side == 'Left' else None)
+           forearm, .006 + tier * .002, ceramic, trim, dark if side == 'Left' else None)
     if side == 'Left':
         for k in [1.2, 1.7, 2.2]:
             rail(g, 'NYX / gauntlet inset indicator', [(k, 17.1), (k, 18.9)],
-                 limb_surface(arm, .028), .10, .0025, signal)
+                 limb_surface(arm, .017), .10, .0025, signal)
     else:
         for col in [16.9, 18.9]:
             rail(g, 'NYX / gauntlet external rib', [(1, col), (2.2, col), (3.1, col - .3)],
-                 limb_surface(arm, .035), .22, .006, ceramic)
+                 limb_surface(arm, .019), .22, .003, ceramic)
     relief(g, 'NYX / thigh segmented strike face',
            [(.5, 16), (.3, 19), (1.3, 21), (3.4, 20), (3.8, 17), (2.8, 15.8)],
            limb_surface(thigh, .024 + tier * .003), .008 + tier * .004, ceramic, trim)

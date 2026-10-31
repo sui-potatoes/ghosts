@@ -4,12 +4,11 @@
 /**
  * Player name: what other players see instead of an address.
  *
- * Today the name lives in local storage, keyed by address. The plan is to back
- * it with SuiNS, so the rules below are SuiNS label rules: whatever a player
- * picks now is a name they can register later without changing it. Swapping
- * the backend means replacing `store` with one that reads the address's
- * default SuiNS name and writes through a registration flow; the hook and the
- * UI stay as they are.
+ * The name lives in local storage, keyed by address, and the rules below are
+ * SuiNS label rules: a committed name is registered as a SuiNS leaf under the
+ * commander-names instance and made the address's default name before it is
+ * written here (`src/chain/names.tsx`), and `usePlayerName` reads the default
+ * back as the source of truth on any device.
  */
 
 import { NETWORK } from "../constants";

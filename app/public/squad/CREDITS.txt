@@ -26,3 +26,9 @@ Reproducible Blender source: game/scripts/build-field-kit.py.
 NYX Veil / Shade / Wraith armor: original fitted geometry and procedural woven /
 ceramic normal maps authored for Ghosts. Separate male/female native-bind exports.
 Reproducible Blender source: game/scripts/build-nyx.py, native_gear.py and nyx_details.py.
+
+Office worker / extraction VIP outfit: original procedural clothing authored for
+Ghosts on the native MakeHuman body and skeleton. Separate male/female exports;
+no additional third-party clothing or textures. Reproducible Blender source:
+app/scripts/build-office-worker.py (uses native_gear.py). The relaxed civilian
+idle adapts the existing CC0 weight-shift clip with lowered, empty hands.

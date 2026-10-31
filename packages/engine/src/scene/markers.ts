@@ -7,6 +7,14 @@ import { escapeHTML } from "../html";
 
 const LABEL_OFFSET = new T.Vector3(0, 2.05, 0);
 
+/** Hit odds and the hp a shot takes off, shown on the aimed unit's plate. */
+export interface AimReadout {
+  chance: number;
+  hit: number;
+  crit: number;
+  lethal: boolean;
+}
+
 /**
  * Per-unit markers that are not the body: a name plate over the head (a DOM
  * button projected from the scene) and a soft contact shadow at the feet.
@@ -34,7 +42,7 @@ export class UnitMarkers {
       const label = document.createElement("button");
       label.className = `unit-label ${u.enemy ? "hostile" : ""}`;
       label.setAttribute("aria-label", `Select ${u.name}`);
-      label.innerHTML = `<span>${u.enemy ? "◇" : "◆"} ${escapeHTML(u.name)}</span><i></i>`;
+      label.innerHTML = `<span>${u.enemy ? "◇" : "◆"} ${escapeHTML(u.name)}</span><i></i><em class="aim-readout" hidden></em>`;
       label.onclick = () => onPick(u.id);
       host.append(label);
       this.labels.set(u.id, label);
@@ -51,6 +59,41 @@ export class UnitMarkers {
 
   hide(id: string) {
     this.labels.get(id)!.hidden = true;
+  }
+
+  private aimed: string | null = null;
+
+  /**
+   * While `target` is aimed at, its plate carries the hit odds and marks the
+   * slice of health the shot would remove (deeper on a crit) on its bar; the
+   * plate follows the unit, so the readout is where the eye is. Null clears.
+   */
+  aim(target: Unit | null, readout?: AimReadout) {
+    if (this.aimed && this.aimed !== target?.id) this.clearAim(this.aimed);
+    this.aimed = target?.id ?? null;
+    if (!target || !readout) {
+      if (target) this.clearAim(target.id);
+      this.aimed = null;
+      return;
+    }
+    const label = this.labels.get(target.id)!;
+    const bar = label.querySelector("i")!;
+    const pct = (n: number) => `${(Math.max(0, n) / target.maxHp) * 100}%`;
+    label.classList.add("aimed");
+    bar.style.setProperty("--kept", pct(target.hp - readout.crit));
+    bar.style.setProperty("--hit-from", pct(target.hp - readout.hit));
+    const em = label.querySelector("em")!;
+    em.hidden = false;
+    em.innerHTML = `<strong>${readout.chance}%</strong> −${readout.hit} HP${readout.lethal ? " <b>LETHAL</b>" : ""}`;
+  }
+
+  private clearAim(id: string) {
+    const label = this.labels.get(id)!;
+    label.classList.remove("aimed");
+    const bar = label.querySelector("i")!;
+    bar.style.removeProperty("--kept");
+    bar.style.removeProperty("--hit-from");
+    label.querySelector("em")!.hidden = true;
   }
 
   /** Follow the body: shadow under the feet, plate projected over the head. */

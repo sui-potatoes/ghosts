@@ -3,9 +3,19 @@
 
 import { ARMOR_FINISHES } from "@ghosts/squad/armor-colors";
 import { useState } from "react";
-import { EQUIPMENT, SLOTS, SLOT_NAMES, itemById } from "@ghosts/squad/catalog";
+import {
+    ATTACHMENTS,
+    ATTACHMENT_SLOTS,
+    ATTACHMENT_SLOT_NAMES,
+    EQUIPMENT,
+    SLOTS,
+    SLOT_NAMES,
+    itemById,
+} from "@ghosts/squad/catalog";
 import { available, totalWeight } from "@ghosts/squad/model";
-import type { ArmorColors, Recruit, Slot, SquadState } from "@ghosts/squad/types";
+import type { ArmorColors, AttachmentSlot, Recruit, Slot, SquadState } from "@ghosts/squad/types";
+import { WeaponPreview } from "./WeaponPreview";
+import { recruitStats } from "@ghosts/squad/stats";
 
 interface Props {
     recruit: Recruit;
@@ -13,9 +23,13 @@ interface Props {
     images: Record<string, string>;
     onColors(colors: ArmorColors): void;
     onEquip(slot: Slot, id: string | null): void;
+    onAttachment(slot: AttachmentSlot, id: string | null): void;
 }
-export function LoadoutPanel({ recruit, state, images, onEquip, onColors }: Props) {
+export function LoadoutPanel({ recruit, state, images, onEquip, onColors, onAttachment }: Props) {
     const [slot, setSlot] = useState<Slot>("primary");
+    const [attachmentSlot, setAttachmentSlot] = useState<AttachmentSlot>("clip");
+    const primary = itemById(recruit.equipment.primary);
+    const stats = recruitStats(recruit);
     return (
         <div className="loadout-panel">
             <div className="sq-panel-heading">
@@ -49,6 +63,116 @@ export function LoadoutPanel({ recruit, state, images, onEquip, onColors }: Prop
                     );
                 })}
             </div>
+            {slot === "primary" && primary && (
+                <section className="weapon-workbench" aria-label="Weapon attachments">
+                    <div className="weapon-workbench-heading">
+                        <div>
+                            <span className="sq-eyebrow">WEAPON BENCH</span>
+                            <h4>{primary.name}</h4>
+                        </div>
+                        <span className="sq-count">
+                            {Object.values(recruit.attachments ?? {}).filter(Boolean).length} / 4
+                            FITTED
+                        </span>
+                    </div>
+                    <label className="weapon-type-select">
+                        Weapon type
+                        <select
+                            aria-label="Weapon type"
+                            value={primary.id}
+                            onChange={(e) => onEquip("primary", e.target.value)}
+                        >
+                            {EQUIPMENT.filter((item) => item.slot === "primary").map((item) => (
+                                <option
+                                    key={item.id}
+                                    value={item.id}
+                                    disabled={
+                                        item.id !== primary.id && available(state, item.id) === 0
+                                    }
+                                >
+                                    {item.name}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                    <WeaponPreview item={primary} attachments={recruit.attachments} />
+                    <div className="weapon-live-stats" aria-live="polite">
+                        <span>
+                            <b>
+                                {stats.damage - stats.spread}–{stats.damage + stats.spread}
+                            </b>{" "}
+                            DMG
+                        </span>
+                        <span>
+                            <b>{stats.ammo}</b> AMMO
+                        </span>
+                        <span>
+                            <b>{stats.range}</b> RANGE
+                        </span>
+                        <span>
+                            <b>{stats.critChance}%</b> CRIT
+                        </span>
+                        <span>
+                            <b>{stats.aim}%</b> AIM
+                        </span>
+                    </div>
+                    <div className="attachment-tabs" role="group" aria-label="Attachment family">
+                        {ATTACHMENT_SLOTS.map((s) => (
+                            <button
+                                key={s}
+                                aria-pressed={s === attachmentSlot}
+                                onClick={() => setAttachmentSlot(s)}
+                            >
+                                {ATTACHMENT_SLOT_NAMES[s]}
+                                {recruit.attachments?.[s] && <i aria-label="Installed" />}
+                            </button>
+                        ))}
+                    </div>
+                    <div className="attachment-options">
+                        <button
+                            className="attachment-default"
+                            aria-pressed={!recruit.attachments?.[attachmentSlot]}
+                            onClick={() => onAttachment(attachmentSlot, null)}
+                        >
+                            {attachmentSlot === "clip" || attachmentSlot === "stock"
+                                ? "Standard part"
+                                : "No attachment"}
+                            <span>Base stats</span>
+                        </button>
+                        {ATTACHMENTS.filter((a) => a.slot === attachmentSlot).map((a) => {
+                            const installed = recruit.attachments?.[attachmentSlot] === a.id;
+                            const left = available(state, a.id);
+                            return (
+                                <button
+                                    key={a.id}
+                                    className="attachment-option"
+                                    aria-pressed={installed}
+                                    disabled={!installed && left === 0}
+                                    onClick={() =>
+                                        onAttachment(attachmentSlot, installed ? null : a.id)
+                                    }
+                                >
+                                    {images[a.id] && <img src={images[a.id]} alt="" />}
+                                    <span className="attachment-tier">
+                                        TIER {a.tier.toString().padStart(2, "0")}
+                                    </span>
+                                    <strong>{a.name}</strong>
+                                    <span className="attachment-bonus">{a.stat}</span>
+                                    <small>
+                                        {installed
+                                            ? "✓ Installed · remove"
+                                            : `${left} available · install`}
+                                    </small>
+                                </button>
+                            );
+                        })}
+                    </div>
+                    <p className="sq-footnote">
+                        Fittings transfer when swapping rifles. Returning the rifle returns its
+                        fittings.
+                    </p>
+                </section>
+            )}
             {slot === "armor" && recruit.equipment.armor && (
                 <fieldset className="armor-finish">
                     <legend>Armor finish</legend>

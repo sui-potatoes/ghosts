@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useSquad } from "../features/squad/useSquad";
-import { editRecruit, equip, MAX_RECRUITS } from "@ghosts/squad/model";
+import { editRecruit, equip, equipAttachment, MAX_RECRUITS } from "@ghosts/squad/model";
 import { itemById } from "@ghosts/squad/catalog";
 import { CharacterViewport } from "../features/squad/components/CharacterViewport";
 import { AppearancePanel } from "../features/squad/components/AppearancePanel";
@@ -12,7 +12,8 @@ import { StatsPanel } from "../features/squad/components/StatsPanel";
 import { DossierPanel } from "../features/squad/components/PersonnelForm";
 import type { PersonnelDetails } from "../features/squad/components/PersonnelForm";
 import type { Focus } from "@ghosts/squad/studio/recruit-studio";
-import type { Slot } from "@ghosts/squad/types";
+import type { AttachmentSlot, Slot } from "@ghosts/squad/types";
+import { PadHints } from "../components/PadHints";
 import "../features/squad/squad.css";
 
 type Panel = "Loadout" | "Stats" | "Appearance" | "Personnel";
@@ -52,7 +53,7 @@ export default function Squad() {
     }
     function changePanel(next: Panel) {
         setPanel(next);
-        setFocus(next === "Appearance" ? "face" : "body");
+        setFocus("body");
     }
     function assign(slot: Slot, id: string | null) {
         try {
@@ -66,6 +67,14 @@ export default function Squad() {
         const next = editRecruit(state, recruit.id, { appearance: draft });
         commit(next);
         setDraft(next.recruits.find((r) => r.id === recruit.id)!.appearance);
+    }
+    function assignAttachment(slot: AttachmentSlot, id: string | null) {
+        try {
+            commit(equipAttachment(state, recruit.id, slot, id));
+            setError("");
+        } catch (e) {
+            setError(e instanceof Error ? e.message : String(e));
+        }
     }
     function savePersonnel(details: PersonnelDetails) {
         const next = editRecruit(state, recruit.id, details);
@@ -157,6 +166,7 @@ export default function Squad() {
                                 state={state}
                                 images={images}
                                 onEquip={assign}
+                                onAttachment={assignAttachment}
                                 onColors={(armorColors) =>
                                     commit(editRecruit(state, recruit.id, { armorColors }))
                                 }
@@ -165,6 +175,7 @@ export default function Squad() {
                             <StatsPanel recruit={recruit} />
                         ) : panel === "Appearance" ? (
                             <AppearancePanel
+                                onFocus={setFocus}
                                 value={draft}
                                 onChange={setDraft}
                                 dirty={dirty}
@@ -203,6 +214,7 @@ export default function Squad() {
                     <button onClick={() => setPending(null)}>Keep editing</button>
                 </div>
             </dialog>
+            <PadHints className="squad-pad-hints" entries={[["b", "Back"]]} />
         </main>
     );
 }

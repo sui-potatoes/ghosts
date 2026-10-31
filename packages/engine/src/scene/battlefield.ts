@@ -7,6 +7,7 @@ import { shortestAngle, shoulderArc } from "../aim-transition";
 import { perimeterMist } from "../atmosphere";
 import { batchStaticScenery } from "../batching";
 import type { GameEvent } from "../events";
+import type { PropDamage } from "../environment";
 import { FramePacer } from "../frame-pacer";
 import { key, type Encounter, type Unit } from "../game";
 import type { Cell } from "../map";
@@ -15,13 +16,15 @@ import { createPortraitStudio } from "../portrait-studio";
 import { renderCadence, renderPixelRatio, type RenderMode } from "../render-policy";
 import { applyTimeOfDay, type TimeOfDay } from "../scene-weather";
 import { Effects } from "./effects";
+import { Destruction } from "./destruction";
 import { mapView } from "./maps";
 import { Occlusion } from "./occlusion";
 import { Overlays } from "./overlays";
 import { RenderProfiler } from "./profiler";
 import { buildCovers, buildRelay } from "./props";
-import { Rain } from "./rain";
+import { Precipitation, type Weather } from "./precipitation";
 import { Space } from "./space";
+import type { AimReadout } from "./markers";
 import { Units } from "./units";
 
 export interface BattlefieldOptions {
@@ -66,8 +69,9 @@ export class Battlefield {
   private readonly units: Units;
   private readonly overlays: Overlays;
   private readonly effects = new Effects(this);
+  private readonly destruction: Destruction;
   private readonly occlusion = new Occlusion();
-  private readonly rain = new Rain();
+  private readonly precipitation = new Precipitation();
   private readonly profiler: RenderProfiler;
   private readonly reticle?: HTMLElement;
   private readonly sun = new T.DirectionalLight(0xc6d2ed, 3.6);
@@ -83,6 +87,7 @@ export class Battlefield {
   private viewportWidth = 1;
   private viewportHeight = 1;
   private draggingCamera = false;
+  private supportedScenery: T.Object3D[] = [];
   private aimKey = "";
   private aimUnit = "";
   private aimPoint: T.Vector3 | null = null;
@@ -118,18 +123,26 @@ export class Battlefield {
     this.controls = this.createControls();
     this.light();
     this.space = new Space(game.map);
-    this.occlusion.occluders.push(...mapView(game.map.plan.id).build(this.scene));
-    buildCovers(this.scene, this.space);
+    this.destruction = new Destruction(game.map, () => {
+      this.renderer.shadowMap.needsUpdate = true;
+    });
+    // Scenery places clones of the same catalog assets combat destroys.
+    const kit = { props: this.destruction.assets };
+    this.occlusion.occluders.push(...mapView(game.map.plan.id).build(this.scene, kit));
+    if (!mapView(game.map.plan.id).furnishedCover) buildCovers(this.scene, this.space, kit.props);
     buildRelay(this.scene, this.space, game.relay);
     for (const { group } of this.occlusion.occluders) group.removeFromParent();
+    this.scene.traverse(o => { if (o.userData.supportProp) this.supportedScenery.push(o); });
+    for (const o of this.supportedScenery) o.removeFromParent();
     batchStaticScenery(this.scene);
+    for (const o of this.supportedScenery) this.scene.add(o);
     for (const { group } of this.occlusion.occluders) {
       batchStaticScenery(group);
       group.position.set(0, 0, 0);
       group.quaternion.identity();
       this.scene.add(group);
     }
-    this.scene.add(this.mist.mesh, this.effects.light, this.effects.group, this.rain.mesh);
+    this.scene.add(this.destruction.group, this.mist.mesh, this.effects.light, this.effects.group, this.precipitation.group);
     renderer.shadowMap.autoUpdate = false;
     renderer.shadowMap.needsUpdate = true;
     this.overlays = new Overlays(this.scene, this.space);
@@ -151,6 +164,11 @@ export class Battlefield {
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(viewport);
     this.resize();
+    const defaults = mapView(game.map.plan.id).defaults;
+    if (defaults) {
+      this.setTimeOfDay(defaults.time);
+      this.setWeather(defaults.weather);
+    }
     this.invalidate();
   }
 
@@ -196,7 +214,7 @@ export class Battlefield {
     this.scene.add(rim);
   }
 
-  /** Clicks pick a tile (and the living unit on it); moves hover tiles. */
+  /** Clicks prefer a living unit's model, then fall back to its ground tile. */
   private listen() {
     const host = this.host;
     let down = [0, 0];
@@ -206,7 +224,13 @@ export class Battlefield {
     });
     host.addEventListener("pointerup", (e) => {
       if (e.button !== 0 || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 5) return;
-      const p = this.pick(e);
+      const ray = this.pointerRay(e);
+      const unit = this.units.pick(ray);
+      if (unit) {
+        this.onPick(unit.pos, unit.id);
+        return;
+      }
+      const p = this.pick(e, ray);
       if (p) this.onPick(p, this.game.units.find((u) => u.hp > 0 && key(u.pos) === key(p))?.id);
     });
     host.addEventListener("pointermove", (e) => {
@@ -223,13 +247,17 @@ export class Battlefield {
     });
   }
 
-  private pick(e: PointerEvent): Cell | null {
+  private pointerRay(e: PointerEvent): T.Raycaster {
     const rect = this.host.getBoundingClientRect();
     const ray = new T.Raycaster();
     ray.setFromCamera(
       new T.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, (-(e.clientY - rect.top) / rect.height) * 2 + 1),
       this.camera,
     );
+    return ray;
+  }
+
+  private pick(e: PointerEvent, ray = this.pointerRay(e)): Cell | null {
     const p = new T.Vector3();
     return ray.ray.intersectPlane(new T.Plane(new T.Vector3(0, 1, 0), 0), p) ? this.space.cellAt(p) : null;
   }
@@ -243,6 +271,7 @@ export class Battlefield {
     this.camera.updateProjectionMatrix();
     this.renderer.setPixelRatio(renderPixelRatio(width, height, devicePixelRatio, this.renderMode));
     this.renderer.setSize(width, height);
+    this.precipitation.setViewportHeight(height * this.renderer.getPixelRatio());
     this.invalidate();
   }
 
@@ -277,6 +306,11 @@ export class Battlefield {
     this.overlays.setHover(visible);
   }
 
+  /** Move the hover tile to `p`: the controller's cursor shares the mouse marker. */
+  hoverAt(p: Cell) {
+    if (this.overlays.hoverAt(p)) this.invalidate();
+  }
+
   // === Camera ===
 
   select(id: string) {
@@ -303,6 +337,27 @@ export class Battlefield {
     this.camera.position.copy(this.controls.target).add(v);
     this.controls.update();
     this.invalidate();
+  }
+
+  /** Dolly toward (`factor` < 1) or away from the target; the controls clamp the distance. */
+  dolly(factor: number) {
+    if (this.aimKey || this.cameraMotion) return;
+    const v = this.camera.position.clone().sub(this.controls.target);
+    v.multiplyScalar(factor);
+    this.camera.position.copy(this.controls.target).add(v);
+    this.controls.update();
+    this.invalidate();
+  }
+
+  /**
+   * A screen-space step (up = away from the viewer) as the nearest grid step
+   * under the current camera: stick directions follow the view, not the map.
+   */
+  screenDelta([sx, sy]: Cell): Cell {
+    const f = this.controls.target.clone().sub(this.camera.position);
+    const x = sx * -f.z + -sy * f.x;
+    const z = sx * f.x + -sy * f.z;
+    return Math.abs(x) >= Math.abs(z) ? [Math.sign(x), 0] : [0, Math.sign(z)];
   }
 
   /** Close camera on the selected operator, or the tactical overview. */
@@ -473,11 +528,14 @@ export class Battlefield {
       case "move":
         return this.units.move(unit(event.unit), event.path);
       case "shot":
-        return this.shot(unit(event.unit), unit(event.target), event.hit);
+        return this.shot(unit(event.unit), unit(event.target), event.hit, event.environment ?? []);
       case "reload":
         return this.units.reload(unit(event.unit));
       case "grenade":
-        return this.units.grenade(unit(event.unit), event.at);
+        return this.units.grenade(unit(event.unit), event.at, () => {
+          this.destruction.apply(event.environment ?? [], this.space.vec(event.at, 0.2));
+          this.invalidate();
+        });
       case "hunker":
         return this.units.hunker(unit(event.unit));
       case "overwatch":
@@ -486,13 +544,16 @@ export class Battlefield {
   }
 
   /** A shot, with a camera kick on each tracer when it is framed over the shooter's shoulder. */
-  private shot(a: Unit, b: Unit, hit: boolean) {
+  private shot(a: Unit, b: Unit, hit: boolean, environment: PropDamage[]) {
     const shoulder = this.aimUnit === a.id;
     const kick = a.weapon === "sniper" ? 0.11 : 0.035;
     // The shoulder camera is settled before the trigger is pulled; each kick returns to it.
     const origin = this.camera.position.clone();
+    let impacted = false;
     return this.units.fire(a, b, hit, {
       aimed: shoulder,
+      impact: environment[0]?.impact ? new T.Vector3(...environment[0].impact) :
+        environment.length ? this.destruction.impactPoint(environment[0].id, this.space.vec(a.pos, 1)) : undefined,
       kick: (t) => {
         if (!shoulder) return;
         this.camera.position.copy(origin);
@@ -500,6 +561,10 @@ export class Battlefield {
         this.camera.lookAt(this.controls.target);
       },
       afterTracer: () => {
+        if (!impacted && environment.length) {
+          this.destruction.apply(environment, this.space.vec(a.pos, 1));
+          impacted = true;
+        }
         if (shoulder) this.camera.position.copy(origin);
       },
     });
@@ -508,12 +573,20 @@ export class Battlefield {
   /** Swap in a fresh encounter: every rig out of its pose and back on its start cell. */
   redeploy(game: Encounter) {
     this.game = game;
+    this.space.map = game.map;
+    this.destruction.reset(game.map);
     this.units.redeploy();
+    this.invalidate();
   }
 
   /** Bring rigs and markers in line with the encounter after the rules changed it. */
   sync() {
     this.units.sync(this.selected, !!this.aimKey);
+  }
+
+  /** Hit odds and the predicted hp cut on the aimed hostile's plate; null clears. */
+  setAimReadout(target: Unit | null, readout?: AimReadout) {
+    this.units.aimReadout(target, readout);
   }
 
   // === Settings ===
@@ -528,22 +601,37 @@ export class Battlefield {
 
   setTimeOfDay(time: TimeOfDay) {
     this.timeOfDay = time;
-    const p = applyTimeOfDay(this.scene, this.sun, this.ambient, this.rim, time);
-    this.renderer.toneMappingExposure = p.exposure;
-    this.mist.mesh.material.uniforms.tint.value.setHex(p.mist);
+    const interior = mapView(this.game.map.plan.id).interiorLighting;
+    this.mist.mesh.visible = !interior;
+    if (interior) {
+      this.renderer.toneMappingExposure = interior(this.scene, this.sun, this.ambient, this.rim, time);
+    } else {
+      const p = applyTimeOfDay(this.scene, this.sun, this.ambient, this.rim, time);
+      this.renderer.toneMappingExposure = p.exposure;
+      this.mist.mesh.material.uniforms.tint.value.setHex(p.mist);
+    }
     this.renderer.shadowMap.needsUpdate = true;
     this.host.dataset.timeOfDay = time;
     this.invalidate();
   }
 
-  setRain(enabled: boolean) {
-    this.rain.visible = enabled;
-    this.host.dataset.rain = String(enabled);
+  get weather() { return this.precipitation.kind; }
+
+  get indoors() { return !!mapView(this.game.map.plan.id).interiorLighting; }
+
+  setWeather(weather: Weather) {
+    this.precipitation.setKind(weather);
+    this.host.dataset.weather = weather;
+    this.host.dataset.rain = String(weather === "rain");
+    this.host.dataset.snowParticles = String(this.precipitation.particles);
     this.invalidate();
   }
 
   setRenderMode(mode: RenderMode) {
     this.renderMode = mode;
+    this.destruction.setBatterySaver(mode === "battery");
+    this.precipitation.setBatterySaver(mode === "battery");
+    this.host.dataset.snowParticles = String(this.precipitation.particles);
     this.resize();
   }
 
@@ -561,7 +649,7 @@ export class Battlefield {
   private animate = (now: number) => {
     this.raf = 0;
     if (this.disposed) return;
-    const active = now < this.activeUntil || this.jobs.length > 0 || this.units.busy;
+    const active = now < this.activeUntil || this.jobs.length > 0 || this.units.busy || this.destruction.active;
     const rate = renderCadence(this.renderMode, !document.hidden, active);
     if (rate === null) {
       this.pacer.reset();
@@ -581,10 +669,14 @@ export class Battlefield {
     // Hidden tabs suspend the timeline; returning resumes the current action without a jump.
     this.jobs = this.jobs.filter((job) => !job(elapsed));
     if (!this.aimKey && !this.cameraMotion) this.controls.update();
-    this.rain.update(elapsed);
+    this.precipitation.update(elapsed);
+    this.destruction.update(elapsed, this.camera);
+    this.host.dataset.destruction = JSON.stringify(this.destruction.stats);
     this.updateUnits(elapsed, now / 1000);
     this.updateReticle();
     this.updateOcclusion();
+    // Interior shadows follow moving actors / camera cutaways, then reuse their maps at rest.
+    if (this.indoors && active) this.renderer.shadowMap.needsUpdate = true;
     this.profiler.begin();
     this.renderer.render(this.scene, this.camera);
     this.profiler.end(now, elapsed, cpuStart, this.renderMode);
@@ -612,6 +704,9 @@ export class Battlefield {
     const points = [this.controls.target, ...this.units.chestPoints(this.chestPoints)];
     if (this.aimPoint) points.push(this.aimPoint);
     this.host.dataset.occludedBuildings = String(this.occlusion.update(this.camera.position, points));
+    this.destruction.syncBuildingVisibility(this.occlusion.occluders.map(({ group }) => group.visible));
+    this.destruction.syncOfficeVisibility(this.camera.position, points);
+    for (const o of this.supportedScenery) o.visible = this.destruction.isPropVisible(o.userData.supportProp);
   }
 
   // === Lifecycle ===
@@ -643,12 +738,15 @@ export class Battlefield {
     this.resizeObserver.disconnect();
     this.controls.dispose();
     this.units.dispose();
+    this.destruction.dispose();
+    this.precipitation.dispose();
     document.removeEventListener("visibilitychange", this.onVisibility);
     const geometries = new Set<T.BufferGeometry>(),
       materials = new Set<T.Material>(),
       textures = new Set<T.Texture>(),
       skeletons = new Set<T.Skeleton>();
     this.scene.traverse((o) => {
+      if (o instanceof T.SpotLight || o instanceof T.DirectionalLight || o instanceof T.PointLight) o.dispose();
       if (o instanceof T.Mesh || o instanceof T.Line) {
         geometries.add(o.geometry);
         for (const m of Array.isArray(o.material) ? o.material : [o.material]) materials.add(m);

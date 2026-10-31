@@ -1,11 +1,12 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
+import { PadHints } from "./components/PadHints";
 import { useBack } from "./hooks/useBack";
+import { useMenuNav } from "./hooks/useMenuNav";
 import { SettingsOverlay } from "./settings/SettingsView";
-import { listStep } from "./settings/store";
 
 type Props = {
     open: boolean;
@@ -24,7 +25,8 @@ type View = "menu" | "options";
  */
 export function PauseMenu({ open, onResume, onBriefing, onRestart, onQuit }: Props) {
     const [view, setView] = useState<View>("menu");
-    const items = useRef<(HTMLButtonElement | null)[]>([]);
+    // Up/Down and Confirm come off the input bus, whatever produced them.
+    const items = useMenuNav(open && view === "menu");
 
     useEffect(() => {
         if (open) setView("menu");
@@ -32,7 +34,7 @@ export function PauseMenu({ open, onResume, onBriefing, onRestart, onQuit }: Pro
 
     useEffect(() => {
         if (open && view === "menu") items.current[0]?.focus();
-    }, [open, view]);
+    }, [open, view, items]);
 
     useBack(open ? onResume : null);
 
@@ -46,19 +48,18 @@ export function PauseMenu({ open, onResume, onBriefing, onRestart, onQuit }: Pro
         { label: "Quit to menu", onClick: onQuit },
     ];
 
-    function onNavKey(e: React.KeyboardEvent) {
-        const i = items.current.findIndex((el) => el === document.activeElement);
-        const next = listStep(e, i, entries.length);
-        if (next !== null) items.current[next]?.focus();
-    }
-
     return (
         <div
-            className="fixed inset-0 z-[200] flex items-center justify-center bg-overlay p-6 backdrop-blur-sm"
+            className={`fixed inset-0 z-[200] flex items-center justify-center bg-overlay backdrop-blur-sm ${view === "menu" ? "p-6" : ""}`}
             onClick={onResume}
         >
+            {/* The root menu is a small card; the settings take the whole screen, like the route. */}
             <div
-                className={`flex max-h-[92vh] w-full flex-col gap-6 overflow-y-auto border border-line bg-surface px-8 py-7 ${view === "menu" ? "max-w-md" : "max-w-3xl"}`}
+                className={
+                    view === "menu"
+                        ? "flex max-h-[92vh] w-full max-w-md flex-col gap-6 overflow-y-auto border border-line bg-surface px-8 py-7"
+                        : "flex h-full min-h-0 w-full flex-col px-6 py-10 md:px-16 md:py-16"
+                }
                 onClick={(e) => e.stopPropagation()}
                 role="dialog"
                 aria-modal="true"
@@ -75,11 +76,7 @@ export function PauseMenu({ open, onResume, onBriefing, onRestart, onQuit }: Pro
                                 Paused
                             </h2>
                         </header>
-                        <nav
-                            aria-label="Pause menu"
-                            className="flex flex-col border-t border-line"
-                            onKeyDown={onNavKey}
-                        >
+                        <nav aria-label="Pause menu" className="flex flex-col border-t border-line">
                             {entries.map((entry, i) => (
                                 <button
                                     key={entry.label}
@@ -93,6 +90,13 @@ export function PauseMenu({ open, onResume, onBriefing, onRestart, onQuit }: Pro
                                 </button>
                             ))}
                         </nav>
+                        <PadHints
+                            entries={[
+                                ["dpad", "Navigate"],
+                                ["a", "Select"],
+                                ["b", "Resume"],
+                            ]}
+                        />
                     </>
                 ) : (
                     <SettingsOverlay onBack={() => setView("menu")} />

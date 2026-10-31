@@ -3,7 +3,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Encounter, distance, key, type Cell } from "./game.ts";
+import { Encounter, distance, key, shotDamage, type Cell } from "./game.ts";
 
 test("movement costs one AP and cannot end inside a barrier or on an occupied tile", () => {
   const g = new Encounter(),
@@ -141,6 +141,19 @@ test("mission requires both core extraction and hostile elimination", () => {
   assert.equal(g.result, "victory");
   assert.equal(g.move(u, [1, -1]), null);
 });
+test("shot damage follows the equipped weapon and the target's armor", () => {
+  const g = new Encounter(),
+    a = g.allies[0],
+    b = g.enemies[0];
+  assert.equal(shotDamage(a, b), a.damage - b.armor);
+  assert.equal(shotDamage(a, b, true), a.damage + Math.floor(a.damage / 2) - b.armor);
+  g.switchWeapon(a, "pistol");
+  assert.equal(shotDamage(a, b), a.damage - b.armor);
+  assert.equal(a.damage, 4, "sidearm damage comes from the equipped weapon");
+  b.armor = 9;
+  assert.equal(shotDamage(a, b), 1, "a hit never deals less than one");
+});
+
 test("no living allies ends the encounter in defeat", () => {
   const g = new Encounter();
   g.allies.forEach((u) => (u.hp = 0));

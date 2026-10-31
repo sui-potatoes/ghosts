@@ -78,7 +78,7 @@ export const blackRain: Scenario = {
       "Move an operator onto the illuminated relay pad and use *Extract*. Neutralize the three Wraith security operators to close the contract.",
     ],
     rules:
-      "Two action points per operator. Low cover reduces incoming accuracy by 25 points. Hunkering improves defense. Grenades damage every unit within two tiles, including your own.",
+      "Two action points per operator. Low cover reduces incoming accuracy by 25 points. Hunkering improves defense. Grenades damage every unit within two tiles, including your own, and can destroy nearby props. Destroyed cover opens a route and no longer protects you. Concrete takes more punishment than wood or glass.",
     facts: [
       ["EMPLOYER", "HELIOS INDUSTRIES"],
       ["OPPOSITION", "KŌRA / WRAITH SECURITY"],

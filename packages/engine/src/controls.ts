@@ -3,7 +3,7 @@
 
 import { action, cancelTargeting, endTurn, fire, pick, select, throwGrenade } from "./actions";
 import { distance } from "./game";
-import { combatActionOf } from "./keys";
+import { combatActionOf, isEditable as typing, type CombatAction } from "./keys";
 import { session } from "./session";
 import { engineSettings } from "./settings";
 import { toggleGrid, toggleView } from "./ui/view";
@@ -11,15 +11,51 @@ import { toggleGrid, toggleView } from "./ui/view";
 export interface ControlOptions {
   /** Cancel with nothing to cancel: the host's pause menu. */
   onPause?: () => void;
+  /** Walk operators backwards (Shift+Tab, the left bumper). */
+  reverse?: boolean;
 }
 
 const ORDERS = new Set(["move", "fire", "grenade", "reload", "overwatch", "hunker", "secure"]);
 
-const typing = (el: Element | null) => !!el?.closest("input, select, textarea, [contenteditable]");
+
+/**
+ * One executor for every combat action. The keyboard, the controller and the
+ * HUD map their inputs to a `CombatAction` and land here, so what an action
+ * does never depends on what produced it.
+ */
+export function runCombatAction(command: CombatAction, { onPause, reverse }: ControlOptions = {}) {
+  const s = session;
+  // A cancel nothing here wants goes to the host's pause menu.
+  if (command === "cancel" && s.mode === "move") {
+    onPause?.();
+    return;
+  }
+  if (s.busy) return;
+  if (command === "next-operator") {
+    const living = s.game.allies;
+    const i = living.findIndex((u) => u.id === s.selected);
+    if (living.length)
+      select(living[(i + (reverse ? -1 : 1) + living.length) % living.length].id);
+    return;
+  }
+  const { battlefield } = s;
+  if (ORDERS.has(command)) void action(command);
+  else if (command === "confirm") {
+    if (s.mode === "fire") void fire();
+    else if (s.mode === "grenade") void throwGrenade();
+    else void endTurn();
+  } else if (command === "grid") toggleGrid();
+  else if (command === "focus") battlefield.focus();
+  else if (command === "camera") toggleView();
+  else if (command === "rotate-left") battlefield.rotate(-Math.PI / 4);
+  else if (command === "rotate-right") battlefield.rotate(Math.PI / 4);
+  else if (command === "cancel") cancelTargeting();
+}
 
 /**
  * Keys and the field: combat bindings from the player's settings, squad
- * numbers 1–9, and picks and hovers on the 3D field. Returns the unbind.
+ * numbers 1–9, and picks and hovers on the 3D field. The keyboard only maps
+ * and guards here; execution is `runCombatAction`. Returns the unbind.
  */
 export function bindControls({ onPause }: ControlOptions = {}): () => void {
   const onKey = (e: KeyboardEvent) => {
@@ -30,25 +66,27 @@ export function bindControls({ onPause }: ControlOptions = {}): () => void {
     const command = combatActionOf(e, engineSettings().combatKeys());
     if (scene) {
       if (command === "cancel") {
+        // Consumed here, or the menu bus beneath would also act on the Escape.
+        e.preventDefault();
         scene.open = false;
         scene.querySelector("summary")?.focus();
       }
       return;
     }
-    // A cancel nothing here wants goes to the host's pause menu.
     if (command === "cancel" && s.mode === "move") {
-      if (onPause) {
-        e.preventDefault();
-        onPause();
-      }
+      if (!onPause) return;
+      e.preventDefault();
+      onPause();
       return;
     }
-    if (s.busy) return;
+    if (s.busy) {
+      // A combat key mid-animation is spent, not passed to the menus beneath.
+      if (command) e.preventDefault();
+      return;
+    }
     if (command === "next-operator" && !typing(target)) {
       e.preventDefault();
-      const living = s.game.allies;
-      const i = living.findIndex((u) => u.id === s.selected);
-      if (living.length) select(living[(i + (e.shiftKey ? -1 : 1) + living.length) % living.length].id);
+      runCombatAction("next-operator", { reverse: e.shiftKey });
       return;
     }
     // Enter and Space on a focused control press that control.
@@ -59,24 +97,8 @@ export function bindControls({ onPause }: ControlOptions = {}): () => void {
       return;
     }
     if (!command) return;
-    const { battlefield } = s;
-    if (ORDERS.has(command)) {
-      e.preventDefault();
-      void action(command);
-    } else if (command === "confirm") {
-      e.preventDefault();
-      if (s.mode === "fire") void fire();
-      else if (s.mode === "grenade") void throwGrenade();
-      else void endTurn();
-    } else if (command === "grid") toggleGrid();
-    else if (command === "focus") battlefield.focus();
-    else if (command === "camera") toggleView();
-    else if (command === "rotate-left") battlefield.rotate(-Math.PI / 4);
-    else if (command === "rotate-right") battlefield.rotate(Math.PI / 4);
-    else if (command === "cancel") {
-      e.preventDefault();
-      cancelTargeting();
-    }
+    if (ORDERS.has(command) || command === "confirm" || command === "cancel") e.preventDefault();
+    runCombatAction(command, { onPause });
   };
   document.addEventListener("keydown", onKey);
   bindField();

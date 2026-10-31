@@ -1,8 +1,10 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
+import { useSyncExternalStore } from "react";
 import { action, endTurn, select } from "../actions";
 import { distance, weapons } from "../game";
+import { padActive, subscribePad } from "../gamepad";
 import { pad2 } from "../html";
 import type { CombatAction } from "../keys";
 import { shotBlockReason } from "../targeting";
@@ -207,9 +209,12 @@ const ORDERS: { id: CombatAction; icon: IconName; title: string }[] = [
 /** The selected operator and the order buttons, with End turn beside them. */
 export function CommandDeck() {
   const s = useSession();
+  // On the pad the wheel is the deck; the pointer buttons would only clutter.
+  const padDriving = useSyncExternalStore(subscribePad, padActive);
   const { game, busy } = s;
   const u = s.selectedUnit();
   const cannot = busy || !game.canAct(u);
+  if (padDriving) return null;
   const disabled: Record<string, boolean> = {
     reload: u.ammo === u.clip,
     grenade: u.grenade,

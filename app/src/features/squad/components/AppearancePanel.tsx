@@ -4,6 +4,7 @@
 import { useState } from "react";
 import type { Appearance } from "@ghosts/squad/types";
 import { schema } from "@ghosts/squad/appearance/schema";
+import { BODY_CONTROLS, normalizeBody } from "@ghosts/squad/body";
 import {
     BROWS,
     BROW_CONTROLS,
@@ -119,9 +120,10 @@ interface Props {
     dirty: boolean;
     onSave(): void;
     onReset(): void;
+    onFocus(value: "body" | "face"): void;
 }
-export function AppearancePanel({ value: s, onChange, dirty, onSave, onReset }: Props) {
-    const [category, setCategory] = useState("Face"),
+export function AppearancePanel({ value: s, onChange, dirty, onSave, onReset, onFocus }: Props) {
+    const [category, setCategory] = useState("Body"),
         [region, setRegion] = useState("Contour");
     const patch = (p: Partial<Appearance>) => onChange({ ...s, ...p });
     const morph = (key: string, value: number) => patch({ values: { ...s.values, [key]: value } });
@@ -131,19 +133,61 @@ export function AppearancePanel({ value: s, onChange, dirty, onSave, onReset }: 
         <div className="appearance-panel">
             <div className="sq-panel-heading">
                 <div>
-                    <span className="sq-eyebrow">FACIAL EDITOR</span>
+                    <span className="sq-eyebrow">CHARACTER EDITOR</span>
                     <h3>Appearance</h3>
                 </div>
-                <span className="sq-count">51 MORPHS</span>
+                <span className="sq-count">
+                    {category === "Body" ? "6 BODY CONTROLS" : "51 FACE MORPHS"}
+                </span>
             </div>
             <div className="appearance-nav" aria-label="Appearance categories">
-                {["Face", "Eyes", "Brows", "Hair", "Skin", "Details"].map((c) => (
-                    <button key={c} aria-pressed={category === c} onClick={() => setCategory(c)}>
+                {["Body", "Face", "Eyes", "Brows", "Hair", "Skin", "Details"].map((c) => (
+                    <button
+                        key={c}
+                        aria-pressed={category === c}
+                        onClick={() => {
+                            setCategory(c);
+                            onFocus(c === "Body" ? "body" : "face");
+                        }}
+                    >
                         {c}
                     </button>
                 ))}
             </div>
             <div className="appearance-fields">
+                {category === "Body" && (
+                    <>
+                        <Select
+                            label="Base anatomy"
+                            value={s.sex}
+                            options={[
+                                ["female", "Female"],
+                                ["male", "Male"],
+                            ]}
+                            onChange={(sex) => patch({ sex: sex as Appearance["sex"] })}
+                        />
+                        {BODY_CONTROLS.map((control) => (
+                            <Range
+                                key={control.key}
+                                label={control.label}
+                                low={control.low}
+                                high={control.high}
+                                value={normalizeBody(s.body)[control.key]}
+                                onChange={(value) =>
+                                    patch({
+                                        body: { ...normalizeBody(s.body), [control.key]: value },
+                                    })
+                                }
+                            />
+                        ))}
+                        <button
+                            className="sq-text-button"
+                            onClick={() => patch({ body: normalizeBody(null) })}
+                        >
+                            Reset body proportions
+                        </button>
+                    </>
+                )}
                 {category === "Face" && (
                     <>
                         <Select
@@ -166,7 +210,11 @@ export function AppearancePanel({ value: s, onChange, dirty, onSave, onReset }: 
                                 if (i !== "")
                                     onChange(
                                         normalize(
-                                            { ...fromPreset(presets[+i]), name: s.name },
+                                            {
+                                                ...fromPreset(presets[+i]),
+                                                name: s.name,
+                                                body: s.body,
+                                            },
                                             schema,
                                         ),
                                     );
@@ -427,19 +475,24 @@ export function AppearancePanel({ value: s, onChange, dirty, onSave, onReset }: 
                 )}
             </div>
             <div className="appearance-footer">
-                <div>
-                    <button onClick={() => onChange(shuffleFace(schema, s))}>Shuffle face</button>
-                    <button
-                        onClick={() =>
-                            onChange({
-                                ...randomIdentity(schema, s.sex, Math.random, s),
-                                name: s.name,
-                            })
-                        }
-                    >
-                        New look ↻
-                    </button>
-                </div>
+                {category !== "Body" && (
+                    <div>
+                        <button onClick={() => onChange(shuffleFace(schema, s))}>
+                            Shuffle face
+                        </button>
+                        <button
+                            onClick={() =>
+                                onChange({
+                                    ...randomIdentity(schema, s.sex, Math.random, s),
+                                    name: s.name,
+                                    body: s.body,
+                                })
+                            }
+                        >
+                            New look ↻
+                        </button>
+                    </div>
+                )}
                 <button className="btn sq-primary" disabled={!dirty} onClick={onSave}>
                     Apply appearance <span>↗</span>
                 </button>

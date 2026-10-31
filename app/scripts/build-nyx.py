@@ -27,8 +27,11 @@ for sex in ['male','female']:
     vs.append(hit+d*.009)
   torso_rings=[vs[i*cols:(i+1)*cols] for i in range(rows)]
   if tier>0:
+   # Rib shells are rigid assemblies; hip flexion belongs to the fabric below.
+   g.binding_rigid='Spine'
    g.patch('NYX / left rib wrap',torso_rings,[37,38,39,0,1,2,3],ceramic,lift=.008+.002*tier)
    g.patch('NYX / right rib wrap',torso_rings,list(range(17,24)),ceramic,lift=.008+.002*tier)
+  g.binding_rigid=None
   g.mesh('NYX / fitted jacket',vs,[(i*cols+j,i*cols+(j+1)%cols,(i+1)*cols+(j+1)%cols,(i+1)*cols+j) for i in range(rows-1) for j in range(cols)],cloth,thickness=.003)
   # Segmented diagonal cuirass: narrow enough to move with the torso.
   width=shoulder*(.78+.055*tier);upper=neck-.05*scale;lower=waist+.115*scale
@@ -55,7 +58,11 @@ for sex in ['male','female']:
   g.tube('NYX / dorsal signal',[g.front(0,chest-.06+t*.032,-1,.025) for t in [0,.5,1]],.0016,signal)
   build_cuirass(g,tier,upper,lower,width,ceramic,trim,cloth,hardware,signal)
   torso_details(g,tier,upper,lower,waist,width,ceramic,trim,cloth,hardware,signal)
-  if tier==2: heavy_torso(g,upper,lower,waist,width,ceramic,trim,cloth,hardware,signal)
+  if tier==2:
+   # Housing, heat sinks and indicators share a rigid dorsal attachment.
+   g.binding_rigid='Spine1'
+   heavy_torso(g,upper,lower,waist,width,ceramic,trim,cloth,hardware,signal)
+   g.binding_rigid=None
   # Fitted limb sleeves with short ceramic overlays, never floating bone boxes.
   def sleeve(name,a,b,t0,t1,mat,around=24):
    axis=(b-a).normalized();u=axis.cross(Vector((0,0,1))).normalized();v=axis.cross(u);rings=[];surface=g.tree if 'shoulder' in name else g.region([side+'Arm',side+'Shoulder',side+'ForeArm',side+'Hand'] if 'arm' in name else [side+'UpLeg',side+'Leg'])
@@ -89,7 +96,7 @@ for sex in ['male','female']:
    g.patch('NYX / deltoid shell',caprings,list(range(2,23)),ceramic,lift=.006+.003*tier)
    # Collar-length shoulder edging gives a clean manufactured boundary.
    g.tube('NYX / shoulder binding',caprings[-1]+[caprings[-1][0]],.0018,trim)
-   bracer,brings=sleeve('NYX / forearm bracer',el,wrist,.065,(wrist-el).length-.025,cloth)
+   bracer,brings=sleeve('NYX / forearm bracer',el,wrist,.065,(wrist-el).length-.050,cloth)
    # Inner wrist status strip follows the bracer itself.
    g.tube('NYX / wrist signal',[brings[k][6]+Vector((0,0,.002)) for k in [2,3,4]],.0014,signal)
    # Thigh protection stays on the front/outer leg; no padded shorts silhouette.

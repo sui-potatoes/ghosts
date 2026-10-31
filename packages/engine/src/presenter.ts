@@ -57,6 +57,12 @@ export async function present(event: GameEvent) {
       await battlefield.play(event);
       notify("OVERWATCH / REACTION FIRE ARMED");
       return;
+    case "switch-weapon":
+      audio.tone("click");
+      return;
+    case "watch-spent":
+      // The spent watch shows on the marker sync; no line of its own.
+      return;
     case "secure":
       notify(game.scenario.lines.securedStamp);
       return;

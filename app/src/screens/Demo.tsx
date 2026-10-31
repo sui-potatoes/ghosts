@@ -1,7 +1,7 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
-import { Encounter, openBriefing, restartEncounter } from "@ghosts/engine";
+import { Encounter, openBriefing, restartEncounter, paperTrail } from "@ghosts/engine";
 import { savedRecruits, SQUAD_STORAGE_KEY } from "@ghosts/squad/model";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -16,7 +16,7 @@ import { PauseMenu } from "../PauseMenu";
  * with the pause menu and freezes the encounter while it is up. Leaving the
  * route unmounts the encounter, which releases its renderer and audio.
  */
-export default function Demo() {
+export default function Demo({ office = false }: { office?: boolean }) {
     const navigate = useNavigate();
     const [paused, setPaused] = useState(false);
     // The roster as saved when the encounter starts; playing never writes it back.
@@ -34,6 +34,8 @@ export default function Demo() {
     return (
         <div className="fixed inset-0 h-dvh w-full bg-surface">
             <Encounter
+                key={office ? "office" : "kora"}
+                scenario={office ? paperTrail : undefined}
                 squad={squad}
                 settings={engineSettings}
                 paused={paused}

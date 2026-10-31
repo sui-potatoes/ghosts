@@ -2,13 +2,21 @@
 // SPDX-License-Identifier: MIT
 
 import { CELL, footprint, tacticalMap, type Cell, type MapPlan } from "./map.ts";
+import { districtProps } from "./district-props.ts";
+import { storefrontProps } from "./storefronts.ts";
 
 /**
  * The Kōra district, metres and cells. One plan drives the 3D build
  * (`district.ts`), collision footprints, cover and foot elevation.
  */
 export { CELL, footprint };
-export const STREET = { avenueHalf: 2.7, crossHalf: 2.025, curb: 0.16, reach: 45 };
+export const STREET = {
+  avenueHalf: 2.7,
+  crossHalf: 2.025,
+  curb: 0.16,
+  reach: 45,
+  cuts: { avenue: 3.25, cross: 3.85, half: 0.7, run: 0.75 },
+};
 export const districtBuildings = [
   { x: -7, z: -5, w: 5, d: 4, h: 5.4, kind: 'seven' },
   { x: 6, z: -5, w: 5, d: 4, h: 4.6, kind: 'lawson' },
@@ -34,6 +42,7 @@ export const koraPlan: MapPlan = {
   bounds: { minX: -9, maxX: 8, minZ: -7, maxZ: 6 },
   buildings: districtBuildings,
   covers: lowCoverCells,
+  props: [...districtProps(lowCoverCells, CELL), ...storefrontProps(districtBuildings)],
   street: STREET,
 };
 

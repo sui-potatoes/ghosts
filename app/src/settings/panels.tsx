@@ -3,37 +3,28 @@
 
 import { useCurrentAccount, useDAppKit } from "@mysten/dapp-kit-react";
 import { formatAddress, MIST_PER_SUI } from "@mysten/sui/utils";
-import { useState, type ReactNode } from "react";
+import { useState, useSyncExternalStore } from "react";
 
-import { Tooltip } from "../components/Tooltip";
+import { useSessionRows } from "../chain";
 import { NETWORK } from "../constants";
 import { useBalance } from "../hooks/useBalance";
 import { usePlayerName } from "../hooks/usePlayerName";
 import { useSignInMethod } from "../hooks/useSignInMethod";
 import { NameDialog } from "../NameDialog";
 import { requestSignIn } from "../signIn";
-import { Field, Keys, Slider, Switch } from "./controls";
+import { Keys } from "./controls";
+import { previewDialogue, previewEffect } from "../audio";
 import { COMBAT_ACTIONS, COMBAT_LABELS } from "@ghosts/engine/keys";
 import { ACTION_LABELS, ACTIONS } from "./keys";
-import { useSettingsSection } from "./store";
+import { SettingList, type SettingRow } from "./SettingList";
+import { DEFAULTS, useSettingsSection } from "./store";
 
 /*
- * The settings panels. Shared by the Settings screen and the in-game pause
- * menu, so a change made mid-encounter is the same change.
+ * The settings panels, each a list of rows for `SettingList`. Shared by the
+ * Settings screen and the in-game pause menu, so a change made mid-encounter
+ * is the same change. Every row carries the description shown in the panel
+ * under the list while it is focused.
  */
-
-/** Button row under a panel's fields. */
-function Actions({ children }: { children: ReactNode }) {
-    return <div className="flex flex-wrap gap-3 pt-4">{children}</div>;
-}
-
-function ResetButton({ onReset }: { onReset: () => void }) {
-    return (
-        <button className="btn" onClick={onReset}>
-            Reset to defaults
-        </button>
-    );
-}
 
 /** Format MIST as SUI with four decimals, trimming nothing so columns align. */
 function formatSui(mist: bigint): string {
@@ -42,40 +33,41 @@ function formatSui(mist: bigint): string {
     return `${whole}.${frac.toString().padStart(4, "0")}`;
 }
 
-function CopyAddress({ address }: { address: string }) {
-    const [copied, setCopied] = useState(false);
-
-    async function copy() {
-        try {
-            await navigator.clipboard.writeText(address);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
-        } catch (e) {
-            console.warn("clipboard write failed:", e);
-        }
-    }
-
-    return (
-        <Tooltip text={address}>
-            <button onClick={copy} className="font-mono text-sm">
-                {copied ? "copied" : formatAddress(address)}
-            </button>
-        </Tooltip>
-    );
+/** Visitors get this row in place of anything tied to an account. */
+function signedOutRow(what: string): SettingRow {
+    return {
+        kind: "action",
+        id: "sign-in",
+        label: "Log in",
+        value: <span className="text-warn">not signed in</span>,
+        description: `Not signed in. Identify with a passkey or a provider to see ${what}.`,
+        onConfirm: requestSignIn,
+    };
 }
 
-/** Visitors see this in place of anything tied to an account. */
-function SignedOut({ what }: { what: string }) {
-    return (
-        <div className="flex flex-col gap-4 pt-2">
-            <p className="text-sm text-secondary">Not signed in. Identify to see {what}.</p>
-            <div>
-                <button className="btn" onClick={requestSignIn}>
-                    Log in
-                </button>
-            </div>
-        </div>
-    );
+/** An on/off setting: Left is off, Right is on, Confirm flips it. */
+function switchRow(args: {
+    id: string;
+    label: string;
+    description: string;
+    checked: boolean;
+    defaultValue: boolean;
+    set: (next: boolean) => void;
+    /** Value texts when "On"/"Off" would read wrong next to the label. */
+    values?: { on: string; off: string };
+}): SettingRow {
+    const { id, label, description, checked, defaultValue, set, values } = args;
+    return {
+        kind: "choice",
+        id,
+        label,
+        description,
+        value: checked ? (values?.on ?? "On") : (values?.off ?? "Off"),
+        onPrev: () => set(false),
+        onNext: () => set(true),
+        onConfirm: () => set(!checked),
+        onReset: () => set(defaultValue),
+    };
 }
 
 export function PlayerPanel() {
@@ -83,24 +75,28 @@ export function PlayerPanel() {
     const player = usePlayerName();
     const [nameOpen, setNameOpen] = useState(false);
 
-    if (!account) return <SignedOut what="your name" />;
+    if (!account) return <SettingList rows={[signedOutRow("your name")]} />;
+
+    const rows: SettingRow[] = [
+        {
+            kind: "action",
+            id: "name",
+            label: "Name",
+            value: (
+                <>
+                    {player.name}
+                    {player.source === null && <span className="set-note">generated</span>}
+                </>
+            ),
+            description:
+                "Your call sign, shown to other players. Follows SuiNS rules, so it can become your SuiNS name unchanged.",
+            onConfirm: () => setNameOpen(true),
+        },
+    ];
 
     return (
         <>
-            <Field
-                label="Name"
-                hint="Follows SuiNS rules, so it can become your SuiNS name unchanged."
-            >
-                {player.name}
-                {player.source === null && (
-                    <span className="ml-2 text-[11px] text-secondary">(generated)</span>
-                )}
-            </Field>
-            <Actions>
-                <button className="btn" onClick={() => setNameOpen(true)}>
-                    Change
-                </button>
-            </Actions>
+            <SettingList rows={rows} />
             <NameDialog open={nameOpen} onClose={() => setNameOpen(false)} />
         </>
     );
@@ -111,144 +107,281 @@ export function AccountPanel() {
     const account = useCurrentAccount();
     const method = useSignInMethod();
     const { data: mist, isPending, isError } = useBalance();
+    const [copied, setCopied] = useState(false);
+    const sessionRows = useSessionRows();
 
-    if (!account) return <SignedOut what="your wallet and balance" />;
+    if (!account) return <SettingList rows={[signedOutRow("your wallet and balance")]} />;
 
-    return (
-        <>
-            <Field label="Held by">{method?.label ?? "—"}</Field>
-            <Field label="Address">
-                <CopyAddress address={account.address} />
-            </Field>
-            <Field label="Balance">
-                {isPending ? (
-                    <span className="skeleton h-[14px] w-[88px] align-middle" />
-                ) : isError || mist === undefined ? (
-                    <span className="text-warn">unavailable</span>
-                ) : (
-                    <>
-                        {formatSui(mist)} <span className="text-secondary">SUI</span>
-                    </>
-                )}
-            </Field>
-            <Field label="Network">{NETWORK}</Field>
-            <h3 className="label pt-8 pb-2 text-muted">Security</h3>
-            <Field
-                label="Recovery wallet"
-                hint="A second authorizer that can take over after a delay. Passkeys are bound to this site and zkLogin to a provider; without it, losing either means losing the squad."
-            >
+    async function copy() {
+        if (!account) return;
+        try {
+            await navigator.clipboard.writeText(account.address);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+        } catch (e) {
+            console.warn("clipboard write failed:", e);
+        }
+    }
+
+    const rows: SettingRow[] = [
+        {
+            kind: "static",
+            id: "held-by",
+            label: "Held by",
+            value: method?.label ?? "—",
+            description:
+                "How this account is authorized: a passkey bound to this site, or a zkLogin provider.",
+        },
+        {
+            kind: "action",
+            id: "address",
+            label: "Address",
+            value: copied ? "copied" : formatAddress(account.address),
+            description: "The account's Sui address. Activate to copy it to the clipboard.",
+            onConfirm: copy,
+        },
+        {
+            kind: "static",
+            id: "balance",
+            label: "Balance",
+            value: isPending ? (
+                <span className="skeleton h-[14px] w-[88px] align-middle" />
+            ) : isError || mist === undefined ? (
+                <span className="text-warn">unavailable</span>
+            ) : (
+                <>
+                    {formatSui(mist)} <span className="set-note">SUI</span>
+                </>
+            ),
+            description: "SUI held by the address. Pays fees once the squad moves on chain.",
+        },
+        {
+            kind: "static",
+            id: "network",
+            label: "Network",
+            value: NETWORK,
+            description: "The Sui network this build talks to. Testnet only for now.",
+        },
+        // Test networks hand out funds. The address rides in the query (the
+        // faucet ignores it today but keeps it) and is copied for pasting.
+        // faucet.sui.io would be the official choice; its proof-of-work flow
+        // is heavier, so the SuiLearn faucet serves for now.
+        ...(NETWORK === "testnet"
+            ? [
+                  {
+                      kind: "action",
+                      id: "faucet",
+                      label: "Add test funds",
+                      value: "faucet.suilearn.io ↗",
+                      description:
+                          "Opens a Sui testnet faucet in a new tab and copies this address, ready to paste there. Test SUI only; it has no real value.",
+                      onConfirm: () => {
+                          navigator.clipboard.writeText(account.address).catch(() => {});
+                          window.open(
+                              `https://faucet.suilearn.io/?address=${account.address}`,
+                              "_blank",
+                              "noopener",
+                          );
+                      },
+                  } satisfies SettingRow,
+              ]
+            : []),
+        { kind: "section", id: "security", label: "Security" },
+        {
+            kind: "static",
+            id: "recovery",
+            label: "Recovery wallet",
+            value: (
                 <span className="inline-flex items-center gap-2 text-warn">
                     <span className="dot dot-pulse" aria-hidden />
                     not set
                 </span>
-            </Field>
-            <Actions>
-                <button className="btn" disabled>
-                    Set up recovery · soon
-                </button>
-                <button className="btn" onClick={() => dAppKit.disconnectWallet()}>
-                    Sign out
-                </button>
-            </Actions>
-        </>
-    );
+            ),
+            description:
+                "A second authorizer that can take over after a delay; without it, losing the passkey or provider means losing the squad. Setup arrives with the on-chain account.",
+        },
+        {
+            kind: "action",
+            id: "sign-out",
+            label: "Sign out",
+            value: "",
+            description: "Disconnect this wallet from the device. Local preferences stay.",
+            onConfirm: () => dAppKit.disconnectWallet(),
+        },
+        ...sessionRows,
+    ];
+
+    return <SettingList rows={rows} />;
 }
 
 export function AudioPanel() {
-    const [audio, setAudio, reset] = useSettingsSection("audio");
+    const [audio, setAudio] = useSettingsSection("audio");
 
-    return (
-        <>
-            <Switch label="Mute" checked={audio.muted} onChange={(muted) => setAudio({ muted })} />
-            <Slider
-                label="Master"
-                value={audio.master}
-                disabled={audio.muted}
-                onChange={(master) => setAudio({ master })}
-            />
-            <Slider
-                label="Music"
-                value={audio.music}
-                disabled={audio.muted}
-                onChange={(music) => setAudio({ music })}
-            />
-            <Slider
-                label="Effects"
-                value={audio.sfx}
-                disabled={audio.muted}
-                onChange={(sfx) => setAudio({ sfx })}
-            />
-            <Slider
-                label="Dialogue"
-                value={audio.voice}
-                disabled={audio.muted}
-                onChange={(voice) => setAudio({ voice })}
-            />
-            <Actions>
-                <ResetButton onReset={reset} />
-            </Actions>
-        </>
+    const slider = (
+        key: "master" | "music" | "sfx" | "voice" | "ui",
+        label: string,
+        description: string,
+        preview?: () => void,
+    ): SettingRow => ({
+        kind: "slider",
+        id: key,
+        label,
+        description,
+        value: audio[key],
+        disabled: audio.muted,
+        // The store updates synchronously, so the preview plays at the new level.
+        onChange: (v) => {
+            setAudio({ [key]: v });
+            preview?.();
+        },
+        onReset: () => {
+            setAudio({ [key]: DEFAULTS.audio[key] });
+            preview?.();
+        },
+    });
+
+    const rows: SettingRow[] = [
+        // Phrased as "Sound: On/Muted" — "Mute: Off" reads like "music off".
+        switchRow({
+            id: "muted",
+            label: "Sound",
+            description: "Silence every channel without touching the mix.",
+            checked: !audio.muted,
+            defaultValue: !DEFAULTS.audio.muted,
+            set: (on) => setAudio({ muted: !on }),
+            values: { on: "On", off: "Muted" },
+        }),
+        slider("master", "Master", "Overall output level. Every other channel scales under it."),
+        slider("music", "Music", "Score and ambient music."),
+        slider("sfx", "Effects", "Weapons and impacts.", previewEffect),
+        slider("voice", "Dialogue", "Squad chatter and mission dialogue.", previewDialogue),
+        // No preview callback: the list's own detent tick is the preview.
+        slider("ui", "Interface", "Menu ticks and clicks."),
+    ];
+
+    return <SettingList rows={rows} />;
+}
+
+/**
+ * The Keyboard Lock API, Chromium only (TS's DOM lib does not type it).
+ * Locking Escape while fullscreen delivers a tapped Esc to the page — the
+ * menu opens, fullscreen stays — while press-and-hold still exits: that
+ * guarantee is the browser's own. Elsewhere this is null and Esc behaves
+ * as it always did (exits fullscreen; the keydown still reaches the page).
+ */
+type KeyboardLock = { lock(keys?: string[]): Promise<void>; unlock(): void };
+
+function keyboardLock(): KeyboardLock | null {
+    const keyboard = (navigator as Navigator & { keyboard?: KeyboardLock }).keyboard;
+    return keyboard && "lock" in keyboard ? keyboard : null;
+}
+
+// Release the Esc capture whenever fullscreen ends, however it was left.
+if (typeof document !== "undefined") {
+    document.addEventListener("fullscreenchange", () => {
+        if (!document.fullscreenElement) keyboardLock()?.unlock();
+    });
+}
+
+/**
+ * Live browser fullscreen state. Not part of the settings store: browsers
+ * only enter fullscreen from a user gesture, so it cannot be restored at
+ * startup, and the system UI can flip it at any time.
+ */
+function useFullscreen(): [boolean, (on: boolean) => void] {
+    const on = useSyncExternalStore(
+        (onChange) => {
+            document.addEventListener("fullscreenchange", onChange);
+            return () => document.removeEventListener("fullscreenchange", onChange);
+        },
+        () => document.fullscreenElement !== null,
     );
+    const set = (next: boolean) => {
+        if (next === (document.fullscreenElement !== null)) return;
+        if (next)
+            document.documentElement
+                .requestFullscreen()
+                .then(() => keyboardLock()?.lock(["Escape"]))
+                .catch(() => {});
+        else document.exitFullscreen().catch(() => {});
+    };
+    return [on, set];
 }
 
 export function DisplayPanel() {
-    const [display, setDisplay, reset] = useSettingsSection("display");
+    const [display, setDisplay] = useSettingsSection("display");
+    const [fullscreen, setFullscreen] = useFullscreen();
 
-    return (
-        <>
-            <Switch
-                label="Battery saver"
-                checked={display.batterySaver}
-                onChange={(batterySaver) => setDisplay({ batterySaver })}
-            />
-            <Switch
-                label="Scanlines"
-                checked={display.scanlines}
-                onChange={(scanlines) => setDisplay({ scanlines })}
-            />
-            <Switch
-                label="Vignette"
-                checked={display.vignette}
-                onChange={(vignette) => setDisplay({ vignette })}
-            />
-            <Switch
-                label="Reduce motion"
-                checked={display.reduceMotion}
-                onChange={(reduceMotion) => setDisplay({ reduceMotion })}
-            />
-            <Actions>
-                <ResetButton onReset={reset} />
-            </Actions>
-        </>
-    );
+    const flag = (
+        key: "batterySaver" | "scanlines" | "vignette" | "reduceMotion",
+        label: string,
+        description: string,
+    ): SettingRow =>
+        switchRow({
+            id: key,
+            label,
+            description,
+            checked: display[key],
+            defaultValue: DEFAULTS.display[key],
+            set: (v) => setDisplay({ [key]: v }),
+        });
+
+    const rows: SettingRow[] = [
+        switchRow({
+            id: "fullscreen",
+            label: "Fullscreen",
+            description:
+                "Take the whole display. Hold Esc to leave fullscreen; the browser forgets the choice between sessions.",
+            checked: fullscreen,
+            defaultValue: false,
+            set: setFullscreen,
+        }),
+        flag(
+            "batterySaver",
+            "Battery saver",
+            "Lower the frame rate and scene detail to save power. Recommended on portable machines.",
+        ),
+        flag("scanlines", "Scanlines", "Faint CRT scanlines over the picture."),
+        flag("vignette", "Vignette", "Darkened frame edges for a low-light read."),
+        flag(
+            "reduceMotion",
+            "Reduce motion",
+            "Cut interface animation and transitions to a minimum.",
+        ),
+    ];
+
+    return <SettingList rows={rows} />;
 }
 
 export function ControlsPanel() {
-    const [controls, , reset] = useSettingsSection("controls");
+    const [controls] = useSettingsSection("controls");
 
-    return (
-        <>
-            <h3 className="label pb-2 text-muted">Menus</h3>
-            {ACTIONS.map((action) => (
-                <Field key={action} label={ACTION_LABELS[action]}>
-                    <Keys action={action} />
-                </Field>
-            ))}
-            <h3 className="label pt-8 pb-2 text-muted">Combat</h3>
-            {COMBAT_ACTIONS.map((action) => (
-                <Field key={action} label={COMBAT_LABELS[action]}>
-                    <Keys keys={controls.combat[action]} />
-                </Field>
-            ))}
-            <Field label="Select operator">
-                <Keys keys={["1", "–", "9"]} />
-            </Field>
-            <Actions>
-                <button className="btn" disabled>
-                    Rebind · soon
-                </button>
-                <ResetButton onReset={reset} />
-            </Actions>
-        </>
-    );
+    const rows: SettingRow[] = [
+        { kind: "section", id: "menus", label: "Menus" },
+        ...ACTIONS.map((action): SettingRow => ({
+            kind: "static",
+            id: `menu-${action}`,
+            label: ACTION_LABELS[action],
+            value: <Keys action={action} />,
+            description: "Menu binding. Rebinding arrives with a later update.",
+        })),
+        { kind: "section", id: "combat", label: "Combat" },
+        ...COMBAT_ACTIONS.map((action): SettingRow => ({
+            kind: "static",
+            id: `combat-${action}`,
+            label: COMBAT_LABELS[action],
+            value: <Keys keys={controls.combat[action]} />,
+            description:
+                "Combat binding, defined by the engine. Rebinding arrives with a later update.",
+        })),
+        {
+            kind: "static",
+            id: "select-operator",
+            label: "Select operator",
+            value: <Keys keys={["1", "–", "9"]} />,
+            description: "Operators answer to their squad number, one through nine.",
+        },
+    ];
+
+    return <SettingList rows={rows} />;
 }

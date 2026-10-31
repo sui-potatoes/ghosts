@@ -19,8 +19,9 @@ import {
 import { reactionMotion, reloadMotion, type Motion } from "../motions";
 import { vaultProgress } from "../vault-motion";
 import type { Effects } from "./effects";
-import { UnitMarkers } from "./markers";
+import { UnitMarkers, type AimReadout } from "./markers";
 import { metal } from "./props";
+import { pickUnit } from "./unit-picking";
 import type { Animator, Space } from "./space";
 
 export interface UnitsOptions {
@@ -38,6 +39,7 @@ export interface UnitsOptions {
 /** How a shot is framed: whether the shooter is already aimed, and the camera kick per tracer. */
 export interface ShotFraming {
   aimed: boolean;
+  impact?: T.Vector3;
   kick?: (t: number) => void;
   afterTracer?: () => void;
 }
@@ -79,6 +81,15 @@ export class Units {
     return this.rigs.get(id);
   }
 
+  pick(ray: T.Raycaster): Unit | undefined {
+    const candidates = this.game.units.flatMap((unit) => {
+      const rig = this.rigs.get(unit.id);
+      return rig ? [{ id: unit.id, hp: unit.hp, root: rig.root }] : [];
+    });
+    const id = pickUnit(ray, candidates);
+    return id ? this.game.unit(id) : undefined;
+  }
+
   /** True while any rig is in a motion the loop must keep rendering. */
   get busy() {
     for (const r of this.rigs.values()) if (r.busy) return true;
@@ -101,6 +112,11 @@ export class Units {
       resetHuman(this.rigs.get(u.id)!);
       this.place(u);
     }
+  }
+
+  /** Hit odds and the predicted hp cut on the aimed hostile's plate; null clears. */
+  aimReadout(target: Unit | null, readout?: AimReadout) {
+    this.markers.aim(target, readout);
   }
 
   /** Bring rigs and markers in line with the rules; `aiming` leaves poses to the aim camera. */
@@ -214,7 +230,7 @@ export class Units {
     const { animator, effects } = this.o;
     const r = this.rigs.get(a.id)!;
     r.busy = true;
-    const target = this.vec(b.pos, 1);
+    const target = framing.impact ?? this.vec(b.pos, 1);
     r.aimTarget = target.clone();
     const from = r.root.position;
     r.root.rotation.y = Math.atan2(from.x - target.x, from.z - target.z);
@@ -233,8 +249,11 @@ export class Units {
     const reaction = hit ? this.reaction(b, a.weapon === "sniper") : Promise.resolve();
     const shots = a.weapon === "rifle" ? 3 : 1;
     for (let i = 0; i < shots; i++) {
-      const origin = r.gun.getWorldPosition(new T.Vector3());
-      origin.add(target.clone().sub(origin).normalize().multiplyScalar(0.35));
+      const weapon = a.weapon === "sniper" ? r.sniper : r.rifle;
+      const origin = a.weapon === "pistol"
+        ? r.gun.getWorldPosition(new T.Vector3())
+        : weapon.localToWorld(new T.Vector3().fromArray(weapon.userData.muzzle));
+      if (a.weapon === "pistol") origin.add(target.clone().sub(origin).normalize().multiplyScalar(0.35));
       await effects.tracer(origin, target, a.enemy, framing.kick);
       framing.afterTracer?.();
       await animator.tween(0.1, () => {});
@@ -253,7 +272,7 @@ export class Units {
     return this.busyWith(u, (r) => this.clip(r, reloadMotion(u.weapon, this.game.cover(u) > 0), 1.35));
   }
 
-  grenade(u: Unit, p: Cell) {
+  grenade(u: Unit, p: Cell, onImpact?: () => void) {
     const { animator, effects } = this.o;
     return this.busyWith(u, async (r) => {
       const target = this.vec(p, 0.2);
@@ -262,6 +281,7 @@ export class Units {
       r.gun.visible = true;
       await animator.tween(duration * 0.43, () => {});
       await effects.lob(r.hand.getWorldPosition(new T.Vector3()), target, metal);
+      onImpact?.();
       await effects.explosion(target);
       await Promise.all(
         this.game.units
@@ -353,7 +373,7 @@ export class Units {
   showAllWeapons(): () => void {
     const hidden: T.Object3D[] = [];
     for (const r of this.rigs.values())
-      for (const o of [r.rifle, r.pistol, r.scope])
+      for (const o of [r.rifle, r.pistol, r.sniper])
         if (!o.visible) {
           hidden.push(o);
           o.visible = true;
@@ -364,6 +384,7 @@ export class Units {
   }
 
   dispose() {
+    for (const rig of this.rigs.values()) rig.smoking?.dispose();
     this.markers.dispose();
   }
 }

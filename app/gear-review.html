@@ -1,0 +1,81 @@
+<!doctype html>
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <title>Ghosts · gear review</title>
+        <style>
+            body {
+                margin: 0;
+                background: #11171a;
+                color: #d8e0de;
+                font: 13px system-ui;
+            }
+            header {
+                height: 70px;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                padding: 0 24px;
+            }
+            h1 {
+                font-size: 13px;
+                letter-spacing: 3px;
+                margin-right: auto;
+            }
+            select,
+            button {
+                background: #263137;
+                color: inherit;
+                border: 1px solid #506167;
+                padding: 5px;
+            }
+            canvas {
+                display: block;
+            }
+            #status {
+                position: absolute;
+                bottom: 20px;
+                left: 24px;
+                letter-spacing: 2px;
+            }
+            #labels {
+                position: absolute;
+                top: 70px;
+                left: 0px;
+                line-height: 2;
+                letter-spacing: 2px;
+                pointer-events: none;
+            }
+        </style>
+    </head>
+    <body>
+        <header>
+            <h1>GEAR REVIEW</h1>
+            <select aria-label="View">
+                <option value="weapons">Weapons</option>
+                <option value="utilities">Field supplies</option>
+                <option value="spectre">Spectre</option>
+                <option value="nyx">Veil</option>
+                <option value="nyx-mid">Shade</option>
+                <option value="nyx-heavy">Wraith</option>
+                <option value="none">Base kit</option></select
+            ><select aria-label="Pose">
+                <option value="idle">Ready</option>
+                <option value="stand_cover_emerge">Emerge</option>
+                <option value="rifle_run">Run</option>
+                <option value="crouch_idle">Crouch</option></select
+            ><select aria-label="Body">
+                <option value="female">Female</option>
+                <option value="male">Male</option></select
+            ><select aria-label="Weapon">
+                <option value="sniper">SRS-9</option>
+                <option value="rifle">MX-4</option></select
+            ><select aria-label="Sheet"></select
+            ><button id="front">Front</button><button id="back">Back</button
+            ><button id="side">Profile</button>
+        </header>
+        <div id="labels"></div>
+        <div id="status">Loading</div>
+        <script type="module" src="/scripts/gear-review.ts"></script>
+    </body>
+</html>

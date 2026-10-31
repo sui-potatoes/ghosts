@@ -1,0 +1,199 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { gunzipSync } from "node:zlib";
+import * as T from "three";
+import {
+    createLongGun,
+    LONG_GUN_GRIP,
+    BORE_HEIGHT,
+    WEAPON_MOUNTS,
+} from "@ghosts/squad/studio/long-guns";
+import { ATTACHMENTS } from "../../packages/squad/src/catalog.ts";
+import { createFieldSupply } from "../../packages/squad/src/studio/field-supplies.ts";
+import { motionSkeleton } from "@ghosts/squad/motion/clearance";
+import { nativeClip } from "@ghosts/squad/motion/clips";
+import { mountHandEquipment } from "@ghosts/squad/studio/held-equipment";
+
+for (const kind of ["rifle", "sniper", "plasma"] as const) {
+    test(`${kind}: complete geometry, empty optics mounts and coherent barrel axis`, () => {
+        const gun = createLongGun(kind);
+        const bounds = new T.Box3().setFromObject(gun);
+        const size = bounds.getSize(new T.Vector3());
+        assert.ok(size.y > (kind === "sniper" ? 0.93 : 0.7));
+        assert.ok(size.y < (kind === "sniper" ? 0.99 : 0.8));
+        let triangles = 0;
+        gun.traverse((part) => {
+            if (!(part instanceof T.Mesh)) return;
+            assert.ok(Array.from(part.geometry.attributes.position.array).every(Number.isFinite));
+            assert.ok(Array.from(part.geometry.attributes.normal.array).every(Number.isFinite));
+            assert.ok(part.geometry.attributes.uv);
+            triangles += part.geometry.attributes.position.count / 3;
+        });
+        assert.ok(triangles < 40000, `${triangles} triangles`);
+        assert.equal(gun.getObjectByName("mount_scope")!.children.length, 0, "no scope by default");
+        assert.equal(gun.getObjectByName("mount_laser")!.children.length, 0, "no laser by default");
+        // A ray along the bore must meet the muzzle face at the advertised exit.
+        const ray = new T.Raycaster(new T.Vector3(0, 1, -BORE_HEIGHT), new T.Vector3(0, -1, 0));
+        const hits = ray.intersectObject(gun);
+        assert.ok(hits.length > 0);
+        assert.ok(Math.abs(hits[0].point.y - gun.userData.muzzle[1]) < 0.003);
+    });
+    for (const sex of ["female", "male"])
+        test(`${kind}/${sex}: trigger grip stays in palm through ready, fire, reload and run`, () => {
+            const b = readFileSync(`public/squad/body/${sex}/skin.glb`);
+            const root = motionSkeleton(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength));
+            const hand = root.getObjectByName("mixamorigRightHand") as T.Bone;
+            const gun = createLongGun(kind),
+                group = new T.Group();
+            gun.quaternion.setFromRotationMatrix(
+                new T.Matrix4().makeBasis(
+                    new T.Vector3(0, 0, -1),
+                    new T.Vector3(1, 0, 0),
+                    new T.Vector3(0, -1, 0),
+                ),
+            );
+            group.add(gun);
+            group.userData.center = [0, 0, 0];
+            group.userData.model = kind;
+            mountHandEquipment(
+                group,
+                hand,
+                JSON.parse(readFileSync(`public/squad/body/${sex}/weapon-mount.json`, "utf8")),
+            );
+            const source = JSON.parse(
+                gunzipSync(readFileSync(`public/squad/motions/${sex}.bin`)).toString(),
+            );
+            const mixer = new T.AnimationMixer(root);
+            for (const name of [
+                "rifle_idle",
+                "rifle_burst",
+                "sniper_shot",
+                "reload",
+                "rifle_run",
+            ]) {
+                mixer.stopAllAction();
+                const clip = nativeClip(
+                    T.AnimationClip.parse(source.find((c: { name: string }) => c.name === name)),
+                );
+                const action = mixer.clipAction(clip).play();
+                for (const fraction of [0, 0.3, 0.6, 0.99]) {
+                    action.time = clip.duration * fraction;
+                    mixer.update(0);
+                    root.updateMatrixWorld(true);
+                    const palm = hand
+                        .getWorldPosition(new T.Vector3())
+                        .lerp(
+                            root
+                                .getObjectByName("mixamorigRightHandMiddle1")!
+                                .getWorldPosition(new T.Vector3()),
+                            0.8,
+                        );
+                    assert.ok(
+                        gun.localToWorld(new T.Vector3(...LONG_GUN_GRIP)).distanceTo(palm) < 0.032,
+                        `${name}@${fraction}`,
+                    );
+                }
+            }
+            mixer.stopAllAction();
+            mixer.uncacheRoot(root);
+        });
+}
+test("field supplies are human-scale, finite, and limited to four finishes", () => {
+    for (const kind of ["grenade", "medkit"] as const) {
+        const group = createFieldSupply(kind),
+            size = new T.Box3().setFromObject(group).getSize(new T.Vector3());
+        assert.equal(group.children.length, 4);
+        assert.ok(size.y < 0.25);
+        assert.ok(size.x < (kind === "grenade" ? 0.12 : 0.32));
+        for (const mesh of group.children as T.Mesh[])
+            assert.ok(Array.from(mesh.geometry.attributes.position.array).every(Number.isFinite));
+    }
+});
+
+test("exported GLBs preserve every socket and contain texture-ready normals, tangents and UVs", () => {
+    for (const kind of ["rifle", "sniper", "plasma"]) {
+        const bytes = readFileSync(`public/squad/weapons/${kind}.glb`);
+        const gltf = JSON.parse(bytes.subarray(20, 20 + bytes.readUInt32LE(12)).toString());
+        for (const [slot, xyz] of Object.entries(WEAPON_MOUNTS)) {
+            const mount = gltf.nodes.find(
+                (n: { extras?: { interface?: string } }) =>
+                    n.extras?.interface === `ghosts:${slot}:v1`,
+            );
+            assert.ok(mount, `${kind}/${slot} exists`);
+            const [x, y, z] = kind === "plasma" && slot === "laser" ? [0.23, 0.045, 0.052] : xyz;
+            const expected = [-z, x, -y];
+            assert.ok(mount.translation, `${kind}/${slot} must not lose its transform`);
+            assert.ok(
+                mount.translation.every((v: number, i: number) => Math.abs(v - expected[i]) < 1e-6),
+                `${kind}/${slot}`,
+            );
+            if (slot === "scope" || slot === "laser") assert.equal(mount.children?.length ?? 0, 0);
+        }
+        for (const mesh of gltf.meshes)
+            for (const primitive of mesh.primitives) {
+                for (const attribute of ["NORMAL", "TEXCOORD_0", "TANGENT"]) {
+                    assert.notEqual(
+                        primitive.attributes[attribute],
+                        undefined,
+                        `${kind}/${mesh.name}/${attribute}`,
+                    );
+                    assert.ok(gltf.accessors[primitive.attributes[attribute]].count > 0);
+                }
+            }
+    }
+});
+
+test("all twelve attachment meshes assemble on every rifle without modifying the default assets", () => {
+    for (const kind of ["rifle", "sniper", "plasma"] as const) {
+        const original = createLongGun(kind);
+        for (const attachment of ATTACHMENTS) {
+            const fitted = createLongGun(kind, { [attachment.slot]: attachment.id });
+            const mount = fitted.getObjectByName(`mount_${attachment.slot}`)!;
+            assert.equal(mount.children.length, 1);
+            assert.equal(mount.children[0].userData.tier, attachment.tier);
+            assert.equal(mount.children[0].name, attachment.id);
+            assert.ok(mount.children[0].position.length() === 0, "attachment uses socket origin");
+            const size = new T.Box3().setFromObject(fitted).getSize(new T.Vector3());
+            assert.ok(
+                size.x < 0.2 && size.y < 1.1 && size.z < 0.4,
+                `${kind}/${attachment.id} bounds`,
+            );
+            fitted.traverse((o) => {
+                if (o instanceof T.Mesh) o.geometry.dispose();
+            });
+        }
+        assert.equal(original.getObjectByName("mount_scope")!.children.length, 0);
+    }
+});
+
+test("all fifteen exported assets have finite unit-range UVs and material channels", () => {
+    for (const id of ["rifle", "sniper", "plasma", ...ATTACHMENTS.map((a) => a.id)]) {
+        const bytes = readFileSync(`public/squad/weapons/${id}.glb`);
+        const jsonLength = bytes.readUInt32LE(12);
+        const gltf = JSON.parse(bytes.subarray(20, 20 + jsonLength).toString());
+        const binaryOffset = 20 + jsonLength + 8;
+        assert.ok(gltf.materials.length > 0);
+        for (const material of gltf.materials)
+            assert.ok(material.name.includes("/0"), material.name);
+        for (const mesh of gltf.meshes)
+            for (const primitive of mesh.primitives) {
+                const accessor = gltf.accessors[primitive.attributes.TEXCOORD_0];
+                const view = gltf.bufferViews[accessor.bufferView];
+                const offset = binaryOffset + (view.byteOffset ?? 0) + (accessor.byteOffset ?? 0);
+                for (let i = 0; i < accessor.count; i++)
+                    for (let component = 0; component < 2; component++) {
+                        const uv = bytes.readFloatLE(
+                            offset + i * (view.byteStride ?? 8) + component * 4,
+                        );
+                        assert.ok(
+                            Number.isFinite(uv) && uv >= -1e-5 && uv <= 1.00001,
+                            `${id}: invalid UV ${uv}`,
+                        );
+                    }
+            }
+    }
+});

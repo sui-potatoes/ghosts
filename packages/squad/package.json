@@ -5,6 +5,8 @@
     "type": "module",
     "description": "The Ghosts squad domain: roster model and catalog, operative stats, and the character pipeline (appearance, armor, field kit, motion) shared by the Squad screen and the encounter engine.",
     "exports": {
+        "./body": "./src/body.ts",
+        "./appearance/body-shape": "./src/appearance/body-shape.ts",
         "./appearance/brow-shape": "./src/appearance/brow-shape.js",
         "./appearance/editor-state": "./src/appearance/editor-state.js",
         "./appearance/eyewear": "./src/appearance/eyewear.js",
@@ -29,11 +31,14 @@
         "./studio/equipment-assets": "./src/studio/equipment-assets.ts",
         "./studio/held-equipment": "./src/studio/held-equipment.ts",
         "./studio/recruit-studio": "./src/studio/recruit-studio.ts",
+        "./studio/long-guns": "./src/studio/long-guns.ts",
         "./studio/sidearm": "./src/studio/sidearm.ts",
-        "./types": "./src/types.ts"
+        "./types": "./src/types.ts",
+        "./motion/equipment-poses": "./src/motion/equipment-poses.ts",
+        "./motion/smoking": "./src/motion/smoking.ts"
     },
     "scripts": {
-        "test": "node --experimental-strip-types --test tests/squad.test.ts",
+        "test": "node --experimental-strip-types --test tests/squad.test.ts tests/eyewear.test.ts",
         "typecheck": "tsc -p ."
     },
     "dependencies": {

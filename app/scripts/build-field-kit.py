@@ -1,13 +1,16 @@
 """Author Spectre field armor around the native MPFB bind meshes; retain skin weights."""
-import bpy, bmesh, math, os, json
+import bpy, bmesh, math, os, json, sys
+sys.path.insert(0,os.path.dirname(os.path.abspath(__file__)))
 from mathutils import Vector
 from mathutils.bvhtree import BVHTree
+from native_gear import material as surface_material
 ROOT=os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT=os.environ.get('GEAR_BUILD_DIR','/tmp/ghosts-field-kit')
 os.makedirs(OUT,exist_ok=True)
 def bv(v): return Vector((v[0],-v[2],v[1]))
 def gv(v): return Vector((v.x,v.z,-v.y))
 def material(name,color,metal,rough):
+ if name.startswith(("Spectre","Field kit")):return surface_material(name,color,metal,rough)
  m=bpy.data.materials.new(name);m.diffuse_color=(*color,1);m.use_nodes=True
  bs=m.node_tree.nodes.get('Principled BSDF');bs.inputs['Base Color'].default_value=(*color,1);bs.inputs['Metallic'].default_value=metal;bs.inputs['Roughness'].default_value=rough
  return m
@@ -46,6 +49,14 @@ for sex in ['male','female']:
     ds=[max(0,1-beta-gamma),max(0,beta),max(0,gamma)];ws={}
     for i,d in zip(ids,ds):
      for n,w in weights[i].items():ws[n]=ws.get(n,0)+w*d/max(sum(ds),1e-9)
+    if fit_tree is torso_tree:
+     ws={n:w for n,w in ws.items() if any(k in n for k in ['Hips','Spine'])}
+     if not ws:ws={bone_names['mixamorigSpine2']:1}
+    if o.name=='Carrier / fitted ballistic shell':
+     # The vest hem rides above the belt. Hip weights pull it apart when the
+     # pelvis folds away from the chest during a covered reload or collapse.
+     ws={n:w for n,w in ws.items() if 'Spine' in n}
+     if not ws:ws={bone_names['mixamorigSpine']:1}
     ws=dict(sorted(ws.items(),key=lambda a:-a[1])[:4]);total=sum(ws.values());ws={n:w/total for n,w in ws.items()}
    near,_,ti,_=fit_tree.find_nearest(p)
    anchors.append({'position':list(p),'weights':ws,'triangle':list(fit_tris[ti]),'surface':list(near)})
@@ -62,16 +73,30 @@ for sex in ['male','female']:
   bpy.ops.object.select_all(action='DESELECT');o.select_set(True);bpy.context.view_layer.objects.active=o
   bpy.ops.object.mode_set(mode='EDIT');bpy.ops.mesh.select_all(action='SELECT');bpy.ops.mesh.normals_make_consistent(inside=False);bpy.ops.object.mode_set(mode='OBJECT')
   for p in o.data.polygons:p.use_smooth=False
+  # Metre-scaled UVs supply woven cloth and a subtle ceramic surface finish.
+  uv=o.data.uv_layers.new(name='Surface finish')
+  for face in o.data.polygons:
+   normal=gv(face.normal);axis=max(range(3),key=lambda k:abs(normal[k]));axes=[k for k in range(3) if k!=axis]
+   for li in face.loop_indices:
+    p=gv(o.data.vertices[o.data.loops[li].vertex_index].co);uv.data[li].uv=(p[axes[0]]*32,p[axes[1]]*32)
   bind(o,rigid);return o
+ plate_profiles={}
  def plate_z(cx,w,x,y,side,offset,depth=0):
-  # A shallow curved face with a body-fitted rear wall, rather than an unsupported flat slab.
-  local=side*surface(x,y,side)
-  row=max(side*surface(cx+u*w,y,side) for u in [-.35,0,.35])
-  return side*(local*.65+row*.35+offset+depth)
+  profile=plate_profiles.get((cx,w,side))
+  if profile:
+   cy,slope,base=profile
+   return side*(base+slope*(y-cy)-.006*((x-cx)/(w*.5))**2+offset+depth)
+  return surface(x,y,side)+side*(offset+depth)
  def panel(name,cx,cy,w,h,side=1,mat=0,offset=.018,rigid=None,fitted=False):
   # Chamfered shield silhouette, shallow crown and a bevelled perimeter.
   outline=[(-.38,.5),(.38,.5),(.5,.33),(.48,-.32),(.30,-.5),(-.30,-.5),(-.48,-.32),(-.5,.33)]
   vs=[];rings=[(1,0),(.94,.006),(.24,.012)]
+  slope=side*(surface(cx,cy+h*.5,side)-surface(cx,cy-h*.5,side))/h
+  base=max(side*surface(cx+u*w,cy+v*h,side)-slope*v*h+.006*(u*2)**2 for u in [-.5,-.25,0,.25,.5] for v in [-.5,-.25,0,.25,.5])
+  plate_profiles[(cx,w,side)]=(cy,slope,base)
+  # Ceramic shells keep one rigid attachment; cloth carries torso flexion.
+  if rigid is None and fit_tree is torso_tree:
+   joint=min(['Spine','Spine1','Spine2'],key=lambda n:abs(bone(n).y-cy));rigid='mixamorig'+joint
   # One continuous front plane clears both chest contours; no sculpted breast cups.
   central=max(side*surface(cx+u*w,cy+v*h,side) for u,v in outline+[(0,0)])
   for f,depth in rings:
@@ -84,11 +109,24 @@ for sex in ['male','female']:
   fs.append(tuple(range(16,24)))
   # Side walls close the plate; a textile backing is separate.
   for u,v in outline:
-   x=cx+u*w;y=cy+v*h;vs.append((x,y,surface(x,y,side)+side*.008))
+   x=cx+u*w;y=cy+v*h;vs.append((x,y,plate_z(cx,w,x,y,side,offset-.006)))
   for j in range(8):fs.append((j,24+j,24+(j+1)%8,(j+1)%8))
   fs.append(tuple(reversed(range(24,32))))
   if side<0:fs=[tuple(reversed(f)) for f in fs]
-  return mesh(name,vs,fs,mat,rigid)
+  result=mesh(name,vs,fs,mat,rigid)
+  # Recessed edge seal and flush fasteners make the thin plate construction readable.
+  if mat==0:
+   edge=[]
+   for factor in [.91,.895]:
+    for u,v in outline:
+     x=cx+u*w*factor;y=cy+v*h*factor
+     edge.append((x,y,plate_z(cx,w,x,y,side,offset+.0042)))
+   mesh(name+' / perimeter seal',edge,[(j,(j+1)%8,8+(j+1)%8,8+j) for j in range(8)],1,rigid)
+   for sx in [-1,1]:
+    for sy in [-1,1]:
+     x=cx+sx*w*.31;y=cy+sy*h*.28
+     box(name+' / flush fastener',(x,y,plate_z(cx,w,x,y,side,offset+.007)),(.006,.006,.003),2,rigid,.001)
+  return result
  def ribbon(name,points,width,mat=1,rigid=None):
   # Sewn, fitted strips follow the body along shoulder and waist lines.
   vs=[]
@@ -190,7 +228,14 @@ for sex in ['male','female']:
  panel('Ceramic / upper chest',0,upper,w,.20*scale)
  panel('Ceramic / sternum',0,upper-.185*scale,w*.94,.145*scale)
  panel('Ceramic / abdominal overlap',0,waist+.015*scale,w*.80,.085*scale)
- body_shell('Ceramic / fitted dorsal shell',lambda p,n,ids: waist+.055*scale<p.y<neck-.135*scale and abs(p.x)<w*.43 and n.z<-.35,.023,.006,0)
+ # Manufactured dorsal plates replace copied skin triangles that pinched in the rifle pose.
+ for i in range(3):
+  py=upper-.015*scale-i*.095*scale;pw=w*(.86 if i==0 else .78)
+  panel('Ceramic / dorsal segment',0,py,pw,.105*scale,side=-1,offset=.023)
+  for sign in [-1,1]:
+   for row in range(3):
+    yy=py+(.022-row*.014)*scale;xx=sign*pw*.27
+    box('Dorsal / cooling recess',(xx,yy,plate_z(0,pw,xx,yy,-1,.031)),(.045*scale,.004,.002),1,'mixamorigSpine2' if i==0 else 'mixamorigSpine1',.001)
  for sign in [-1,1]:
   x=sign*w*.36
   side_name='Left' if sign>0 else 'Right'
@@ -199,11 +244,29 @@ for sex in ['male','female']:
    t=(p-sh).dot(axis)
    relevant=sum(sum(a for name,a in weights[i].items() if side_name+'Arm' in name or side_name+'Shoulder' in name) for i in ids)/3
    return lo*scale<t<hi*scale and p.x*sign>abs(sh.x)*.72 and (p-sh).length<.15*scale and p.y>sh.y-.08*scale
-  body_shell('Ceramic / anatomical shoulder cap',lambda p,n,ids:shoulder_region(p,n,ids,-.09,.065),.009,.006,0)
+  # Rigid open deltoid shell: a regular loft avoids jagged skin-derived borders.
+  u=Vector((0,0,1));v=axis.cross(u).normalized();rings=[];cols=13
+  limb_tree,_=region_tree([side_name+'Arm',side_name+'Shoulder'])
+  for k,t in enumerate([-.025,.005,.045,.08]):
+   center=sh+axis*t;ring=[]
+   for j in range(cols):
+    angle=-.30+(math.pi+.60)*j/(cols-1)
+    d=(u*math.cos(angle)+v*math.sin(angle)*(-sign)).normalized()
+    hit=limb_tree.ray_cast(center,d,.20)[0]
+    radius=max(.055*scale,min(.085*scale,(hit-center).dot(d) if hit else .065*scale))
+    ring.append(tuple(center+d*(radius+.014)))
+   rings+=ring
+  fs=[(k*cols+j,k*cols+j+1,(k+1)*cols+j+1,(k+1)*cols+j) for k in range(3) for j in range(cols-1)]
+  cap=mesh('Ceramic / rigid deltoid shell',rings,fs,0,'mixamorig'+side_name+'Arm')
+  bpy.context.view_layer.objects.active=cap
+  sol=cap.modifiers.new('Finished plate rim','SOLIDIFY');sol.thickness=.005
+  bpy.ops.object.modifier_move_up(modifier=sol.name);bpy.ops.object.modifier_apply(modifier=sol.name)
+  for poly in cap.data.polygons:poly.use_smooth=True
   # Paired low-profile magazine sleeves, outside the weapon stock pocket.
   px=sign*w*.23;py=upper-.185*scale;pz=plate_z(0,w*.94,px,py,1,.018)+.023
-  box('Load carriage / magazine sleeve',(px,py,pz),(.065*scale,.112*scale,.035),1)
-  box('Load carriage / sleeve tab',(px,py+.045*scale,pz+.022),(.038*scale,.025*scale,.007),2,None,.002)
+  pouch_joint='mixamorig'+min(['Spine','Spine1','Spine2'],key=lambda n:abs(bone(n).y-py))
+  box('Load carriage / magazine sleeve',(px,py,pz),(.065*scale,.112*scale,.035),1,pouch_joint)
+  box('Load carriage / sleeve tab',(px,py+.045*scale,pz+.022),(.038*scale,.025*scale,.007),2,pouch_joint,.002)
   # Light armor: a rounded knee pad over a fitted sleeve and two retaining straps.
   # No unsupported shin slabs. Each surface follows native mixed knee skin weights.
   side_name='Left' if sign>0 else 'Right'
@@ -241,8 +304,9 @@ for sex in ['male','female']:
   for o in objects:o.select_set(True)
   bpy.ops.export_scene.gltf(filepath=os.path.join(OUT,f'{kind}-{sex}.glb'),use_selection=True,export_format='GLB',export_animations=False,export_yup=True,export_apply=False,export_extras=False)
  export_parts('spectre')
+ if os.environ.get('GEAR_VARIANT')=='spectre':continue
  objects=[]
- # Independent base kit uses three shared, texture-free materials.
+ # Independent base kit uses three shared finishes with embedded micro-normal maps.
  mats=[material('Field kit / leather',(.024,.027,.026),0,.68),material('Field kit / rubber and webbing',(.015,.018,.017),0,.93),material('Field kit / hardware',(.20,.23,.22),.55,.48)]
  def tube(name,points,radius,mat,rigid=None):
   vs=[];segments=4
@@ -461,17 +525,33 @@ for sex in ['male','female']:
   for i in range(2):
    angle=sign*(.68+i*.42);d=Vector((math.sin(angle),0,math.cos(angle)));origin=Vector((0,cy,.015));hit=tree.ray_cast(origin,d,.4)[0]
    center=hit+d*.033+Vector((0,-.032,0))
-   o=box('Belt / magazine pouch' if sign<0 else 'Belt / utility pouch',center,(.056,.105,.045),0,None,.007)
-   # Rotate the authored pouch around its own centre to follow the belt tangent.
    from mathutils import Matrix
    rot=Matrix.Rotation(angle,3,'Y')
-   for v in o.data.vertices:v.co=bv(center+rot@(gv(v.co)-center))
-   # Refit weights after orienting the pouch, preserving deformation with the waist.
-   box('Belt / retention tab',center+d*.029+Vector((0,.033,0)),(.029,.025,.007),1,None,.003)
- # Rear compact medical pouch.
+   # One rigid hip attachment for the pouch and its fittings. Rotating the
+   # entire assembly keeps flap, retention strap and fastener on its face.
+   def pouch_box(name,local,dims,mat=0,bevel=.002):
+    o=box(name,center+Vector(local),dims,mat,'mixamorigHips',bevel)
+    for v in o.data.vertices:v.co=bv(center+rot@(gv(v.co)-center))
+    return o
+   pouch_box('Belt / magazine pouch' if sign<0 else 'Belt / utility pouch',(0,0,0),(.056,.105,.045),0,.007)
+   pouch_box('Belt / reinforced front gusset',(0,-.005,.024),(.045,.080,.003),1,.004)
+   pouch_box('Belt / folded flap',(0,.027,.028),(.052,.037,.006),0,.005)
+   pouch_box('Belt / retention webbing',(0,.008,.033),(.014,.055,.003),1)
+   pouch_box('Belt / retention buckle',(0,.005,.036),(.020,.018,.004),2)
+   pouch_box('Belt / buckle opening',(0,.005,.039),(.012,.009,.001),1,.001)
+   for x in [-.020,.020]:
+    for j in range(7):pouch_box('Belt / pouch stitching',(x,-.039+j*.009,.027),(.0012,.004,.001),2,.0003)
+ # Rear compact medical pouch with perimeter stitching and a zip closure.
  z=surface(0,cy,-1)-.035
- box('Belt / rear medical pouch',(0,cy-.025,z),(.12,.085,.05),0,None,.010)
- box('Belt / medical patch',(0,cy-.025,z-.027),(.032,.028,.003),2,None,.002)
+ box('Belt / rear medical pouch',(0,cy-.025,z),(.12,.085,.05),0,'mixamorigHips',.010)
+ box('Belt / medical front panel',(0,cy-.025,z-.027),(.103,.066,.004),1,'mixamorigHips',.006)
+ box('Belt / medical patch',(0,cy-.025,z-.030),(.032,.028,.003),0,'mixamorigHips',.002)
+ box('Belt / medical cross horizontal',(0,cy-.025,z-.032),(.023,.006,.002),2,'mixamorigHips',.001)
+ box('Belt / medical cross vertical',(0,cy-.025,z-.032),(.006,.023,.002),2,'mixamorigHips',.001)
+ for y in [cy-.052,cy+.002]:
+  for j in range(12):box('Belt / rear pouch stitching',(-.046+j*.008,y,z-.030),(.003,.001,.001),2,'mixamorigHips',.0002)
+ box('Belt / pouch zipper',(0,cy+.017,z),(.087,.002,.004),2,'mixamorigHips',.001)
+ box('Belt / zipper pull',(.041,cy+.014,z-.010),(.008,.012,.003),2,'mixamorigHips',.001)
  export_parts('field-kit')
  print('FIELD_KIT',sex,len(objects),'pieces')
  if os.environ.get('GEAR_SAVE_BLEND'):bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT,f'field-kit-{sex}.blend'))

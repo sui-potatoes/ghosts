@@ -6,6 +6,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import {
     isCategory,
     SettingsHeader,
+    SettingsSmoke,
     SettingsView,
     type CategoryId,
 } from "../settings/SettingsView";
@@ -21,11 +22,12 @@ export default function Settings() {
     const current: CategoryId = isCategory(tab) ? tab : "player";
 
     return (
-        <main className="flex min-h-screen flex-col px-6 py-10 md:px-16 md:py-16">
-            <div className="flex w-full max-w-3xl flex-1 flex-col gap-10">
+        <main className="relative isolate flex h-screen flex-col px-6 py-10 md:px-16 md:py-16">
+            <SettingsSmoke />
+            <div className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col gap-10">
                 <SettingsHeader>
                     <Link to="/" className="label text-secondary hover:text-accent">
-                        Menu
+                        ← Menu
                     </Link>
                 </SettingsHeader>
                 <SettingsView

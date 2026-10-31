@@ -1128,3 +1128,223 @@
         bottom: 100px;
     }
 }
+
+/* Actual assembled weapon, under product lighting; the same GLBs are held by the operative. */
+.weapon-workbench {
+    margin: 24px 0;
+    border: 1px solid #303b40;
+    background: #141c20;
+}
+.weapon-workbench-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 18px 16px 0;
+}
+.weapon-workbench-heading h4 {
+    margin: 5px 0 0;
+    font-size: 18px;
+    font-weight: 500;
+    color: #d7dfdf;
+}
+.weapon-preview {
+    position: relative;
+    background: radial-gradient(ellipse at 50% 45%, #303d43, #11191e 75%);
+}
+.weapon-canvas {
+    width: 100%;
+    height: 235px;
+    touch-action: none;
+}
+.weapon-canvas canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+.weapon-preview-caption {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 14px 12px;
+    font-size: 10px;
+    color: #929fa5;
+}
+.weapon-preview-caption button,
+.weapon-inspect header button {
+    padding: 7px 10px;
+    border: 1px solid #52646b;
+    background: #1d2b32;
+    color: #d7e6e7;
+    cursor: pointer;
+}
+.weapon-live-stats {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 14px;
+    border-top: 1px solid #303b40;
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    color: #929fa5;
+}
+.weapon-live-stats b {
+    display: block;
+    color: #e2e9e6;
+    font-size: 17px;
+    font-weight: 500;
+    margin-bottom: 4px;
+}
+.attachment-tabs {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    border-block: 1px solid #303b40;
+}
+.attachment-tabs button {
+    position: relative;
+    padding: 12px 3px;
+    background: transparent;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    color: #9aabad;
+    font-size: 10px;
+    cursor: pointer;
+}
+.attachment-tabs button[aria-pressed="true"] {
+    color: #d7ece7;
+    background: #203034;
+    border-bottom-color: #91bcb3;
+}
+.attachment-tabs i {
+    display: inline-block;
+    width: 4px;
+    height: 4px;
+    margin-left: 5px;
+    border-radius: 50%;
+    background: #91bcb3;
+}
+.attachment-options {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 7px;
+    padding: 12px;
+}
+.attachment-options button {
+    cursor: pointer;
+    color: #c5d1d2;
+    border: 1px solid #344348;
+    background: #1a252a;
+    text-align: left;
+}
+.attachment-options button[aria-pressed="true"] {
+    border-color: #9dbdb5;
+    background: #263a3c;
+}
+.attachment-options button:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+.attachment-default {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: space-between;
+    padding: 9px;
+    font-size: 11px;
+}
+.attachment-default span {
+    font-size: 10px;
+    color: #95a5a7;
+}
+.attachment-option {
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 7px;
+}
+.attachment-option img {
+    width: 100%;
+    aspect-ratio: 2;
+    object-fit: contain;
+}
+.attachment-tier {
+    color: #8ea1a5;
+    font-size: 8px;
+    letter-spacing: 0.14em;
+}
+.attachment-option strong {
+    font-size: 11px;
+    font-weight: 500;
+    min-height: 28px;
+    line-height: 1.4;
+}
+.attachment-bonus {
+    color: #a2cbc1;
+    font-size: 11px;
+}
+.attachment-option small {
+    margin-top: auto;
+    font-size: 9px;
+    color: #8fa6aa;
+}
+.weapon-workbench > .sq-footnote {
+    margin: 0;
+    padding: 0 14px 14px;
+    line-height: 1.5;
+}
+.weapon-inspect {
+    margin: auto;
+    max-height: 95vh;
+    width: min(1100px, 94vw);
+    max-width: 94vw;
+    padding: 0;
+    border: 1px solid #4a5d65;
+    color: #e0e8e6;
+    background: #101a20;
+}
+.weapon-inspect::backdrop {
+    background: #050a0ee8;
+    backdrop-filter: blur(8px);
+}
+.weapon-inspect header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 24px;
+}
+.weapon-inspect h2 {
+    margin: 8px 0 0;
+    font-size: 26px;
+    font-weight: 400;
+}
+.weapon-inspect-stage {
+    background: radial-gradient(ellipse at 50% 45%, #34454c, #101a20 75%);
+}
+.weapon-inspect .weapon-canvas {
+    height: min(65vh, 660px);
+}
+.weapon-inspect > p {
+    margin: 0;
+    padding: 15px 24px;
+    color: #93a4ab;
+    font-size: 11px;
+}
+
+.weapon-type-select {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    margin: 14px 16px;
+    color: #92a3a9;
+    font-size: 10px;
+}
+.weapon-type-select select {
+    min-width: 0;
+    background: #18262c;
+    color: #d6e2e2;
+    padding: 8px;
+    border: 1px solid #40535b;
+    font-size: 11px;
+}

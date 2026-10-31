@@ -2,8 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import * as T from "three";
+import { equipmentPose, loadEquipmentPoses } from "../motion/equipment-poses";
 import { nativeClip } from "../motion/clips";
 import { paintArmor } from "./armor-materials";
+import { officeIdle } from "./office-worker";
+import { BodyDeformation } from "../appearance/body-shape";
 import { GLTFLoader, type GLTF } from "three/addons/loaders/GLTFLoader.js";
 import { clone } from "three/addons/utils/SkeletonUtils.js";
 import { weights } from "../appearance/editor-state.js";
@@ -16,6 +19,7 @@ import { nativeTattoo } from "../appearance/mpfb-tattoo.js";
 import type { Appearance, ArmorColors, Sex } from "../types";
 
 export const assetUrl = (path: string) => `${import.meta.env.BASE_URL}squad/${path}`;
+export type CharacterLook = "operative" | "office-worker";
 interface Target {
     offset: number;
     count: number;
@@ -46,6 +50,8 @@ export interface Character {
     top: number;
     hand: T.Bone;
     mount: WeaponMount;
+    idleClip: T.AnimationClip;
+    heightScale: number;
     setArmorColors(colors: ArmorColors): void;
     dispose(): void;
 }
@@ -224,9 +230,14 @@ export class CharacterAssets {
         if (!this.poses.has(sex))
             this.poses.set(
                 sex,
-                json<Parameters<typeof T.AnimationClip.parse>[0]>(
-                    assetUrl(`body/${sex}/idle.json`),
-                ).then((data) => nativeClip(T.AnimationClip.parse(data))),
+                Promise.all([
+                    json<Parameters<typeof T.AnimationClip.parse>[0]>(
+                        assetUrl(`body/${sex}/idle.json`),
+                    ),
+                    loadEquipmentPoses(sex),
+                ]).then(([data, poses]) =>
+                    equipmentPose(nativeClip(T.AnimationClip.parse(data)), poses),
+                ),
             );
         return this.poses.get(sex)!;
     }
@@ -235,7 +246,7 @@ export class CharacterAssets {
         if (!this.armor.has(key))
             this.armor.set(
                 key,
-                this.loader.loadAsync(assetUrl(`armor/${key}.glb?v=${id === "spectre" ? 4 : 8}`)),
+                this.loader.loadAsync(assetUrl(`armor/${key}.glb?v=${id === "spectre" ? 7 : 10}`)),
             );
         return this.armor.get(key)!;
     }
@@ -243,23 +254,25 @@ export class CharacterAssets {
         s: Appearance,
         armorId: string | null,
         poseMode: "idle" | "rest" = "idle",
+        look: CharacterLook = "operative",
     ): Promise<Character> {
         if (this.disposed) throw Error("Studio closed.");
+        const office = look === "office-worker";
         const keys = ["skin", "eyes", "lashes", s.brows, s.hair].filter((k) => k !== "none");
         if (!this.mounts.has(s.sex))
             this.mounts.set(s.sex, json<WeaponMount>(assetUrl(`body/${s.sex}/weapon-mount.json`)));
-        if (!this.fieldKit.has(s.sex))
+        if (!office && !this.fieldKit.has(s.sex))
             this.fieldKit.set(
                 s.sex,
-                this.loader.loadAsync(assetUrl(`armor/field-kit-${s.sex}.glb?v=8`)),
+                this.loader.loadAsync(assetUrl(`armor/field-kit-${s.sex}.glb?v=9`)),
             );
         const [parts, skinTexture, eyeTexture, pose, mount, kit] = await Promise.all([
             Promise.all(keys.map((key) => this.getPart(s.sex, key))),
             this.texture(`editor/textures/${s.skin}_${s.sex}.webp`),
             this.texture(`editor/textures/eye-${s.eyes}.webp`),
-            this.pose(s.sex),
+            office ? Promise.resolve(null) : this.pose(s.sex),
             this.mounts.get(s.sex)!,
-            this.fieldKit.get(s.sex)!,
+            office ? this.armorAsset("office-worker", s.sex) : this.fieldKit.get(s.sex)!,
         ]);
         if (this.disposed) throw Error("Studio closed.");
         const root = clone(parts[0].gltf.scene) as T.Group,
@@ -286,7 +299,7 @@ export class CharacterAssets {
         updateBlush(body, s);
         installScars(body, top);
         updateScars(body, s);
-        installBodySuit(body, top, body.skeleton, armorId?.startsWith("nyx") ?? false);
+        if (!office) installBodySuit(body, top, body.skeleton, armorId?.startsWith("nyx") ?? false);
         const headIndex = body.skeleton.bones.findIndex((b) => b.name.endsWith("Head"));
         function attach(g: T.BufferGeometry, mat: T.Material, nativeSkeleton?: T.Skeleton) {
             if (nativeSkeleton) remapNativeWeights(g, nativeSkeleton, body.skeleton, true);
@@ -354,16 +367,44 @@ export class CharacterAssets {
                 accessory.userData.nativePart = "tattoo";
             }
         }
-        // Boots and utility belt are base clothing, independent of the armor slot.
+        // Civilian clothing replaces the entire field kit, including its boots and belt.
         const kitMeshes = meshes(kit.scene).map((source) => {
             const skin = source as T.SkinnedMesh;
             const attached = attach(skin.geometry.clone(), material(skin).clone(), skin.skeleton);
-            attached.userData.nativePart = "field-kit";
+            attached.userData.nativePart = office ? "office-worker" : "field-kit";
             return attached;
         });
-        hideBodyInsideBoots(body);
+        if (office) {
+            // Keep the original vertex buffer and weights for contact sampling and morphs;
+            // omit only enclosed triangles to prevent skin showing through moving cloth.
+            body.updateWorldMatrix(true, false);
+            const neck =
+                body.worldToLocal(
+                    body.skeleton.bones
+                        .find((b) => b.name.endsWith("Neck"))!
+                        .getWorldPosition(new T.Vector3()),
+                ).y + 0.002;
+            const g = body.geometry,
+                p = g.attributes.position,
+                joints = g.attributes.skinIndex,
+                skinWeights = g.attributes.skinWeight;
+            const exposed = Array.from({ length: p.count }, (_, i) => {
+                let hand = 0;
+                for (let k = 0; k < 4; k++)
+                    if (body.skeleton.bones[joints.getComponent(i, k)].name.includes("Hand"))
+                        hand += skinWeights.getComponent(i, k);
+                return p.getY(i) > neck || hand > 0.18;
+            });
+            const visible: number[] = [],
+                index = g.index!;
+            for (let i = 0; i < index.count; i += 3) {
+                const triangle = [index.getX(i), index.getX(i + 1), index.getX(i + 2)];
+                if (triangle.some((v) => exposed[v])) visible.push(...triangle);
+            }
+            g.setIndex(visible);
+        } else hideBodyInsideBoots(body);
         const armorMaterials: T.MeshStandardMaterial[] = [];
-        if (armorId && ["spectre", "nyx", "nyx-mid", "nyx-heavy"].includes(armorId)) {
+        if (!office && armorId && ["spectre", "nyx", "nyx-mid", "nyx-heavy"].includes(armorId)) {
             const armor = await this.armorAsset(armorId, s.sex);
             for (const source of meshes(armor.scene)) {
                 const skin = source as T.SkinnedMesh;
@@ -373,10 +414,14 @@ export class CharacterAssets {
                     "armor";
             }
         }
-        // Use one frozen frame from the existing retargeted idle, not procedural limb posing.
+        const physique = new BodyDeformation(body, s.body);
+        for (const mesh of meshes(root)) physique.geometry(mesh.geometry);
+        // Office idle is authored in the original rest coordinates before stature scaling.
+        const idleClip = office ? officeIdle(root) : pose!;
+        root.scale.multiplyScalar(physique.heightScale);
         const mixer = new T.AnimationMixer(root);
         if (poseMode === "idle") {
-            mixer.clipAction(pose).play();
+            mixer.clipAction(idleClip).play();
             mixer.setTime(0.8);
         }
         root.updateMatrixWorld(true);
@@ -397,6 +442,8 @@ export class CharacterAssets {
             top: bounds.max.y - bounds.min.y,
             hand: body.skeleton.bones.find((b) => b.name.endsWith("RightHand"))!,
             mount,
+            idleClip,
+            heightScale: physique.heightScale,
             setArmorColors(colors) {
                 paintArmor(armorMaterials, colors);
             },

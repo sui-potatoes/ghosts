@@ -10,9 +10,22 @@ interface Props {
     studio: RecruitStudio | null;
     state: MotionState;
     onBody(): void;
+    civilian?: boolean;
 }
-export function MotionControls({ studio, state, onBody }: Props) {
-    const [choice, setChoice] = useState<Motion>("rifle_idle");
+export function MotionControls({ studio, state, onBody, civilian = false }: Props) {
+    const available = civilian
+        ? motions.filter(([id]) =>
+              [
+                  "idle_weight_shift",
+                  "run",
+                  "crouch_idle",
+                  "hunker_down",
+                  "take_damage",
+                  "death",
+              ].includes(id),
+          )
+        : motions;
+    const [choice, setChoice] = useState<Motion>(civilian ? "idle_weight_shift" : "rifle_idle");
     const [loop, setLoop] = useState(true),
         [speed, setSpeed] = useState(1);
     const [loading, setLoading] = useState(false),
@@ -33,7 +46,7 @@ export function MotionControls({ studio, state, onBody }: Props) {
     return (
         <div className="motion-controls" aria-label="Motion drills">
             <label className="motion-picker">
-                MOTION / {motions.length}
+                MOTION / {available.length}
                 <select
                     aria-label="Motion"
                     value={choice}
@@ -42,13 +55,15 @@ export function MotionControls({ studio, state, onBody }: Props) {
                         setChoice(e.target.value as Motion);
                     }}
                 >
-                    {[...new Set(motions.map((m) => m[2]))].map((group) => (
+                    {[...new Set(available.map((m) => m[2]))].map((group) => (
                         <optgroup key={group} label={group}>
-                            {motions
+                            {available
                                 .filter((m) => m[2] === group)
                                 .map(([id, label]) => (
                                     <option key={id} value={id}>
-                                        {label}
+                                        {civilian && id === "idle_weight_shift"
+                                            ? "Crossed arms / civilian idle"
+                                            : label}
                                     </option>
                                 ))}
                         </optgroup>

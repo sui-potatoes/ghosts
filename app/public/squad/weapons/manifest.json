@@ -1,0 +1,96 @@
+{
+  "version": 2,
+  "uv": "UV0 per material, packed 0\u20131, 0.8% island gutter",
+  "assets": [
+    {
+      "id": "rifle",
+      "triangles": 25572,
+      "materials": 5,
+      "bytes": 2258820
+    },
+    {
+      "id": "sniper",
+      "triangles": 24868,
+      "materials": 6,
+      "bytes": 2438320
+    },
+    {
+      "id": "plasma",
+      "triangles": 26240,
+      "materials": 7,
+      "bytes": 2515500
+    },
+    {
+      "id": "clip-1",
+      "triangles": 956,
+      "materials": 4,
+      "bytes": 633812
+    },
+    {
+      "id": "clip-2",
+      "triangles": 2252,
+      "materials": 5,
+      "bytes": 885660
+    },
+    {
+      "id": "clip-3",
+      "triangles": 2900,
+      "materials": 6,
+      "bytes": 1105808
+    },
+    {
+      "id": "stock-1",
+      "triangles": 3020,
+      "materials": 5,
+      "bytes": 934312
+    },
+    {
+      "id": "stock-2",
+      "triangles": 3672,
+      "materials": 6,
+      "bytes": 1161488
+    },
+    {
+      "id": "stock-3",
+      "triangles": 3844,
+      "materials": 6,
+      "bytes": 1170680
+    },
+    {
+      "id": "laser-1",
+      "triangles": 896,
+      "materials": 8,
+      "bytes": 1002476
+    },
+    {
+      "id": "laser-2",
+      "triangles": 1260,
+      "materials": 8,
+      "bytes": 1023808
+    },
+    {
+      "id": "laser-3",
+      "triangles": 1908,
+      "materials": 8,
+      "bytes": 1055344
+    },
+    {
+      "id": "scope-1",
+      "triangles": 852,
+      "materials": 7,
+      "bytes": 813620
+    },
+    {
+      "id": "scope-2",
+      "triangles": 5860,
+      "materials": 6,
+      "bytes": 1091820
+    },
+    {
+      "id": "scope-3",
+      "triangles": 6184,
+      "materials": 7,
+      "bytes": 1110720
+    }
+  ]
+}

@@ -6,6 +6,7 @@ import { STOPPED, type MotionState } from "@ghosts/squad/motion/player";
 import { useEffect, useRef, useState } from "react";
 import type { Appearance, Recruit } from "@ghosts/squad/types";
 import type { Focus, RecruitStudio } from "@ghosts/squad/studio/recruit-studio";
+import type { CharacterLook } from "@ghosts/squad/studio/character-assets";
 
 interface Props {
     recruit: Recruit;
@@ -23,6 +24,7 @@ export function CharacterViewport(props: Props) {
     latest.current = props;
     const [motion, setMotion] = useState<MotionState>(STOPPED);
     const [drills, setDrills] = useState(false);
+    const [look, setLook] = useState<CharacterLook>("operative");
     const [ready, setReady] = useState(false),
         [error, setError] = useState(""),
         [attempt, setAttempt] = useState(0);
@@ -59,7 +61,7 @@ export function CharacterViewport(props: Props) {
         setError("");
         const timer = window.setTimeout(() => {
             void studio.current
-                ?.apply(props.recruit, props.appearance)
+                ?.apply(props.recruit, props.appearance, look)
                 .then(() => {
                     if (!cancelled) {
                         studio.current?.focus(latest.current.focus);
@@ -75,7 +77,7 @@ export function CharacterViewport(props: Props) {
             cancelled = true;
             window.clearTimeout(timer);
         };
-    }, [ready, props.recruit, props.appearance]);
+    }, [ready, props.recruit, props.appearance, look]);
     useEffect(() => {
         studio.current?.focus(props.focus);
     }, [props.focus]);
@@ -102,9 +104,16 @@ export function CharacterViewport(props: Props) {
             aria-label="Recruit preview"
         >
             <div className="stage-identity">
-                <span>{props.recruit.role} / ACTIVE ROSTER</span>
+                <span>
+                    {look === "office-worker"
+                        ? "EXTRACTION VIP / LOOK PREVIEW"
+                        : `${props.recruit.role} / ACTIVE ROSTER`}
+                </span>
                 <h2>{props.recruit.callsign}</h2>
-                <p>{props.recruit.name}</p>
+                <p>
+                    {props.recruit.name}
+                    {look === "office-worker" ? " · Office worker" : ""}
+                </p>
             </div>
             <div
                 ref={host}
@@ -127,6 +136,8 @@ export function CharacterViewport(props: Props) {
             )}
             {drills && (
                 <MotionControls
+                    key={look}
+                    civilian={look === "office-worker"}
                     studio={studio.current}
                     state={motion}
                     onBody={() => props.onFocus("body")}
@@ -135,6 +146,16 @@ export function CharacterViewport(props: Props) {
             <div className="stage-toolbar">
                 <span>DRAG HORIZONTALLY</span>
                 <div>
+                    <button
+                        aria-pressed={look === "office-worker"}
+                        onClick={() => {
+                            studio.current?.stopMotion();
+                            props.onFocus("body");
+                            setLook(look === "operative" ? "office-worker" : "operative");
+                        }}
+                    >
+                        Office VIP
+                    </button>
                     <button
                         aria-pressed={props.focus === "body"}
                         onClick={() => props.onFocus("body")}

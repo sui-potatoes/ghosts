@@ -2,16 +2,21 @@
 // SPDX-License-Identifier: MIT
 
 import { cityBlocks } from "./city-blocks";
+import { demoAsset } from './demo-assets';
 import * as T from 'three';
 import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import { STREET, districtBuildings, footprint, surfaceHeight } from './district-plan';
+import { storefrontFaces } from './storefronts';
+import type { StreetKind } from './environment';
+import type { SceneryKit } from './scene/maps';
 
 const textures: Record<string, T.Texture> = {};
 export async function loadDistrictTextures(renderer: T.WebGLRenderer) {
-  const loader = new KTX2Loader().setTranscoderPath('/demo-assets/basis/').setWorkerLimit(1).detectSupport(renderer);
+  if (textures['asphalt-rough']) return;
+  const loader = new KTX2Loader().setTranscoderPath(demoAsset('basis/')).setWorkerLimit(1).detectSupport(renderer);
   try {
     await Promise.all(['asphalt', 'concrete', 'brick'].flatMap(name => ['color', 'normal', 'rough'].map(async type => {
-      const t = await loader.loadAsync(`/demo-assets/textures/district/${name}-${type}.ktx2`);
+      const t = await loader.loadAsync(demoAsset(`textures/district/${name}-${type}.ktx2`));
       t.colorSpace = type === 'color' ? T.SRGBColorSpace : T.NoColorSpace;
       t.wrapS = t.wrapT = T.RepeatWrapping; t.anisotropy = 2;
       textures[`${name}-${type}`] = t;
@@ -25,6 +30,12 @@ function material(color: number, roughness = 0.8, metalness = 0.05) {
 function pbr(name: string, color: number, roughness: number) {
   return new T.MeshStandardMaterial({ color, map: textures[`${name}-color`], normalMap: textures[`${name}-normal`],
     roughnessMap: textures[`${name}-rough`], roughness, normalScale: new T.Vector2(0.45, 0.45) });
+}
+/** The street's PBR maps, for anything else (the level editor's floors) that
+ * reuses them; null until `loadDistrictTextures` resolves. */
+export function districtMaps(name: 'asphalt' | 'concrete') {
+  return { map: textures[`${name}-color`] ?? null, normalMap: textures[`${name}-normal`] ?? null,
+    roughnessMap: textures[`${name}-rough`] ?? null };
 }
 /** Metric UVs keep the same texture density on a small curb and a large facade. */
 function block(parent: T.Object3D, x: number, y: number, z: number, w: number, h: number, d: number, m: T.Material, tint?: number) {
@@ -73,7 +84,13 @@ function label(g: T.Object3D, m: T.Material, row: number, x: number, y: number, 
   for (let i=0; i<uv.count; i++) uv.setY(i, 1 - (row + 1 - uv.getY(i)) / 8);
   const mesh = new T.Mesh(geo,m); mesh.position.set(x,y,z); mesh.rotation.y=rotation; g.add(mesh); return mesh;
 }
-export function buildDistrict(scene: T.Scene) {
+/** A decorative clone of a catalog prop (scene/prop-assets.ts): no health or
+ * physics, and `batchStaticScenery` merges it per shared material. */
+function placeProp(kit:SceneryKit,kind:StreetKind,seed:number,parent:T.Object3D,x:number,y:number,z:number) {
+  const prop=kit.props.get({id:`decor-${kind}`,kind,x,z,yaw:0,seed}).intact.clone();
+  prop.position.set(x,y,z);parent.add(prop);return prop;
+}
+export function buildDistrict(scene: T.Scene, kit: SceneryKit) {
   const asphalt=pbr('asphalt',0x737c88,.72), concrete=pbr('concrete',0x9c9fa3,.9), paving=pavementMaterial(), brick=pbr('brick',0x8e7770,.9);
   const steel=material(0x30383f,.52,.65), black=material(0x151c23), paint=material(0xb8b5a2), curb=material(0x85888b), glass=material(0x1b303b,.22,.65);
   const colored=new T.MeshStandardMaterial({vertexColors:true,roughness:.75});
@@ -99,9 +116,9 @@ export function buildDistrict(scene: T.Scene) {
     // Segmented curb stones leave the lowered crossing ramps open.
     for(let n=0;n<36;n++) {
       const z=STREET.crossHalf+.5+n*1.1;
-      if(Math.abs(z-3.25)>.95) block(scene,sx*2.72,.075,sz*z,.16,.15,1.06,curb);
+      if(Math.abs(z-STREET.cuts.avenue)>.95) block(scene,sx*2.72,.075,sz*z,.16,.15,1.06,curb);
       const x=STREET.avenueHalf+.5+n*1.1;
-      if(Math.abs(x-3.85)>.95) block(scene,sx*x,.075,sz*2.045,1.06,.15,.16,curb);
+      if(Math.abs(x-STREET.cuts.cross)>.95) block(scene,sx*x,.075,sz*2.045,1.06,.15,.16,curb);
     }
   }
   // Kerb-side drainage and continuous edge lines, stopping at the junction.
@@ -119,13 +136,13 @@ export function buildDistrict(scene: T.Scene) {
   }
   // Four short zebra crossings connect actual sidewalk ramps, never whole blocks.
   for(const s of [-1,1]) {
-    for(let x=-2.3;x<2.6;x+=.63)block(scene,x,.022,s*3.25,.34,.018,1.25,paint);
-    for(let z=-1.7;z<1.9;z+=.62)block(scene,s*3.85,.022,z,1.25,.018,.34,paint);
+    for(let x=-2.3;x<2.6;x+=.63)block(scene,x,.022,s*STREET.cuts.avenue,.34,.018,1.25,paint);
+    for(let z=-1.7;z<1.9;z+=.62)block(scene,s*STREET.cuts.cross,.022,z,1.25,.018,.34,paint);
     block(scene, s*1.35,.021,s*4.35,2.25,.015,.13,paint);
     block(scene,s*5.0,.021,-s*1.0,.13,.015,1.65,paint);
     for(const r of [-1,1]) {
-      block(scene,r*3.1,.165,s*3.25,.35,.025,1.15,colored,0xb29b62);
-      block(scene,s*3.85,.165,r*2.42,1.15,.025,.35,colored,0xb29b62);
+      block(scene,r*3.1,.165,s*STREET.cuts.avenue,.35,.025,1.15,colored,0xb29b62);
+      block(scene,s*STREET.cuts.cross,.165,r*2.42,1.15,.025,.35,colored,0xb29b62);
     }
   }
   // Modest sidewalk joint lines rather than a second tactical checkerboard.
@@ -136,12 +153,10 @@ export function buildDistrict(scene: T.Scene) {
   }
   scene.add(new T.LineSegments(new T.BufferGeometry().setAttribute('position',new T.Float32BufferAttribute(seams,3)),new T.LineBasicMaterial({color:0x41484d,transparent:true,opacity:.28})));
 
-  const shopGlass=new T.MeshStandardMaterial({color:0x91b4c0,transparent:true,opacity:.16,roughness:.22,metalness:.1,depthWrite:false});
   // Two glazed street faces share the same materials and sign atlas.
   function shopfront(parent:T.Group,width:number,door:number,index:number,fasciaShift=0,fasciaExtra=0) {
     const halfDoor=.72;
     for(const [a,b] of [[-width/2+.08,door-halfDoor],[door+halfDoor,width/2-.08]]) {
-      block(parent,(a+b)/2,1.4,0,b-a,2.5,.018,shopGlass);
       block(parent,(a+b)/2,.32,.025,b-a,.04,.04,steel);
       block(parent,(a+b)/2,1.12,.025,b-a,.055,.025,colored,index?0x3b729c:0x438769);
     }
@@ -150,7 +165,6 @@ export function buildDistrict(scene: T.Scene) {
     // Clearly framed sliding doors, distinct from the shop-window bays.
     for(const side of [-1,1]) {
       const x=door+side*.355;
-      block(parent,x,1.27,.04,.68,2.28,.018,shopGlass);
       for(const y of [.14,1.1,2.4])block(parent,x,y,.065,.69,.04,.035,paint);
       block(parent,door+side*.018,1.27,.065,.025,2.28,.035,paint);
       block(parent,door+side*.1,1.12,.09,.035,.3,.035,steel);
@@ -213,10 +227,12 @@ export function buildDistrict(scene: T.Scene) {
       block(g,-streetSide*w*.3,1.21,-.35,w*.23,.08,1,steel);
       block(g,-streetSide*w*.3,1.4,-.35,.32,.28,.18,black);
       block(g,0,2.85,0,w-.4,.04,d-.4,glow);
-      const frontFace=new T.Group();frontFace.position.z=front;g.add(frontFace);
-      shopfront(frontFace,w,0,index,streetSide*.28,.56);
-      const avenueFace=new T.Group();avenueFace.position.x=streetSide*w/2;avenueFace.rotation.y=streetSide*Math.PI/2;g.add(avenueFace);
-      shopfront(avenueFace,d,-streetSide*.65,index,-streetSide*.3,.6);
+      const [frontFace, avenueFace] = storefrontFaces(b).map((face) => {
+        const group = new T.Group();
+        group.position.set(face.x, 0, face.z); group.rotation.y = face.yaw; g.add(group);
+        shopfront(group, face.width, face.door, index, face.shift, face.extra);
+        return group;
+      });
       // Upper windows wrap the corner as well, rather than leaving a blank side wall.
       for(let u=-d/2+.7;u<d/2-.4;u+=1.3) {
         block(avenueFace,u,3.95,.025,.8,1.05,.04,black);
@@ -224,6 +240,9 @@ export function buildDistrict(scene: T.Scene) {
         block(avenueFace,u,3.4,.08,.94,.06,.18,curb);
       }
       label(frontFace,atlas,4,-streetSide*w*.3,1.5,.04,.65,.75);
+      // The hanging advert stays supported when the glazing below it shatters.
+      for (const offset of [-.25,.25])
+        block(frontFace,-streetSide*w*.3+offset,2.2675,.04,.012,.785,.012,steel);
       // Recessed recycling bins stay within the non-walkable storefront footprint.
       for(let n=0;n<2;n++) {block(g,-streetSide*(w*.35+n*.32),.38,front-.3,.28,.65,.35,colored,0x83918a);block(g,-streetSide*(w*.35+n*.32),.69,front-.3,.24,.025,.28,black);}
     } else {
@@ -251,7 +270,7 @@ export function buildDistrict(scene: T.Scene) {
     const depth=Math.abs(Math.cos(b.rotation))*b.d+Math.abs(Math.sin(b.rotation))*b.w;
     occluders.push({group:g,bounds:new T.Box3(new T.Vector3(b.x-width/2-.2,0,b.z-depth/2-.2),new T.Vector3(b.x+width/2+.2,b.h+1.2,b.z+depth/2+.2))});
   }
-  streetLife(scene,urban,urbanAtlas);
+  streetLife(scene,urban,kit);
   // Two mission-area lamps cast cached static shadows. Distant fixtures remain inexpensive.
   for(const x of [-3.05,3.05])for(const z of [-11,9,23,-25,x<0?5.7:-5.7]) {
     block(scene,x,2.1,z,.07,4.2,.07,steel);
@@ -293,7 +312,6 @@ export function buildDistrict(scene: T.Scene) {
   block(scene,0,.035,-2.7,1.65,.04,2.3,steel);
   for(const side of [-1,1])for(let n=0;n<5;n++) block(scene,side*.78,.062,-3.65+n*.45,.06,.012,.07,colored,0xa88e50);
   block(scene,0,.06,-2.7,.025,.012,2.2,black);
-  const coneMaterial=material(0xc56735);
   // Clearly temporary security cordon explains the tactical barricades in a city.
   for(const s of [-1,1]) {
     // The sign and barricade carry the closure; just two spaced cones guide each approach.
@@ -302,18 +320,13 @@ export function buildDistrict(scene: T.Scene) {
     block(scene,s*1.4,.73,s*10.8,2.2,.25,.08,colored,0xdccca7);
     for(let j=0;j<7;j++)block(scene,s*1.4-.9+j*.3,.73,s*10.85,.13,.23,.025,colored,0xb46032).rotation.z=-.45;
     for(const x of [s*1.4-.85,s*1.4+.85]) {block(scene,x,.35,s*10.8,.07,.7,.07,steel);block(scene,x,.045,s*10.8,.18,.09,.6,steel);}
-    for(let n=0;n<2;n++) {
-      const x=s*(.45+n*1.05),z=s*(12.1+n*1.5);
-      block(scene,x,.035,z,.31,.07,.31,black);
-      const cone=new T.Mesh(new T.CylinderGeometry(.025,.14,.52,8),coneMaterial);cone.position.set(x,.31,z);scene.add(cone);
-      const stripe=new T.Mesh(new T.CylinderGeometry(.064,.085,.1,8),paint);stripe.position.set(x,.32,z);scene.add(stripe);
-    }
+    for(let n=0;n<2;n++)placeProp(kit,'cone',0,scene,s*(.45+n*1.05),0,s*(12.1+n*1.5));
   }
   return occluders;
 }
 
 /** Deliberately low-contrast, jointed stone slabs; no moss/cloudy albedo on footpaths. */
-function pavementMaterial() {
+export function pavementMaterial() {
   const c=document.createElement('canvas');c.width=c.height=512;const ctx=c.getContext('2d')!;
   ctx.fillStyle='#51555c';ctx.fillRect(0,0,512,512);
   for(let y=0;y<8;y++)for(let x=0;x<4;x++) {
@@ -402,53 +415,27 @@ function urbanBuilding(g:T.Group,w:number,d:number,h:number,style:number,shop:bo
   const blade=label(g,signs,(style+2)%8,w/2+.19,4.3,front-.4,2.2,.56,Math.PI/2);blade.rotateZ(Math.PI/2);
   if(index%3===1) {label(g,signs,(style+4)%8,0,h-.7,front+.08,w*.85,.7);}
 }
-function streetLife(scene:T.Scene,m:T.Material,signs:T.Material) {
+function streetLife(scene:T.Scene,m:T.Material,kit:SceneryKit) {
   const b=(g:T.Object3D,x:number,y:number,z:number,w:number,h:number,d:number,c:number)=>block(g,x,y,z,w,h,d,m,c);
-  const display=new T.MeshStandardMaterial({color:0xb4c9c3,emissive:0xc8eeec,emissiveIntensity:1.6,roughness:.45});
-  display.userData.dayOffGlow=display.emissiveIntensity;
   // Vending machines sit at blank shop walls beyond the combat boundary.
   for(const [x,z,rot] of [[-16.25,-4.9,0],[14.15,-4.9,0]]) {
     const g=new T.Group();g.position.set(x,.16,z);g.rotation.y=rot;scene.add(g);
     // One short-range, unshadowed light per pair, shared by both displays.
     const spill=new T.PointLight(0xc8eeec,5,3.2,2);
     spill.position.set(.46,1.15,.78);spill.userData.dayOffIntensity=spill.intensity;g.add(spill);
-    for(let n=0;n<2;n++) {
-      const xx=n*.92;b(g,xx,.91,0,.84,1.82,.64,n?0xc7c9c1:0x823e37);
-      block(g,xx,1.2,.33,.69,.96,.025,display);
-      label(g,signs,7,xx,1.7,.35,.7,.16);
-      for(let row=0;row<3;row++)for(let col=0;col<5;col++)b(g,xx-.26+col*.13,.85+row*.25,.36,.07,.16,.045,[0xa44b3e,0xbbab65,0x54747b,0xabae9e][(row+col)%4]);
-      b(g,xx,.35,.34,.5,.19,.04,0x252d30);b(g,xx+.3,.6,.34,.08,.14,.025,0x1d282e);
-    }
+    for(let n=0;n<2;n++)placeProp(kit,'vending',n?0:1,g,n*.92,0,0);
   }
   // Bikes are inside the southern shops’ 2.3m-deep parking recesses, beyond the through sidewalk.
-  const tube=(g:T.Object3D,a:T.Vector3,c:T.Vector3,r:number,color:number)=>{
-    const len=a.distanceTo(c);const geom=new T.CylinderGeometry(r,r,len,5);const mesh=new T.Mesh(geom,m);
-    const colors=new Float32Array(geom.attributes.position.count*3);rgb.setHex(color);for(let i=0;i<geom.attributes.position.count;i++)rgb.toArray(colors,i*3);geom.setAttribute('color',new T.BufferAttribute(colors,3));
-    mesh.position.copy(a).add(c).multiplyScalar(.5);mesh.quaternion.setFromUnitVectors(new T.Vector3(0,1,0),c.clone().sub(a).normalize());mesh.castShadow=true;g.add(mesh);
-  };
   for(const [x,z,rot] of [[-15.2,6.3,Math.PI],[15.2,6.3,Math.PI]]) {
     const g=new T.Group();g.position.set(x,.16,z);g.rotation.y=rot;scene.add(g);
-    // Bay markings and wheel stands make the intended parking area explicit.
+    // Bay markings make the intended parking area explicit.
     for(const x of [-1.65,-.25])b(g,x,.065,2.1,.035,.015,1.9,0xb3b6b1);
     for(const z of [1.15,3.05])b(g,-.95,.065,z,1.4,.015,.035,0xb3b6b1);
-    for(let n=0;n<2;n++) {
-      const bike=new T.Group();bike.position.set(-1.25+n*.55,.05,2.1);bike.rotation.z=.08;g.add(bike);
-      for(const zz of [-.55,.55]) {
-        const geo=new T.TorusGeometry(.31,.025,4,14);const colors=new Float32Array(geo.attributes.position.count*3).fill(.12);geo.setAttribute('color',new T.BufferAttribute(colors,3));const wheel=new T.Mesh(geo,m);wheel.rotation.y=Math.PI/2;wheel.position.set(0,.32,zz);bike.add(wheel);
-        tube(bike,new T.Vector3(0,.32,zz-.29),new T.Vector3(0,.32,zz+.29),.008,0x8e9294);
-      }
-      const v=(y:number,z:number)=>new T.Vector3(0,y,z);
-      for(const [a,c] of [[v(.32,-.55),v(.38,0)],[v(.32,-.55),v(.83,-.15)],[v(.38,0),v(.83,-.15)],[v(.83,-.15),v(.86,.39)],[v(.38,0),v(.86,.39)],[v(.86,.39),v(.32,.55)]])tube(bike,a,c,.022,n%2?0x8c9c9d:0xa58873);
-      b(bike,0,.88,-.15,.17,.045,.25,0x222c31);tube(bike,v(.85,.4),v(1.02,.42),.022,0x909799);tube(bike,new T.Vector3(-.21,1.02,.42),new T.Vector3(.21,1.02,.42),.02,0x909799);
-    }
+    for(let n=0;n<2;n++)placeProp(kit,'bicycle',n?0:1,g,-1.25+n*.55,.05,2.1).rotation.z=.08;
   }
   // Utility poles and restrained sagging bundles enclose the street vertically.
   for(const sx of [-1,1]) {
-    for(const z of [-11.6,12,26]) {
-      const x=sx*3.3;b(scene,x,3,z,.13,6,.13,0x6c6c68);b(scene,x,5.6,z,1.15,.1,.1,0x3b444a);
-      b(scene,x+.15,4.65,z,.35,.6,.3,0x727b7a);
-      for(let k=0;k<3;k++)b(scene,x-.4+k*.4,5.72,z,.08,.16,.08,0xa1aaa3);
-    }
+    for(const z of [-11.6,12,26])placeProp(kit,'utility-pole',0,scene,sx*3.3,0,z);
     for(const [z1,z2] of [[-11.6,12],[12,26]])for(let k=0;k<3;k++) {
       const x=sx*3.3-.4+k*.4;
       const curve=new T.QuadraticBezierCurve3(new T.Vector3(x,5.72,z1),new T.Vector3(x,4.8,(z1+z2)/2),new T.Vector3(x,5.72,z2));
@@ -456,10 +443,7 @@ function streetLife(scene:T.Scene,m:T.Material,signs:T.Material) {
     }
   }
   // A busy district temporarily cordoned off: deliveries and business infrastructure remain.
-  for(const [x,z] of [[-13.8,-8.8],[13.6,8.9],[4.4,-17]]) {
-    b(scene,x,.25,z,1.1,.18,.8,0x776450);
-    for(let n=0;n<3;n++) {b(scene,x-.34+n*.34,.54,z,.3,.4,.6,0x9c8160);b(scene,x-.34+n*.34,.75,z,.045,.02,.6,0xc3ac86);}
-  }
+  for(const [x,z] of [[-13.8,-8.8],[13.6,8.9],[4.4,-17]])placeProp(kit,'pallet',0,scene,x,.16,z);
   // Yellow tactile guidance follows the footway and stops before each crossing.
   for(const s of [-1,1])for(const t of [-1,1]) {
     b(scene,s*3.55,.17,t*23,.28,.025,36,0xa6945f);

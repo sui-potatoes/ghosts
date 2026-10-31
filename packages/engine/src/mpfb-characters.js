@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import * as T from 'three';
+import {demoAsset} from './demo-assets';
 import {loadMotions,captureClip} from '@ghosts/squad/motion/clips';
 import {CharacterAssets} from '@ghosts/squad/studio/character-assets';
 import {schema} from '@ghosts/squad/appearance/schema';
@@ -19,7 +20,7 @@ export function nativeAnimations(sex){return nativeRigs.get(sex).animations;}
 async function rigFor(sex){
  if(!nativeRigs.has(sex)){
   const [rig,clips]=await Promise.all([
-   fetch(`/demo-assets/combat/${sex}/rig.json`).then(r=>{if(!r.ok)throw Error('Missing combat rig');return r.json();}),
+   fetch(demoAsset(`combat/${sex}/rig.json`)).then(r=>{if(!r.ok)throw Error('Missing combat rig');return r.json();}),
    loadMotions(sex)
   ]);
   nativeRigs.set(sex,{...rig,animations:[...clips.values()].map(captureClip)});
@@ -55,6 +56,8 @@ export function attachNativeBody(model,id){
  if(!donor){donor=model.getObjectByName('Blackline_Face');if(!donor?.isSkinnedMesh)throw Error('Combat head skin binding is missing');model.userData.mpfbDonor=donor;model.userData.mpfbParent=donor.parent;}
  const skeleton=donor.skeleton,nativeSkeleton=data.records.find(r=>r.key==='skin').nativeSkeleton,rig=nativeRigs.get(data.state.sex);
  model.userData.terrainPose=null;bindNativeSkeleton(skeleton,rig);model.userData.mpfbSex=data.state.sex;
+ model.userData.bodyHeightScale=data.character.heightScale;
+ model.scale.setScalar(.96*data.character.heightScale);
  const weapon=model.getObjectByName('WeaponMount')??model.getObjectByName('Rifle');
  if(!model.userData.nativeWeaponRest)model.userData.nativeWeaponRest={position:weapon.position.clone(),quaternion:weapon.quaternion.clone()};
  const correction=new T.Quaternion().fromArray(rig.gunCorrection),weaponRest=model.userData.nativeWeaponRest;

@@ -1,6 +1,8 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
+import { propBlastMultiplier, propHealth, resistsGunfire, type MapProp, type PropDamage } from "./environment.ts";
+
 type Point = readonly [number, number];
 export type Cell = [number, number];
 
@@ -24,6 +26,8 @@ export function footprint(b: { x: number; z: number; w: number; d: number }) {
 }
 
 export interface Building {
+  /** Optional destructible owner; its footprint disappears with that prop. */
+  prop?: string;
   x: number;
   z: number;
   w: number;
@@ -32,12 +36,19 @@ export interface Building {
   kind: string;
 }
 
-/** Street widths in metres; the crossing ramps sit at fixed offsets from them. */
+/** Street widths in metres. */
 export interface Street {
   avenueHalf: number;
   crossHalf: number;
   curb: number;
   reach: number;
+  /**
+   * Zebra-crossing curb cuts: `avenue` is |z| of the cuts through the avenue
+   * sidewalk, `cross` is |x| of the cuts through the cross-street sidewalk,
+   * `half` their band half-width and `run` the ramp run, all in metres.
+   * Hard curbs all around when absent.
+   */
+  cuts?: { avenue: number; cross: number; half: number; run: number };
 }
 
 /** A map as plain data: playable bounds in cells, buildings, low cover and the street. */
@@ -46,6 +57,9 @@ export interface MapPlan {
   bounds: { minX: number; maxX: number; minZ: number; maxZ: number };
   buildings: readonly Building[];
   covers: readonly Cell[];
+  /** Movement-only furniture / glazing footprints; no cover or line-of-sight defense. */
+  obstacles?: readonly Cell[];
+  props?: readonly MapProp[];
   street: Street;
 }
 
@@ -59,20 +73,147 @@ const key = (p: Point) => `${p[0]},${p[1]}`;
  */
 export class TacticalMap {
   readonly plan: MapPlan;
-  readonly covers: readonly Cell[];
-  private readonly boxes: ReturnType<typeof footprint>[];
+  readonly props: readonly MapProp[];
+  private readonly propHp = new Map<string, number>();
+  private readonly boxes: (ReturnType<typeof footprint> & { prop?: string })[];
+  private readonly propBlocks = new Map<string, string[]>();
   private readonly blocked = new Set<string>();
   private readonly coverKeys: Set<string>;
 
   constructor(plan: MapPlan) {
     this.plan = plan;
-    this.covers = plan.covers;
-    this.boxes = plan.buildings.map(footprint);
-    for (const b of plan.buildings)
+    this.props = plan.props ?? [];
+    for (const prop of this.props) this.propHp.set(prop.id, propHealth[prop.kind]);
+    this.boxes = plan.buildings.map(b => ({ ...footprint(b), prop: b.prop }));
+    for (const prop of this.props) for (const cell of prop.blocks ?? []) {
+      const ids = this.propBlocks.get(key(cell)) ?? []; ids.push(prop.id); this.propBlocks.set(key(cell), ids);
+    }
+    for (const cell of plan.obstacles ?? []) this.blocked.add(key(cell));
+    for (const b of plan.buildings.filter(b => !b.prop))
       for (let x = b.x - Math.floor(b.w / 2); x < b.x - Math.floor(b.w / 2) + b.w; x++)
         for (let z = b.z - Math.floor(b.d / 2); z < b.z - Math.floor(b.d / 2) + b.d; z++) this.blocked.add(key([x, z]));
     this.coverKeys = new Set(plan.covers.map(key));
-    for (const c of plan.covers) this.blocked.add(key(c));
+  }
+
+  get covers(): readonly Cell[] {
+    return this.plan.covers.filter((cell) => this.coverKeys.has(key(cell)));
+  }
+
+  health(id: string) {
+    return this.propHp.get(id) ?? 0;
+  }
+
+  /** Decide damage without mutation; the event reducer commits the result. */
+  damageProp(id: string, damage: number, source: "shot" | "blast" = "shot"): PropDamage[] {
+    const before = this.health(id);
+    if (!before || !Number.isFinite(damage) || damage <= 0) return [];
+    const prop = this.props.find((p) => p.id === id);
+    if (!prop || (source === "shot" && resistsGunfire(prop.kind))) return [];
+    const hp = Math.max(0, before - damage * (source === "blast" ? propBlastMultiplier(prop.kind) : 1));
+    const changes: PropDamage[] = [{ id, hp, destroyed: hp === 0 }];
+    const seen = new Set([id]);
+    for (let i = 0; i < changes.length; i++) {
+      if (!changes[i].destroyed) continue;
+      for (const prop of this.props) {
+        if (prop.support !== changes[i].id || seen.has(prop.id) || !this.health(prop.id)) continue;
+        seen.add(prop.id);
+        changes.push({ id: prop.id, hp: 0, destroyed: true });
+      }
+    }
+    return changes;
+  }
+
+  applyPropDamage(changes: readonly PropDamage[]) {
+    for (const change of changes) {
+      const prop = this.props.find((p) => p.id === change.id);
+      if (!prop) continue;
+      this.propHp.set(prop.id, change.hp);
+    }
+    for (const change of changes) {
+      const prop = this.props.find(p => p.id === change.id);
+      for (const cell of prop?.covers ?? (prop?.cover ? [prop.cover] : []))
+        if (!this.props.some(p => this.health(p.id) > 0 && (p.covers ?? (p.cover ? [p.cover] : [])).some(c => key(c) === key(cell))))
+          this.coverKeys.delete(key(cell));
+    }
+  }
+
+  /** Diamond-shaped reach to the prop surface. Intact buildings shield props;
+   * all shielding is evaluated before this explosion removes any walls. */
+  blastProps(at: Point): PropDamage[] {
+    const x = at[0] * CELL, z = at[1] * CELL;
+    const changes = this.props.flatMap((prop) => {
+      // Store glazing is slightly inset into its footprint. Test visibility at
+      // the outside face, while still allowing other buildings to shield it.
+      const offset = prop.storefront ? 0.1 : 0;
+      let face: Point = [prop.x + Math.sin(prop.yaw) * offset, prop.z + Math.cos(prop.yaw) * offset];
+      if (prop.hitbox) {
+        const box = prop.hitbox, c = Math.cos(prop.yaw), s = Math.sin(prop.yaw);
+        const localX = (x - prop.x) * c - (z - prop.z) * s;
+        const localZ = (x - prop.x) * s + (z - prop.z) * c;
+        const nearX = Math.max(-box.width / 2, Math.min(box.width / 2, localX - (box.x ?? 0))) + (box.x ?? 0);
+        const nearZ = Math.max(-box.depth / 2, Math.min(box.depth / 2, localZ - (box.z ?? 0))) + (box.z ?? 0);
+        face = [prop.x + nearX * c + nearZ * s, prop.z - nearX * s + nearZ * c];
+      }
+      const distance = (Math.abs(face[0] - x) + Math.abs(face[1] - z)) / CELL;
+      if (distance > 2 + 1e-8 || !this.clearBuildingShot([x, z], face, prop.pane ? prop.support : prop.id)) return [];
+      return this.damageProp(prop.id, Math.round(100 - distance * 20), "blast");
+    });
+    const unique = new Map<string, PropDamage>();
+    for (const change of changes)
+      if (!unique.has(change.id) || unique.get(change.id)!.hp > change.hp) unique.set(change.id, change);
+    return [...unique.values()];
+  }
+
+  /** Missed rounds can strike the first storefront along their continued path.
+   * Broken glazing never opens a firing lane through the solid building. */
+  strayShotProps(from: Point, toward: Point, damage: number): PropDamage[] {
+    const x = from[0] * CELL, z = from[1] * CELL;
+    const dx = (toward[0] - from[0]) * CELL, dz = (toward[1] - from[1]) * CELL;
+    const length = Math.hypot(dx, dz);
+    if (!length) return [];
+    const ux = dx / length, uz = dz / length;
+    const y = this.surfaceHeight(x, z) + 1.2;
+    let nearest: { prop: MapProp; distance: number; impact: [number, number, number] } | undefined;
+    for (const prop of this.props) {
+      if (prop.hitbox) {
+        if (!this.health(prop.id)) continue;
+        const box = prop.hitbox, c = Math.cos(prop.yaw), s = Math.sin(prop.yaw);
+        const bottom = this.surfaceHeight(prop.x, prop.z) + (prop.y ?? 0) + (box.y ?? 0);
+        if (y < bottom || y > bottom + box.height) continue;
+        const ox = (x - prop.x) * c - (z - prop.z) * s - (box.x ?? 0);
+        const oz = (x - prop.x) * s + (z - prop.z) * c - (box.z ?? 0);
+        const vx = ux * c - uz * s, vz = ux * s + uz * c;
+        let enter = 0, exit = length + 12;
+        for (const [o, v, half] of [[ox, vx, box.width / 2], [oz, vz, box.depth / 2]]) {
+          if (Math.abs(v) < 1e-8) { if (Math.abs(o) > half) exit = -1; continue; }
+          const a = (-half - o) / v, b = (half - o) / v;
+          enter = Math.max(enter, Math.min(a, b)); exit = Math.min(exit, Math.max(a, b));
+        }
+        if (exit < enter || enter <= .001 || (nearest && enter >= nearest.distance)) continue;
+        const localX = ox + vx * enter, localZ = oz + vz * enter;
+        if (prop.kind === "office-window-wall" && y > .93 && y < 2.39 && Math.abs(localX) < .61) continue;
+        if (prop.kind === "office-steel-door" && y > 1.69 && y < 2.05 &&
+          Math.abs(prop.office?.open ? localZ : localX) < .165) continue;
+        const hx = x + ux * enter, hz = z + uz * enter;
+        if (!this.clearBuildingShot([x, z], [hx, hz], prop.pane ? prop.support : prop.id)) continue;
+        nearest = { prop, distance: enter, impact: [hx, y, hz] };
+        continue;
+      }
+      if (!prop.storefront) continue;
+      const nx = Math.sin(prop.yaw), nz = Math.cos(prop.yaw);
+      const approach = ux * nx + uz * nz;
+      if (approach >= -0.0001) continue;
+      const distance = ((prop.x - x) * nx + (prop.z - z) * nz) / approach;
+      if (distance <= 0 || distance > length + 12 || (nearest && distance >= nearest.distance)) continue;
+      const hx = x + ux * distance, hz = z + uz * distance;
+      const localX = (hx - prop.x) * nz - (hz - prop.z) * nx;
+      const bottom = this.surfaceHeight(prop.x, prop.z) + (prop.y ?? 0);
+      if (Math.abs(localX) > prop.storefront.width / 2 || y < bottom || y > bottom + prop.storefront.height) continue;
+      if (!this.clearBuildingShot([x, z], [hx + nx * 0.1, hz + nz * 0.1])) continue;
+      nearest = { prop, distance, impact: [hx, y, hz] };
+    }
+    if (!nearest) return [];
+    return this.damageProp(nearest.prop.id, damage).map((change) => ({ ...change, impact: nearest.impact }));
   }
 
   get bounds() {
@@ -86,7 +227,8 @@ export class TacticalMap {
 
   /** Inside the bounds and not a building or a barrier. Units are the rules' concern. */
   open(p: Point) {
-    return this.inBounds(p) && !this.blocked.has(key(p));
+    return this.inBounds(p) && !this.blocked.has(key(p)) && !this.coverKeys.has(key(p)) &&
+      !(this.propBlocks.get(key(p)) ?? []).some(id => this.health(id) > 0);
   }
 
   isCover(p: Point) {
@@ -95,18 +237,20 @@ export class TacticalMap {
 
   /** Ground height at a world point: street level, curbs, and ramps at the crossings. */
   surfaceHeight = (x: number, z: number) => {
-    const street = this.plan.street;
-    const dx = Math.abs(x) - street.avenueHalf,
-      dz = Math.abs(z) - street.crossHalf;
+    const { avenueHalf, crossHalf, curb, cuts } = this.plan.street;
+    const dx = Math.abs(x) - avenueHalf,
+      dz = Math.abs(z) - crossHalf;
     if (dx <= 0 || dz <= 0) return 0;
-    const rampX = Math.abs(Math.abs(z) - 3.25) < 0.7;
-    const rampZ = Math.abs(Math.abs(x) - 3.85) < 0.7;
-    return street.curb * Math.min(1, rampX ? dx / 0.75 : 1, rampZ ? dz / 0.75 : 1);
+    if (!cuts) return curb;
+    const rampX = Math.abs(Math.abs(z) - cuts.avenue) < cuts.half;
+    const rampZ = Math.abs(Math.abs(x) - cuts.cross) < cuts.half;
+    return curb * Math.min(1, rampX ? dx / cuts.run : 1, rampZ ? dz / cuts.run : 1);
   };
 
   /** Test the entire shot segment (world metres) against solid building footprints. */
-  clearBuildingShot(a: Point, b: Point) {
+  clearBuildingShot(a: Point, b: Point, ignoreProp?: string) {
     return !this.boxes.some((box) => {
+      if (box.prop && (box.prop === ignoreProp || !this.health(box.prop))) return false;
       let enter = 0,
         exit = 1;
       for (const [axis, min, max] of [
@@ -134,7 +278,7 @@ export class TacticalMap {
     const x = cell[0] * CELL,
       z = cell[1] * CELL;
     return this.boxes.find(
-      (b) => Math.hypot(Math.max(b.minX - x, 0, x - b.maxX), Math.max(b.minZ - z, 0, z - b.maxZ)) < CELL * 0.72,
+      (b) => (!b.prop || this.health(b.prop) > 0) && Math.hypot(Math.max(b.minX - x, 0, x - b.maxX), Math.max(b.minZ - z, 0, z - b.maxZ)) < CELL * 0.72,
     );
   }
 

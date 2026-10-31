@@ -95,6 +95,12 @@ importers:
 
   packages/engine:
     dependencies:
+      '@dgreenheck/three-pinata':
+        specifier: ^2.0.1
+        version: 2.0.1(three@0.174.0)
+      '@dimforge/rapier3d-compat':
+        specifier: ^0.21.0
+        version: 0.21.0
       '@ghosts/squad':
         specifier: workspace:*
         version: link:../squad
@@ -193,6 +199,14 @@ packages:
   '@cspotcode/source-map-support@0.8.1':
     resolution: {integrity: sha512-IchNf6dN4tHoMFIn/7OE8LWZ19Y6q/67Bmf6vnGREv8RSbBVb9LPJxEcnwrcwX6ixSvaiGoomAUvu4YSxXrVgw==}
     engines: {node: '>=12'}
+
+  '@dgreenheck/three-pinata@2.0.1':
+    resolution: {integrity: sha512-1pQU68B5xguxvRryl6nxZBARDqOW+/lXf7Xpz8QZ87awadSpN85mDNChTEdA4fPfJYyrft+thHS6Ooe7E5rdFA==}
+    peerDependencies:
+      three: '>=0.158.0'
+
+  '@dimforge/rapier3d-compat@0.21.0':
+    resolution: {integrity: sha512-tCl1HPGwOhn5aCQbgqWbOH+Nx/5fnr3IPAnzQuR7zIhC/raqi2yxC6LhvZqjdI2El5hQgY5RDAwDrAjAi2FdPA==}
 
   '@emnapi/runtime@1.11.3':
     resolution: {integrity: sha512-Xz4Tpyki7XyrpbUK1jR1AhdAdaXyhhY4lZ3neLodmhpuWfy2PAQN5B46sAiU4liOXGLkHypn/qU+jvfWSCYYLA==}
@@ -2104,6 +2118,12 @@ snapshots:
   '@cspotcode/source-map-support@0.8.1':
     dependencies:
       '@jridgewell/trace-mapping': 0.3.9
+
+  '@dgreenheck/three-pinata@2.0.1(three@0.174.0)':
+    dependencies:
+      three: 0.174.0
+
+  '@dimforge/rapier3d-compat@0.21.0': {}
 
   '@emnapi/runtime@1.11.3':
     dependencies:

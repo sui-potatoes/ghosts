@@ -56,11 +56,12 @@ function meshSoleMinimum(mesh: T.SkinnedMesh) {
     return minimum;
 }
 
-/** Contact follows boot outsoles when the field kit is equipped. */
+/** Contact follows equipped footwear, including civilian dress shoes. */
 export function soleMinimum(body: T.SkinnedMesh) {
     const boots = (body.parent?.children ?? []).filter(
         (mesh): mesh is T.SkinnedMesh =>
-            mesh instanceof T.SkinnedMesh && mesh.userData.nativePart === "field-kit",
+            mesh instanceof T.SkinnedMesh &&
+            ["field-kit", "office-worker"].includes(mesh.userData.nativePart),
     );
     return Math.min(...(boots.length ? boots : [body]).map(meshSoleMinimum));
 }

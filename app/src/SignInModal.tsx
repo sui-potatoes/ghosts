@@ -82,14 +82,19 @@ function Option({
     onClick: () => void;
     extra?: ReactNode;
 }) {
+    // Not a <button>: `extra` may hold one, and buttons cannot nest.
     return (
         <div
             role="button"
             tabIndex={disabled ? -1 : 0}
             aria-disabled={disabled}
             onClick={() => !disabled && onClick()}
-            onKeyDown={(e) => e.key === "Enter" && !disabled && onClick()}
-            className={`group flex items-center gap-5 px-6 py-5 text-left transition-colors ${
+            onKeyDown={(e) => {
+                if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
+                e.preventDefault();
+                if (!disabled) onClick();
+            }}
+            className={`group flex w-full items-center gap-5 px-6 py-5 text-left transition-colors ${
                 disabled
                     ? "opacity-40"
                     : "cursor-pointer hover:bg-accent-dim focus-visible:bg-accent-dim"

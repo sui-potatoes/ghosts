@@ -40,8 +40,8 @@ test("hits and deaths respect crouched stance and heavy impacts", () => {
   assert.equal(reactionMotion(true, false, true), "death_backward");
   assert.equal(reactionMotion(false, false, true), "heavy_hit");
 });
-test("the drill catalogue has 38 unique actions", () =>
-  assert.equal(new Set(motions.map((m) => m[0])).size, 38));
+test("the drill catalogue has 39 unique actions", () =>
+  assert.equal(new Set(motions.map((m) => m[0])).size, 39));
 
 test("ordinary rifle rest uses the captured ready idle", () =>
   assert.equal(

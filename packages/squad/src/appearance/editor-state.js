@@ -1,6 +1,8 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
+import { normalizeBody } from "../body.ts";
+
 export const GLASSES = [
     ["none", "None"],
     ["rectangular", "Rectangular acetate"],
@@ -99,6 +101,7 @@ export const baseState = () => ({
     shape: "oval",
     shapeAmount: 0.35,
     values: {},
+    body: normalizeBody(null),
     skin: "young_caucasian",
     skinTint: "#ffffff",
     warmth: 0,
@@ -380,6 +383,7 @@ export function normalize(input, schema) {
     s.values = Object.fromEntries(
         schema.controls.map((c) => [c.key, clamp(input.values?.[c.key] ?? 0, -1, 1)]),
     );
+    s.body = normalizeBody(input.body);
     return s;
 }
 export function weights(s) {

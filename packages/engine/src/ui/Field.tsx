@@ -1,15 +1,20 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
-import { useEffect, useState, type RefObject } from "react";
+import { useEffect, useState, useSyncExternalStore, type RefObject } from "react";
 import { cancelTargeting, fire, pick, select, throwGrenade } from "../actions";
-import { distance, weapons } from "../game";
+import { distance, weapons, type Unit } from "../game";
+import { padActive, padGlyph, padKind, subscribePad } from "../gamepad";
 import { pad2 } from "../html";
+import { confirmWheel, WHEEL_ACTIONS } from "../pad-combat";
 import { timePresets, type TimeOfDay } from "../scene-weather";
-import { grenadeBlockReason, shotBlockReason } from "../targeting";
+import type { Weather } from "../scene/precipitation";
+import { damagePreview, grenadeBlockReason, shotBlockReason } from "../targeting";
 import { Icon, Logo } from "./icons";
 import { useSession } from "./useSession";
 import { cap, toggleGrid, toggleView } from "./view";
+import { DestructionPreview } from "./DestructionPreview";
+import { OfficePreview } from "./OfficePreview";
 
 export interface FieldRefs {
   viewport: RefObject<HTMLDivElement | null>;
@@ -37,6 +42,8 @@ export function Field({ refs }: { refs: FieldRefs }) {
         <i />
         <b />
       </div>
+      {s.state === "ready" && <ActionWheel />}
+      {s.state === "ready" && <PadHintsBar />}
       <div className="field-bottom">{s.state === "ready" && <SquadCards />}</div>
       {s.state !== "ready" && (
         <div className="loading" id="loading">
@@ -54,6 +61,91 @@ export function Field({ refs }: { refs: FieldRefs }) {
       )}
       {s.state === "ready" && <FieldObjectives />}
     </section>
+  );
+}
+
+/** "" with no controller; otherwise the pad family, so glyphs re-render on change. */
+function usePad(): string {
+  return useSyncExternalStore(subscribePad, () => (padActive() ? padKind() : ""));
+}
+
+/** The controller's radial action menu, driven by the pad or the mouse. */
+function ActionWheel() {
+  const s = useSession();
+  if (!s.wheel) return null;
+  const n = WHEEL_ACTIONS.length;
+  return (
+    <div id="action-wheel" role="menu" aria-label="Actions">
+      <div className="wheel-ring">
+        {WHEEL_ACTIONS.map((a, i) => {
+          const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
+          const x = Math.round(Math.cos(angle) * 140);
+          const y = Math.round(Math.sin(angle) * 140);
+          return (
+            <button
+              key={a.id}
+              role="menuitem"
+              className={i === s.wheelIndex ? "active" : ""}
+              style={{ translate: `${x}px ${y}px` }}
+              onMouseEnter={() => {
+                if (s.wheelIndex === i) return;
+                s.wheelIndex = i;
+                s.changed();
+              }}
+              onClick={() => confirmWheel(i)}
+            >
+              {a.label}
+            </button>
+          );
+        })}
+        <span className="wheel-center" aria-hidden>
+          {WHEEL_ACTIONS[s.wheelIndex]?.label}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/** The controller hints for the state the field is in; only with a pad connected. */
+function PadHintsBar() {
+  const pad = usePad();
+  const s = useSession();
+  if (!pad) return null;
+  const hints: [string, string][] = s.wheel
+    ? [
+        [padGlyph("ls"), "SELECT"],
+        [padGlyph("a"), "CONFIRM"],
+        [padGlyph("b"), "CLOSE"],
+      ]
+    : s.mode === "fire"
+      ? [
+          ["◀ ▶", "TARGET"],
+          [padGlyph("a"), "FIRE"],
+          [padGlyph("b"), "CANCEL"],
+        ]
+      : s.mode === "grenade"
+        ? [
+            [padGlyph("dpad"), "AIM"],
+            [padGlyph("a"), "THROW"],
+            [padGlyph("b"), "CANCEL"],
+          ]
+        : [
+            [padGlyph("dpad"), "CURSOR"],
+            [padGlyph("a"), "MOVE"],
+            [padGlyph("y"), "ACTIONS"],
+            [`${padGlyph("lb")} ${padGlyph("rb")}`, "OPERATOR"],
+            [padGlyph("rt"), "AIM"],
+            [padGlyph("b"), "PAUSE"],
+          ];
+  return (
+    <div id="pad-hints" aria-hidden>
+      {hints.map(([glyph, label]) => (
+        <span key={label}>
+          <kbd>{glyph}</kbd>
+          {label}
+        </span>
+      ))}
+    </div>
   );
 }
 
@@ -76,8 +168,11 @@ function ViewTools() {
   const s = useSession();
   const { battlefield } = s;
   const [time, setTime] = useState<TimeOfDay>(battlefield.timeOfDay);
-  const [rain, setRain] = useState(true);
+  const [weather, setWeather] = useState<Weather>(battlefield.weather);
+  const [preview, setPreview] = useState(false);
+  const [officePreview, setOfficePreview] = useState(false);
   return (
+    <>
     <div className="view-tools">
       <details id="scene-controls">
         <summary>SCENE</summary>
@@ -98,21 +193,26 @@ function ViewTools() {
             <option value="evening">Evening</option>
             <option value="night">Night</option>
           </select>
-          <label className="scene-rain">
-            <input
-              id="scene-rain"
-              type="checkbox"
-              checked={rain}
-              onChange={(e) => {
-                setRain(e.target.checked);
-                battlefield.setRain(e.target.checked);
-              }}
-            />{" "}
-            Rain
-          </label>
+          <label htmlFor="scene-weather">WEATHER</label>
+          <select id="scene-weather" value={weather} onChange={(e) => {
+            const next = e.target.value as Weather;
+            if (next !== "clear" && next !== "rain" && next !== "snow") return;
+            setWeather(next);
+            battlefield.setWeather(next);
+          }}>
+            <option value="clear">Clear</option>
+            <option value="rain">Rain</option>
+            <option value="snow">Snow</option>
+          </select>
           <small id="scene-light-status" role="status">
-            Streetlights {timePresets[time].lights ? "on" : "off"}
+            {battlefield.indoors ? "Office lighting on · ceiling, task & access lights" : `Streetlights ${timePresets[time].lights ? "on" : "off"}`}
           </small>
+          <button className="preview-destruction" disabled={s.busy} onClick={() => setPreview(true)}>
+            Destruction preview ↗
+          </button>
+          <button className="preview-destruction" disabled={s.busy} onClick={() => setOfficePreview(true)}>
+            Office asset pack ↗
+          </button>
         </section>
       </details>
       <button id="view" onClick={toggleView}>
@@ -133,6 +233,9 @@ function ViewTools() {
         <Icon name="focus" />
       </button>
     </div>
+    {preview && <DestructionPreview initialKind={s.battlefield.indoors ? "office-desk" : "crate"} onClose={() => setPreview(false)} />}
+    {officePreview && <OfficePreview onClose={() => setOfficePreview(false)} />}
+    </>
   );
 }
 
@@ -150,6 +253,25 @@ function Feedback() {
     <div id="feedback" role="status" aria-live="polite" className={visible && feedback ? `visible ${feedback.tone}` : ""}>
       {feedback?.message}
     </div>
+  );
+}
+
+/** The target's health with the slice the shot would remove: the hit, deeper on a crit. */
+function HealthPreview({ unit, target, blocked = false }: { unit: Unit; target: Unit; blocked?: boolean }) {
+  const { hit, crit, lethal } = damagePreview(unit, target);
+  const pct = (n: number) => `${(n / target.maxHp) * 100}%`;
+  return (
+    <span
+      className="target-hp-track"
+      role="img"
+      aria-label={`${target.name}: ${target.hp} of ${target.maxHp} HP${
+        blocked ? "" : `; a hit removes ${hit}${lethal ? ", lethal" : ""}`
+      }`}
+    >
+      <i className="kept" style={{ width: pct(target.hp - (blocked ? 0 : crit)) }} />
+      {!blocked && <i className="crit" style={{ width: pct(crit - hit) }} />}
+      {!blocked && <i className="hit" style={{ width: pct(hit) }} />}
+    </span>
   );
 }
 
@@ -173,6 +295,7 @@ function TargetingHud() {
   );
   if (s.mode === "fire" && t) {
     const reason = shotBlockReason(game, u, t);
+    const preview = damagePreview(u, t);
     return (
       <div id="targeting-hud" aria-label="Target confirmation">
         <div className="targeting-top">
@@ -189,9 +312,23 @@ function TargetingHud() {
           <div className="aim-description">
             <small>HOSTILE TARGET</small>
             <strong>{t.name}</strong>
+            <span className="target-hp">
+              <HealthPreview unit={u} target={t} blocked={!!reason} />
+              <small>
+                {t.hp}/{t.maxHp} HP · ARMOR {t.armor}
+                {!reason && (
+                  <>
+                    {" "}
+                    · HIT −{preview.hit}
+                    {preview.crit > preview.hit && ` · CRIT −${preview.crit}`}
+                    {preview.lethal && <b className="lethal"> · LETHAL</b>}
+                  </>
+                )}
+              </small>
+            </span>
             <span>
               {reason ??
-                `${u.damage} DAMAGE · ${distance(u.pos, t.pos)} TILES · ${u.weapon === "pistol" ? "1 AP" : "ENDS OPERATOR TURN"}`}
+                `${distance(u.pos, t.pos)} TILES · ${u.weapon === "pistol" ? "1 AP" : "ENDS OPERATOR TURN"}`}
             </span>
           </div>
           <button id="confirm-fire" className="primary" disabled={busy || !!reason} onClick={() => void fire()}>
@@ -218,6 +355,8 @@ function TargetingHud() {
   const reason = grenadeBlockReason(game, u, target);
   const affected = target ? game.units.filter((a) => a.hp > 0 && distance(a.pos, target) <= 2) : [];
   const friendly = affected.filter((a) => !a.enemy);
+  const propDamage = target && !busy ? game.map.blastProps(target) : [];
+  const brokenProps = propDamage.filter((p) => p.destroyed).length;
   return (
     <div id="targeting-hud" aria-label="Target confirmation">
       <div className="targeting-top">
@@ -238,6 +377,9 @@ function TargetingHud() {
                 ? `FRIENDLY FIRE: ${friendly.map((a) => a.name).join(", ")}`
                 : `${affected.length} HOSTILES IN BLAST · 2-TILE RADIUS · 1 AP`)}
           </span>
+          {!!propDamage.length && (
+            <span>{propDamage.length} PROPS HIT · {brokenProps} DESTROYED</span>
+          )}
         </div>
         <button id="confirm-grenade" className="primary" disabled={busy || !!reason} onClick={() => void throwGrenade()}>
           {busy ? "THROWING…" : "CONFIRM THROW"} <Icon name="grenade" />

@@ -3,10 +3,18 @@
 
 import {
   distance,
+  shotDamage,
   type Cell,
   type Encounter,
   type Unit,
 } from "./game.ts";
+
+/** What one shot from `unit`'s equipped weapon can take off `target`, armor counted. */
+export function damagePreview(unit: Unit, target: Unit) {
+  const hit = Math.min(shotDamage(unit, target), target.hp);
+  const crit = Math.min(shotDamage(unit, target, true), target.hp);
+  return { hit, crit, lethal: hit >= target.hp };
+}
 
 export function shotBlockReason(
   game: Encounter,

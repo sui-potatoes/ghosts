@@ -1,72 +1,86 @@
 [
   {
     "sex": "male",
-    "kind": "spectre",
-    "triangles": 3886,
-    "materials": 4,
-    "vertices": 4586
-  },
-  {
-    "sex": "female",
-    "kind": "spectre",
-    "triangles": 3898,
-    "materials": 4,
-    "vertices": 4592
-  },
-  {
-    "sex": "male",
     "kind": "field-kit",
-    "triangles": 9752,
+    "triangles": 14196,
     "materials": 3,
-    "vertices": 10694
+    "vertices": 20881
   },
   {
     "sex": "female",
     "kind": "field-kit",
-    "triangles": 9752,
+    "triangles": 14196,
     "materials": 3,
-    "vertices": 10704
+    "vertices": 20924
   },
   {
     "sex": "male",
     "kind": "nyx",
     "triangles": 38376,
     "materials": 5,
-    "vertices": 41580
+    "vertices": 41584
   },
   {
     "sex": "male",
     "kind": "nyx-mid",
     "triangles": 46348,
     "materials": 5,
-    "vertices": 50546
+    "vertices": 50550
   },
   {
     "sex": "male",
     "kind": "nyx-heavy",
     "triangles": 54540,
     "materials": 5,
-    "vertices": 60924
+    "vertices": 60928
   },
   {
     "sex": "female",
     "kind": "nyx",
     "triangles": 38376,
     "materials": 5,
-    "vertices": 41873
+    "vertices": 41907
   },
   {
     "sex": "female",
     "kind": "nyx-mid",
     "triangles": 46348,
     "materials": 5,
-    "vertices": 50791
+    "vertices": 50825
   },
   {
     "sex": "female",
     "kind": "nyx-heavy",
     "triangles": 54540,
     "materials": 5,
-    "vertices": 61231
+    "vertices": 61267
+  },
+  {
+    "sex": "male",
+    "kind": "spectre",
+    "triangles": 4806,
+    "materials": 4,
+    "vertices": 8954
+  },
+  {
+    "sex": "female",
+    "kind": "spectre",
+    "triangles": 4806,
+    "materials": 4,
+    "vertices": 9050
+  },
+  {
+    "sex": "male",
+    "kind": "office-worker",
+    "triangles": 19538,
+    "materials": 6,
+    "vertices": 13364
+  },
+  {
+    "sex": "female",
+    "kind": "office-worker",
+    "triangles": 19669,
+    "materials": 6,
+    "vertices": 13409
   }
 ]

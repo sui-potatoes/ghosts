@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { audio } from "../audio";
 import { boot } from "../boot";
 import type { Recruit } from "@ghosts/squad/types";
+import type { DriverFactory } from "../driver";
 import type { Scenario } from "../scenario";
 import { newSession } from "../session";
 import { defaultSettings, type EngineSettings } from "../settings";
@@ -19,6 +20,8 @@ import "../ghosts-theme.css";
 export interface EncounterProps {
   /** What to play; Operation Black Rain when omitted. */
   scenario?: Scenario;
+  /** What decides orders: the bundled rules when omitted, the host's chain driver later. */
+  driver?: DriverFactory;
   /** The player's recruits in squad order (faces, names, armor); the showcase squad when omitted. */
   squad?: readonly Recruit[] | null;
   /** The player's preferences, read live. */
@@ -39,6 +42,7 @@ export interface EncounterProps {
  */
 export function Encounter({
   scenario,
+  driver,
   squad = null,
   settings = defaultSettings,
   paused = false,
@@ -51,7 +55,7 @@ export function Encounter({
     reticle: useRef<HTMLDivElement>(null),
   };
   // The session exists before the first render so the UI subscribes to the one boot fills in.
-  const [session] = useState(() => newSession(scenario));
+  const [session] = useState(() => newSession(scenario, driver));
   const hooks = useRef({ onPause, onQuit });
   hooks.current = { onPause, onQuit };
 
@@ -64,7 +68,14 @@ export function Encounter({
         viewport: refs.viewport.current!,
         labels: refs.labels.current!,
         reticle: refs.reticle.current!,
-        onPause: () => hooks.current.onPause?.(),
+        onPause: () => {
+          if (!hooks.current.onPause) return;
+          // Gate input now: the host's `paused` prop lands in a passive
+          // effect, which a busy frame defers past the menu's first paint —
+          // a pad or key pressed in that window must not reach the field.
+          session.paused = true;
+          hooks.current.onPause();
+        },
       }),
     // The encounter is built once per mount; a new scenario or settings source means a new mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
