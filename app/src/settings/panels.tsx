@@ -6,6 +6,9 @@ import { formatAddress, MIST_PER_SUI } from "@mysten/sui/utils";
 import { useState, useSyncExternalStore } from "react";
 
 import { useBalance, useSessionRows } from "../chain";
+// Type-only: chain/index.ts re-exports runtime symbols; the shape rides along.
+import type { SessionTermination } from "../chain/sessions";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { NETWORK } from "../constants";
 import { usePlayerName } from "../hooks/usePlayerName";
 import { useSignInMethod } from "../hooks/useSignInMethod";
@@ -107,7 +110,9 @@ export function AccountPanel() {
     const method = useSignInMethod();
     const { data: mist, isPending, isError } = useBalance();
     const [copied, setCopied] = useState(false);
-    const sessionRows = useSessionRows();
+    // A termination waits here while its confirmation dialog is up.
+    const [termination, setTermination] = useState<SessionTermination | null>(null);
+    const sessionRows = useSessionRows(setTermination);
 
     if (!account) return <SettingList rows={[signedOutRow("your wallet and balance")]} />;
 
@@ -210,7 +215,30 @@ export function AccountPanel() {
         ...sessionRows,
     ];
 
-    return <SettingList rows={rows} />;
+    return (
+        <>
+            <SettingList rows={rows} />
+            <ConfirmDialog
+                open={termination !== null}
+                title="Terminate session"
+                confirmLabel="Terminate"
+                onConfirm={() => {
+                    termination?.run();
+                    setTermination(null);
+                }}
+                onClose={() => setTermination(null)}
+            >
+                {termination && (
+                    <>
+                        <span className="font-mono text-warn">{termination.label}</span> is removed
+                        from the on-chain alias set and can no longer sign for this account
+                        {termination.local ? "; the key stored in this browser is wiped" : ""}. One
+                        passkey signature confirms the removal.
+                    </>
+                )}
+            </ConfirmDialog>
+        </>
+    );
 }
 
 export function AudioPanel() {

@@ -106,10 +106,29 @@ function ago(at: number | undefined): string | null {
 const STALE_DAYS = 14;
 
 /**
+ * A termination waiting on the player's confirmation: whom it names and the
+ * work it would do. The panel shows the confirmation; `run` is the unchanged
+ * passkey-signed removal and fires only once the player confirms.
+ */
+export type SessionTermination = {
+    /** What the confirmation names: "This device" or the short address. */
+    label: string;
+    /** This browser's own key: removal also wipes it locally. */
+    local: boolean;
+    /** Send the removal; the rows' busy state tracks it. */
+    run: () => void;
+};
+
+/**
  * The Sessions rows for the account panel: the on-chain alias set with
  * last-action times, termination on each, and authorization of this device.
+ * Termination is irreversible for the removed key, so activating a session
+ * row hands `confirmTermination` the request instead of sending it; the
+ * removal runs only when the panel's confirmation calls `run`.
  */
-export function useSessionRows(): SettingRow[] {
+export function useSessionRows(
+    confirmTermination: (termination: SessionTermination) => void,
+): SettingRow[] {
     const account = useCurrentAccount();
     const client = useCurrentClient();
     const owner = account?.address ?? null;
@@ -190,19 +209,24 @@ export function useSessionRows(): SettingRow[] {
             // The owner's own entry is the module's bookkeeping, not a session;
             // it is never listed and never offered for removal.
             if (alias === owner) continue;
+            const isLocal = alias === localAddress;
+            const label = isLocal ? "This device" : formatAddress(alias);
             const lastAt =
                 activity.data?.get(alias) ??
-                (alias === localAddress ? (local?.lastUsedAt ?? local?.createdAt) : undefined);
+                (isLocal ? (local?.lastUsedAt ?? local?.createdAt) : undefined);
             const last = ago(lastAt);
             const old = lastAt !== undefined && Date.now() - lastAt > STALE_DAYS * 86400_000;
             const left =
-                alias === localAddress && local
-                    ? Math.max(0, Math.ceil((local.createdAt + SESSION_TTL_MS - Date.now()) / 86400_000))
+                isLocal && local
+                    ? Math.max(
+                          0,
+                          Math.ceil((local.createdAt + SESSION_TTL_MS - Date.now()) / 86400_000),
+                      )
                     : null;
             rows.push({
                 kind: "action",
                 id: `session-${alias}`,
-                label: alias === localAddress ? "This device" : formatAddress(alias),
+                label,
                 value: (
                     <span className={old ? "text-warn" : undefined}>
                         {busy
@@ -210,17 +234,25 @@ export function useSessionRows(): SettingRow[] {
                             : `${last ?? "no action seen"}${left !== null ? ` · ${left}d left` : ""} · terminate`}
                     </span>
                 ),
-                description: `Activate to terminate this session: one passkey confirmation removes it from the alias set${
-                    alias === localAddress ? " and wipes the key here" : ""
+                description: `Activate to terminate this session: a confirmation asks first, then one passkey signature removes it from the alias set${
+                    isLocal ? " and wipes the key here" : ""
                 }.`,
-                onConfirm: () =>
-                    run(async () => {
-                        await sendTransaction(removeTx(await aliasesRef(client, aliasesId!), alias), {
-                            passkey: true,
-                        });
-                        if (alias === localAddress) await clearSessionKey();
-                        forgetSessionStatus();
-                    }),
+                onConfirm: () => {
+                    if (busy) return;
+                    confirmTermination({
+                        label,
+                        local: isLocal,
+                        run: () =>
+                            run(async () => {
+                                await sendTransaction(
+                                    removeTx(await aliasesRef(client, aliasesId!), alias),
+                                    { passkey: true },
+                                );
+                                if (isLocal) await clearSessionKey();
+                                forgetSessionStatus();
+                            }),
+                    });
+                },
             });
         }
 
@@ -253,6 +285,19 @@ export function useSessionRows(): SettingRow[] {
             });
         }
         return rows;
-    }, [owner, supported, aliases, activity, aliasesQuery, local, localAddress, busy, fault, client, aliasesId, enabled]);
+    }, [
+        owner,
+        supported,
+        aliases,
+        activity,
+        aliasesQuery,
+        local,
+        localAddress,
+        busy,
+        fault,
+        client,
+        aliasesId,
+        enabled,
+        confirmTermination,
+    ]);
 }
-
