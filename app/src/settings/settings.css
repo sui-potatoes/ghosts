@@ -309,6 +309,16 @@ html[data-reduce-motion="on"] *::after {
     color: var(--text-secondary);
 }
 
+/* === Confirmation dialog === */
+
+/* The chosen button wears the Sifu band; the pad or the keyboard moves it,
+   the mouse by hovering. Unlayered on purpose, so it outranks .btn:hover. */
+.confirm-dialog .btn[data-selected] {
+    background: var(--text-color);
+    border-color: var(--text-color);
+    color: var(--background-color);
+}
+
 /* Controller diagram: line art that lights up as the pad is used. */
 .pad-svg {
     width: 100%;
