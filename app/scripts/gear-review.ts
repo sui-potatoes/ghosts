@@ -1,6 +1,7 @@
 // Silent, local visual regression bench. Uses the same assets and poses as the game.
 import * as T from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { createLongGun, type LongGunKind } from "@ghosts/squad/studio/long-guns";
 import { EquipmentAssets } from "@ghosts/squad/studio/equipment-assets";
 import { CharacterAssets } from "@ghosts/squad/studio/character-assets";
 import { mountHandEquipment } from "@ghosts/squad/studio/held-equipment";
@@ -80,7 +81,50 @@ async function build() {
     renderer.setViewport(0, 0, 1200, 850);
     camera.aspect = 1200 / 850;
     camera.updateProjectionMatrix();
-    if (view.value === "weapons" || view.value === "utilities") {
+    if (view.value === "clips" || view.value === "optics" || view.value === "reflex") {
+        const ids =
+            view.value === "clips"
+                ? ["standard", "clip-1", "clip-2", "clip-3"]
+                : view.value === "reflex"
+                  ? ["scope-1"]
+                  : ["scope-1", "scope-2", "scope-3"];
+        const names =
+            view.value === "clips"
+                ? ["STANDARD", "BASIC +1", "ADVANCED +2", "SUPERIOR +3"]
+                : ["BASIC / REFLEX", "ADVANCED", "SUPERIOR"];
+        for (let i = 0; i < ids.length; i++) {
+            let model: T.Object3D;
+            if (ids[i] === "standard") {
+                const rifle = await gear.get("rifle");
+                let mount!: T.Object3D;
+                rifle.traverse((o) => {
+                    if (o.userData.interface === "ghosts:clip:v1") mount = o;
+                });
+                model = mount.children[0].clone();
+            } else model = await gear.attachment(ids[i]);
+            const wrap = new T.Group();
+            model.quaternion.setFromRotationMatrix(
+                new T.Matrix4().makeBasis(
+                    new T.Vector3(0, 0, -1),
+                    new T.Vector3(1, 0, 0),
+                    new T.Vector3(0, -1, 0),
+                ),
+            );
+            wrap.add(model);
+            const box = new T.Box3().setFromObject(wrap),
+                center = box.getCenter(new T.Vector3());
+            model.position.sub(center);
+            wrap.position.x = (i - (ids.length - 1) / 2) * (view.value === "clips" ? 0.105 : 0.24);
+            content.add(wrap);
+        }
+        controls.target.set(0, 0, 0);
+        camera.position.set(0.035, 0.045, view.value === "clips" ? 0.53 : 0.8);
+        if (view.value === "reflex") camera.position.set(-0.1, 0.065, 0.15);
+        controls.update();
+        draw();
+        labels.textContent =
+            view.value === "reflex" ? "BASIC SCOPE / COMPACT REFLEX" : names.join("     /     ");
+    } else if (view.value === "weapons" || view.value === "utilities") {
         const kinds =
             view.value === "weapons"
                 ? (["rifle", "sniper", "pistol"] as const)
@@ -103,16 +147,27 @@ async function build() {
             recruit = initialSquad().recruits.find((r) => r.appearance.sex === sex)!;
         const c = (character = await people.create(
             recruit.appearance,
-            view.value === "none" ? null : view.value,
+            ["none", "grip", "wrist", "trigger"].includes(view.value) ? null : view.value,
             "rest",
         ));
         c.setArmorColors({ primary: "#485358", secondary: "#687877", accent: "#4ba3a0" });
         content.add(c.root);
         const library = await loadMotions(sex),
             guns = await Promise.all([
-                gear.get(weapon.value as "sniper" | "rifle"),
+                gear.get(weapon.value as "sniper" | "rifle" | "plasma", {
+                    laser: "laser-3",
+                    scope: "scope-1",
+                    clip: "clip-3",
+                }),
                 gear.get("pistol"),
             ]);
+        if (new URLSearchParams(location.search).has("source")) {
+            const source = createLongGun(weapon.value as LongGunKind, {laser:"laser-3",scope:"scope-1",clip:"clip-3"});
+            source.quaternion.setFromRotationMatrix(new T.Matrix4().makeBasis(
+                new T.Vector3(0,0,-1), new T.Vector3(1,0,0), new T.Vector3(0,-1,0)));
+            const group = new T.Group(); group.userData.model = weapon.value;
+            group.userData.center = [0,0,0]; group.add(source); guns[0] = group;
+        }
         const carries = guns.map((g) => {
             mountHandEquipment(g, c.hand, c.mount);
             return new WeaponCarry(g, c.root.getObjectByName("mixamorigLeftHand")!);
@@ -142,6 +197,16 @@ async function build() {
             apply(pose.value);
             controls.target.set(0, 1.22, 0);
             camera.position.set(1.7, 1.37, 0.2);
+            if (view.value === "grip") {
+                const gun = guns[0];
+                controls.target.copy(gun.localToWorld(new T.Vector3(0.12, 0.005, 0)));
+                camera.position.copy(gun.localToWorld(new T.Vector3(0.28, 0.19, -0.4)));
+            }
+            if (view.value === "wrist" || view.value === "trigger") {
+                const gun = guns[0];
+                controls.target.copy(gun.localToWorld(new T.Vector3(...(view.value === "wrist" ? [.08,-.025,.02] : [-.13,-.04,0]))));
+                camera.position.copy(gun.localToWorld(new T.Vector3(...(view.value === "wrist" ? [.48,.03,.14] : [-.22,.06,-.27]))));
+            }
             controls.update();
             draw();
             labels.textContent = `${view.selectedOptions[0].text} / ${sex.toUpperCase()} / ${pose.selectedOptions[0].text}`;

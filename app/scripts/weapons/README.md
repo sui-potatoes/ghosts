@@ -16,9 +16,11 @@ The TypeScript models in `packages/squad/src/studio/long-guns.ts` and `weapon-at
 ## Mounting and animation
 
 - All dimensions are metres. Authoring coordinates are +X muzzle, +Y up, +Z left side; `WEAPON_BASIS` converts to the existing character's weapon socket.
-- Rifles are rigid objects attached to the animated hand. The receiver, grip and attachment meshes must not be skinned to the character's deforming skeleton. The existing trigger grip and left-hand carry system remain in use.
+- Rifles are rigid objects attached to the animated hand. The receiver, grip and attachment meshes must not be skinned to the character's deforming skeleton. The trigger contact remains invariant when sizing the rifles down by 10%. `sizeWeapon` bakes that scale into the meshes and socket positions, keeping attachment transforms at unit scale. The left-hand carry system remains in use.
 - `mount_clip`, `mount_stock`, `mount_scope`, and `mount_laser` empties carry stable `interface` extras (`ghosts:<slot>:v1`). Use extras rather than Blender's auto-suffixed names.
 - Fittings have their local origin at the mount interface and no weapon-specific scale. Clip and stock replace the standard furniture. Scope and laser mounts start empty on every rifle, including Sharpshooter.
+- Arm roll is distributed through the upper arm and forearm by `scripts/equipment-fit/arm-twist.ts`, preserving the hand socket and joint positions without collapsing the wrist skin. Trigger fingers use separate relaxed and firing arcs in `trigger-grip.ts`; the shared pistol grip has thumb-web relief.
+- Support grips are baked by `scripts/equipment-fit/support-grip.ts`: the palm cups the fore-end and individual fingers clear its sidewalls. Rebuild with `pnpm --dir app build:equipment-poses` after exporting weapon changes. No runtime IK or bone scaling is used.
 - Plasma's side rail is farther from the bore to clear its ceramic shroud; it uses exactly the same laser asset.
 - A primary weapon swap transfers the recruit's installed fittings. Returning the primary weapon releases them to shared inventory. Legacy saves default to empty attachment slots.
 
@@ -51,4 +53,4 @@ pnpm --dir app test:equipment
 pnpm --dir app build
 ```
 
-Tests cover exact packed stats, all 36 attachment/weapon combinations, inventory conservation, legacy/malformed saves, exported socket transforms, UV/normal/tangent availability, and trigger-hand alignment through ready, fire, reload and run for both body rigs.
+Tests cover exact packed stats, all 36 attachment/weapon combinations, inventory conservation, legacy/malformed saves, exported socket transforms, UV/normal/tangent availability, trigger-hand alignment through ready, fire, reload and run for both body rigs, and actual skinned intersections of both hands on all three rifles with every laser tier, plus wrist-ring thickness through 24 held animations. Attachment bounds are checked against the parametric sources to catch stale exports.
