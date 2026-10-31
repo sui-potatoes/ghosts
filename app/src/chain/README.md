@@ -9,10 +9,13 @@ is what the screens and the future encounter driver import.
 - `executor.ts` — `useTransactionExecutor()`: a `SerialTransactionExecutor`
   over the connected account with measured (simulated) gas budgets, for rapid
   sequential transactions — one combat order after another. Ported from the
-  Sui Potatoes `app`.
+  Sui Potatoes `app`; nothing calls it until the encounter driver lands with
+  the Move package.
 - `objects.ts` — `useBcsObject` / `useOwnedBcsObjects`: object reads decoded
   straight from BCS content with a schema, returned with their
   `objectId`/`version`/`digest` so the next transaction can reference them.
+  `useBcsObject` reads the alias set today; `useOwnedBcsObjects` waits for
+  the Move package's owned objects.
 - `sender.tsx` — the one sign-and-send path: `<TransactionSender />` (mounted
   once in the shell) serves `sendTransaction(tx)`, callable from anywhere
   without React context; it returns `null` while signed out

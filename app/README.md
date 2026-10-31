@@ -33,16 +33,17 @@ Keep this exact timing when refreshing them: the live scene holds that pose thro
 the poster-to-canvas fade before advancing its animation clock.
 
 Local squad management lives at `/squad`: appearance, armor, equipment, names,
-and motion drills. It is available without a wallet. Motion previews offer 38
-captured actions, pause/scrub, loop, speed and reset; `pnpm test:motion` checks
+and motion drills. It is available without a wallet. Motion previews cover the
+whole captured action catalog with pause/scrub, loop, speed and reset; `pnpm test:motion` checks
 native-rig conversion and playback lifecycle.
 
 The playable Tokyo street encounter is at `/demo`, available from the main
 menu without a wallet: the Lawson / 7-Eleven district, turn-based combat, cover
 and weapons, with the squad saved in `/squad`. The screen mounts `<Encounter>`
 from `@ghosts/engine` (see `packages/engine/README.md`) and owns the pause
-menu. Sign-in and Settings retain their existing behavior. Ranked/Public modes
-remain disabled.
+menu. Ranked/Public modes remain disabled. A second, indoor encounter — the
+office extraction — is at `/demo-2`, and the level editor that authors such
+maps (flooring, props, markers, lights, export/import) lives at `/editor`.
 
 Stack and conventions mirror the Sui Potatoes `app`. See `CLAUDE.md`.
 
@@ -57,14 +58,14 @@ documents). It is served by Cloudflare as a Worker with static assets:
 Cloudflare builds and deploys from GitHub (Workers & Pages → Create →
 Connect to Git). Project settings:
 
-| Setting        | Value        |
-| -------------- | ------------ |
-| Root directory | `app`        |
-| Build command  | `pnpm build` |
+| Setting        | Value                 |
+| -------------- | --------------------- |
+| Root directory | `app`                 |
+| Build command  | `pnpm build`          |
+| Deploy command | `npx wrangler deploy` |
 
 pnpm finds the workspace root above `app/`, so the install there also links
 `packages/engine` and `packages/squad`.
-| Deploy command | `npx wrangler deploy` |
 
 Node comes from `.node-version` and pnpm from `packageManager`. Pushes to
 `main` go to production; other branches get preview URLs when previews are

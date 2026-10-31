@@ -8,6 +8,6 @@ export default defineConfig({
         target: "es2022",
     },
     plugins: [tailwindcss(), react()],
-    // `app/` takes 5173; keep both dev servers runnable side by side.
+    // The Sui Potatoes app takes 5173; keep both dev servers runnable side by side.
     server: { port: 5174 },
 });

@@ -35,11 +35,6 @@ const views: Record<string, MapView> = {
     interiorLighting: applyOfficeLighting, defaults: { time: "night", weather: "clear" } },
 };
 
-/** Add a map's scenery; a new level registers its view under its plan id. */
-export function registerMapView(id: string, view: MapView) {
-  views[id] = view;
-}
-
 export function mapView(id: string): MapView {
   const view = views[id];
   if (!view) throw new Error(`No scenery for map "${id}"`);

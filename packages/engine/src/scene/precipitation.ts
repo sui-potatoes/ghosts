@@ -54,8 +54,7 @@ export class Precipitation {
 
   dispose() {
     this.group.removeFromParent();
-    this.rain.mesh.geometry.dispose();
-    (this.rain.mesh.material as T.Material).dispose();
+    this.rain.dispose();
     this.snow?.dispose();
     this.group.clear();
   }

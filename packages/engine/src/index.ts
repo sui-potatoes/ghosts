@@ -3,8 +3,10 @@
 
 /**
  * The Ghosts encounter engine. Mount `<Encounter>` to play; the rules,
- * scenario, keys and settings types are here for hosts that store
- * preferences or author scenarios.
+ * scenario and settings types are here for hosts that store preferences
+ * or author scenarios. Key bindings, gamepad, sounds, demo assets and the
+ * editor have their own subpaths (`@ghosts/engine/keys`, `/gamepad`,
+ * `/sounds`, `/demo-assets`, `/editor`).
  */
 import { reset, showBriefing } from "./actions";
 
@@ -17,16 +19,6 @@ export { localDriver, type DriverFactory, type EncounterDriver } from "./driver"
 export type { Command, GameEvent } from "./events";
 export { replayEncounter, type Encounter as EncounterRules } from "./game";
 export { defaultSettings, type AudioLevels, type EngineSettings } from "./settings";
-export {
-  COMBAT_ACTIONS,
-  COMBAT_LABELS,
-  DEFAULT_COMBAT_BINDINGS,
-  combatActionOf,
-  keyCap,
-  sanitizeCombatBindings,
-  type CombatAction,
-  type CombatBindings,
-} from "./keys";
 
 /** A fresh encounter with the same squad, back at the deployment briefing. */
 export function restartEncounter() {

@@ -14,20 +14,31 @@ no storage, no app imports.
 - `stats.ts`: mirror of `commander::stats` with the `commander::items` presets
   by catalog id.
 - `appearance/`: the MPFB editor's normalization, randomization and cosmetic
-  geometry/shader helpers (`schema.ts`: the 51 facial controls).
+  geometry/shader helpers (`schema.ts`: the 51 facial controls;
+  `body-shape.ts`: the procedural body-proportion warp).
 - `studio/`: the shared character builder (`character-assets.ts`), armor
-  materials, held equipment and shared weapon models, and the Squad screen's
-  recruit studio.
-- `motion/`: the 38-action catalog, compressed clip loading, rig conversion,
-  boot contact, clearance and weapon carry; `MotionPlayer` has no combat state.
+  materials, held equipment, the recruit studio, and the parametric gear
+  sources — `long-guns.ts`, `weapon-attachments.ts` and `weapon-finish.ts`
+  (rifles and fittings), `sidearm.ts`, `field-supplies.ts` (grenade, trauma
+  case), `office-worker.ts` with its generated `crossed-arms-reference.ts`,
+  and `gear-geometry.ts` underneath them.
+- `motion/`: the captured action catalog (`catalog.ts`: combat actions plus
+  ambient ones such as standing smoking), compressed clip loading, rig
+  conversion, boot contact (`sole-contact.ts`), baked equipment poses
+  (`equipment-poses.ts`), the smoking effect (`smoking.ts`) and weapon carry;
+  `MotionPlayer` has no combat state. `clearance.ts` is offline tooling for
+  the build scripts and tests, not loaded at runtime.
 
 Modules are imported by path, `@ghosts/squad/model`, `@ghosts/squad/studio/sidearm`;
 `package.json` lists every one. Assets load from the host at `${BASE_URL}squad/`
 (the app serves `app/public/squad/`).
 
-`pnpm test` here checks the roster model, stats packing and face randomization.
-The app's `test:motion` and `test:equipment` check this pipeline against the
-shipped assets.
+`pnpm test` here checks the roster model, stats packing, face randomization,
+armor paint, weapon attachments and eyewear fitting. The bulk of the pipeline
+is covered from the app against the shipped assets: `test:motion`
+(motion, smoking, clearance, armor deformation, office worker, body shape)
+and `test:equipment` (sidearm, long guns, support grip, equipment poses,
+gear collision).
 
 Eyewear arms sample both sides of the morphed head and keep tube-radius clearance
 through the temples and ear transition. Fitting happens once when appearance
@@ -46,12 +57,15 @@ batches, embedded leather/webbing normals, and hip-bound pouch assemblies whose
 flaps, closures and stitching follow the pouch orientation. Build and pack with
 `field-kit` in place of `spectre` above.
 
-`studio/long-guns.ts` authors MX-4 and SRS-9 in the shared native weapon socket.
-Each model is merged into five finish batches (5,120 / 8,524 triangles). The
-precision optic has two rail feet and rings; all barrel/muzzle components use
-one bore axis. Squad, inventory and combat consume these same models, and combat
-tracers start at their authored muzzle positions. The finishes use deterministic
-64px micro-normal maps with no image requests or per-frame geometry work.
+`studio/long-guns.ts`, `weapon-attachments.ts` and `weapon-finish.ts` are the
+parametric source for the three rifles (assault, precision, plasma) and their
+interchangeable fittings, authored in the shared native weapon socket with one
+bore axis per weapon. They bake to `app/public/squad/weapons/*.glb` through
+the `app/scripts/weapons/` pipeline (see its README); Squad and inventory load
+those baked GLBs, while combat still builds the assault and precision rifles
+procedurally without attachments — moving combat onto the baked models is the
+open follow-up. Combat tracers start at the authored muzzle positions, and the
+finishes use deterministic micro-normal maps with no per-frame geometry work.
 `studio/field-supplies.ts` builds the grenade and sewn trauma case in four batches.
 Equipment tests check dimensions, finite geometry, muzzle/optic alignment, and
 palm fit for both sexes through five weapon motions.

@@ -57,4 +57,9 @@ export class Rain {
     }
     this.mesh.geometry.attributes.position.needsUpdate = true;
   }
+
+  dispose() {
+    this.mesh.geometry.dispose();
+    (this.mesh.material as T.Material).dispose();
+  }
 }

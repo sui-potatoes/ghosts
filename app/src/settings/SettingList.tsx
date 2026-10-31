@@ -7,8 +7,8 @@ import { padGlyph } from "@ghosts/engine/gamepad";
 
 import { uiConfirm, uiTick } from "../audio";
 import { usePad } from "../components/PadHints";
-import { onAction } from "../input";
-import { isEditable, keyLabel, type Action } from "./keys";
+import { onAction, onKeys } from "../input";
+import { keyLabel, type Action } from "./keys";
 import { useSettings } from "./store";
 
 /*
@@ -307,21 +307,25 @@ export function SettingList({ rows }: { rows: SettingRow[] }) {
     actionRef.current = onBusAction;
     useEffect(() => onAction((action) => actionRef.current(action)), []);
 
-    // Home/End jump a slider to its ends: a keyboard nicety outside the action set.
-    const edgeRef = useRef((e: KeyboardEvent) => {
-        void e;
+    // Home/End jump a slider to its ends: a keyboard nicety outside the action
+    // set, riding the input bus's shortcut lane like every other screen key.
+    const edgeRef = useRef((end: boolean): boolean => {
+        void end;
+        return false;
     });
-    edgeRef.current = (e: KeyboardEvent) => {
-        if (e.defaultPrevented || isEditable(e.target) || dialogAbove(listRef.current)) return;
-        if ((e.key !== "Home" && e.key !== "End") || row?.kind !== "slider" || row.disabled) return;
-        row.onChange(e.key === "Home" ? 0 : 100);
-        e.preventDefault();
+    edgeRef.current = (end: boolean) => {
+        if (dialogAbove(listRef.current) || row?.kind !== "slider" || row.disabled) return false;
+        row.onChange(end ? 100 : 0);
+        return true;
     };
-    useEffect(() => {
-        const onKey = (e: KeyboardEvent) => edgeRef.current(e);
-        window.addEventListener("keydown", onKey);
-        return () => window.removeEventListener("keydown", onKey);
-    }, []);
+    useEffect(
+        () =>
+            onKeys({
+                Home: () => edgeRef.current(false),
+                End: () => edgeRef.current(true),
+            }),
+        [],
+    );
 
     function hover(i: number) {
         if (i === focus || !focusable(rows[i])) return;

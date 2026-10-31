@@ -7,7 +7,6 @@ export const SCARS: [string, string][];
 export const HAIR: [string, string][];
 export const BROWS: [string, string][];
 export const TATTOOS: [string, string][];
-export const BEARDS: [string, string][];
 export const BROW_CONTROLS: {
     key: "browThickness" | "browLength" | "browArch" | "browTail" | "browDensity";
     label: string;

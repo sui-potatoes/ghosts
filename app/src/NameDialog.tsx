@@ -3,7 +3,7 @@
 
 import { useEffect, useId, useState } from "react";
 
-import { useSubmitNameChange } from "./chain/names";
+import { useSubmitNameChange } from "./chain";
 import { useBack } from "./hooks/useBack";
 import { usePlayerName } from "./hooks/usePlayerName";
 import { NAME_MAX, normalizeName, validateName } from "./player/name";

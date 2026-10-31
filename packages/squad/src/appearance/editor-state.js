@@ -75,7 +75,6 @@ export const EYE_PRESETS = [
         values: { innerLid: 0.55, eyefold: -0.25, eyeOpen: -0.2, eyeTilt: 0.2 },
     },
 ];
-export const BEARDS = [["none", "Clean shaven"]];
 export const TATTOOS = [
     ["none", "None"],
     ["bars", "Signal bars"],
@@ -116,8 +115,6 @@ export const baseState = () => ({
     brows: "brow002",
     browColor: "#423326",
     ...Object.fromEntries(BROW_CONTROLS.map((c) => [c.key, c.default ?? 0])),
-    beard: "none",
-    beardColor: "#392c23",
     tattoo: "none",
     tattooPlace: "cheekLeft",
     tattooColor: "#262a28",
@@ -325,7 +322,6 @@ export function normalize(input, schema) {
         ["scar", SCARS],
         ["hair", HAIR],
         ["brows", BROWS],
-        ["beard", BEARDS],
         ["tattoo", TATTOOS],
     ])
         allowed(
@@ -360,7 +356,6 @@ export function normalize(input, schema) {
         "skinTint",
         "hairColor",
         "browColor",
-        "beardColor",
         "tattooColor",
     ])
         if (/^#[\da-f]{6}$/i.test(input[key])) s[key] = input[key];
@@ -620,7 +615,6 @@ export function randomIdentity(schema, sex, random = Math.random, previous = nul
             : "none";
     s.scarPlace = pick(["cheekLeft", "cheekRight", "temple", "bridge"], random);
     s.scarAmount = between(random, 0.35, 0.7);
-    s.beard = "none";
     return normalize(s, schema);
 }
 // Face shuffle explores the eye region independently: a different jaw must not

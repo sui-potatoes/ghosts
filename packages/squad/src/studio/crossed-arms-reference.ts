@@ -1,3 +1,6 @@
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
+
 // Derived from Umplix / Cross Arms, CC0. Source frame 61.
 // Regenerate: node app/scripts/crossed-arms/build-reference.mjs
 export default {

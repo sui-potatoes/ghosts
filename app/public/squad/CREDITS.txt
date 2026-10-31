@@ -21,11 +21,11 @@ frontend data. The armor and weapon models remain prototype art.
 
 Combat boots, utility belts and revised fitted shoulder caps: original
 procedural geometry authored for this game, fitted to the native MakeHuman body.
-Reproducible Blender source: game/scripts/build-field-kit.py.
+Reproducible Blender source: app/scripts/build-field-kit.py.
 
 NYX Veil / Shade / Wraith armor: original fitted geometry and procedural woven /
 ceramic normal maps authored for Ghosts. Separate male/female native-bind exports.
-Reproducible Blender source: game/scripts/build-nyx.py, native_gear.py and nyx_details.py.
+Reproducible Blender source: app/scripts/build-nyx.py, native_gear.py and nyx_details.py.
 
 Office worker / extraction VIP outfit: original procedural clothing authored for
 Ghosts on the native MakeHuman body and skeleton. Separate male/female exports;

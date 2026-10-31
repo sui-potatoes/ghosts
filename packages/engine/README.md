@@ -34,8 +34,11 @@ and decides nothing itself.
 Mount it to start an encounter and unmount it to end one: the renderer, audio
 and listeners go with it. One encounter runs at a time. `restartEncounter()`
 redeploys the same squad; `openBriefing()` shows the briefing over the field.
-`@ghosts/engine/keys` has the combat actions, their default bindings and
-`sanitizeCombatBindings` for a host that stores the player's keys.
+Subpaths carry the host-facing toolkits: `@ghosts/engine/keys` (combat
+actions, default bindings, `sanitizeCombatBindings`), `/gamepad` (pad glyphs
+and dialog cancel), `/sounds` (the effect and voice listings), `/demo-assets`
+(base-URL-aware demo asset paths) and `/editor` (the level editor's engine
+half).
 
 The host provides:
 
@@ -58,7 +61,8 @@ Rules (pure TypeScript, no DOM, no three; node-tested):
 
 - `scenario.ts`: an encounter as data — map plan, roster, objective cell,
   briefing, contract, objectives, location and feed lines. `scenarios.ts` is
-  the registry of playable levels; `blackRain` is the one scenario today.
+  the registry of playable levels: `blackRain` (the Kōra street) and
+  `paperTrail` (the office extraction, Demo 2).
 - `map.ts`: `TacticalMap` answers every geometry question from a `MapPlan`
   (bounds, standing room, low and high cover, corner peeks, shot lines, ground
   height — the street's curb cuts are plan data). `district-plan.ts` is the
@@ -74,16 +78,27 @@ Rules (pure TypeScript, no DOM, no three; node-tested):
   wraps `apply` and `hostilePhase`; a chain driver resolves orders from
   transaction effects instead. Hosts pass theirs to `<Encounter>`.
 - `targeting.ts`: shot and throw checks for the UI.
+- `catalog.ts` and `environment.ts`: the placeable-asset roster (stable uids,
+  seats, tactical footprints) and the street/office prop model with damage
+  stages; `district-props.ts` dresses the street, `storefronts.ts` shapes the
+  breakable shop fronts.
+- `editor/`: the level editor's engine half — the level model, its twofold
+  export (Move map grid + render placements), demo reconstruction and the
+  editing viewport. The React screen lives in the app.
+- `office/`: the indoor pack — catalog, plan, scenario, lighting and scene.
 
 Scene (`scene/`, three.js; shows state and animates events, decides nothing):
 `battlefield.ts` is the facade (camera, aim, render loop, `play(event)`), with
-`units.ts` (rigs, markers, body animation, cover side-steps), `overlays.ts`
-(grid, ranges, paths, hover, selection ring), `effects.ts`, `rain.ts`,
-`occlusion.ts`, `profiler.ts`, `props.ts` (barriers, relay) and `space.ts`
-(cells ↔ world on one map). `maps.ts` maps a plan id to its scenery
-(`district.ts` builds Kōra). `humans.ts` and `mpfb-characters.js` build
-operatives from the shared `@ghosts/squad` character pipeline;
-`squad-bridge.ts` turns recruits into deployment looks.
+`units.ts` (rigs, markers, body animation, cover side-steps), `unit-picking.ts`
+(pointer hits), `overlays.ts` (grid, ranges, paths, hover, selection ring),
+`markers.ts`, `effects.ts`, `precipitation.ts` (one weather effect at a time
+over `rain.ts` and `snow.ts`), `destruction.ts` with `prop-assets.ts`,
+`prop-deformation.ts` and `surface-damage.ts` (fracture, damage stages,
+cracks), `occlusion.ts`, `profiler.ts`, `props.ts` (barriers, relay) and
+`space.ts` (cells ↔ world on one map). `maps.ts` maps a plan id to its scenery
+(`district.ts` builds Kōra, `office/scene.ts` the office). `humans.ts` and
+`mpfb-characters.js` build operatives from the shared `@ghosts/squad`
+character pipeline; `squad-bridge.ts` turns recruits into deployment looks.
 
 Session and UI:
 
@@ -92,19 +107,22 @@ Session and UI:
   (`presenter.ts` voices and announces each, the scene animates it) with a
   redraw after each.
 - `controls.ts`: combat keys through the player's bindings, squad numbers 1–9,
-  field picks and hovers.
+  field picks and hovers. `gamepad.ts` and `pad-combat.ts` map a controller
+  onto the same orders (and `cancelDialog` closes native dialogs on pad back).
 - `boot.ts`: loads the squad and map, builds and warms the scene, takes
   portraits, binds controls, opens the deployment briefing; returns the
   teardown.
 - `ui/`: `Encounter.tsx` (root), `Field.tsx` (overlays on the field),
   `Panels.tsx` (intel panel, command deck), `Dialogs.tsx` (briefing, debrief
-  host).
+  host), `DestructionPreview.tsx` and `OfficePreview.tsx` (the Scene labs).
 - `audio.ts`, `voice.ts`, `sfx.ts`: effects and voice lines from `/sounds/`,
   levelled master × effects and master × dialogue; kinds without a recording
   keep a synthesized tone at the effects level. Only voices listed in
-  `RECORDED` play (male-01 and female-01 today).
-- `style.css`, `ghosts-theme.css`, `aftermath/reveal.css`: the legacy sheets,
-  scoped under `.encounter`, so they never reach the host page.
+  `RECORDED` play (male-01 and female-01 today). `sounds.ts` lists the files
+  for hosts (the app's settings previews).
+- `style.css`, `ghosts-theme.css` (with `fonts.css`), `host-reset.css`,
+  `aftermath/reveal.css`: the sheets, scoped under `.encounter`, so they
+  never reach the host page.
 
 ## Debrief
 
@@ -215,9 +233,11 @@ or paused scenes do not advance it. Snow never keeps the full scene awake.
 ## Checks
 
 `pnpm test` here (Node 22+): rules, events and the hostile planner, maps and
-cover, aim blending, frame pacing, render policy, weather, voice and effects,
-squad mapping, the debrief report. `pnpm typecheck` checks the package alone;
-the app's build checks it together with the app.
+cover, scenarios and the driver, the asset catalog and environment, aim
+blending, frame pacing, render policy, weather, destruction, unit picking,
+the gamepad, the office and editor suites, voice and effects, squad mapping,
+the debrief report. `pnpm typecheck` checks the package alone; the app's
+build checks it together with the app.
 
 Development-only fixtures at `/demo?review=corner`, `bishop-wall`,
 `cover-axes`, `debrief`, `debrief-clean` and `debrief-defeat` place units or
