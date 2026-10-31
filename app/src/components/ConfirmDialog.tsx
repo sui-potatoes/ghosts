@@ -13,8 +13,12 @@ type Props = {
     title: string;
     /** The consequence, named plainly; shown under the title. */
     children: ReactNode;
-    /** The confirming button's label; the other button is always Cancel. */
+    /** The confirming button's label; the other button cancels. */
     confirmLabel: string;
+    /** The cancelling button's label, when "Cancel" would read wrong. */
+    cancelLabel?: string;
+    /** Destructive confirm (sign out, terminate): the button reads amber. */
+    danger?: boolean;
     onConfirm: () => void;
     onClose: () => void;
 };
@@ -27,7 +31,16 @@ type Props = {
  * the back stack, and every other menu action is consumed while open, so the
  * list and the category nav behind the overlay hold still.
  */
-export function ConfirmDialog({ open, title, children, confirmLabel, onConfirm, onClose }: Props) {
+export function ConfirmDialog({
+    open,
+    title,
+    children,
+    confirmLabel,
+    cancelLabel,
+    danger,
+    onConfirm,
+    onClose,
+}: Props) {
     const id = useId();
     const [choice, setChoice] = useState<0 | 1>(0);
 
@@ -69,10 +82,10 @@ export function ConfirmDialog({ open, title, children, confirmLabel, onConfirm, 
                 aria-modal="true"
                 aria-labelledby={`${id}-title`}
                 aria-describedby={`${id}-body`}
-                className="confirm-dialog flex w-full max-w-md flex-col border border-line bg-surface"
+                className="confirm-dialog flex w-full max-w-sm flex-col border border-line bg-surface"
                 onClick={(e) => e.stopPropagation()}
             >
-                <div className="flex flex-col gap-2 px-6 pt-6 pb-5">
+                <div className="flex flex-col gap-3 px-6 pt-6">
                     <h2 id={`${id}-title`} className="label text-foreground">
                         {title}
                     </h2>
@@ -80,26 +93,21 @@ export function ConfirmDialog({ open, title, children, confirmLabel, onConfirm, 
                         {children}
                     </p>
                 </div>
-                <div className="flex items-center justify-end gap-3 border-t border-line px-6 py-4">
-                    <PadHints
-                        className="mr-auto"
-                        entries={[
-                            ["a", "Select"],
-                            ["b", "Back"],
-                        ]}
-                    />
+                {/* Two equal twins; the chosen one wears the band. */}
+                <div className="grid grid-cols-2 gap-3 px-6 pt-6 pb-5">
                     <button
                         type="button"
-                        className="btn"
+                        className="btn confirm-btn"
                         data-selected={choice === 0 || undefined}
                         onMouseEnter={() => setChoice(0)}
                         onClick={onClose}
                     >
-                        Cancel
+                        {cancelLabel ?? "Cancel"}
                     </button>
                     <button
                         type="button"
-                        className="btn"
+                        className="btn confirm-btn"
+                        data-danger={danger || undefined}
                         data-selected={choice === 1 || undefined}
                         onMouseEnter={() => setChoice(1)}
                         onClick={onConfirm}
@@ -107,6 +115,14 @@ export function ConfirmDialog({ open, title, children, confirmLabel, onConfirm, 
                         {confirmLabel}
                     </button>
                 </div>
+                {/* One quiet glyph line, only while a pad is in play. */}
+                <PadHints
+                    className="confirm-pad-hints"
+                    entries={[
+                        ["a", "Select"],
+                        ["b", "Back"],
+                    ]}
+                />
             </div>
         </div>
     );

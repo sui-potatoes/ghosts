@@ -9,7 +9,17 @@
  */
 
 export type Action =
-    "back" | "up" | "down" | "left" | "right" | "confirm" | "prev-tab" | "next-tab" | "reset";
+    | "back"
+    | "up"
+    | "down"
+    | "left"
+    | "right"
+    | "confirm"
+    | "prev-tab"
+    | "next-tab"
+    | "prev-section"
+    | "next-section"
+    | "reset";
 
 export type Bindings = Record<Action, string[]>;
 
@@ -22,6 +32,8 @@ export const ACTIONS: Action[] = [
     "confirm",
     "prev-tab",
     "next-tab",
+    "prev-section",
+    "next-section",
     "reset",
 ];
 
@@ -34,6 +46,8 @@ export const ACTION_LABELS: Record<Action, string> = {
     confirm: "Activate",
     "prev-tab": "Previous settings category",
     "next-tab": "Next settings category",
+    "prev-section": "Previous section of the list",
+    "next-section": "Next section of the list",
     reset: "Reset the focused setting",
 };
 
@@ -46,6 +60,8 @@ export const DEFAULT_BINDINGS: Bindings = {
     confirm: ["Enter", " "],
     "prev-tab": ["Shift+Tab", "q"],
     "next-tab": ["Tab", "e"],
+    "prev-section": ["PageUp"],
+    "next-section": ["PageDown"],
     reset: ["r"],
 };
 
@@ -91,6 +107,10 @@ export function keyLabel(key: string): string {
             return "→";
         case "Tab":
             return "tab";
+        case "PageUp":
+            return "pgup";
+        case "PageDown":
+            return "pgdn";
         default:
             return key.length === 1 ? key.toUpperCase() : key.toLowerCase();
     }

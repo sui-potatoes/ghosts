@@ -6,7 +6,7 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import { padGlyph } from "@ghosts/engine/gamepad";
 
 import { uiConfirm, uiTick } from "../audio";
-import { usePad } from "../components/PadHints";
+import { usePadActive } from "../components/PadHints";
 import { onAction, onKeys } from "../input";
 import { keyLabel, type Action } from "./keys";
 import { useSettings } from "./store";
@@ -201,13 +201,14 @@ export const ResetHintContext = createContext<(canReset: boolean) => void>(() =>
 
 /**
  * The control hints: a quiet global footer, rendered by the view. Pad glyphs
- * while a controller is connected, the bound keys otherwise.
+ * while the pad is the device in use, the bound keys otherwise — in both
+ * layouts, so a pad owner reaching for the mouse sees the keys again.
  */
 export function SettingsHints({ canReset }: { canReset: boolean }) {
     const [settings] = useSettings();
-    const pad = usePad();
+    const glyphs = !!usePadActive();
     const b = settings.controls.bindings;
-    const caps = (keys: string[], glyphs: string[]) => (pad ? glyphs : keys.map(keyLabel));
+    const caps = (keys: string[], glyph: string[]) => (glyphs ? glyph : keys.map(keyLabel));
     return (
         <div className="set-hints" aria-hidden>
             <Hint caps={caps([b.up[0], b.down[0]], [padGlyph("dpad")])} label="Navigate" />
@@ -216,6 +217,13 @@ export function SettingsHints({ canReset }: { canReset: boolean }) {
             <Hint
                 caps={caps([b["prev-tab"][0], b["next-tab"][0]], [padGlyph("lb"), padGlyph("rb")])}
                 label="Category"
+            />
+            <Hint
+                caps={caps(
+                    [b["prev-section"][0], b["next-section"][0]],
+                    [padGlyph("lt"), padGlyph("rt")],
+                )}
+                label="Section"
             />
             <Hint caps={caps([b.reset[0]], [padGlyph("x")])} label="Default" dim={!canReset} />
             <Hint caps={caps([b.back[0]], [padGlyph("b")])} label="Back" />
@@ -247,6 +255,26 @@ export function SettingList({ rows }: { rows: SettingRow[] }) {
             if (focusable(rows[i])) break;
         }
         moveTo(i);
+    }
+
+    // Jump between the list's sections (the triggers, PgUp/PgDn): each group
+    // starts at its first focusable row; rows before the first header form a
+    // leading group. Wraps like the rest of the navigation.
+    function sectionJump(dir: 1 | -1): boolean {
+        const starts: number[] = [];
+        let open = false;
+        for (let i = 0; i < rows.length; i++) {
+            if (rows[i].kind === "section") open = false;
+            else if (!open && focusable(rows[i])) {
+                starts.push(i);
+                open = true;
+            }
+        }
+        if (starts.length < 2) return false;
+        let at = 0;
+        for (let k = 0; k < starts.length; k++) if (starts[k] <= focus) at = k;
+        moveTo(starts[(at + dir + starts.length) % starts.length]);
+        return true;
     }
 
     function change(r: SettingRow | undefined, dir: 1 | -1): boolean {
@@ -295,6 +323,8 @@ export function SettingList({ rows }: { rows: SettingRow[] }) {
         }
         if (action === "left") return change(row, -1);
         if (action === "right") return change(row, 1);
+        if (action === "prev-section") return sectionJump(-1);
+        if (action === "next-section") return sectionJump(1);
         if (action === "confirm") return confirm(row);
         if (action === "reset" && row && row.kind !== "section" && row.onReset && !row.disabled) {
             row.onReset();

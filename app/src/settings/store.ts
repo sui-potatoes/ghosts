@@ -16,6 +16,10 @@ import {
 } from "@ghosts/engine/keys";
 import { DEFAULT_BINDINGS, actionOf, type Action, type Bindings } from "./keys";
 
+/** How the Settings screen lays itself out; "auto" follows the connected pad. */
+export const LAYOUTS = ["auto", "desktop", "controller"] as const;
+export type LayoutChoice = (typeof LAYOUTS)[number];
+
 export type Settings = {
     audio: {
         master: number;
@@ -31,13 +35,24 @@ export type Settings = {
         reduceMotion: boolean;
         batterySaver: boolean;
     };
-    controls: { bindings: Bindings; combat: CombatBindings };
+    controls: {
+        bindings: Bindings;
+        combat: CombatBindings;
+        layout: LayoutChoice;
+        /** The "controller connected" prompt was answered; never ask again. */
+        layoutAnswered: boolean;
+    };
 };
 
 export const DEFAULTS: Settings = {
     audio: { master: 50, music: 50, sfx: 80, voice: 80, ui: 80, muted: false },
     display: { scanlines: true, vignette: true, reduceMotion: false, batterySaver: true },
-    controls: { bindings: DEFAULT_BINDINGS, combat: DEFAULT_COMBAT_BINDINGS },
+    controls: {
+        bindings: DEFAULT_BINDINGS,
+        combat: DEFAULT_COMBAT_BINDINGS,
+        layout: "auto",
+        layoutAnswered: false,
+    },
 };
 
 const KEY = "ghosts:settings";
@@ -51,6 +66,10 @@ function level(v: unknown, fallback: number): number {
 
 function flag(v: unknown, fallback: boolean): boolean {
     return typeof v === "boolean" ? v : fallback;
+}
+
+function layoutChoice(v: unknown): LayoutChoice {
+    return LAYOUTS.includes(v as LayoutChoice) ? (v as LayoutChoice) : DEFAULTS.controls.layout;
 }
 
 /**
@@ -88,7 +107,12 @@ function sanitize(raw: unknown): Settings {
             reduceMotion: flag(d.reduceMotion, DEFAULTS.display.reduceMotion),
             batterySaver: flag(d.batterySaver, DEFAULTS.display.batterySaver),
         },
-        controls: { bindings: bindings(), combat: sanitizeCombatBindings(c.combat) },
+        controls: {
+            bindings: bindings(),
+            combat: sanitizeCombatBindings(c.combat),
+            layout: layoutChoice(c.layout),
+            layoutAnswered: flag(c.layoutAnswered, DEFAULTS.controls.layoutAnswered),
+        },
     };
 }
 

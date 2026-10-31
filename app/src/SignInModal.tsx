@@ -3,11 +3,14 @@
 
 import { useCurrentAccount, useDAppKit, useWallets } from "@mysten/dapp-kit-react";
 import { isEnokiWallet } from "@mysten/enoki";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
+import { uiConfirm, uiTick } from "./audio";
+import { PadHints, usePad } from "./components/PadHints";
 import { FEATURES } from "./constants";
 import { useBack } from "./hooks/useBack";
 import { useGoogleSignIn } from "./hooks/useGoogleSignIn";
+import { onAction } from "./input";
 import {
     createPasskey,
     loadStoredPasskey,
@@ -60,8 +63,9 @@ function Glyph({ kind }: { kind: keyof typeof GLYPHS }) {
 }
 
 /**
- * One sign-in option: a full-width row that is itself the button. `extra` is a
- * secondary action rendered under the description; it does not trigger the row.
+ * One sign-in option: a full-width row in the settings-list voice, the Sifu
+ * band on the selected one. `extra` is a secondary action rendered under the
+ * description; it does not trigger the row.
  */
 function Option({
     glyph,
@@ -70,6 +74,8 @@ function Option({
     description,
     state,
     disabled,
+    selected,
+    onHover,
     onClick,
     extra,
 }: {
@@ -79,58 +85,61 @@ function Option({
     description: string;
     state?: string;
     disabled?: boolean;
+    selected: boolean;
+    onHover: () => void;
     onClick: () => void;
     extra?: ReactNode;
 }) {
-    // Not a <button>: `extra` may hold one, and buttons cannot nest.
+    // Not a <button>: `extra` may hold one, and buttons cannot nest. Selection
+    // is drawn state, never DOM focus; the input bus moves and activates it.
     return (
         <div
             role="button"
-            tabIndex={disabled ? -1 : 0}
+            tabIndex={-1}
             aria-disabled={disabled}
+            data-selected={selected || undefined}
+            data-disabled={disabled || undefined}
+            onMouseEnter={onHover}
             onClick={() => !disabled && onClick()}
-            onKeyDown={(e) => {
-                if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
-                e.preventDefault();
-                if (!disabled) onClick();
-            }}
-            className={`group flex w-full items-center gap-5 px-6 py-5 text-left transition-colors ${
-                disabled
-                    ? "opacity-40"
-                    : "cursor-pointer hover:bg-accent-dim focus-visible:bg-accent-dim"
-            }`}
+            className="sign-option flex w-full items-center gap-5 px-6 py-5 text-left"
         >
             {icon ? (
                 <img src={icon} alt="" className="size-5 shrink-0 rounded-full" />
             ) : (
                 glyph && <Glyph kind={glyph} />
             )}
-            <div className="flex min-w-0 flex-1 flex-col gap-1">
-                <span className="label text-foreground">{title}</span>
-                <span className="text-[13px] leading-snug text-secondary">{description}</span>
-                {extra && <span className="mt-1 text-[12px]">{extra}</span>}
+            <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                <span className="label text-[14px]">{title}</span>
+                <span className="font-mono text-[13px] leading-relaxed tracking-[0.02em]">
+                    {description}
+                </span>
+                {extra && <span className="mt-1.5 font-mono text-[12px]">{extra}</span>}
             </div>
-            <span className="label shrink-0 text-muted transition-colors group-hover:text-accent">
-                {state ?? "→"}
-            </span>
+            <span className="label shrink-0 text-[14px]">{state ?? "→"}</span>
         </div>
     );
 }
 
 /**
  * Sign-in dialog. Passkey is the WebAuthn wallet in `wallets/passkey.ts`,
- * Google is zkLogin through Enoki (hidden as unavailable without an API key),
+ * Google is zkLogin through Enoki (shown unavailable without an API key),
  * and browser-extension wallets appear only behind `FEATURES.externalWallets`.
  * Closes itself once an account is connected.
+ *
+ * Driven by the input bus like the settings lists: up/down move the band,
+ * confirm activates, back (Escape, pad B) closes via the back stack, and every
+ * other menu action is consumed while open so the screen behind holds still.
  */
 export function SignInModal({ open, onClose }: Props) {
     const dAppKit = useDAppKit();
     const wallets = useWallets();
     const account = useCurrentAccount();
+    const pad = usePad();
     const { canSignIn: canGoogle, signIn: signInWithGoogle } = useGoogleSignIn();
 
     const [busy, setBusy] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [sel, setSel] = useState("passkey");
 
     const passkeyWallet = wallets.find((w) => w.name === PASSKEY_WALLET_NAME);
     const externalWallets = FEATURES.externalWallets
@@ -142,9 +151,12 @@ export function SignInModal({ open, onClose }: Props) {
         if (open && account) onClose();
     }, [open, account, onClose]);
 
-    useBack(open ? onClose : null);
+    // Every open starts on the first option, like a fresh menu.
+    useEffect(() => {
+        if (open) setSel("passkey");
+    }, [open]);
 
-    if (!open) return null;
+    useBack(open ? onClose : null);
 
     async function run(name: string, fn: () => Promise<unknown>) {
         if (busy) return;
@@ -165,6 +177,70 @@ export function SignInModal({ open, onClose }: Props) {
         await dAppKit.connectWallet({ wallet: passkeyWallet });
     }
 
+    // The selectable entries in render order; disabled ones are skipped over.
+    const entries: { id: string; disabled?: boolean }[] = [
+        { id: "passkey" },
+        { id: "recover" },
+        { id: "google", disabled: !canGoogle },
+        ...externalWallets.map((w) => ({ id: `wallet:${w.name}` })),
+    ];
+    const usable = (id: string) => entries.some((e) => e.id === id && !e.disabled);
+    const selected = usable(sel) ? sel : (entries.find((e) => !e.disabled)?.id ?? "passkey");
+
+    function hover(id: string) {
+        if (id === selected || !usable(id)) return;
+        uiTick();
+        setSel(id);
+    }
+
+    function move(dir: 1 | -1) {
+        let i = entries.findIndex((e) => e.id === selected);
+        for (let n = 0; n < entries.length; n++) {
+            i = (i + dir + entries.length) % entries.length;
+            if (!entries[i].disabled) break;
+        }
+        if (entries[i].id === selected) return;
+        uiTick();
+        setSel(entries[i].id);
+    }
+
+    function activate(id: string) {
+        if (!usable(id) || busy) return;
+        uiConfirm();
+        if (id === "passkey") {
+            void run("passkey", async () => {
+                if (!hasPasskey) await createPasskey("any");
+                await connectPasskey();
+            });
+        } else if (id === "recover") {
+            void run("recover", async () => {
+                await recoverPasskey();
+                await connectPasskey();
+            });
+        } else if (id === "google") {
+            void run("google", signInWithGoogle);
+        } else {
+            const wallet = externalWallets.find((w) => `wallet:${w.name}` === id);
+            if (wallet) void run(wallet.name, () => dAppKit.connectWallet({ wallet }));
+        }
+    }
+
+    const busRef = useRef({ move, activate, selected });
+    busRef.current = { move, activate, selected };
+
+    useEffect(() => {
+        if (!open) return;
+        return onAction((action) => {
+            if (action === "back") return false; // falls to this dialog's back-stack entry
+            if (action === "up") busRef.current.move(-1);
+            else if (action === "down") busRef.current.move(1);
+            else if (action === "confirm") busRef.current.activate(busRef.current.selected);
+            return true; // modal: tabs and reset never reach the screen behind
+        });
+    }, [open]);
+
+    if (!open) return null;
+
     const state = (name: string, text: string) => (busy === name ? text : undefined);
 
     return (
@@ -173,7 +249,7 @@ export function SignInModal({ open, onClose }: Props) {
             onClick={onClose}
         >
             <div
-                className="flex w-full max-w-md flex-col border border-line bg-surface"
+                className="flex w-full max-w-lg flex-col border border-line bg-surface"
                 onClick={(e) => e.stopPropagation()}
                 role="dialog"
                 aria-modal="true"
@@ -181,10 +257,10 @@ export function SignInModal({ open, onClose }: Props) {
             >
                 <div className="flex items-start justify-between gap-4 px-6 pt-6 pb-4">
                     <div className="flex flex-col gap-2">
-                        <h2 id="sign-in-title" className="label text-foreground">
+                        <h2 id="sign-in-title" className="label text-[14px] text-foreground">
                             Identify
                         </h2>
-                        <p className="text-[13px] text-secondary">
+                        <p className="font-mono text-[13px] leading-relaxed tracking-[0.02em] text-secondary">
                             Choose how your account is held. This becomes the main wallet of your
                             squad.
                         </p>
@@ -204,21 +280,18 @@ export function SignInModal({ open, onClose }: Props) {
                         title="Passkey"
                         description="Touch ID, iCloud Keychain or a security key signs for you. No extension, no seed phrase."
                         state={state("passkey", "Waiting…")}
-                        onClick={() =>
-                            run("passkey", async () => {
-                                if (!hasPasskey) await createPasskey("any");
-                                await connectPasskey();
-                            })
-                        }
+                        selected={selected === "passkey"}
+                        onHover={() => hover("passkey")}
+                        onClick={() => activate("passkey")}
                         extra={
                             <button
-                                className="text-secondary underline underline-offset-4 hover:text-foreground"
+                                type="button"
+                                className="sign-link"
+                                data-selected={selected === "recover" || undefined}
+                                onMouseEnter={() => hover("recover")}
                                 onClick={(e) => {
                                     e.stopPropagation();
-                                    run("recover", async () => {
-                                        await recoverPasskey();
-                                        await connectPasskey();
-                                    });
+                                    activate("recover");
                                 }}
                             >
                                 {busy === "recover"
@@ -239,7 +312,9 @@ export function SignInModal({ open, onClose }: Props) {
                         }
                         disabled={!canGoogle}
                         state={state("google", "Opening…")}
-                        onClick={() => run("google", signInWithGoogle)}
+                        selected={selected === "google"}
+                        onHover={() => hover("google")}
+                        onClick={() => activate("google")}
                     />
                     {externalWallets.map((w) => (
                         <Option
@@ -249,13 +324,29 @@ export function SignInModal({ open, onClose }: Props) {
                             title={w.name}
                             description="A wallet you already use."
                             state={state(w.name, "Connecting…")}
-                            onClick={() => run(w.name, () => dAppKit.connectWallet({ wallet: w }))}
+                            selected={selected === `wallet:${w.name}`}
+                            onHover={() => hover(`wallet:${w.name}`)}
+                            onClick={() => activate(`wallet:${w.name}`)}
                         />
                     ))}
                 </div>
 
                 {error && (
-                    <p className="border-t border-line px-6 py-3 text-[13px] text-warn">{error}</p>
+                    <p className="border-t border-line px-6 py-3 font-mono text-[13px] text-warn">
+                        {error}
+                    </p>
+                )}
+
+                {pad && (
+                    <div className="flex justify-end border-t border-line px-6 py-3">
+                        <PadHints
+                            entries={[
+                                ["dpad", "Navigate"],
+                                ["a", "Select"],
+                                ["b", "Back"],
+                            ]}
+                        />
+                    </div>
                 )}
             </div>
         </div>

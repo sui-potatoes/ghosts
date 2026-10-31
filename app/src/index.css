@@ -299,6 +299,43 @@
         border-color: var(--border-color);
     }
 
+    /* Sign-in options: mono voice and the Sifu band on the selected row.
+       Selection is drawn, never DOM focus, so pad and keyboard move it alike. */
+    .sign-option {
+        color: var(--text-secondary);
+        cursor: pointer;
+    }
+
+    .sign-option .label {
+        color: var(--text-color);
+    }
+
+    .sign-option[data-selected] {
+        background: var(--text-color);
+        color: var(--background-color);
+    }
+
+    .sign-option[data-selected] .label {
+        color: inherit;
+    }
+
+    .sign-option[data-disabled] {
+        opacity: 0.4;
+        cursor: default;
+    }
+
+    .sign-link {
+        color: inherit;
+        text-decoration: underline;
+        text-underline-offset: 4px;
+    }
+
+    .sign-link[data-selected] {
+        background: var(--text-color);
+        color: var(--background-color);
+        text-decoration: none;
+    }
+
     /* Loading placeholder: a slow shimmer in the surface tone. */
     .skeleton {
         display: inline-block;

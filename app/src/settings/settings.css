@@ -91,6 +91,68 @@ html[data-reduce-motion="on"] *::after {
     }
 }
 
+/* The controller layout's category bar, Sifu-style: every category on one
+   shared baseline at the top, the active one lit and underlined, the
+   shoulder glyphs at the ends. Overflows sideways on narrow screens. */
+.set-tabs-wrap {
+    position: relative;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    min-width: 0;
+}
+
+/* The location, folded into the tab row (the controller layout has no header
+   row). Hidden where the tabs already need the full width. */
+.set-tabs-loc {
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 14px;
+}
+
+@media (max-width: 1279px) {
+    .set-tabs-loc {
+        display: none;
+    }
+}
+
+.set-tabs {
+    display: flex;
+    gap: 36px;
+    min-width: 0;
+    overflow-x: auto;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.set-tab {
+    font-family: var(--font-mono);
+    font-size: 15px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    padding: 12px 2px;
+    margin-bottom: -1px; /* the underline sits on the shared baseline */
+    border-bottom: 2px solid transparent;
+    color: var(--disabled-color);
+}
+
+.set-tab:hover {
+    color: var(--text-secondary);
+}
+
+.set-tab[aria-current="true"] {
+    color: var(--text-color);
+    border-bottom-color: var(--text-color);
+}
+
+.set-tab[aria-current="true"]:hover {
+    color: var(--text-color);
+}
+
 /* The setting rows. The list flexes to the screen and scrolls internally,
    so the description and the pinned hints bar never move. */
 .set-list {
@@ -317,4 +379,38 @@ html[data-reduce-motion="on"] *::after {
     background: var(--text-color);
     border-color: var(--text-color);
     color: var(--background-color);
+}
+
+/* Equal twins: same height, same width, never wrapping. The type is stated
+   here because the layered .btn size loses to the cascade inside the dialog. */
+.confirm-dialog .confirm-btn {
+    width: 100%;
+    padding: 10px 8px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* A destructive confirm reads amber until chosen; the band stays the band. */
+.confirm-dialog .confirm-btn[data-danger]:not([data-selected]) {
+    color: var(--warn-color);
+    border-color: color-mix(in srgb, var(--warn-color) 40%, transparent);
+}
+
+/* The pad glyphs as one dim centered line under the buttons. */
+.confirm-dialog .confirm-pad-hints {
+    justify-content: center;
+    gap: 24px;
+    padding: 0 24px 16px;
+    font-size: 10px;
+    color: var(--disabled-color);
+}
+
+.confirm-dialog .confirm-pad-hints .kbd {
+    font-size: 9px;
+    color: var(--disabled-color);
 }
