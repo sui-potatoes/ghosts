@@ -5,7 +5,7 @@ import { createLongGun } from "../../../packages/squad/src/studio/long-guns.ts";
 import { createWeaponAttachment } from "../../../packages/squad/src/studio/weapon-attachments.ts";
 import { ATTACHMENTS } from "../../../packages/squad/src/catalog.ts";
 
-const directory = new URL("../../../output/weapons-source/", import.meta.url);
+const directory = new URL("../../../scratch/output/weapons-source/", import.meta.url);
 mkdirSync(directory, { recursive: true });
 const manifest: string[] = [];
 for (const id of ["rifle", "sniper", "plasma", ...ATTACHMENTS.map((a) => a.id)]) {

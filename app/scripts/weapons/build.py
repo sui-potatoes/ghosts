@@ -6,7 +6,7 @@ import bpy, json, math, pathlib
 from mathutils import Vector, Matrix
 import numpy as np
 ROOT = pathlib.Path(__file__).resolve().parents[3]
-SOURCE = ROOT / 'output/weapons-source'
+SOURCE = ROOT / 'scratch/output/weapons-source'
 DEST = ROOT / 'app/public/squad/weapons'
 DEST.mkdir(parents=True, exist_ok=True)
 bpy.ops.object.select_all(action='SELECT')
@@ -206,7 +206,7 @@ for asset_id in json.loads((SOURCE / 'manifest.json').read_text()):
     root = objects[data['nodes'][0]['id']]
     root.location.x += (len(report) - 1) % 3 * 1.3
     root.location.y += (len(report) - 1) // 3 * 0.6
-library = ROOT / 'art/weapons'
+library = ROOT / 'scratch/art/weapons'
 library.mkdir(parents=True, exist_ok=True)
 bpy.context.preferences.filepaths.save_version = 0
 bpy.ops.wm.save_as_mainfile(filepath=str(library / 'weapons.blend'))

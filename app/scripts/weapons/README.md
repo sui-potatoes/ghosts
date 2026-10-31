@@ -1,6 +1,6 @@
 # Modular weapon asset pipeline
 
-The game-ready assets are in `app/public/squad/weapons/`: three rifles and twelve interchangeable fittings. The editable Blender library is `art/weapons/weapons.blend`. `manifest.json` records mesh and file budgets.
+The game-ready assets are in `app/public/squad/weapons/`: three rifles and twelve interchangeable fittings. The editable Blender library is `scratch/art/weapons/weapons.blend` (scratch material, not in git). `manifest.json` records mesh and file budgets.
 
 ## Rebuild
 
