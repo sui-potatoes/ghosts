@@ -9,3 +9,7 @@ node_modules
 
 # OS
 .DS_Store
+
+# Working material: source art, pipeline intermediates, raw captures
+scratch/
+__pycache__/
