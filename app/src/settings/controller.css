@@ -1,0 +1,75 @@
+/* Copyright (c) Sui Potatoes
+   SPDX-License-Identifier: MIT */
+
+/* The controller diagram: line art generated from the repo-root
+   controller.svg by scripts/controller-svg/clean.ts. Every stroke rides
+   currentColor, so a pressed control (data-held, set by ControllerPanel
+   outside React) lights its whole group — shape, leader line and label —
+   by changing one color. */
+
+.ctl-svg {
+    width: 100%;
+    max-width: 680px;
+    flex: none;
+    align-self: center;
+    color: var(--text-secondary);
+}
+
+.ctl-svg path,
+.ctl-svg ellipse,
+.ctl-svg rect {
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.ctl-svg g,
+.ctl-svg text {
+    transition: color 0.08s linear;
+}
+
+/* The stick caps: a filled face with a dark top. */
+.ctl-svg .ctl-fill {
+    fill: currentColor;
+}
+
+.ctl-svg .ctl-fill-dark {
+    fill: var(--background-color);
+    stroke: var(--background-color);
+}
+
+/* The artist's leader lines, from each control to its label row. */
+.ctl-svg .ctl-pointer {
+    opacity: 0.4;
+}
+
+/* Action labels at the leader-line ends. */
+.ctl-svg text {
+    fill: currentColor;
+    stroke: none;
+    font: 2.6px var(--font-mono);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    dominant-baseline: central;
+    pointer-events: none;
+}
+
+.ctl-svg .ctl-glyph {
+    opacity: 0.55;
+}
+
+/* A held button recolors its group and its label. */
+.ctl-svg [data-held] {
+    color: var(--accent-color);
+}
+
+.ctl-svg:not([data-connected]) {
+    opacity: 0.5;
+}
+
+.ctl-caption {
+    margin-top: -16px;
+    text-align: center;
+    color: var(--disabled-color);
+}

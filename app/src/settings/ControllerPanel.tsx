@@ -1,7 +1,7 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
-import { useEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
+import { useEffect, useRef } from "react";
 
 import {
     heldPadButtons,
@@ -12,14 +12,17 @@ import {
 } from "@ghosts/engine/gamepad";
 
 import { usePad } from "../components/PadHints";
+import diagram from "./controller-diagram.svg?raw";
 import { SettingList, type SettingRow } from "./SettingList";
+import "./controller.css";
 
 /**
- * The controller category: a live render of the connected pad family — a
- * DualSense for PlayStation, the asymmetric layout for Xbox — where pressed
- * buttons light up and the stick nubs follow the real sticks, over the fixed
- * bindings for the menus and the field. Nothing to configure yet; this page
- * is the reference the hints bars abbreviate.
+ * The controller category: the hand-drawn pad diagram (cleaned from the
+ * repo-root controller.svg by scripts/controller-svg/clean.ts), where every
+ * control carries its field action on the artist's leader lines, pressed
+ * buttons light up and the stick caps follow the real sticks — over the
+ * fixed bindings for the menus and the field. Nothing to configure yet;
+ * this page is the reference the hints bars abbreviate.
  */
 
 const g = (...buttons: (PadButton | "dpad" | "ls" | "rs")[]) => buttons.map(padGlyph).join("  ");
@@ -88,226 +91,155 @@ function rows(pad: string): SettingRow[] {
     ];
 }
 
-type On = (b: PadButton) => CSSProperties | undefined;
-type Sticks = RefObject<(SVGGElement | null)[]>;
+// ---------------------------------------------------------------------------
+// The diagram asset: the art without its <svg> wrapper (re-wrapped below so
+// the label layer shares its coordinate space), and the label anchors the
+// cleanup script derived from the artist's leader lines.
 
-/** A d-pad of four separate arms around (cx, cy); PS and Xbox share it. */
-function Dpad({
-    cx,
-    cy,
-    on,
-    arm = 18,
-    len = 22,
-    gap = 2,
-}: {
-    cx: number;
-    cy: number;
-    on: On;
-    arm?: number;
-    len?: number;
-    gap?: number;
-}) {
-    const half = arm / 2;
-    return (
-        <>
-            <rect
-                x={cx - half}
-                y={cy - half - gap - len}
-                width={arm}
-                height={len}
-                rx={5}
-                style={on("up")}
-            />
-            <rect
-                x={cx - half}
-                y={cy + half + gap}
-                width={arm}
-                height={len}
-                rx={5}
-                style={on("down")}
-            />
-            <rect
-                x={cx - half - gap - len}
-                y={cy - half}
-                width={len}
-                height={arm}
-                rx={5}
-                style={on("left")}
-            />
-            <rect
-                x={cx + half + gap}
-                y={cy - half}
-                width={len}
-                height={arm}
-                rx={5}
-                style={on("right")}
-            />
-        </>
-    );
+const ART = diagram.replace(/^[\s\S]*?<svg[^>]*>/, "").replace(/<\/svg>\s*$/, "");
+
+interface Anchor {
+    id: string;
+    x: number;
+    y: number;
+    align: "start" | "end" | "middle";
 }
 
-/** The four face buttons around (cx, cy), labeled with the family's glyphs. */
-function FaceButtons({
-    cx,
-    cy,
-    on,
-    r = 11,
-    spread = 28,
-}: {
-    cx: number;
-    cy: number;
-    on: On;
-    r?: number;
-    spread?: number;
-}) {
-    const spots: [PadButton, number, number][] = [
-        ["y", cx, cy - spread],
-        ["a", cx, cy + spread],
-        ["x", cx - spread, cy],
-        ["b", cx + spread, cy],
-    ];
-    return (
-        <>
-            {spots.map(([b, x, y]) => (
-                <circle key={b} cx={x} cy={y} r={r} style={on(b)} />
-            ))}
-            {spots.map(([b, x, y]) => (
-                <text key={`t-${b}`} x={x} y={y}>
-                    {padGlyph(b)}
-                </text>
-            ))}
-        </>
-    );
+const ANCHORS: Anchor[] = [
+    ...diagram.matchAll(
+        /<g id="(ctl-[\w-]+)"[^>]*data-label-x="([-\d.]+)" data-label-y="([-\d.]+)" data-label-anchor="(\w+)"/g,
+    ),
+].map((m) => ({
+    id: m[1],
+    x: parseFloat(m[2]),
+    y: parseFloat(m[3]),
+    align: m[4] as Anchor["align"],
+}));
+
+/** The field action each control performs, on its label row. The physical
+ *  button is named only where the art does not name it itself. */
+const ACTIONS: Record<string, [prefix: PadButton | "ls" | "rs" | "", action: string]> = {
+    "ctl-rt": ["rt", "Fire"],
+    "ctl-rb": ["rb", "Next operator"],
+    "ctl-lt": ["lt", "Grenade"],
+    "ctl-lb": ["lb", "Prev operator"],
+    "ctl-y": ["", "Action wheel"],
+    "ctl-b": ["", "Cancel / pause"],
+    "ctl-a": ["", "Confirm"],
+    "ctl-x": ["", "Reload"],
+    "ctl-start": ["", "Pause"],
+    "ctl-select": ["", "Tactical grid"],
+    "ctl-stick-left": ["ls", "Cursor / aim"],
+    "ctl-stick-right": ["rs", "Camera"],
+    "ctl-up": ["", "Cursor up"],
+    "ctl-down": ["", "Cursor down"],
+    "ctl-left": ["", "Cursor left"],
+    "ctl-right": ["", "Cursor right"],
+};
+
+/** The engine button a diagram group stands for, for live highlighting. */
+function padOf(id: string): PadButton {
+    if (id === "ctl-stick-left") return "l3";
+    if (id === "ctl-stick-right") return "r3";
+    return id.slice(4) as PadButton;
 }
 
-/** A stick well and its nub; the nub group follows the real stick. */
-function Stick({
-    cx,
-    cy,
-    on,
-    button,
-    nub,
-    sticks,
-    slot,
-}: {
-    cx: number;
-    cy: number;
-    on: On;
-    button: PadButton;
-    nub: number;
-    sticks: Sticks;
-    slot: number;
-}) {
-    return (
-        <>
-            <circle cx={cx} cy={cy} r={nub + 6} className="pad-well" />
-            <g
-                ref={(el) => {
-                    sticks.current[slot] = el;
-                }}
-            >
-                <circle cx={cx} cy={cy} r={nub} style={on(button)} />
-            </g>
-        </>
-    );
-}
+// The label layer extends the art's 100×100 box; size the viewBox so the
+// longest row on each side fits (mono advance ≈ 0.68em at the label size).
+const FONT = 2.6;
+const CHAR = FONT * 0.68;
+const GAP = 1.5;
+const PREFIX = 5; // "R2 · ", every prefix is two characters
 
-/** Bumpers and triggers along the top edge. */
-function Shoulders({ on }: { on: On }) {
-    return (
-        <>
-            <rect x={94} y={2} width={40} height={12} rx={6} style={on("lt")} />
-            <rect x={266} y={2} width={40} height={12} rx={6} style={on("rt")} />
-            <rect x={84} y={20} width={60} height={12} rx={6} style={on("lb")} />
-            <rect x={256} y={20} width={60} height={12} rx={6} style={on("rb")} />
-        </>
-    );
-}
+const VIEW_BOX = (() => {
+    let minX = 0;
+    let maxX = 100;
+    for (const { id, x, align } of ANCHORS) {
+        const spec = ACTIONS[id];
+        if (!spec) continue;
+        const width = ((spec[0] ? PREFIX : 0) + spec[1].length) * CHAR + GAP;
+        if (align === "start") maxX = Math.max(maxX, x + width);
+        if (align === "end") minX = Math.min(minX, x - width);
+    }
+    return `${(minX - 2).toFixed(1)} 10 ${(maxX - minX + 4).toFixed(1)} 84`;
+})();
 
-/** The DualSense: touchpad up top, symmetric low sticks, create/options slits. */
-function DualSense({ on, sticks }: { on: On; sticks: Sticks }) {
-    return (
-        <>
-            <path d="M 124 42 C 156 34 244 34 276 42 C 308 48 326 56 338 74 C 358 102 372 148 366 182 C 362 210 346 228 326 226 C 306 224 298 202 284 186 C 270 170 240 162 200 162 C 160 162 130 170 116 186 C 102 202 94 224 74 226 C 54 228 38 210 34 182 C 28 148 42 102 62 74 C 74 56 92 48 124 42 Z" />
-            {/* Touchpad, with the create / options slits beside it. */}
-            <rect x={152} y={50} width={96} height={52} rx={15} className="pad-well" />
-            <rect x={138} y={54} width={7} height={18} rx={3.5} style={on("select")} />
-            <rect x={255} y={54} width={7} height={18} rx={3.5} style={on("start")} />
-            <Dpad cx={97} cy={112} on={on} />
-            <FaceButtons cx={303} cy={112} on={on} />
-            <Stick cx={158} cy={146} on={on} button="l3" nub={12} sticks={sticks} slot={0} />
-            <Stick cx={242} cy={146} on={on} button="r3" nub={12} sticks={sticks} slot={1} />
-            {/* The PS button and the mic slit between the sticks. */}
-            <circle cx={200} cy={128} r={7} />
-            <rect x={188} y={146} width={24} height={4} rx={2} className="pad-dead" />
-            <Shoulders on={on} />
-        </>
-    );
-}
-
-/** The Xbox layout: left stick high, d-pad low center-left, guide up top. */
-function XboxPad({ on, sticks }: { on: On; sticks: Sticks }) {
-    return (
-        <>
-            <path d="M 128 44 C 158 34 242 34 272 44 C 304 52 322 60 334 78 C 354 108 368 150 362 184 C 358 212 342 230 322 228 C 302 226 294 204 280 188 C 266 172 238 166 200 166 C 162 166 134 172 120 188 C 106 204 98 226 78 228 C 58 230 42 212 38 184 C 32 150 46 108 66 78 C 78 60 96 52 128 44 Z" />
-            {/* Guide, view and menu. */}
-            <circle cx={200} cy={66} r={13} className="pad-well" />
-            <rect x={168} y={94} width={13} height={13} rx={6.5} style={on("select")} />
-            <rect x={219} y={94} width={13} height={13} rx={6.5} style={on("start")} />
-            <Stick cx={116} cy={100} on={on} button="l3" nub={13} sticks={sticks} slot={0} />
-            <FaceButtons cx={284} cy={100} on={on} />
-            <Dpad cx={160} cy={154} on={on} arm={16} len={18} />
-            <Stick cx={240} cy={154} on={on} button="r3" nub={12} sticks={sticks} slot={1} />
-            <Shoulders on={on} />
-        </>
-    );
-}
-
-const LIVE = "var(--accent-color)";
+const STICK_TRAVEL = 1.8; // in art units; the cap wells are ~4 wide
 
 export function ControllerPanel() {
     const pad = usePad();
-    const [held, setHeld] = useState("");
-    const sticks = useRef<(SVGGElement | null)[]>([]);
+    const root = useRef<SVGSVGElement | null>(null);
 
-    useEffect(
-        () =>
-            observePad((snap) => {
-                const names = heldPadButtons(snap).join(",");
-                setHeld((prev) => (prev === names ? prev : names));
-                // The stick nubs track the real sticks, outside React.
-                sticks.current[0]?.setAttribute(
-                    "transform",
-                    `translate(${(snap.axes[0] ?? 0) * 5} ${(snap.axes[1] ?? 0) * 5})`,
-                );
-                sticks.current[1]?.setAttribute(
-                    "transform",
-                    `translate(${(snap.axes[2] ?? 0) * 5} ${(snap.axes[3] ?? 0) * 5})`,
-                );
-            }),
-        [],
-    );
-
-    const live = new Set(held.split(","));
-    const on: On = (b) => (live.has(b) ? { fill: LIVE, stroke: LIVE } : undefined);
+    // Pressed buttons and the stick axes drive the DOM directly, outside
+    // React: data-held on every element of the button's group and label,
+    // a translate on the stick caps.
+    useEffect(() => {
+        const svg = root.current;
+        if (!svg) return;
+        const byPad = new Map<string, Element[]>();
+        for (const el of svg.querySelectorAll("[data-pad]")) {
+            const b = el.getAttribute("data-pad")!;
+            byPad.set(b, [...(byPad.get(b) ?? []), el]);
+        }
+        const caps = [svg.querySelector('[data-stick="0"]'), svg.querySelector('[data-stick="1"]')];
+        let prev: PadButton[] = [];
+        return observePad((snap) => {
+            const held = heldPadButtons(snap);
+            for (const b of prev)
+                if (!held.includes(b))
+                    for (const el of byPad.get(b) ?? []) el.removeAttribute("data-held");
+            for (const b of held)
+                if (!prev.includes(b))
+                    for (const el of byPad.get(b) ?? []) el.setAttribute("data-held", "");
+            prev = held;
+            caps[0]?.setAttribute(
+                "transform",
+                `translate(${(snap.axes[0] ?? 0) * STICK_TRAVEL} ${(snap.axes[1] ?? 0) * STICK_TRAVEL})`,
+            );
+            caps[1]?.setAttribute(
+                "transform",
+                `translate(${(snap.axes[2] ?? 0) * STICK_TRAVEL} ${(snap.axes[3] ?? 0) * STICK_TRAVEL})`,
+            );
+        });
+    }, []);
 
     return (
         <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-6">
             <svg
-                className="pad-svg"
-                viewBox="0 0 400 240"
+                ref={root}
+                className="ctl-svg"
+                viewBox={VIEW_BOX}
                 role="img"
                 aria-label={
-                    pad === "ps" ? "PlayStation controller diagram" : "Xbox controller diagram"
+                    pad === "ps"
+                        ? "PlayStation controller diagram"
+                        : pad === "xbox"
+                          ? "Xbox controller diagram"
+                          : "Controller diagram"
                 }
                 data-connected={pad ? "" : undefined}
             >
-                {pad === "ps" ? (
-                    <DualSense on={on} sticks={sticks} />
-                ) : (
-                    <XboxPad on={on} sticks={sticks} />
-                )}
+                <g dangerouslySetInnerHTML={{ __html: ART }} />
+                <g aria-hidden>
+                    {ANCHORS.map(({ id, x, y, align }) => {
+                        const spec = ACTIONS[id];
+                        if (!spec) return null;
+                        const [prefix, action] = spec;
+                        const tx = align === "start" ? x + GAP : align === "end" ? x - GAP : x;
+                        return (
+                            <text key={id} x={tx} y={y} textAnchor={align} data-pad={padOf(id)}>
+                                {prefix ? (
+                                    <tspan className="ctl-glyph">{`${padGlyph(prefix)} · `}</tspan>
+                                ) : null}
+                                {action}
+                            </text>
+                        );
+                    })}
+                </g>
             </svg>
+            <div className="label ctl-caption" aria-hidden>
+                Field actions on the diagram — menu bindings below.
+            </div>
             <SettingList rows={rows(pad)} />
         </div>
     );
