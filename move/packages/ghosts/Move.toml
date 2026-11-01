@@ -1,0 +1,12 @@
+[package]
+name = "ghosts"
+edition = "2024.beta"
+license = "MIT"
+authors = ["Damir Shamanaev (damirka.ru@gmail.com)"]
+
+[dependencies]
+bit_field = { r.mvr = "@potatoes/bit-field" }
+# name_gen = { git = "https://github.com/sui-potatoes/app", path = "packages/name-gen", rev = "main" }
+format = { r.mvr = "@potatoes/format" }
+codec = { r.mvr = "@potatoes/codec" }
+grid = { r.mvr = "@potatoes/grid" }
