@@ -241,7 +241,38 @@ export function posedSurface(meshes: T.SkinnedMesh[], excludeHands = false, _bou
         }
         return results;
     };
-    return Object.assign(inside, { segment });
+    const regionBranches = new Map<string, Set<Branch>>();
+    const nearest = (point: T.Vector3, region: RegExp) => {
+        let allowed = regionBranches.get(region.source);
+        if (!allowed) {
+            allowed = new Set<Branch>();
+            const collect = (node: Branch): boolean => {
+                const match = node.faces
+                    ? node.faces.some((f) => region.test(f.region))
+                    : [collect(node.left!), collect(node.right!)].some(Boolean);
+                if (match) allowed!.add(node);
+                return match;
+            };
+            collect(tree);
+            regionBranches.set(region.source, allowed);
+        }
+        let distance = Infinity;
+        const stack = [tree];
+        while (stack.length) {
+            const node = stack.pop()!;
+            if (!allowed.has(node) || node.box.distanceToPoint(point) >= distance) continue;
+            if (node.faces) {
+                for (const face of node.faces)
+                    if (region.test(face.region))
+                        distance = Math.min(
+                            distance,
+                            face.triangle.closestPointToPoint(point, closest).distanceTo(point),
+                        );
+            } else stack.push(node.left!, node.right!);
+        }
+        return distance;
+    };
+    return Object.assign(inside, { segment, nearest });
 }
 export function weaponEdges(gun: T.Object3D) {
     const result = new Map<string, [T.Vector3, T.Vector3]>();
@@ -315,4 +346,117 @@ export function weaponSamples(gun: T.Object3D) {
         }
     });
     return [...unique.values()];
+}
+
+/** Read shipped rigid GLB geometry with its complete node transforms, without textures. */
+export function rigidAsset(path: string): T.Group {
+    const file = readFileSync(path),
+        length = file.readUInt32LE(12);
+    const json = JSON.parse(file.subarray(20, 20 + length).toString()),
+        binary = 28 + length;
+    function read(id: number) {
+        const a = json.accessors[id],
+            v = json.bufferViews[a.bufferView];
+        const size = ({ SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4 } as Record<string, number>)[a.type];
+        const bytes = ({ 5121: 1, 5123: 2, 5125: 4, 5126: 4 } as Record<number, number>)[
+            a.componentType
+        ];
+        const out = new Float32Array(a.count * size);
+        for (let i = 0; i < a.count; i++)
+            for (let k = 0; k < size; k++) {
+                const at =
+                    binary +
+                    (v.byteOffset ?? 0) +
+                    (a.byteOffset ?? 0) +
+                    i * (v.byteStride ?? size * bytes) +
+                    k * bytes;
+                out[i * size + k] =
+                    a.componentType === 5126
+                        ? file.readFloatLE(at)
+                        : bytes === 1
+                          ? file.readUInt8(at)
+                          : bytes === 2
+                            ? file.readUInt16LE(at)
+                            : file.readUInt32LE(at);
+            }
+        return new T.BufferAttribute(out, size);
+    }
+    function node(id: number): T.Group {
+        const n = json.nodes[id],
+            out = new T.Group();
+        out.name = n.name ?? "";
+        out.userData = n.extras ?? {};
+        if (n.matrix) out.applyMatrix4(new T.Matrix4().fromArray(n.matrix));
+        else {
+            if (n.translation) out.position.fromArray(n.translation);
+            if (n.rotation) out.quaternion.fromArray(n.rotation);
+            if (n.scale) out.scale.fromArray(n.scale);
+        }
+        if (n.mesh !== undefined)
+            for (const p of json.meshes[n.mesh].primitives) {
+                const g = new T.BufferGeometry().setAttribute(
+                    "position",
+                    read(p.attributes.POSITION),
+                );
+                if (p.indices !== undefined)
+                    g.setIndex(new T.Uint32BufferAttribute(read(p.indices).array, 1));
+                out.add(new T.Mesh(g, new T.MeshBasicMaterial({ side: T.DoubleSide })));
+            }
+        for (const child of n.children ?? []) out.add(node(child));
+        return out;
+    }
+    const root = new T.Group();
+    for (const id of json.scenes[json.scene ?? 0].nodes) root.add(node(id));
+    return root;
+}
+
+export function rifleAsset(kind: string, tier = 0) {
+    const gun = rigidAsset(`public/squad/weapons/${kind}.glb`);
+    const sockets: T.Object3D[] = [];
+    gun.traverse((o) => {
+        if (o.name.startsWith("mount_")) sockets.push(o);
+    });
+    if (sockets.length !== 4) throw Error(`${kind}: expected four exported sockets`);
+    if (tier)
+        for (const socket of sockets) {
+            const slot = socket.userData.interface.match(/^ghosts:(.+):v1$/)[1];
+            socket.clear();
+            socket.add(rigidAsset(`public/squad/weapons/${slot}-${tier}.glb`));
+        }
+    return gun;
+}
+
+/** Closest support contact on the shipped fore-end, measured against skinned triangles. */
+export function supportContact(
+    gun: T.Object3D,
+    holder: T.Object3D,
+    surface: ReturnType<typeof posedSurface>,
+) {
+    let palm = Infinity,
+        fingers = Infinity,
+        thumb = Infinity;
+    const seen = new Set<string>();
+    gun.updateWorldMatrix(true, true);
+    gun.traverse((o) => {
+        if (!(o instanceof T.Mesh)) return;
+        const pos = o.geometry.attributes.position;
+        for (let i = 0; i < pos.count; i++) {
+            const world = new T.Vector3().fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+            const p = holder.worldToLocal(world.clone());
+            if (p.x < 0.04 || p.x > 0.16 || p.y > 0.04) continue;
+            const key = p
+                .toArray()
+                .map((v) => Math.round(v * 2000))
+                .join(",");
+            if (seen.has(key)) continue;
+            seen.add(key);
+            thumb = Math.min(thumb, surface.nearest(world, /^mixamorigLeftHandThumb/));
+            palm = Math.min(palm, surface.nearest(world, /^mixamorigLeftHand$/));
+            fingers = Math.min(
+                fingers,
+                surface.nearest(world, /^mixamorigLeftHand(?:Index|Middle|Ring|Pinky)/),
+            );
+        }
+    });
+    return { palm, fingers, thumb };
 }

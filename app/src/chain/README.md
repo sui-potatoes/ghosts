@@ -55,11 +55,26 @@ is what the screens and the future encounter driver import.
   `useAssignedName` reads the default name back as the cross-device source of
   truth for `usePlayerName`.
 
-## When the ghosts Move package lands
+- `bcs.ts` — the BCS schemas mirroring the on-chain types of the ghosts Move
+  package (`Registry`, `Account`, `Recruit` with its `Metadata`/`Visuals`,
+  gear and the table wrappers). Field order mirrors the Move structs.
+- `ghosts.ts` — the ghosts package frontend behind Headquarters: the
+  `Registry` and the player's `Account` id (a derived dynamic-field read of
+  `Registry.accounts`), the account's recruits and armory (dynamic object
+  fields of its `ObjectTable`s, re-listed until they match the table's
+  length), and the transactions — account, hire, `edit_recruit` with the
+  appearance codec's five areas, unequip, `issueTx` (hand gear from carrier
+  to recruit in one PTB), `fittingsTx` (bring a rifle to a whole draft of
+  fittings in one PTB — unequip, strip, fit from stock, mint the missing,
+  re-equip; indices tracked against a local copy of the upgrade vector),
+  testnet requisition. `useGhostsAction` signs, executes and waits for each
+  step, then refreshes every ghosts read. Ids live in `GHOSTS`
+  (`src/constants.ts`); `ghostsEnabled` gates every consumer.
 
-- `bcs.ts` — the BCS schemas mirroring the on-chain types (the shape of
-  `potatoes/app/src/apps/commander/types/bcs.ts`), plus the mapping from
-  decoded objects and transaction events to `@ghosts/engine` types.
+## When the rest of the ghosts Move package lands
+
+- Event schemas in `bcs.ts`, plus the mapping from decoded objects and
+  transaction events to `@ghosts/engine` types.
 - `driver.ts` — an `EncounterDriver` (`@ghosts/engine`): `resolve(command)`
   builds the Move call for an order, simulates it (`client.core.simulateTransaction`)
   to surface a refusal before signing, executes it through

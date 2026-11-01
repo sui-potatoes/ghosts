@@ -36,14 +36,15 @@ export function nativeClip(source: T.AnimationClip, inPlace = false) {
   }
   return clip;
 }
-const cache = new Map<Sex, Promise<Map<string, T.AnimationClip>>>();
-export function loadMotions(sex: Sex) {
-  if (!cache.has(sex)) {
+const cache = new Map<string, Promise<Map<string, T.AnimationClip>>>();
+export function loadMotions(sex: Sex, model = "rifle") {
+  const key = `${sex}/${model === "sniper" ? "sniper" : "rifle"}`;
+  if (!cache.has(key)) {
     const request = (async () => {
       const base = `${import.meta.env.BASE_URL}squad/`;
       const [response, poses, smokingResponse] = await Promise.all([
         fetch(`${base}motions/${sex}.bin`),
-        loadEquipmentPoses(sex),
+        loadEquipmentPoses(sex, model),
         fetch(`${base}motions/${sex}-smoking.bin`),
       ]);
       if (!response.ok) throw Error("Motion library could not load.");
@@ -73,12 +74,12 @@ export function loadMotions(sex: Sex) {
       library.set(smoking.name, smoking);
       return library;
     })().catch((error) => {
-      cache.delete(sex);
+      cache.delete(key);
       throw error;
     });
-    cache.set(sex, request);
+    cache.set(key, request);
   }
-  return cache.get(sex)!;
+  return cache.get(key)!;
 }
 
 /** Combat uses the capture coordinate system; keep the corrected motion identical. */

@@ -12,14 +12,62 @@ import { equipmentPose, type EquipmentPoses } from "@ghosts/squad/motion/equipme
 import { motionSkeleton } from "@ghosts/squad/motion/clearance";
 import { mountHandEquipment } from "@ghosts/squad/studio/held-equipment";
 import { WeaponCarry } from "@ghosts/squad/motion/weapon-carry";
+import { MAX_AIM_LEAN, relaxAimPosture } from "../scripts/equipment-fit/aim-posture.ts";
 const unpack = (path: string) => JSON.parse(gunzipSync(readFileSync(path)).toString());
-for (const sex of ["female", "male"]) {
-    const poses: EquipmentPoses = unpack(`public/squad/motions/${sex}-equipment.bin`);
+const configurations = ["female", "male"].flatMap((sex) =>
+    ["rifle", "sniper"].map((model) => ({ sex, model })),
+);
+for (const { sex, model } of configurations) {
+    const poses: EquipmentPoses = unpack(
+        `public/squad/motions/${sex}${model === "sniper" ? "-sniper" : ""}-equipment.bin`,
+    );
     const clips = unpack(`public/squad/motions/${sex}.bin`).map(
         (c: Parameters<typeof T.AnimationClip.parse>[0]) => nativeClip(T.AnimationClip.parse(c)),
     ) as T.AnimationClip[];
-    test(`${sex}: every shipped pose has current equipment calibration`, () => {
-        assert.deepEqual(Object.keys(poses.clips).sort(), motions.filter(([, , group]) => group !== "Ambient").map(([name]) => name).sort());
+        test(`${sex}/${model}: firing poses keep a modest back bend throughout the animation`, () => {
+            const file = readFileSync(`public/squad/body/${sex}/skin.glb`);
+            const root = motionSkeleton(file.buffer.slice(file.byteOffset, file.byteOffset + file.length));
+            for (const name of ["shooting", "crouch_shooting", "rifle_burst", "sniper_shot", "cover_peek", "overwatch_ready"]) {
+                const clip = equipmentPose(clips.find((c) => c.name === name)!, poses);
+                const samplers = clip.tracks.map((track) => ({
+                    bone: root.getObjectByName(track.name.split(".")[0])!,
+                    property: track.name.split(".")[1],
+                    sample: track.createInterpolant(),
+                }));
+                for (let frame = 0; frame <= 60; frame++) {
+                    for (const { bone, property, sample } of samplers) {
+                        const value = sample.evaluate(clip.duration * frame / 60);
+                        if (property === "quaternion") bone.quaternion.fromArray(value);
+                        else if (property === "position") bone.position.fromArray(value);
+                    }
+                    root.updateMatrixWorld(true);
+                    const chest = root.getObjectByName("mixamorigSpine2")!.getWorldPosition(new T.Vector3());
+                    const direction = root.getObjectByName("mixamorigNeck")!.getWorldPosition(new T.Vector3()).sub(chest).normalize();
+                    const lean = Math.acos(T.MathUtils.clamp(direction.y, -1, 1));
+                    assert(lean <= MAX_AIM_LEAN + T.MathUtils.degToRad(0.35), `${name}@${frame}: upper back bends ${T.MathUtils.radToDeg(lean)} degrees`);
+                }
+            }
+        });
+        test(`${sex}/${model}: relaxing the back preserves weapon and gaze directions`, () => {
+            const file = readFileSync(`public/squad/body/${sex}/skin.glb`);
+            const root = motionSkeleton(file.buffer.slice(file.byteOffset, file.byteOffset + file.length));
+            const references = JSON.parse(readFileSync("scripts/equipment-fit/references.json", "utf8"));
+            for (const [name, pose] of Object.entries(references[sex].aim.rotations))
+                root.getObjectByName(name)!.quaternion.fromArray((pose as { local: number[] }).local);
+            root.updateMatrixWorld(true);
+            const bones = ["RightHand", "LeftHand", "Head"].map((name) => root.getObjectByName(`mixamorig${name}`)!);
+            const before = bones.map((bone) => bone.getWorldQuaternion(new T.Quaternion()).normalize());
+            relaxAimPosture(root);
+            bones.forEach((bone, i) => assert(before[i].angleTo(bone.getWorldQuaternion(new T.Quaternion()).normalize()) < 1e-6));
+        });
+    test(`${sex}/${model}: every shipped pose has current equipment calibration`, () => {
+        assert.deepEqual(
+            Object.keys(poses.clips).sort(),
+            motions
+                .filter(([, , group]) => group !== "Ambient")
+                .map(([name]) => name)
+                .sort(),
+        );
         for (const [path, hash] of Object.entries(poses.sources))
             assert.equal(
                 createHash("sha256").update(readFileSync(path)).digest("hex"),
@@ -68,7 +116,7 @@ for (const sex of ["female", "male"]) {
             }
         }
     });
-    test(`${sex}: Squad's frozen idle uses the same corrected hold`, () => {
+    test(`${sex}/${model}: Squad's frozen idle uses the same corrected hold`, () => {
         const idle = nativeClip(
             T.AnimationClip.parse(
                 JSON.parse(readFileSync(`public/squad/body/${sex}/idle.json`, "utf8")),
@@ -89,7 +137,7 @@ for (const sex of ["female", "male"]) {
             );
         }
     });
-    test(`${sex}: throw handoff is independent of the preceding pose and restores the grip`, () => {
+    test(`${sex}/${model}: throw handoff is independent of the preceding pose and restores the grip`, () => {
         const file = readFileSync(`public/squad/body/${sex}/skin.glb`),
             root = motionSkeleton(
                 file.buffer.slice(file.byteOffset, file.byteOffset + file.length),

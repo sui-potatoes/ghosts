@@ -10,10 +10,15 @@ interface HandMount {
     scale: number[];
     correction: number[];
     translation: number[];
+    rifleTranslation?: number[];
 }
 
 /** Undo inventory centering and bind a clone to the native hand's authored socket. */
-export function mountHandEquipment(gun: T.Group, hand: T.Bone, mount: HandMount) {
+export function mountHandEquipment(
+    gun: T.Group,
+    hand: T.Bone,
+    mount: HandMount,
+) {
     const correction = new T.Quaternion().fromArray(mount.correction);
     const basis = new T.Quaternion().setFromRotationMatrix(
         new T.Matrix4().makeBasis(
@@ -29,7 +34,8 @@ export function mountHandEquipment(gun: T.Group, hand: T.Bone, mount: HandMount)
     // Cloned inventory models carry the original centering vector. Apply once.
     if (!gun.userData.held) {
         const center = new T.Vector3().fromArray(gun.userData.center);
-        for (const child of gun.children) child.position.add(center).add(socketOffset);
+        for (const child of gun.children)
+            child.position.add(center).add(socketOffset);
         gun.userData.held = true;
     }
     gun.quaternion
@@ -42,5 +48,13 @@ export function mountHandEquipment(gun: T.Group, hand: T.Bone, mount: HandMount)
         .add(new T.Vector3().fromArray(mount.translation))
         .multiplyScalar(0.01);
     gun.scale.fromArray(mount.scale).multiplyScalar(0.01);
+    // Seat the centered rifle grip in the palm, rather than offsetting its mesh.
+    if (["rifle", "sniper", "plasma"].includes(gun.userData.model))
+        gun.position.add(
+            new T.Vector3()
+                .fromArray(mount.rifleTranslation ?? [0, 0, 0])
+                .multiply(gun.scale)
+                .applyQuaternion(gun.quaternion),
+        );
     hand.add(gun);
 }

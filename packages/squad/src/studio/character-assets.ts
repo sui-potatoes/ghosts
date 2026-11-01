@@ -43,6 +43,7 @@ interface WeaponMount {
     scale: number[];
     correction: number[];
     translation: number[];
+    rifleTranslation?: number[];
 }
 export interface Character {
     root: T.Group;
@@ -184,7 +185,7 @@ export class CharacterAssets {
     private armor = new Map<string, Promise<GLTF>>();
     private fieldKit = new Map<Sex, Promise<GLTF>>();
     private mounts = new Map<Sex, Promise<WeaponMount>>();
-    private poses = new Map<Sex, Promise<T.AnimationClip>>();
+    private poses = new Map<string, Promise<T.AnimationClip>>();
     private disposed = false;
     private getPart(sex: Sex, key: string): Promise<Part> {
         const root = key === "skin" ? "body" : "editor",
@@ -208,7 +209,12 @@ export class CharacterAssets {
                     const packed = await new Response(
                         blob.stream().pipeThrough(new DecompressionStream("gzip")),
                     ).arrayBuffer();
-                    return { gltf, meta: manifest.parts[key], top: manifest.top, packed };
+                    return {
+                        gltf,
+                        meta: manifest.parts[key],
+                        top: manifest.top,
+                        packed,
+                    };
                 })(),
             );
         return this.parts.get(id)!;
@@ -226,20 +232,21 @@ export class CharacterAssets {
             );
         return this.textures.get(path)!;
     }
-    private pose(sex: Sex) {
-        if (!this.poses.has(sex))
+    private pose(sex: Sex, model: string) {
+        const key = `${sex}/${model === "sniper" ? "sniper" : "rifle"}`;
+        if (!this.poses.has(key))
             this.poses.set(
-                sex,
+                key,
                 Promise.all([
                     json<Parameters<typeof T.AnimationClip.parse>[0]>(
                         assetUrl(`body/${sex}/idle.json`),
                     ),
-                    loadEquipmentPoses(sex),
+                    loadEquipmentPoses(sex, model),
                 ]).then(([data, poses]) =>
                     equipmentPose(nativeClip(T.AnimationClip.parse(data)), poses),
                 ),
             );
-        return this.poses.get(sex)!;
+        return this.poses.get(key)!;
     }
     private armorAsset(id: string, sex: Sex) {
         const key = `${id}-${sex}`;
@@ -255,12 +262,16 @@ export class CharacterAssets {
         armorId: string | null,
         poseMode: "idle" | "rest" = "idle",
         look: CharacterLook = "operative",
+        weaponModel = "rifle",
     ): Promise<Character> {
         if (this.disposed) throw Error("Studio closed.");
         const office = look === "office-worker";
         const keys = ["skin", "eyes", "lashes", s.brows, s.hair].filter((k) => k !== "none");
         if (!this.mounts.has(s.sex))
-            this.mounts.set(s.sex, json<WeaponMount>(assetUrl(`body/${s.sex}/weapon-mount.json`)));
+            this.mounts.set(
+                s.sex,
+                json<WeaponMount>(assetUrl(`body/${s.sex}/weapon-mount.json?v=2`)),
+            );
         if (!office && !this.fieldKit.has(s.sex))
             this.fieldKit.set(
                 s.sex,
@@ -270,7 +281,7 @@ export class CharacterAssets {
             Promise.all(keys.map((key) => this.getPart(s.sex, key))),
             this.texture(`editor/textures/${s.skin}_${s.sex}.webp`),
             this.texture(`editor/textures/eye-${s.eyes}.webp`),
-            office ? Promise.resolve(null) : this.pose(s.sex),
+            office ? Promise.resolve(null) : this.pose(s.sex, weaponModel),
             this.mounts.get(s.sex)!,
             office ? this.armorAsset("office-worker", s.sex) : this.fieldKit.get(s.sex)!,
         ]);

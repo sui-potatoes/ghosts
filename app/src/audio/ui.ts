@@ -54,12 +54,16 @@ function play(rate: number) {
     const filter = new BiquadFilterNode(ctx, { type: "bandpass", frequency: 300 });
     const gain = new GainNode(ctx, { gain: level * MAKEUP });
     source.connect(filter).connect(gain).connect(ctx.destination);
+    source.onended = () => { source.disconnect(); filter.disconnect(); gain.disconnect(); };
     source.start(0, OFFSET, LENGTH);
 }
 
 /** The cursor moved: a row, a value step, a category. */
-export function uiTick() {
-    play(1);
+export function uiTick(element: Element | null = document.activeElement) {
+    const box = element?.getBoundingClientRect();
+    const vertical = box ? Math.max(0, Math.min(1, (box.top + box.height / 2) / window.innerHeight)) : 0.5;
+    // A gentle four-semitone descent from the top of the screen to the bottom.
+    play(2 ** (((0.5 - vertical) * 4) / 12));
 }
 
 /** Something was activated: the same knock, deeper. */
@@ -76,7 +80,7 @@ if (typeof window !== "undefined") {
         const el = e.target instanceof Element ? e.target.closest(INTERACTIVE) : null;
         if (el === hovered) return;
         hovered = el;
-        if (el && !el.matches(":disabled")) uiTick();
+        if (el && !el.matches(":disabled")) uiTick(el);
     });
     window.addEventListener("click", (e) => {
         const el = e.target instanceof Element ? e.target.closest(INTERACTIVE) : null;

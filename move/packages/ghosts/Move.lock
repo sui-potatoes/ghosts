@@ -43,11 +43,17 @@ deps = { ascii = "ascii", std = "MoveStdlib", sui = "Sui" }
 [pinned.testnet.ghosts]
 source = { root = true }
 use_environment = "testnet"
-manifest_digest = "070F9B393C88A13C23937006470841346BD15CD57CF2F8335A93A210AB395527"
-deps = { bit_field = "bit_field", codec = "codec", format = "format", grid = "grid", std = "MoveStdlib", sui = "Sui" }
+manifest_digest = "D8618B906C75E72D8F375D1C718BE9A034F2C46FABC5D0DC51DC5145ADE24343"
+deps = { bit_field = "bit_field", codec = "codec", format = "format", grid = "grid", name_gen = "name_gen", std = "MoveStdlib", sui = "Sui" }
 
 [pinned.testnet.grid]
 source = { git = "https://github.com/sui-potatoes/app.git", subdir = "packages/grid", rev = "cb1aaed5f00edf4d9f05a4764bb7cd4b2ccdd11a" }
+use_environment = "testnet"
+manifest_digest = "5745706258F61D6CE210904B3E6AE87A73CE9D31A6F93BE4718C442529332A87"
+deps = { std = "MoveStdlib", sui = "Sui" }
+
+[pinned.testnet.name_gen]
+source = { git = "https://github.com/sui-potatoes/app.git", subdir = "packages/name-gen", rev = "a890a5299d7ab34d94b5d853934ae6173bd4d373" }
 use_environment = "testnet"
 manifest_digest = "5745706258F61D6CE210904B3E6AE87A73CE9D31A6F93BE4718C442529332A87"
 deps = { std = "MoveStdlib", sui = "Sui" }

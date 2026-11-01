@@ -1,48 +1,49 @@
 {
-    "name": "@ghosts/squad",
-    "version": "0.0.0",
-    "private": true,
-    "type": "module",
-    "description": "The Ghosts squad domain: roster model and catalog, operative stats, and the character pipeline (appearance, armor, field kit, motion) shared by the Squad screen and the encounter engine.",
-    "exports": {
-        "./body": "./src/body.ts",
-        "./appearance/body-shape": "./src/appearance/body-shape.ts",
-        "./appearance/editor-state": "./src/appearance/editor-state.js",
-        "./appearance/native-body-binding": "./src/appearance/native-body-binding.js",
-        "./appearance/schema": "./src/appearance/schema.ts",
-        "./appearance/skin-blush": "./src/appearance/skin-blush.js",
-        "./appearance/skin-scars": "./src/appearance/skin-scars.js",
-        "./armor-colors": "./src/armor-colors.ts",
-        "./catalog": "./src/catalog.ts",
-        "./model": "./src/model.ts",
-        "./motion/catalog": "./src/motion/catalog.ts",
-        "./motion/clearance": "./src/motion/clearance.ts",
-        "./motion/clips": "./src/motion/clips.ts",
-        "./motion/player": "./src/motion/player.ts",
-        "./motion/sole-contact": "./src/motion/sole-contact.ts",
-        "./motion/weapon-carry": "./src/motion/weapon-carry.ts",
-        "./stats": "./src/stats.ts",
-        "./studio/armor-materials": "./src/studio/armor-materials.ts",
-        "./studio/character-assets": "./src/studio/character-assets.ts",
-        "./studio/equipment-assets": "./src/studio/equipment-assets.ts",
-        "./studio/held-equipment": "./src/studio/held-equipment.ts",
-        "./studio/recruit-studio": "./src/studio/recruit-studio.ts",
-        "./studio/long-guns": "./src/studio/long-guns.ts",
-        "./studio/sidearm": "./src/studio/sidearm.ts",
-        "./types": "./src/types.ts",
-        "./motion/equipment-poses": "./src/motion/equipment-poses.ts",
-        "./motion/smoking": "./src/motion/smoking.ts"
-    },
-    "scripts": {
-        "test": "node --experimental-strip-types --test tests/squad.test.ts tests/eyewear.test.ts",
-        "typecheck": "tsc -p ."
-    },
-    "dependencies": {
-        "three": "^0.174.0"
-    },
-    "devDependencies": {
-        "@types/node": "^22",
-        "@types/three": "^0.174.0",
-        "typescript": "^5.8.3"
-    }
+  "name": "@ghosts/squad",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The Ghosts squad domain: roster model and catalog, operative stats, and the character pipeline (appearance, armor, field kit, motion) shared by the Squad screen and the encounter engine.",
+  "exports": {
+    "./body": "./src/body.ts",
+    "./appearance/body-shape": "./src/appearance/body-shape.ts",
+    "./appearance/codec": "./src/appearance/codec.ts",
+    "./appearance/editor-state": "./src/appearance/editor-state.js",
+    "./appearance/native-body-binding": "./src/appearance/native-body-binding.js",
+    "./appearance/schema": "./src/appearance/schema.ts",
+    "./appearance/skin-blush": "./src/appearance/skin-blush.js",
+    "./appearance/skin-scars": "./src/appearance/skin-scars.js",
+    "./armor-colors": "./src/armor-colors.ts",
+    "./catalog": "./src/catalog.ts",
+    "./model": "./src/model.ts",
+    "./motion/catalog": "./src/motion/catalog.ts",
+    "./motion/clearance": "./src/motion/clearance.ts",
+    "./motion/clips": "./src/motion/clips.ts",
+    "./motion/player": "./src/motion/player.ts",
+    "./motion/sole-contact": "./src/motion/sole-contact.ts",
+    "./motion/weapon-carry": "./src/motion/weapon-carry.ts",
+    "./stats": "./src/stats.ts",
+    "./studio/armor-materials": "./src/studio/armor-materials.ts",
+    "./studio/character-assets": "./src/studio/character-assets.ts",
+    "./studio/equipment-assets": "./src/studio/equipment-assets.ts",
+    "./studio/held-equipment": "./src/studio/held-equipment.ts",
+    "./studio/recruit-studio": "./src/studio/recruit-studio.ts",
+    "./studio/long-guns": "./src/studio/long-guns.ts",
+    "./studio/sidearm": "./src/studio/sidearm.ts",
+    "./types": "./src/types.ts",
+    "./motion/equipment-poses": "./src/motion/equipment-poses.ts",
+    "./motion/smoking": "./src/motion/smoking.ts"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --test tests/squad.test.ts tests/eyewear.test.ts tests/codec.test.ts",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "three": "^0.174.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@types/three": "^0.174.0",
+    "typescript": "^5.8.3"
+  }
 }

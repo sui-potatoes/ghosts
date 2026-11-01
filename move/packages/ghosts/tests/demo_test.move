@@ -114,7 +114,7 @@ fun run_simulation_demo_1(seed: vector<u8>): vector<u16> {
 
 // placed on the map at (6, 5)
 fun recruit_one(ctx: &mut TxContext): Recruit {
-    let mut recruit = recruit::new(b"Recruit 1".to_string(), b"".to_string(), ctx);
+    let mut recruit = recruit::new("Recruit 1", ctx);
 
     recruit.add_armor(items::armor(2, ctx)); //  tier 2: medium armor
     recruit.add_weapon(items::rifle(3, ctx)); // tier 3: rifle
@@ -123,7 +123,7 @@ fun recruit_one(ctx: &mut TxContext): Recruit {
 
 // placed on the map at (2, 6)
 fun recruit_two(ctx: &mut TxContext): Recruit {
-    let mut recruit = recruit::new(b"Recruit 2".to_string(), b"".to_string(), ctx);
+    let mut recruit = recruit::new("Recruit 2", ctx);
 
     recruit.add_armor(items::armor(2, ctx)); //  tier 2: medium armor
     recruit.add_weapon(items::rifle(2, ctx)); // tier 2: rifle

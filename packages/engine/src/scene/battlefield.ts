@@ -26,6 +26,7 @@ import { Precipitation, type Weather } from "./precipitation";
 import { Space } from "./space";
 import type { AimReadout } from "./markers";
 import { Units } from "./units";
+import { StreetReflections } from "./puddles";
 
 export interface BattlefieldOptions {
   /** Element the canvas fills; also carries the scene's QA data attributes. */
@@ -75,6 +76,8 @@ export class Battlefield {
   private readonly effects = new Effects(this);
   private readonly destruction: Destruction;
   private readonly occlusion = new Occlusion();
+  private readonly reflections = new StreetReflections();
+  private reflectionsDirty = true;
   private readonly precipitation = new Precipitation();
   private readonly profiler: RenderProfiler;
   private readonly reticle?: HTMLElement;
@@ -243,7 +246,7 @@ export class Battlefield {
       if (p && this.overlays.hoverAt(p)) {
         this.invalidate();
         this.onHover(p);
-      }
+      } else if (!p && this.overlays.leave()) this.invalidate();
     });
     host.addEventListener("pointerleave", () => {
       this.overlays.leave();
@@ -661,6 +664,7 @@ export class Battlefield {
       this.mist.mesh.material.uniforms.tint.value.setHex(p.mist);
     }
     this.renderer.shadowMap.needsUpdate = true;
+    this.reflectionsDirty = true;
     this.host.dataset.timeOfDay = time;
     this.invalidate();
   }
@@ -698,7 +702,7 @@ export class Battlefield {
   private animate = (now: number) => {
     this.raf = 0;
     if (this.disposed) return;
-    const active = now < this.activeUntil || this.jobs.length > 0 || this.units.busy || this.destruction.active;
+    const active = now < this.activeUntil || this.jobs.length > 0 || this.units.busy || this.destruction.active || this.occlusion.active || this.destruction.fading;
     const rate = renderCadence(this.renderMode, !document.hidden, active);
     if (rate === null) {
       this.pacer.reset();
@@ -723,7 +727,22 @@ export class Battlefield {
     this.host.dataset.destruction = JSON.stringify(this.destruction.stats);
     this.updateUnits(elapsed, now / 1000);
     this.updateReticle();
-    this.updateOcclusion();
+    if (this.reflectionsDirty && !this.indoors) {
+      // Probe only scenery: moving actors and ground HUD should never be baked into puddles.
+      const excluded = [...this.overlays.reflectionExcluded, this.precipitation.group, this.effects.group,
+        ...this.game.units.flatMap((u) => { const rig = this.units.rig(u.id); return rig ? [rig.root] : []; })];
+      const excludedVisibility = excluded.map((object) => object.visible);
+      excluded.forEach((object) => { object.visible = false; });
+      const visibility = this.occlusion.occluders.map(({ group }) => group.visible);
+      for (const { group } of this.occlusion.occluders) group.visible = true;
+      try { this.reflections.capture(this.renderer, this.scene); }
+      finally {
+        excluded.forEach((object, i) => { object.visible = excludedVisibility[i]; });
+        this.occlusion.occluders.forEach(({ group }, i) => { group.visible = visibility[i]; });
+      }
+      this.reflectionsDirty = false;
+    }
+    this.updateOcclusion(elapsed);
     // Interior shadows follow moving actors / camera cutaways, then reuse their maps at rest.
     if (this.indoors && active) this.renderer.shadowMap.needsUpdate = true;
     this.profiler.begin();
@@ -749,12 +768,14 @@ export class Battlefield {
   }
 
   /** Update scenery visibility against the camera focus, living units and aim point. */
-  private updateOcclusion() {
+  private updateOcclusion(dt: number) {
     const points = [this.controls.target, ...this.units.chestPoints(this.chestPoints)];
     if (this.aimPoint) points.push(this.aimPoint);
-    this.host.dataset.occludedBuildings = String(this.occlusion.update(this.camera.position, points));
-    this.destruction.syncBuildingVisibility(this.occlusion.occluders.map(({ group }) => group.visible));
-    this.destruction.syncOfficeVisibility(this.camera.position, points);
+    const wasFading = this.occlusion.active;
+    this.host.dataset.occludedBuildings = String(this.occlusion.update(this.camera.position, points, dt));
+    if (wasFading || this.occlusion.active) this.renderer.shadowMap.needsUpdate = true;
+    this.destruction.syncBuildingVisibility(this.occlusion.occluders.map(({ group }) => this.occlusion.amount(group)));
+    this.destruction.syncOfficeVisibility(this.camera.position, points, dt);
     for (const o of this.supportedScenery) o.visible = this.destruction.isPropVisible(o.userData.supportProp);
   }
 
@@ -787,6 +808,8 @@ export class Battlefield {
     this.resizeObserver.disconnect();
     this.controls.dispose();
     this.units.dispose();
+    this.occlusion.dispose();
+    this.reflections.dispose();
     this.destruction.dispose();
     this.precipitation.dispose();
     document.removeEventListener("visibilitychange", this.onVisibility);

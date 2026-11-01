@@ -148,7 +148,13 @@ export class BodyDeformation {
             (1 - upper) *
             smooth(this.ankle + 0.07, this.ankle + 0.23, input.y) *
             (1 - smooth(this.shoulder * 0.9, this.shoulder * 1.75, Math.abs(input.x)));
-        addLimb(this.legs[side], (0.15 * build + 0.12 * muscle + 0.07 * hips) * legWeight);
+        // The pelvis joins both legs. A hard side switch here moves adjacent
+        // center-seam vertices toward opposite thigh axes, folding the surface
+        // and flipping the normals sampled across it (front and back alike).
+        const leftLeg = smooth(-0.06, 0.06, input.x);
+        const legAmount = (0.15 * build + 0.12 * muscle + 0.07 * hips) * legWeight;
+        if (leftLeg < 1) addLimb(this.legs[0], legAmount * (1 - leftLeg));
+        if (leftLeg > 0) addLimb(this.legs[1], legAmount * leftLeg);
         return output;
     }
 

@@ -16,14 +16,14 @@ import {applyDeploymentNames} from './squad-bridge';
 // adapter is demo-specific: native meshes bind to the existing combat rig.
 const assets=new CharacterAssets(), prepared=new Map(), nativeRigs=new Map();
 export let deployment=new Map();
-export function nativeAnimations(sex){return nativeRigs.get(sex).animations;}
+export function nativeAnimations(sex,weapon="rifle"){const rig=nativeRigs.get(sex);return weapon==="sniper"?rig.sniperAnimations:rig.animations;}
 async function rigFor(sex){
  if(!nativeRigs.has(sex)){
-  const [rig,clips]=await Promise.all([
+  const [rig,clips,sniperClips]=await Promise.all([
    fetch(demoAsset(`combat/${sex}/rig.json`)).then(r=>{if(!r.ok)throw Error('Missing combat rig');return r.json();}),
-   loadMotions(sex)
+   loadMotions(sex),loadMotions(sex,"sniper")
   ]);
-  nativeRigs.set(sex,{...rig,animations:[...clips.values()].map(captureClip)});
+  nativeRigs.set(sex,{...rig,animations:[...clips.values()].map(captureClip),sniperAnimations:[...sniperClips.values()].map(captureClip)});
  }
 }
 async function prepare(state,look){

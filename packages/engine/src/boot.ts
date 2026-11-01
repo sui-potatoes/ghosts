@@ -60,6 +60,13 @@ export function boot(options: BootOptions): () => void {
   provideSettings(settings);
   const cleanups: (() => void)[] = [];
   let disposed = false;
+  audio.prepareVoice();
+  window.addEventListener("pointerdown", audio.unlockVoice);
+  window.addEventListener("keydown", audio.unlockVoice);
+  cleanups.push(() => {
+    window.removeEventListener("pointerdown", audio.unlockVoice);
+    window.removeEventListener("keydown", audio.unlockVoice);
+  });
 
   void (async () => {
     try {

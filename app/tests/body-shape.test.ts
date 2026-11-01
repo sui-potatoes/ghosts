@@ -72,6 +72,51 @@ test("body controls migrate old saves, validate input and persist independently 
 });
 
 for (const sex of ["male", "female"]) {
+    test(`${sex}: body shaping keeps the front and back pelvis seam continuous`, async () => {
+        const root = await load(`public/squad/body/${sex}/skin.glb`),
+            body = skins(root)[0];
+        const hip = body.skeleton.bones
+            .find((b) => b.name.endsWith("Hips"))!
+            .getWorldPosition(new T.Vector3());
+        const positions = body.geometry.attributes.position;
+        const seam = Array.from({ length: positions.count }, (_, i) =>
+            new T.Vector3().fromBufferAttribute(positions, i),
+        ).filter((p) => Math.abs(p.x) < 0.001 && p.y > hip.y - 0.24 && p.y < hip.y);
+        assert(
+            seam.some((p) => p.z > hip.z),
+            "samples the front seam",
+        );
+        assert(
+            seam.some((p) => p.z < hip.z),
+            "samples the back seam",
+        );
+        for (const sign of [-1, 1]) {
+            const shapes = [
+                ...["build", "muscle", "hips"].map((key) => ({ [key]: sign })),
+                Object.fromEntries(BODY_CONTROLS.map(({ key }) => [key, sign])),
+            ];
+            for (const shape of shapes) {
+                const warp = new BodyDeformation(body, shape);
+                for (const p of seam) {
+                    // Near-coincident points must remain neighbors, including
+                    // the offsets used to transport smooth surface normals.
+                    const right = warp.point(new T.Vector3(-1e-6, p.y, p.z), new T.Vector3());
+                    const left = warp.point(new T.Vector3(1e-6, p.y, p.z), new T.Vector3());
+                    assert(
+                        right.distanceTo(left) < 1e-5,
+                        `continuous seam: ${JSON.stringify(shape)}`,
+                    );
+                    // Scan the entire blend band for inverted surface strips.
+                    for (let x = -0.06; x <= 0.06; x += 0.002) {
+                        const a = warp.point(new T.Vector3(x - 1e-5, p.y, p.z), new T.Vector3());
+                        const b = warp.point(new T.Vector3(x + 1e-5, p.y, p.z), new T.Vector3());
+                        assert(b.x > a.x, `pelvis surface does not fold: ${JSON.stringify(shape)}`);
+                    }
+                }
+            }
+        }
+    });
+
     test(`${sex}: controls change body volume while preserving face, hands, feet and bind skeleton`, async () => {
         const root = await load(`public/squad/body/${sex}/skin.glb`),
             body = skins(root)[0];

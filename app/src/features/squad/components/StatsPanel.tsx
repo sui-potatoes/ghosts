@@ -35,7 +35,7 @@ function explain(row: StatRow, parts: Contribution[]): string {
 }
 
 /** The operative's combat profile: field stats by source, field-only values classified. */
-export function StatsPanel({ recruit }: { recruit: Recruit }) {
+export function StatsPanel({ recruit, tag }: { recruit: Recruit; tag?: string }) {
     const { total, byStat } = contributions(recruit);
     const weapon = itemById(recruit.equipment.primary);
     const armor = itemById(recruit.equipment.armor);
@@ -61,7 +61,7 @@ export function StatsPanel({ recruit }: { recruit: Recruit }) {
                     <span className="sq-eyebrow">COMBAT PROFILE</span>
                     <h3>Stats</h3>
                 </div>
-                <span className="sq-count">{recruit.role}</span>
+                <span className="sq-count">{tag ?? recruit.role}</span>
             </div>
             {groups.map((group) => (
                 <section className="stats-group" key={group.id} aria-label={group.title}>

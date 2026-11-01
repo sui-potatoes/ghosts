@@ -24,7 +24,7 @@ scene.add(new T.HemisphereLight(0xdde7eb, 0x4a4c4c, 2));
 for (const [p, c, i] of [
     [[1, 3, 4], 0xfff1e0, 3],
     [[-3, 1, 2], 0xc1d6ed, 1.5],
-    [[2, 2, -3], 0xb7d3d5, 2],
+    [[2, 2, -3], 0xb7d3d5, 4],
 ] as const) {
     const l = new T.DirectionalLight(c, i);
     l.position.set(...p);
@@ -76,12 +76,35 @@ async function build() {
     character = undefined;
     content = new T.Group();
     scene.add(content);
+    renderer.setSize(
+        view.value.startsWith("orbit-") ? 1600 : 1200,
+        view.value.startsWith("orbit-") ? 1600 : 850,
+    );
     renderer.setScissorTest(false);
     renderer.clear();
     renderer.setViewport(0, 0, 1200, 850);
     camera.aspect = 1200 / 850;
     camera.updateProjectionMatrix();
-    if (view.value === "clips" || view.value === "optics" || view.value === "reflex") {
+    if (view.value === "weapon-detail") {
+        let model: T.Group;
+        if (new URLSearchParams(location.search).has("source")) {
+            model = createLongGun(weapon.value as LongGunKind);
+            model.quaternion.setFromRotationMatrix(
+                new T.Matrix4().makeBasis(
+                    new T.Vector3(0, 0, -1),
+                    new T.Vector3(1, 0, 0),
+                    new T.Vector3(0, -1, 0),
+                ),
+            );
+        } else model = await gear.get(weapon.value as LongGunKind);
+        content.add(model);
+        const center = new T.Box3().setFromObject(model).getCenter(new T.Vector3());
+        controls.target.copy(center);
+        camera.position.copy(center).add(new T.Vector3(-0.08, 0.07, -1.1));
+        controls.update();
+        draw();
+        labels.textContent = weapon.selectedOptions[0].text + " / STANDALONE PROFILE";
+    } else if (view.value === "clips" || view.value === "optics" || view.value === "reflex") {
         const ids =
             view.value === "clips"
                 ? ["standard", "clip-1", "clip-2", "clip-3"]
@@ -147,12 +170,48 @@ async function build() {
             recruit = initialSquad().recruits.find((r) => r.appearance.sex === sex)!;
         const c = (character = await people.create(
             recruit.appearance,
-            ["none", "grip", "wrist", "trigger"].includes(view.value) ? null : view.value,
+            view.value === "orbit-unit"
+                ? "nyx-heavy"
+                : ["none", "grip", "wrist", "trigger"].includes(view.value) ||
+                    view.value.startsWith("orbit-")
+                  ? null
+                  : view.value,
             "rest",
         ));
         c.setArmorColors({ primary: "#485358", secondary: "#687877", accent: "#4ba3a0" });
+        // Diagnostic-only isolation exposes hand surfaces hidden by the torso or kit.
+        if (
+            new URLSearchParams(location.search).has("isolate") &&
+            ["orbit-left", "orbit-right"].includes(view.value)
+        ) {
+            c.root.traverse((o) => {
+                if (o instanceof T.SkinnedMesh) {
+                    const g = o.geometry.clone(),
+                        a = g.attributes,
+                        idx = g.index!;
+                    const handVertex = (i: number) => {
+                        for (let k = 0; k < 4; k++)
+                            if (
+                                a.skinWeight.getComponent(i, k) > 0.2 &&
+                                /(?:Left|Right)Hand/.test(
+                                    o.skeleton.bones[a.skinIndex.getComponent(i, k)].name,
+                                )
+                            )
+                                return true;
+                        return false;
+                    };
+                    const keep: number[] = [];
+                    for (let i = 0; i < idx.count; i += 3) {
+                        const tri = [idx.getX(i), idx.getX(i + 1), idx.getX(i + 2)];
+                        if (tri.some(handVertex)) keep.push(...tri);
+                    }
+                    g.setIndex(keep);
+                    o.geometry = g;
+                } else if (o instanceof T.Mesh) o.visible = false;
+            });
+        }
         content.add(c.root);
-        const library = await loadMotions(sex),
+        const library = await loadMotions(sex, weapon.value),
             guns = await Promise.all([
                 gear.get(weapon.value as "sniper" | "rifle" | "plasma", {
                     laser: "laser-3",
@@ -162,11 +221,23 @@ async function build() {
                 gear.get("pistol"),
             ]);
         if (new URLSearchParams(location.search).has("source")) {
-            const source = createLongGun(weapon.value as LongGunKind, {laser:"laser-3",scope:"scope-1",clip:"clip-3"});
-            source.quaternion.setFromRotationMatrix(new T.Matrix4().makeBasis(
-                new T.Vector3(0,0,-1), new T.Vector3(1,0,0), new T.Vector3(0,-1,0)));
-            const group = new T.Group(); group.userData.model = weapon.value;
-            group.userData.center = [0,0,0]; group.add(source); guns[0] = group;
+            const source = createLongGun(weapon.value as LongGunKind, {
+                laser: "laser-3",
+                scope: "scope-1",
+                clip: "clip-3",
+            });
+            source.quaternion.setFromRotationMatrix(
+                new T.Matrix4().makeBasis(
+                    new T.Vector3(0, 0, -1),
+                    new T.Vector3(1, 0, 0),
+                    new T.Vector3(0, -1, 0),
+                ),
+            );
+            const group = new T.Group();
+            group.userData.model = weapon.value;
+            group.userData.center = [0, 0, 0];
+            group.add(source);
+            guns[0] = group;
         }
         const carries = guns.map((g) => {
             mountHandEquipment(g, c.hand, c.mount);
@@ -193,7 +264,45 @@ async function build() {
             carries[index].update(name === "toss_grenade");
             c.root.updateMatrixWorld(true);
         }
-        if (page.value === "single") {
+        if (view.value.startsWith("orbit-")) {
+            apply(pose.value);
+            renderer.setScissorTest(true);
+            camera.aspect = 1;
+            camera.updateProjectionMatrix();
+            const gun = guns[0],
+                target = new T.Vector3(
+                    ...(view.value === "orbit-unit"
+                        ? [0, -0.05, 0]
+                        : view.value === "orbit-left"
+                          ? [0.085, -0.03, 0]
+                          : [-0.14, -0.05, 0]),
+                );
+            const angles = [
+                ...Array.from({ length: 8 }, (_, i) => [(i * Math.PI) / 4, 0]),
+                ...Array.from({ length: 4 }, (_, i) => [(i * Math.PI) / 2, Math.PI / 3]),
+                ...Array.from({ length: 4 }, (_, i) => [(i * Math.PI) / 2, -Math.PI / 3]),
+            ];
+            angles.forEach(([yaw, pitch], i) => {
+                const x = (i % 4) * 400,
+                    y = (3 - Math.floor(i / 4)) * 400;
+                renderer.setViewport(x, y, 400, 400);
+                renderer.setScissor(x, y, 400, 400);
+                const offset = new T.Vector3(
+                    Math.sin(yaw) * Math.cos(pitch),
+                    Math.sin(pitch),
+                    Math.cos(yaw) * Math.cos(pitch),
+                ).multiplyScalar(view.value === "orbit-unit" ? 1.05 : 0.38);
+                camera.position.copy(gun.localToWorld(target.clone().add(offset)));
+                camera.up.copy(new T.Vector3(0, 1, 0).transformDirection(gun.matrixWorld));
+                camera.lookAt(gun.localToWorld(target.clone()));
+                draw();
+                const label = document.createElement("div");
+                label.textContent = `${sex}/${weapon.value} ${Math.round((yaw * 180) / Math.PI)}° / ${Math.round((pitch * 180) / Math.PI)}°`;
+                label.style.cssText = `position:absolute;left:${x + 8}px;top:${Math.floor(i / 4) * 400 + 8}px;font-size:13px;letter-spacing:0;background:#111a`;
+                labels.append(label);
+            });
+            camera.up.set(0, 1, 0);
+        } else if (page.value === "single") {
             apply(pose.value);
             controls.target.set(0, 1.22, 0);
             camera.position.set(1.7, 1.37, 0.2);
@@ -204,8 +313,20 @@ async function build() {
             }
             if (view.value === "wrist" || view.value === "trigger") {
                 const gun = guns[0];
-                controls.target.copy(gun.localToWorld(new T.Vector3(...(view.value === "wrist" ? [.08,-.025,.02] : [-.13,-.04,0]))));
-                camera.position.copy(gun.localToWorld(new T.Vector3(...(view.value === "wrist" ? [.48,.03,.14] : [-.22,.06,-.27]))));
+                controls.target.copy(
+                    gun.localToWorld(
+                        new T.Vector3(
+                            ...(view.value === "wrist" ? [0.08, -0.025, 0.02] : [-0.13, -0.04, 0]),
+                        ),
+                    ),
+                );
+                camera.position.copy(
+                    gun.localToWorld(
+                        new T.Vector3(
+                            ...(view.value === "wrist" ? [0.48, 0.03, 0.14] : [-0.22, 0.06, -0.27]),
+                        ),
+                    ),
+                );
             }
             controls.update();
             draw();

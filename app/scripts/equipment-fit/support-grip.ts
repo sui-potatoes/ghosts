@@ -4,8 +4,8 @@
 import * as T from "three";
 import { armTo } from "@ghosts/squad/motion/clearance";
 
-/** Offline cupped support grip for the common fore-end. No runtime IK or bone scaling. */
-export function supportGrip(root: T.Group, weapon: T.Group, sex: string) {
+/** Offline support grip. The slim sharpshooter gets a tighter wrap; weapons and bones retain their scale. */
+export function supportGrip(root: T.Group, weapon: T.Group, sex: string, model = "rifle") {
     const bone = (name: string) => root.getObjectByName(`mixamorigLeft${name}`)!;
     const hand = bone("Hand");
     root.updateMatrixWorld(true);
@@ -19,7 +19,13 @@ export function supportGrip(root: T.Group, weapon: T.Group, sex: string) {
         .setFromRotationMatrix(rotation)
         .multiply(hand.getWorldQuaternion(new T.Quaternion()));
     const goal = weapon.localToWorld(
-        new T.Vector3(0.062, sex === "male" ? -0.041 : -0.037, sex === "male" ? 0.081 : 0.063),
+        new T.Vector3(
+            0.062,
+            (sex === "male" ? -0.041 : -0.037) +
+                (model === "sniper" ? (sex === "male" ? 0.006 : 0.007) : 0),
+            (sex === "male" ? 0.081 : 0.063) -
+                (model === "sniper" ? (sex === "male" ? 0.002 : 0.003) : 0),
+        ),
     );
     armTo(bone("Shoulder"), bone("Arm"), bone("ForeArm"), hand, goal);
     hand.quaternion.copy(
@@ -47,11 +53,19 @@ export function supportGrip(root: T.Group, weapon: T.Group, sex: string) {
     for (const finger of ["Index", "Middle", "Ring", "Pinky"]) {
         const joint = bone(`Hand${finger}1`);
         const p = weapon.worldToLocal(joint.getWorldPosition(new T.Vector3()));
-        aim(`Hand${finger}1`, new T.Vector3(0, 0.003 - p.y, -0.058 - p.z));
-        aim(`Hand${finger}2`, new T.Vector3(0, 1, -0.2));
-        aim(`Hand${finger}3`, new T.Vector3(0, 1, 0.05));
+        aim(
+            `Hand${finger}1`,
+            new T.Vector3(0, 0.003 - p.y, (model === "sniper" ? -0.047 : -0.058) - p.z),
+        );
+        aim(`Hand${finger}2`, new T.Vector3(0, 1, model === "sniper" ? 0.12 : 0.05));
+        aim(`Hand${finger}3`, new T.Vector3(0, 1, 0.15));
     }
-    aim("HandThumb1", new T.Vector3(0.6, 0.7, 0.4));
-    aim("HandThumb2", new T.Vector3(1, 0.2, -0.05));
-    aim("HandThumb3", new T.Vector3(1, 0.1, -0.05));
+    aim(
+        "HandThumb1",
+        sex === "female"
+            ? new T.Vector3(0.123988, 0.757271, 0.523058)
+            : new T.Vector3(0, 1, model === "sniper" ? 0.15 : 0.3),
+    );
+    aim("HandThumb2", new T.Vector3(0.15, 1, model === "sniper" ? -0.25 : -0.1));
+    aim("HandThumb3", new T.Vector3(0.7, 0.5, model === "sniper" ? -0.2 : -0.1));
 }

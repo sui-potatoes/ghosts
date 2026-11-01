@@ -42,6 +42,10 @@ export class CombatAudio {
     this.voice.stop();
   }
 
+  prepareVoice() { this.voice.preload(); }
+
+  unlockVoice = () => { this.voice.unlock(); };
+
   /** A recorded effect when there is one; otherwise a synthesized tone. */
   tone(kind: EffectKind, weapon?: Weapon) {
     if (this.sfx.play(kind, weapon)) return;
@@ -71,7 +75,7 @@ export class CombatAudio {
 
   /** Silence everything and release the audio context; the next encounter starts fresh. */
   stop() {
-    this.voice.stop();
+    this.voice.dispose();
     this.sfx.setPaused(true);
     this.voice.setPaused(false);
     this.sfx.setPaused(false);

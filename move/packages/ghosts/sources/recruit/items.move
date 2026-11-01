@@ -13,6 +13,12 @@ use ghosts::{
 };
 use std::string::String;
 
+/// `WeaponUpgrade` kinds: a `Weapon` takes one of each.
+const SCOPE: u8 = 0;
+const LASER_SIGHT: u8 = 1;
+const STOCK: u8 = 2;
+const EXPANDED_CLIP: u8 = 3;
+
 // === Armor ===
 
 /// Creates a new `Armor` with the given tier.
@@ -60,7 +66,7 @@ public fun scope(tier: u8): WeaponUpgrade {
         _ => abort,
     };
 
-    upgrade::new(name, tier, stats::new_unchecked(stats))
+    upgrade::new(name, SCOPE, tier, stats::new_unchecked(stats))
 }
 
 /// Adds `5-15%` to the `crit_chance` stat of the `Weapon` depending on the tier.
@@ -75,7 +81,7 @@ public fun laser_sight(tier: u8): WeaponUpgrade {
         _ => abort,
     };
 
-    upgrade::new(name, tier, stats::new_unchecked(stats))
+    upgrade::new(name, LASER_SIGHT, tier, stats::new_unchecked(stats))
 }
 
 /// Adds 1-3 to `range` stat of the `Weapon` depending on the tier.
@@ -90,7 +96,7 @@ public fun stock(tier: u8): WeaponUpgrade {
         _ => abort,
     };
 
-    upgrade::new(name, tier, stats::new_unchecked(stats))
+    upgrade::new(name, STOCK, tier, stats::new_unchecked(stats))
 }
 
 /// Expanded clip increases the `ammo` stat by 1-3 depending on the tier.
@@ -105,7 +111,7 @@ public fun expanded_clip(tier: u8): WeaponUpgrade {
         _ => abort,
     };
 
-    upgrade::new(name, tier, stats::new_unchecked(stats))
+    upgrade::new(name, EXPANDED_CLIP, tier, stats::new_unchecked(stats))
 }
 
 #[test]

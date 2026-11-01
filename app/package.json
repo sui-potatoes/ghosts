@@ -16,6 +16,7 @@
         "build:title-motion": "node scripts/build-title-motion.mjs",
         "build:smoking": "node --experimental-strip-types scripts/build-smoking.ts",
         "build:equipment-poses": "node --experimental-strip-types scripts/equipment-fit/build.ts",
+        "build:visual-presets": "node --experimental-strip-types scripts/build-visual-presets.ts",
         "test:pose-audit": "node --experimental-strip-types scripts/equipment-fit/audit-all.ts"
     },
     "dependencies": {

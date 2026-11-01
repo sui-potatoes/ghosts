@@ -123,7 +123,7 @@ export function soldier(u: Unit): Rig {
   attachNativeBody(model,u.id);
   const mixer = new T.AnimationMixer(model),
     clips = new Map(
-      [...nativeAnimations(model.userData.mpfbSex), ...combatClips(nativeAnimations(model.userData.mpfbSex)), ...coverStepClips(model,nativeAnimations(model.userData.mpfbSex))].map((c) => [
+      [...nativeAnimations(model.userData.mpfbSex,u.weapon), ...combatClips(nativeAnimations(model.userData.mpfbSex,u.weapon)), ...coverStepClips(model,nativeAnimations(model.userData.mpfbSex,u.weapon))].map((c) => [
         c.name,
         c,
       ]),
@@ -206,7 +206,7 @@ export function soldier(u: Unit): Rig {
   };
   model.userData.refreshNativeRig=()=>{
     const motion=rig.action?.getClip().name??'rifle_idle';mixer.stopAllAction();mixer.uncacheRoot(model);clips.clear();
-    const native=nativeAnimations(model.userData.mpfbSex);for(const clip of [...native,...combatClips(native),...coverStepClips(model,native)])clips.set(clip.name,clip);
+    const native=nativeAnimations(model.userData.mpfbSex,rig.weapon);for(const clip of [...native,...combatClips(native),...coverStepClips(model,native)])clips.set(clip.name,clip);
     rig.action=null;rig.fading=undefined;play(rig,motion);mixer.update(0);root.updateMatrixWorld(true);
   };
   initial.time = initial.getClip().duration * rig.idlePhase;
@@ -251,7 +251,9 @@ export function play(
   return clip.duration / speed;
 }
 export function setWeapon(r: Rig, w: Weapon) {
+  const changedGrip = (r.weapon === "sniper") !== (w === "sniper");
   r.weapon = w;
+  if (changedGrip) r.model.userData.refreshNativeRig?.();
   r.rifle.visible = w === "rifle";
   r.pistol.visible = w === "pistol";
   r.sniper.visible = w === "sniper";

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { gunzipSync } from "node:zlib";
 import * as T from "three";
-import { skinMeshes, posedSurface, weaponEdges } from "./gear-collision.ts";
+import { skinMeshes, posedSurface, weaponEdges, rifleAsset } from "./gear-collision.ts";
 import { motionSkeleton, clearEquipment } from "@ghosts/squad/motion/clearance";
 import { nativeClip } from "@ghosts/squad/motion/clips";
 import { equipmentPose, type EquipmentPoses } from "@ghosts/squad/motion/equipment-poses";
@@ -26,7 +26,7 @@ if(!sets.length)throw Error("Unknown collision set");
 const mount = JSON.parse(fs.readFileSync(`public/squad/body/${sex}/weapon-mount.json`, "utf8"));
 const kind = process.env.WEAPON === "rifle" ? "rifle" : process.env.WEAPON === "plasma" ? "plasma" : "sniper";
 const equipment = [kind, "pistol"].map((type) => {
-    const gun = type === "pistol" ? createSidearm() : createLongGun(kind, process.env.ATTACHMENTS === "max" ? { clip: "clip-3", stock: "stock-3", laser: "laser-3", scope: "scope-3" } : {}),
+    const gun = type === "pistol" ? createSidearm() : process.env.RIGID ? rifleAsset(kind,process.env.ATTACHMENTS === "max" ? 3 : 0) : createLongGun(kind, process.env.ATTACHMENTS === "max" ? { clip: "clip-3", stock: "stock-3", laser: "laser-3", scope: "scope-3" } : {}),
         group = new T.Group();
     gun.quaternion.setFromRotationMatrix(
         new T.Matrix4().makeBasis(
@@ -49,7 +49,7 @@ const equipment = [kind, "pistol"].map((type) => {
 const fitted: EquipmentPoses | undefined = process.env.FIT
     ? undefined
     : JSON.parse(
-          gunzipSync(fs.readFileSync(`public/squad/motions/${sex}-equipment.bin`)).toString(),
+          gunzipSync(fs.readFileSync(`public/squad/motions/${sex}${kind === "sniper" ? "-sniper" : ""}-equipment.bin`)).toString(),
       );
 const clips = JSON.parse(
     gunzipSync(fs.readFileSync(process.env.FIT ?? `public/squad/motions/${sex}.bin`)).toString(),

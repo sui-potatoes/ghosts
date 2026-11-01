@@ -228,7 +228,9 @@ export function createRecruitStudio(
         const item = itemById(
             pistol ? currentRecruit.equipment.sidearm : currentRecruit.equipment.primary,
         );
-        const gun = item ? await equipment.get(item.model, pistol ? {} : currentRecruit.attachments) : undefined;
+        const gun = item
+            ? await equipment.get(item.model, pistol ? {} : currentRecruit.attachments)
+            : undefined;
         if (disposed || ticket !== motionEpoch || person !== current) return;
         attachGun(person, gun);
     }
@@ -242,8 +244,11 @@ export function createRecruitStudio(
                 currentRecruit = recruit;
                 current.setArmorColors(recruit.armorColors);
                 if (displayedAttachments !== attachmentKey) {
-                    const item = look === "office-worker" ? undefined : itemById(recruit.equipment.primary);
-                    const gun = item ? await equipment.get(item.model, recruit.attachments) : undefined;
+                    const item =
+                        look === "office-worker" ? undefined : itemById(recruit.equipment.primary);
+                    const gun = item
+                        ? await equipment.get(item.model, recruit.attachments)
+                        : undefined;
                     if (disposed || ticket !== epoch || person !== current) return;
                     attachGun(person, gun);
                     displayedAttachments = attachmentKey;
@@ -251,7 +256,13 @@ export function createRecruitStudio(
                 draw();
                 return;
             }
-            const next = await assets.create(appearance, recruit.equipment.armor, "idle", look);
+            const next = await assets.create(
+                appearance,
+                recruit.equipment.armor,
+                "idle",
+                look,
+                itemById(recruit.equipment.primary)?.model,
+            );
             if (disposed || ticket !== epoch) {
                 next.dispose();
                 return;
@@ -289,7 +300,10 @@ export function createRecruitStudio(
         async playMotion(name, loop, speed) {
             if (!current) throw Error("The character is still loading.");
             const ticket = ++motionEpoch;
-            const library = await loadMotions(currentSex);
+            const library = await loadMotions(
+                currentSex,
+                itemById(currentRecruit?.equipment.primary ?? null)?.model,
+            );
             if (disposed || ticket !== motionEpoch) return;
             const clip =
                 currentLook === "office-worker" && name === "idle_weight_shift"
@@ -355,9 +369,13 @@ export function createRecruitStudio(
             for (const item of ATTACHMENTS) {
                 const object = await equipment.attachment(item.id);
                 if (disposed) return result;
-                object.quaternion.setFromRotationMatrix(new T.Matrix4().makeBasis(
-                    new T.Vector3(0, 0, -1), new T.Vector3(1, 0, 0), new T.Vector3(0, -1, 0),
-                ));
+                object.quaternion.setFromRotationMatrix(
+                    new T.Matrix4().makeBasis(
+                        new T.Vector3(0, 0, -1),
+                        new T.Vector3(1, 0, 0),
+                        new T.Vector3(0, -1, 0),
+                    ),
+                );
                 result[item.id] = capture(object);
             }
             return result;
