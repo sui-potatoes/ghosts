@@ -243,6 +243,9 @@ export function bindPadCombat({ onPause }: ControlOptions = {}): () => void {
       return true;
     }
     if (free) {
+      // The next selection starts its cursor afresh, even on the same operator.
+      cursor = null;
+      cursorFor = "";
       // The operator nearest the focus wears the hover tile; A takes them, the focus button centres on them.
       const near = operatorAtFocus();
       battlefield.markTile(padActive() && near ? near.pos : null);
