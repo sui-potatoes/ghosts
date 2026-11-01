@@ -205,7 +205,7 @@ export function AccountPanel() {
                   } satisfies SettingRow,
               ]
             : []),
-        { kind: "section", id: "security", label: "Security" },
+        { kind: "section", id: "access", label: "Account access" },
         {
             kind: "static",
             id: "recovery",
@@ -322,11 +322,7 @@ export function AudioPanel() {
 }
 
 /**
- * The Keyboard Lock API, Chromium only (TS's DOM lib does not type it).
- * Locking Escape while fullscreen delivers a tapped Esc to the page — the
- * menu opens, fullscreen stays — while press-and-hold still exits: that
- * guarantee is the browser's own. Elsewhere this is null and Esc behaves
- * as it always did (exits fullscreen; the keydown still reaches the page).
+ * Local type for the optional navigator.keyboard lock and unlock methods.
  */
 type KeyboardLock = { lock(keys?: string[]): Promise<void>; unlock(): void };
 

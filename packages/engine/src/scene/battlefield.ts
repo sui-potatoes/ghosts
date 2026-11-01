@@ -748,7 +748,7 @@ export class Battlefield {
     reticle.style.top = `${(-p.y * 0.5 + 0.5) * this.viewportHeight}px`;
   }
 
-  /** Dense foreground blocks must not hide the focus, any living unit or the aim point. */
+  /** Update scenery visibility against the camera focus, living units and aim point. */
   private updateOcclusion() {
     const points = [this.controls.target, ...this.units.chestPoints(this.chestPoints)];
     if (this.aimPoint) points.push(this.aimPoint);
@@ -760,7 +760,7 @@ export class Battlefield {
 
   // === Lifecycle ===
 
-  /** Compile every shader up front, weapons included, so the first shot does not stall. */
+  /** Temporarily show all weapons, compile scene shaders, then restore weapon visibility. */
   async warmup() {
     const restore = this.units.showAllWeapons();
     try {

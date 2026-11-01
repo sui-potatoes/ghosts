@@ -2,17 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Perceptual volume. The sliders are loudness (0–100 as the ear judges it),
- * element volume is amplitude — and hearing is roughly logarithmic in
- * amplitude, so mapping the two linearly packs every audible change into the
- * bottom of the slider and makes the top half do nothing. The square of the
- * slider (Stevens' loudness law has amplitude ≈ loudness^1.7; x² is the
- * next-door curve that is exactly 0 at 0 and 1 at 100) keeps steps sounding
- * even: 50 plays at −12 dB, about half as loud, not half the voltage.
- *
- * This module is the one home of that math. The theme, the previews and the
- * levels handed to the engine (which multiplies them linearly and must stay
- * that way — it is handed amplitudes, see `index.ts`) all read it from here.
+ * Maps 0–100 volume sliders to amplitude by clamping, dividing by 100 and
+ * squaring. Channel levels multiply the master and channel amplitudes;
+ * muting returns zero.
  */
 
 import { getSettings } from "../settings/store";

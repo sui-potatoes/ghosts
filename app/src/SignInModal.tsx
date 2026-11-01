@@ -278,7 +278,7 @@ export function SignInModal({ open, onClose }: Props) {
                     <Option
                         glyph="passkey"
                         title="Passkey"
-                        description="Touch ID, iCloud Keychain or a security key signs for you. No extension, no seed phrase."
+                        description="Touch ID, iCloud Keychain or an external authenticator signs for you. No extension, no seed phrase."
                         state={state("passkey", "Waiting…")}
                         selected={selected === "passkey"}
                         onHover={() => hover("passkey")}

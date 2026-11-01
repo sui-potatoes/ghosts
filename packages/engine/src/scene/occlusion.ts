@@ -9,8 +9,8 @@ export interface Occluder {
 }
 
 /**
- * Hides foreground buildings that stand between the camera and anything the
- * player must see: the camera focus, every living unit and the aim point.
+ * Hides foreground buildings whose bounds intersect a ray from the camera
+ * to one of the supplied points before reaching that point's 0.7-metre margin.
  */
 export class Occlusion {
   readonly occluders: Occluder[] = [];

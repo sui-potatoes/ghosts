@@ -62,7 +62,7 @@ public fun try_reset_ap(unit: &mut Unit, turn: u16) {
     unit.last_turn = turn;
 }
 
-/// Get the HP of the `Unit`.
+/// Spend 1 AP on movement; abort if distance exceeds mobility or AP is zero.
 public fun perform_move(unit: &mut Unit, distance: u8) {
     assert!(unit.stats.mobility() >= distance, ERangeExceeded);
     assert!(unit.ap.value() > 0, ENoAP);
@@ -88,21 +88,16 @@ public fun perform_grenade(unit: &mut Unit) {
 }
 
 #[allow(lint(public_random))]
-/// The `Unit` performs an attack on another `Unit`. The attack is calculated
-/// from the `Unit`'s stats and returns the damage dealt. It does not include
-/// the target's armor or dodge, which should be calculated separately.
+/// Deplete AP, consume one round and roll an attack using the unit's stats.
+/// Abort if AP or ammo is zero, or range exceeds weapon range plus
+/// `MAX_RANGE_OFFSET`. Hit chance includes range bonuses or penalties and
+/// subtracts `target_defense`.
 ///
-/// Notes:
-/// - Crit chance is currently hardcoded to 10%.
-/// - Crit damage is 50% higher than the base damage.
-/// - Regular attack can be + or - 10% of the base damage - random.
-/// - The attack fully depletes the `Unit`'s AP.
+/// On a hit, vary base damage by up to the `spread` stat, roll `plus_one`
+/// and `crit_chance`, add half the base damage for a critical hit, and cap
+/// damage at 255. This function does not apply armor, dodge or HP changes.
 ///
-/// Returns: (is_hit, is_plus_one, is_critical, damage, hit_chance)
-///
-/// Rng security:
-/// - this function is more expensive in the happy path, so the gas limit attack
-/// is less likely to be successful
+/// Returns: (is_hit, is_plus_one, is_critical, damage, hit_chance).
 public fun perform_attack(
     unit: &mut Unit,
     rng: &mut RandomGenerator,
@@ -205,9 +200,7 @@ public fun from_recruit(recruit: &Recruit): Unit {
     }
 }
 
-/// Destroy the `Unit` struct. KIA.
-/// Returns the `ID` of the `Recruit` for easier tracking and "elimination" of
-/// the `Recruit` from the game.
+/// Consume the `Unit` and return its recruit ID.
 public fun destroy(unit: Unit): ID {
     let Unit { recruit, .. } = unit;
     recruit

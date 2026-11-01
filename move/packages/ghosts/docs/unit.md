@@ -262,7 +262,7 @@ Reset the AP of the <code><a href="./unit.md#commander_unit_Unit">Unit</a></code
 
 ## Function `perform_move`
 
-Get the HP of the <code><a href="./unit.md#commander_unit_Unit">Unit</a></code>.
+Spend 1 AP on movement; abort if distance exceeds mobility or AP is zero.
 
 
 <pre><code><b>public</b> <b>fun</b> <a href="./unit.md#commander_unit_perform_move">perform_move</a>(<a href="./unit.md#commander_unit">unit</a>: &<b>mut</b> <a href="./unit.md#commander_unit_Unit">commander::unit::Unit</a>, distance: u8)
@@ -345,21 +345,16 @@ Throw a grenade if there's one in the inventory. It costs 1 AP.
 
 ## Function `perform_attack`
 
-The <code><a href="./unit.md#commander_unit_Unit">Unit</a></code> performs an attack on another <code><a href="./unit.md#commander_unit_Unit">Unit</a></code>. The attack is calculated
-from the <code><a href="./unit.md#commander_unit_Unit">Unit</a></code>'s stats and returns the damage dealt. It does not include
-the target's armor or dodge, which should be calculated separately.
+Deplete AP, consume one round and roll an attack using the unit's stats.
+Abort if AP or ammo is zero, or range exceeds weapon range plus
+`MAX_RANGE_OFFSET`. Hit chance includes range bonuses or penalties and
+subtracts `target_defense`.
 
-Notes:
-- Crit chance is currently hardcoded to 10%.
-- Crit damage is 50% higher than the base damage.
-- Regular attack can be + or - 10% of the base damage - random.
-- The attack fully depletes the <code><a href="./unit.md#commander_unit_Unit">Unit</a></code>'s AP.
+On a hit, vary base damage by up to the `spread` stat, roll `plus_one`
+and `crit_chance`, add half the base damage for a critical hit, and cap
+damage at 255. This function does not apply armor, dodge or HP changes.
 
-Returns: (is_hit, is_plus_one, is_critical, damage, hit_chance)
-
-Rng security:
-- this function is more expensive in the happy path, so the gas limit attack
-is less likely to be successful
+Returns: (is_hit, is_plus_one, is_critical, damage, hit_chance).
 
 
 <pre><code><b>public</b> <b>fun</b> <a href="./unit.md#commander_unit_perform_attack">perform_attack</a>(<a href="./unit.md#commander_unit">unit</a>: &<b>mut</b> <a href="./unit.md#commander_unit_Unit">commander::unit::Unit</a>, rng: &<b>mut</b> <a href="../../.doc-deps/sui/random.md#sui_random_RandomGenerator">sui::random::RandomGenerator</a>, range: u8, target_defense: u8): (bool, bool, bool, u8, u8)
@@ -509,9 +504,7 @@ operative fields.
 
 ## Function `destroy`
 
-Destroy the <code><a href="./unit.md#commander_unit_Unit">Unit</a></code> struct. KIA.
-Returns the <code>ID</code> of the <code>Recruit</code> for easier tracking and "elimination" of
-the <code>Recruit</code> from the game.
+Consume the `Unit` and return its recruit ID.
 
 
 <pre><code><b>public</b> <b>fun</b> <a href="./unit.md#commander_unit_destroy">destroy</a>(<a href="./unit.md#commander_unit">unit</a>: <a href="./unit.md#commander_unit_Unit">commander::unit::Unit</a>): <a href="../../.doc-deps/sui/object.md#sui_object_ID">sui::object::ID</a>

@@ -203,9 +203,8 @@ export function padKind(): PadKind {
 }
 
 /**
- * The pad is the input device in use: it was touched since the last trusted
- * mouse or key input. UI that must pick one mode (the HUD's pointer buttons
- * against pad hints) follows this, the way console ports swap prompts.
+ * True when a pad is connected and has been used since the last trusted
+ * pointer press or non-editable keyboard input.
  */
 export function padActive(): boolean {
   return connected && active;
@@ -261,10 +260,8 @@ function frame(now: number) {
 }
 
 /**
- * Close `dialog` the way a trusted Escape would: fire a cancelable `cancel`
- * first, so the dialog's owner sees the close (React's `onCancel`, pending
- * state), and close only when nothing prevented it. `close()` alone fires no
- * `cancel`, which is how a pad's B button used to strand dialog state.
+ * Dispatch a cancelable `cancel` event, then close the dialog if the event
+ * was not canceled and the dialog is still open.
  */
 export function cancelDialog(dialog: HTMLDialogElement) {
   if (dialog.dispatchEvent(new Event("cancel", { cancelable: true })) && dialog.open) dialog.close();

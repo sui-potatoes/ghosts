@@ -388,7 +388,7 @@ public fun perform_grenade(
 ///
 /// Records: `Explosion`, then `[Dodged]`, `Damage`, `[UnitKIA]` per unit in
 /// the area. Tiles are visited in the order of `Grid.von_neumann_neighbors`
-/// with the center tile last; a replay must walk them in the same order.
+/// with the center tile last.
 fun explode(
     map: &mut Map,
     rng: &mut RandomGenerator,
@@ -666,9 +666,6 @@ fun trace_line(map: &Map, x0: u16, y0: u16, x1: u16, y1: u16, high_cover_blocks:
 /// Whether stepping from `from` into its neighbor `to` in `direction` blocks
 /// the line: `to` is a `Wall`, or, with `high_cover_blocks`, the edge is
 /// `inner` (touches neither end tile) and has high cover on either side.
-///
-/// A function rather than a macro on purpose: `trace_line` calls it six times
-/// and the inlined matches would exceed the 255 locals a function may have.
 fun step_blocks(from: &Tile, to: &Tile, direction: u8, inner: bool, high_cover_blocks: bool): bool {
     if (is_wall!(to)) true
     else if (!high_cover_blocks || !inner) false
@@ -682,7 +679,7 @@ fun step_blocks(from: &Tile, to: &Tile, direction: u8, inner: bool, high_cover_b
 /// - Map: 01 - 7x7 LEGO prototype.
 /// - Unit positions: (0, 3), (1, 6), (6, 5)
 /// - Firing lane in the demo: (3, 1) <-> (0, 3)
-/// - Goal: close encounter with low and high cover to test line of sight and cover mechanics.
+/// - Contains low and high cover around a close-range firing lane.
 /// - Schema:
 ///
 /// ```

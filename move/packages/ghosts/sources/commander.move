@@ -40,7 +40,7 @@ public struct Commander has key {
 /// A preset is a map that is required to start a new game.
 public struct Preset has key {
     id: UID,
-    /// The map that will be cloned and used for the new game.
+    /// The map copied when a game starts from this preset.
     map: Map,
     /// The name of the preset, purely for display purposes.
     name: String,
@@ -52,8 +52,7 @@ public struct Preset has key {
     popularity: u64,
 }
 
-/// Host is an object created to mark a hosted game. An account joining a hosted
-/// game will consume this object and create a new `Game` with it.
+/// Stores the game ID, name, timestamp and host address for a hosted game.
 public struct Host has key {
     id: UID,
     game_id: ID,
@@ -62,8 +61,7 @@ public struct Host has key {
     host: address,
 }
 
-/// A single instance of the game. A `Game` object is created when a new game is
-/// started, it contains the Map and the
+/// Stores a game's map, player addresses, spawn positions, history and recruits.
 public struct Game has key {
     id: UID,
     map: Map,
@@ -80,8 +78,8 @@ public struct Game has key {
 
 // === Map Registration & Removal ===
 
-/// Register a new `Map` so it can be played.
-/// Spawn positions must be in bounds, walkable and unoccupied.
+/// Deserialize and share a map preset. Abort if a spawn position is malformed,
+/// out of bounds, unwalkable or occupied.
 public fun publish_map(cmd: &mut Commander, name: String, bytes: vector<u8>, ctx: &mut TxContext) {
     let mut bcs = bcs::new(bytes);
     let mut map = map::from_bcs(&mut bcs);

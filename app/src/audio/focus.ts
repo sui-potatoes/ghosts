@@ -2,10 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Whether this window should make sound: focused and visible. All audio —
- * the title theme and the encounter's effects — gates on it, so a second
- * tab or a backgrounded window stays silent instead of doubling the mix.
- * Only one window holds focus at a time, which is the whole coordination.
+ * Tracks whether this document is focused and visible, and notifies
+ * subscribers when that state changes.
  */
 
 const LISTENERS = new Set<() => void>();

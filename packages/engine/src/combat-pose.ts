@@ -7,7 +7,7 @@ import type { Weapon } from "./game";
 export function aimClip(weapon: Weapon, covered: boolean) {
   return `${covered ? "covered" : "standing"}_${weapon}_fire`;
 }
-/** Isolate the stable firing section: authored entry/exit motion must not replay on every shot. */
+/** Build firing and cover-transition clips by cropping source tracks and combining poses. */
 export function combatClips(source: T.AnimationClip[]): T.AnimationClip[] {
   const find = (name: string) => source.find((c) => c.name === name)!;
   const slice = (name: string, source: string, from: number, to: number) => {

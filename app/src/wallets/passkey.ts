@@ -4,11 +4,9 @@
 /**
  * Passkey (WebAuthn, SIP-9) exposed as a wallet-standard wallet.
  *
- * Registering the passkey through the wallet standard means dApp Kit treats it
- * like any other wallet: `useCurrentAccount`, `useBalance`, the faucet prompt
- * and every sub-app work unchanged. The public key is kept in local storage
- * because the authenticator never returns it, so a returning user reconnects
- * without a WebAuthn prompt; signing always prompts.
+ * Stores the public key and optional credential ID in local storage and
+ * restores the wallet account from them. Signing methods call the passkey
+ * provider; restoring and connecting an existing account do not.
  */
 
 import type { ClientWithCoreApi, WalletInitializer } from "@mysten/dapp-kit-core";
@@ -79,15 +77,16 @@ export type Attachment = "platform" | "cross-platform" | "any";
 
 export const ATTACHMENTS: { value: Attachment; label: string; hint: string }[] = [
     { value: "platform", label: "This device", hint: "Touch ID, iCloud Keychain, Windows Hello" },
-    { value: "cross-platform", label: "Security key", hint: "YubiKey, or a phone via QR" },
+    { value: "cross-platform", label: "External authenticator", hint: "YubiKey, or a phone via QR" },
     { value: "any", label: "Any", hint: "Let the browser offer both" },
 ];
 
 const RP_NAME = "Ghosts";
 
 /**
- * The SDK defaults to `cross-platform` (security keys). For a laptop the
- * platform authenticator is the one people expect, so the attachment is a choice.
+ * Creates a provider for this hostname with the selected authenticator
+ * attachment and required resident credentials and user verification.
+ * `any` leaves the attachment unspecified.
  */
 export function makePasskeyProvider(attachment: Attachment) {
     return new BrowserPasskeyProvider(RP_NAME, {

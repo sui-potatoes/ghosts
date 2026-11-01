@@ -20,7 +20,7 @@ import "./settings.css";
 
 const CATEGORIES = [
     { id: "player", label: "Player" },
-    { id: "account", label: "Account & Security" },
+    { id: "account", label: "Account & Sessions" },
     { id: "audio", label: "Audio" },
     { id: "display", label: "Display" },
     { id: "controls", label: "Controls" },

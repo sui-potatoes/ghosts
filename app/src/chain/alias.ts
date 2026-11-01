@@ -63,7 +63,7 @@ export async function aliasesRef(client: Client, id: string) {
 
 export type AliasesRef = Awaited<ReturnType<typeof aliasesRef>>;
 
-/** The owner's alias set as one fetch: reference and members; null = never enabled. */
+/** Fetch the owner's alias reference and members; null if the fetch fails. */
 export async function aliasesState(
     client: Client,
     owner: string,
@@ -113,10 +113,11 @@ export function removeTx(ref: AliasesRef, alias: string): Transaction {
 }
 
 /**
- * A key past its lifetime de-escalates itself: while its alias still stands,
- * the key signs its own `remove` — dropping authority needs no ceremony —
- * and is wiped only once the alias is gone, so the pair never diverges. Safe
- * to call anytime; does nothing while the key is fresh.
+ * For an expired local key, fetch the owner's aliases and sign a removal if
+ * the key is listed. Retain the key if that transaction returns a failure;
+ * otherwise delete it locally and invalidate cached membership. An absent
+ * key or an unexpired key is unchanged. Alias fetch errors are treated as
+ * an absent alias set.
  */
 export async function expireSessionKey(client: Client, owner: string): Promise<void> {
     const key = await loadSessionKey();
@@ -143,11 +144,10 @@ export async function expireSessionKey(client: Client, owner: string): Promise<v
 }
 
 /**
- * Retire this device's session on sign-out: while its alias still stands, the
- * key signs its own `remove` — dropping authority needs no ceremony — and the
- * key is wiped either way. Unlike `expireSessionKey`, a failed removal does
- * not keep the key for a retry: signing out must leave no usable key behind,
- * and a dangling alias can still be terminated from the Sessions panel later.
+ * On sign-out, use the local key to remove its alias if it is listed, then
+ * delete the local key and invalidate cached membership. Fetch errors are
+ * treated as an absent alias set; removal errors are logged and local
+ * deletion proceeds.
  */
 export async function retireSessionKey(client: Client, owner: string): Promise<void> {
     const key = await loadSessionKey();

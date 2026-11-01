@@ -312,7 +312,7 @@ export function buildDistrict(scene: T.Scene, kit: SceneryKit) {
   block(scene,0,.035,-2.7,1.65,.04,2.3,steel);
   for(const side of [-1,1])for(let n=0;n<5;n++) block(scene,side*.78,.062,-3.65+n*.45,.06,.012,.07,colored,0xa88e50);
   block(scene,0,.06,-2.7,.025,.012,2.2,black);
-  // Clearly temporary security cordon explains the tactical barricades in a city.
+  // Temporary cordon props surround the tactical barricades.
   for(const s of [-1,1]) {
     // The sign and barricade carry the closure; just two spaced cones guide each approach.
     label(scene,atlas,5,s*1.5,.9,s*11.2,1.7,.65,s>0?0:Math.PI);

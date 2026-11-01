@@ -543,10 +543,8 @@ Create a new <code><a href="./recruit.md#commander_recruit_Recruit">Recruit</a><
 
 ## Function `new`
 
-Create a new <code><a href="./recruit.md#commander_recruit_Recruit">Recruit</a></code> with the given name and backstory.
-TODOs:
-- [ ] restrict who can submit new names and backstory. Right now anyone can
-      create a Recruit with any name and backstory.
+Create an unequipped rookie with the given name, default stats, and the
+transaction sender as leader.
 
 
 <pre><code><b>public</b> <b>fun</b> <a href="./recruit.md#commander_recruit_new">new</a>(name: <a href="../../.doc-deps/std/string.md#std_string_String">std::string::String</a>, backstory: <a href="../../.doc-deps/std/string.md#std_string_String">std::string::String</a>, ctx: &<b>mut</b> <a href="../../.doc-deps/sui/tx_context.md#sui_tx_context_TxContext">sui::tx_context::TxContext</a>): <a href="./recruit.md#commander_recruit_Recruit">commander::recruit::Recruit</a>
