@@ -16,6 +16,8 @@ interface Props {
     onFocus(value: Focus): void;
     onPortrait(id: string, url: string): void;
     onEquipment(images: Record<string, string>): void;
+    /** The line above the callsign; defaults to the role. */
+    eyebrow?: string;
 }
 export function CharacterViewport(props: Props) {
     const host = useRef<HTMLDivElement>(null),
@@ -37,13 +39,7 @@ export function CharacterViewport(props: Props) {
                 studio.current = view;
                 setReady(true);
                 const images = await view.equipmentImages();
-                if (cancelled) return;
-                latest.current.onEquipment(images);
-                for (const recruit of latest.current.recruits) {
-                    if (cancelled) break;
-                    const url = await view.portrait(recruit.appearance);
-                    if (!cancelled && url) latest.current.onPortrait(recruit.id, url);
-                }
+                if (!cancelled) latest.current.onEquipment(images);
             })
             .catch((e) => {
                 if (!cancelled)
@@ -81,23 +77,30 @@ export function CharacterViewport(props: Props) {
     useEffect(() => {
         studio.current?.focus(props.focus);
     }, [props.focus]);
-    // Refresh only the changed recruit's portrait after the saved identity changes.
+    // Portraits for every recruit whose saved identity has not been drawn yet:
+    // the roster at start, hires that arrive later, and looks saved since.
+    const drawn = useRef(new Map<string, string>());
     useEffect(() => {
         if (!ready) return;
         let cancelled = false;
-        const timer = window.setTimeout(() => {
-            void studio.current
-                ?.portrait(props.recruit.appearance)
-                .then((url) => {
-                    if (!cancelled && url) latest.current.onPortrait(props.recruit.id, url);
-                })
-                .catch(() => {});
-        }, 600);
+        const timer = window.setTimeout(async () => {
+            for (const recruit of props.recruits) {
+                const stamp = JSON.stringify(recruit.appearance);
+                if (cancelled) return;
+                if (drawn.current.get(recruit.id) === stamp) continue;
+                const url = await studio.current?.portrait(recruit.appearance).catch(() => "");
+                if (cancelled) return;
+                if (url) {
+                    drawn.current.set(recruit.id, stamp);
+                    latest.current.onPortrait(recruit.id, url);
+                }
+            }
+        }, 300);
         return () => {
             cancelled = true;
             window.clearTimeout(timer);
         };
-    }, [ready, props.recruit.id, props.recruit.appearance]);
+    }, [ready, props.recruits]);
     return (
         <section
             className={`recruit-stage ${drills ? "drills-open" : ""}`}
@@ -107,7 +110,7 @@ export function CharacterViewport(props: Props) {
                 <span>
                     {look === "office-worker"
                         ? "EXTRACTION VIP / LOOK PREVIEW"
-                        : `${props.recruit.role} / ACTIVE ROSTER`}
+                        : (props.eyebrow ?? `${props.recruit.role} / ACTIVE ROSTER`)}
                 </span>
                 <h2>{props.recruit.callsign}</h2>
                 <p>

@@ -59,14 +59,14 @@ fun d_move_grenade() {
 }
 
 fun recruit_one(ctx: &mut TxContext): Recruit {
-    let mut recruit = recruit::new(b"Recruit 1".to_string(), b"".to_string(), ctx);
+    let mut recruit = recruit::new("Recruit 1", ctx);
     recruit.add_armor(items::armor(2, ctx));
     recruit.add_weapon(items::rifle(3, ctx));
     recruit
 }
 
 fun recruit_two(ctx: &mut TxContext): Recruit {
-    let mut recruit = recruit::new(b"Recruit 2".to_string(), b"".to_string(), ctx);
+    let mut recruit = recruit::new("Recruit 2", ctx);
     recruit.add_armor(items::armor(2, ctx));
     recruit.add_weapon(items::rifle(2, ctx));
     recruit

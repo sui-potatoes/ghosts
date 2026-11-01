@@ -41,6 +41,13 @@ export function bestShotTarget(game: Encounter, unit: Unit): Unit | undefined {
     );
   })[0];
 }
+
+/** Hostiles in weapon range and line of sight; range information remains useful without AP or ammunition. */
+export function shootingTargets(game: Encounter, unit: Unit, from: Cell = unit.pos): Unit[] {
+  if (unit.hp <= 0 || game.result) return [];
+  return game.units.filter((target) => target.hp > 0 && target.enemy !== unit.enemy &&
+    distance(from, target.pos) <= unit.range + 3 && !game.map.coverPeek(from, target.pos).blocked);
+}
 export function grenadeBlockReason(
   game: Encounter,
   unit: Unit,

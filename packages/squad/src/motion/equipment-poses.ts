@@ -9,7 +9,10 @@ export interface EquipmentPoses {
     sources: Record<string, string>;
     clips: Record<
         string,
-        { duration: number; tracks: ReturnType<typeof T.KeyframeTrack.toJSON>[] }
+        {
+            duration: number;
+            tracks: ReturnType<typeof T.KeyframeTrack.toJSON>[];
+        }
     >;
 }
 
@@ -32,12 +35,13 @@ export function equipmentPose(source: T.AnimationClip, poses: EquipmentPoses) {
     return clip;
 }
 
-const cache = new Map<Sex, Promise<EquipmentPoses>>();
-export function loadEquipmentPoses(sex: Sex) {
-    if (!cache.has(sex)) {
+const cache = new Map<string, Promise<EquipmentPoses>>();
+export function loadEquipmentPoses(sex: Sex, model = "rifle") {
+    const key = `${sex}${model === "sniper" ? "-sniper" : ""}`;
+    if (!cache.has(key)) {
         const request = (async () => {
             const response = await fetch(
-                `${import.meta.env.BASE_URL}squad/motions/${sex}-equipment.bin?v=3`,
+                `${import.meta.env.BASE_URL}squad/motions/${key}-equipment.bin?v=6`,
             );
             if (!response.ok) throw Error("Equipment poses could not load.");
             const blob = await response.blob();
@@ -47,10 +51,10 @@ export function loadEquipmentPoses(sex: Sex) {
             if (data.version !== 1) throw Error("Unsupported equipment pose format.");
             return data;
         })().catch((error) => {
-            cache.delete(sex);
+            cache.delete(key);
             throw error;
         });
-        cache.set(sex, request);
+        cache.set(key, request);
     }
-    return cache.get(sex)!;
+    return cache.get(key)!;
 }

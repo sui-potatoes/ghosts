@@ -4,6 +4,36 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Encounter, distance, key, shotDamage, type Cell } from "./game.ts";
+import { shootingTargets } from "./targeting.ts";
+
+test("shooting markers predict range without mutating the operator or depending on AP and ammunition", () => {
+  const game = new Encounter(), unit = game.allies[0], target = game.enemies[0];
+  unit.pos = [0, 4];
+  target.pos = [0, -4];
+  const before = structuredClone(unit);
+  assert(shootingTargets(game, unit, [0, 0]).includes(target));
+  assert.deepEqual(unit, before);
+  unit.ap = 1;
+  assert(shootingTargets(game, unit, [0, 0]).includes(target), "a last-AP move still previews shooting range");
+  unit.ap = 0; unit.ammo = 0;
+  assert(shootingTargets(game, unit).includes(target), "range remains visible after actions are spent");
+});
+
+test("shooting markers exclude out-of-range, dead, friendly and wall-blocked targets", () => {
+  const game = new Encounter(), unit = game.allies[0], target = game.enemies[0];
+  unit.pos = [0, 0];
+  target.pos = [0, -4];
+  const targets = shootingTargets(game, unit);
+  assert(targets.includes(target));
+  assert(targets.every((u) => u.enemy && u.hp > 0));
+  target.pos = [0, -20];
+  assert(!shootingTargets(game, unit).includes(target));
+  target.pos = [0, -4]; target.hp = 0;
+  assert(!shootingTargets(game, unit).includes(target));
+  target.hp = 10;
+  game.map.coverPeek = () => ({ blocked: true, from: [0, 0], to: [0, -4] } as ReturnType<typeof game.map.coverPeek>);
+  assert.equal(shootingTargets(game, unit).length, 0);
+});
 
 test("movement costs one AP and cannot end inside a barrier or on an occupied tile", () => {
   const g = new Encounter(),

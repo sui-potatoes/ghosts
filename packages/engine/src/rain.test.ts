@@ -17,8 +17,10 @@ test("rain stays over the map after prolonged wind drift, with intact streaks an
       const x = positions.getX(i), y = positions.getY(i);
       assert(x >= -32.5 && x <= 32.5);
       assert(y >= 0 && y <= 23);
-      assert(Math.abs(positions.getX(i + 1) - x + 0.12) < 0.00001);
-      assert(Math.abs(positions.getY(i + 1) - y - 0.65) < 0.00001);
+      const tailX = positions.getX(i + 1) - x, tailY = positions.getY(i + 1) - y;
+      assert(tailX > 0 && tailY > 0, "tail trails the falling, left-moving head");
+      assert(Math.abs(tailX / tailY - 2 / 15) < 0.00001, "streak aligns with travel velocity");
+      assert.equal(positions.getZ(i + 1), positions.getZ(i));
       for (const index of [i, i + 1]) {
         point.fromBufferAttribute(positions, index);
         assert(rain.mesh.geometry.boundingSphere!.containsPoint(point));

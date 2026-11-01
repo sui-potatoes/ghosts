@@ -12,6 +12,8 @@ use std::string::String;
 const ETooManyUpgrades: u64 = 1;
 /// Attempt to remove an upgrade that does not exist.
 const ENoUpgrade: u64 = 2;
+/// Attempt to attach an upgrade of a kind the weapon already has.
+const EUpgradeKindTaken: u64 = 3;
 
 /// Weapon is an equipment that Recruits can use in battle. Each weapon has its
 /// own stats with a potential to be upgraded with additional modules.
@@ -57,9 +59,10 @@ public fun stats(w: &Weapon): &Stats { &w.stats }
 /// Get the upgrades of the `Weapon`.
 public fun upgrades(w: &Weapon): &vector<WeaponUpgrade> { &w.upgrades }
 
-/// Add an upgrade to the `Weapon`.
+/// Add an upgrade to the `Weapon`: at most three, one of each kind.
 public fun add_upgrade(w: &mut Weapon, upgrade: WeaponUpgrade) {
     assert!(w.upgrades.length() < 3, ETooManyUpgrades);
+    assert!(!w.upgrades.any!(|u| u.kind() == upgrade.kind()), EUpgradeKindTaken);
     w.stats = w.stats.add(upgrade.modifier());
     w.upgrades.push_back(upgrade);
 }

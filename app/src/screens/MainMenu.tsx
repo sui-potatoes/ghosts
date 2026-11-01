@@ -10,6 +10,8 @@ import { NETWORK } from "../constants";
 import { useMenuNav } from "../hooks/useMenuNav";
 import { requestSignIn } from "../signIn";
 
+const SOURCE = "https://github.com/sui-potatoes/ghosts";
+
 type Entry = {
     label: string;
     /** Why the entry is disabled, shown as a right-aligned tag. */
@@ -19,7 +21,7 @@ type Entry = {
 };
 
 /**
- * Title screen. Demo and Squad are local, playable frontend experiences.
+ * Title screen. The demos are local playtests; Headquarters keeps the squad on chain.
  * Networked modes remain disabled until their account flow is ready.
  */
 export default function MainMenu() {
@@ -41,16 +43,16 @@ export default function MainMenu() {
         ...(account ? [] : [{ label: "Login", onClick: requestSignIn }]),
         { label: "Ranked", tag: "soon", disabled: true },
         { label: "Public", tag: "soon", disabled: true },
-        { label: "Squad", onClick: () => navigate("/squad") },
+        { label: "Headquarters", onClick: () => navigate("/headquarters") },
         { label: "Level Editor", tag: "tool", onClick: () => navigate("/editor") },
         { label: "Leaderboard", tag: "soon", disabled: true },
         { label: "Settings", onClick: () => navigate("/settings") },
     ];
 
     return (
-        <main className="main-menu flex min-h-screen flex-col justify-center px-6 py-16 md:px-16">
+        <main className="main-menu flex min-h-screen flex-col px-6 md:px-16">
             <TitleBackdrop />
-            <div className="relative z-10 flex w-full max-w-xl flex-col gap-12">
+            <div className="relative z-10 flex w-full max-w-xl flex-1 flex-col justify-center gap-12 py-16">
                 <header className="flex flex-col gap-5">
                     <h1 className="font-mono text-6xl font-light tracking-[0.3em] text-foreground md:text-7xl">
                         GHOSTS
@@ -85,21 +87,27 @@ export default function MainMenu() {
                         ["a", "Select"],
                     ]}
                 />
+            </div>
 
-                <footer className="label flex flex-wrap gap-x-6 gap-y-2 text-muted">
-                    <span>
-                        Sui · {NETWORK} <span className="text-muted">/</span> build 0.0.0
-                    </span>
-                    <span>© Sui Potatoes</span>
+            <footer className="label relative z-10 flex flex-wrap items-baseline gap-x-6 gap-y-2 pb-8 text-muted">
+                <span>Sui · {NETWORK}</span>
+                {__COMMIT__ ? (
                     <a
-                        href="https://github.com/sui-potatoes/ghosts"
+                        className="normal-case"
+                        href={`${SOURCE}/commit/${__COMMIT__}`}
                         target="_blank"
                         rel="noreferrer"
                     >
-                        Source
+                        {__COMMIT__.slice(0, 7)}
                     </a>
-                </footer>
-            </div>
+                ) : (
+                    <span>dev build</span>
+                )}
+                <span>© Sui Potatoes</span>
+                <a href={SOURCE} target="_blank" rel="noreferrer">
+                    Source
+                </a>
+            </footer>
         </main>
     );
 }

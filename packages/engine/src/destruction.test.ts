@@ -68,7 +68,7 @@ test("storefront panes match their openings, follow building visibility and rese
     destruction.apply(changes, new T.Vector3(6.75, 1.2, 0));
     assert.equal(destruction.stats.destroyed, 1);
     assert.equal(destruction.stats.debris, 10);
-    destruction.syncBuildingVisibility([false, true]);
+    destruction.syncBuildingVisibility([0, 1]);
     for (const prop of panes)
       assert.equal(destruction.group.getObjectByName(`glass / ${prop.id}`)!.visible, prop.storefront!.building === 1);
     destruction.reset(new TacticalMap(koraPlan));

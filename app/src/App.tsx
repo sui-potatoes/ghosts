@@ -2,11 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { lazy, Suspense, useEffect, useState } from "react";
-import { Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 
 import MainMenu from "./screens/MainMenu";
 import Settings from "./screens/Settings";
-const Squad = lazy(() => import("./screens/Squad"));
+// Headquarters brings the squad's three.js studio; load it with the route.
+const Headquarters = lazy(() => import("./screens/Headquarters"));
+const Armory = lazy(() => import("./screens/Armory"));
 // The encounter brings three.js and the combat assets; load it with the route.
 const Demo = lazy(() => import("./screens/Demo"));
 // The level editor brings three.js and the full asset catalog.
@@ -22,7 +24,9 @@ import { SignInModal } from "./SignInModal";
 function MenuMusic() {
     const { pathname } = useLocation();
     const menu =
-        pathname === "/" || pathname.startsWith("/settings") || pathname.startsWith("/squad");
+        pathname === "/" ||
+        pathname.startsWith("/settings") ||
+        pathname.startsWith("/headquarters");
     useEffect(() => {
         if (menu) playTheme();
         else stopTheme();
@@ -68,13 +72,23 @@ export function App() {
                 />
                 <Route path="/settings" element={<Settings />} />
                 <Route
-                    path="/squad"
+                    path="/headquarters"
                     element={
-                        <Suspense fallback={<p className="label p-10">Opening personnel bay…</p>}>
-                            <Squad />
+                        <Suspense fallback={<p className="label p-10">Opening headquarters…</p>}>
+                            <Headquarters />
                         </Suspense>
                     }
                 />
+                <Route
+                    path="/headquarters/armory"
+                    element={
+                        <Suspense fallback={<p className="label p-10">Opening the armory…</p>}>
+                            <Armory />
+                        </Suspense>
+                    }
+                />
+                <Route path="/squad" element={<Navigate to="/headquarters" replace />} />
+                <Route path="/barracks" element={<Navigate to="/headquarters" replace />} />
             </Routes>
             <MenuMusic />
             <TransactionSender />

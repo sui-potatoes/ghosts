@@ -11,6 +11,7 @@ import {
   PHRASES,
   voiceKey,
   voiceVolume,
+  VoicePlayer,
 } from "./voice.ts";
 
 test("line files are named phrase, sex and two-digit voice index", () => {
@@ -19,6 +20,64 @@ test("line files are named phrase, sex and two-digit voice index", () => {
   assert.ok(isRecorded({ sex: "male", index: 1 }));
   assert.ok(isRecorded({ sex: "female", index: 1 }));
   assert.ok(!isRecorded({ sex: "male", index: 2 }));
+});
+
+test("voice loading cannot revive an interrupted line; pause and disposal control the radio channel", async (t) => {
+  const contexts: FakeContext[] = [];
+  const starts: unknown[] = [];
+  const pending: (() => void)[] = [];
+  const node = () => ({
+    connect(next: unknown) { return next; }, disconnect() {}, stop() {},
+    start() { starts.push(this); },
+    frequency: { value: 0 }, gain: { value: 0 }, threshold: { value: 0 }, knee: { value: 0 },
+    ratio: { value: 0 }, attack: { value: 0 }, release: { value: 0 },
+  });
+  class FakeContext {
+    state = "suspended";
+    destination = node();
+    constructor() { contexts.push(this); }
+    createBiquadFilter = node;
+    createGain = node;
+    createDynamicsCompressor = node;
+    createWaveShaper = node;
+    createBufferSource = node;
+    decodeAudioData() { return Promise.resolve({}); }
+    resume() { this.state = "running"; return Promise.resolve(); }
+    suspend() { this.state = "suspended"; return Promise.resolve(); }
+    close() { this.state = "closed"; return Promise.resolve(); }
+  }
+  const originals = ["AudioContext", "document", "fetch"].map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)] as const);
+  t.after(() => {
+    for (const [key, descriptor] of originals) {
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+      else Reflect.deleteProperty(globalThis, key);
+    }
+  });
+  Object.defineProperty(globalThis, "AudioContext", { configurable: true, value: FakeContext });
+  Object.defineProperty(globalThis, "document", { configurable: true, value: { body: { dataset: {} } } });
+  t.mock.method(globalThis, "fetch", () => new Promise((resolve) => {
+    pending.push(() => resolve({ ok: true, arrayBuffer: async () => new ArrayBuffer(4) } as Response));
+  }));
+  const player = new VoicePlayer(() => 1);
+  const voice = { sex: "male", index: 1 } as const;
+  player.speak("fire", voice);
+  player.speak("cover", voice);
+  pending[0]();
+  await new Promise(setImmediate);
+  assert.equal(starts.length, 0, "superseded fetch stays silent");
+  player.setPaused(true);
+  pending[1]();
+  await new Promise(setImmediate);
+  assert.equal(starts.length, 1);
+  assert.equal(contexts[0].state, "suspended", "loaded line remains on the paused timeline");
+  player.setPaused(false);
+  assert.equal(contexts[0].state, "running");
+  player.speak("hit", voice);
+  player.dispose();
+  pending[2]();
+  await new Promise(setImmediate);
+  assert.equal(starts.length, 1, "teardown cancels unfinished playback");
+  assert.equal(contexts[0].state, "closed");
 });
 
 test("phrases avoid an immediate repeat when the event has a choice", () => {

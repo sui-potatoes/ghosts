@@ -8,9 +8,14 @@ import * as T from "three";
 import { motionSkeleton } from "@ghosts/squad/motion/clearance";
 import { nativeClip } from "@ghosts/squad/motion/clips";
 import { equipmentPose } from "@ghosts/squad/motion/equipment-poses";
-import { createLongGun } from "@ghosts/squad/studio/long-guns";
 import { mountHandEquipment } from "@ghosts/squad/studio/held-equipment";
-import { skinMeshes, posedSurface, weaponEdges } from "./gear-collision.ts";
+import {
+    skinMeshes,
+    posedSurface,
+    weaponEdges,
+    rifleAsset,
+    supportContact,
+} from "./gear-collision.ts";
 
 // Track the actual wrist skin ring, so a clear but collapsed wrist cannot pass.
 function wristRings(root: T.Group, skin: T.SkinnedMesh[]) {
@@ -83,8 +88,11 @@ function wristRings(root: T.Group, skin: T.SkinnedMesh[]) {
     });
 }
 
-for (const sex of ["female", "male"]) {
-    test(`${sex}: both hands clear all rifles and retain wrist thickness`, () => {
+const configurations = ["female", "male"].flatMap((sex) =>
+    ["rifle", "sniper", "plasma"].map((kind) => ({ sex, kind })),
+);
+for (const { sex, kind } of configurations) {
+    test(`${sex}/${kind}: both hands clear all rifles and retain wrist thickness`, () => {
         const file = fs.readFileSync(`public/squad/body/${sex}/skin.glb`);
         const root = motionSkeleton(
             file.buffer.slice(file.byteOffset, file.byteOffset + file.length),
@@ -100,16 +108,16 @@ for (const sex of ["female", "male"]) {
             JSON.parse(fs.readFileSync(`public/squad/body/${sex}/weapon-mount.json`, "utf8")),
         );
         const read = (path: string) => JSON.parse(gunzipSync(fs.readFileSync(path)).toString());
-        const poses = read(`public/squad/motions/${sex}-equipment.bin`);
+        const poses = read(
+            `public/squad/motions/${sex}${kind === "sniper" ? "-sniper" : ""}-equipment.bin`,
+        );
         const clips = read(`public/squad/motions/${sex}.bin`).map(
             (c: Parameters<typeof T.AnimationClip.parse>[0]) =>
                 equipmentPose(nativeClip(T.AnimationClip.parse(c)), poses),
         ) as T.AnimationClip[];
-        const weapons = ["rifle", "sniper", "plasma"].flatMap((kind) =>
-            [1, 2, 3].map((tier) => {
-                const gun = createLongGun(kind as "rifle" | "sniper" | "plasma", {
-                    laser: `laser-${tier}`,
-                });
+        const weapons = [kind].flatMap((kind) =>
+            [0, 1, 2, 3].map((tier) => {
+                const gun = rifleAsset(kind, tier);
                 gun.quaternion.setFromRotationMatrix(
                     new T.Matrix4().makeBasis(
                         new T.Vector3(0, 0, -1),
@@ -123,7 +131,7 @@ for (const sex of ["female", "male"]) {
                     e.map((p) => group.worldToLocal(p.clone())),
                 );
                 group.remove(gun);
-                return { kind, tier, edges };
+                return { kind, tier, edges, gun };
             }),
         );
         const mixer = new T.AnimationMixer(root);
@@ -156,7 +164,13 @@ for (const sex of ["female", "male"]) {
             mixer.stopAllAction();
             const clip = clips.find((c) => c.name === name)!;
             const action = mixer.clipAction(clip).play();
-            for (const fraction of [0, 0.5, 0.99]) {
+            const fractions = process.env.FPS
+                ? Array.from(
+                      { length: Math.ceil(clip.duration * Number(process.env.FPS)) + 1 },
+                      (_, i) => Math.min(0.999, i / (clip.duration * Number(process.env.FPS))),
+                  )
+                : [0, 0.5, 0.99];
+            for (const fraction of fractions) {
                 action.time = fraction * clip.duration;
                 mixer.update(0);
                 root.updateMatrixWorld(true);
@@ -166,7 +180,7 @@ for (const sex of ["female", "male"]) {
                         `${name}@${fraction}: ${wrist.side} wrist collapsed`,
                     );
                 const surface = posedSurface(skin); // Deliberately include palms and fingers.
-                for (const { kind, tier, edges } of weapons) {
+                for (const { kind, tier, edges, gun } of weapons) {
                     const hits = edges
                         .flatMap(([a, b]) =>
                             surface.segment(
@@ -175,10 +189,25 @@ for (const sex of ["female", "male"]) {
                             ),
                         )
                         .filter((h) => /mixamorig(?:Left|Right)Hand/.test(h.region));
+                    if (
+                        tier === 0 &&
+                        fraction === 0 &&
+                        ["idle_weight_shift", "rifle_burst", "rifle_run"].includes(name)
+                    ) {
+                        group.add(gun);
+                        root.updateMatrixWorld(true);
+                        const contact = supportContact(gun, group, surface);
+                        group.remove(gun);
+                        assert.ok(
+                            Math.min(contact.palm, contact.thumb) < 0.005 &&
+                                contact.fingers < 0.005,
+                            `${kind}/${name}: floating support hand ${JSON.stringify(contact)}`,
+                        );
+                    }
                     assert.equal(
                         hits.length,
                         0,
-                        `${kind}/laser-${tier}/${name}@${fraction}: ${JSON.stringify(hits.slice(0, 2))}`,
+                        `${kind}/attachments-${tier}/${name}@${fraction}: ${JSON.stringify(hits.slice(0, 2))}`,
                     );
                 }
                 // Prevent a collision-free but detached hand: the palm still cups the fore-end.

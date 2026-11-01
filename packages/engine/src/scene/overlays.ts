@@ -5,9 +5,10 @@ import * as T from "three";
 import { Line2 } from "three/addons/lines/Line2.js";
 import { LineGeometry } from "three/addons/lines/LineGeometry.js";
 import { LineMaterial } from "three/addons/lines/LineMaterial.js";
-import { key, type Encounter, type Unit } from "../game";
-import { CELL, type Cell } from "../map";
-import { clearGroup, type Space } from "./space";
+import { key, type Encounter, type Unit } from "../game.ts";
+import { CELL, type Cell } from "../map.ts";
+import { clearGroup, type Space } from "./space.ts";
+import { shootingTargets } from "../targeting.ts";
 
 const flat = (color: number, opacity: number) =>
   new T.MeshBasicMaterial({ color, transparent: true, opacity, side: T.DoubleSide, depthWrite: false });
@@ -79,6 +80,9 @@ export class Overlays {
   readonly grid: T.LineSegments;
   private readonly range = new T.Group();
   private readonly route = new T.Group();
+  private readonly targets = new T.Group();
+  private targeting: { game: Encounter; unit: Unit } | null = null;
+  private targetKey = "";
   private readonly hover = tileMark();
   private readonly selector = new T.Mesh(
     new T.RingGeometry(0.48, 0.54, 48),
@@ -86,16 +90,16 @@ export class Overlays {
   );
   private movementPaths = new Map<string, Cell[]>();
   private hoverKey = "";
+  private readonly space: Space;
 
-  constructor(
-    scene: T.Scene,
-    private readonly space: Space,
-  ) {
+  constructor(scene: T.Scene, space: Space) {
+    this.space = space;
+    this.targets.name = "Shooting range";
     this.grid = this.tacticalGrid();
     this.selector.rotation.x = -Math.PI / 2;
     this.hover.rotation.x = -Math.PI / 2;
     this.hover.visible = false;
-    scene.add(this.range, this.route, this.grid, this.selector, this.hover);
+    scene.add(this.range, this.route, this.targets, this.grid, this.selector, this.hover);
   }
 
   /** Cell edges over the whole map, following the ground (curbs, ramps). */
@@ -129,6 +133,10 @@ export class Overlays {
     return this.grid.visible;
   }
 
+  get reflectionExcluded(): T.Object3D[] {
+    return [this.range, this.route, this.targets, this.grid, this.selector, this.hover];
+  }
+
   setGrid(visible: boolean) {
     this.grid.visible = visible;
   }
@@ -138,6 +146,9 @@ export class Overlays {
     this.hoverKey = "";
     clearGroup(this.range);
     this.movementPaths.clear();
+    this.targeting = u && show ? { game, unit: u } : null;
+    this.targetKey = "";
+    this.showTargets(u?.pos);
     if (!u || !show || u.ap <= 0) return;
     const paths = game.paths(u);
     this.movementPaths = paths;
@@ -188,6 +199,7 @@ export class Overlays {
   /** The planned route just over the tiles, or a throw arc with its blast ring when `grenade`. */
   showPath(path: Cell[] | undefined, grenade = false) {
     clearGroup(this.route);
+    this.showTargets(grenade ? undefined : path?.[path.length - 1] ?? this.targeting?.unit.pos);
     if (!path || path.length < 2) return;
     const pts = grenade ? this.throwArc(path[0], path[path.length - 1]) : this.routeLine(path);
     this.route.add(screenLine(pts, grenade ? THROW : ROUTE));
@@ -199,6 +211,25 @@ export class Overlays {
       ring.rotation.x = -Math.PI / 2;
       ring.position.copy(pts[pts.length - 1]);
       this.route.add(ring);
+    }
+  }
+
+  /** Red rings show weapon range and line of sight from the current or proposed position. */
+  private showTargets(from?: Cell) {
+    const context = this.targeting;
+    const signature = context && from ? key(from) : "hidden";
+    if (signature === this.targetKey) return;
+    this.targetKey = signature;
+    clearGroup(this.targets);
+    if (!context || !from) return;
+    for (const target of shootingTargets(context.game, context.unit, from)) {
+      const ring = new T.Mesh(new T.RingGeometry(0.57, 0.65, 48), flat(0xff403d, 0.95));
+      ring.name = target.id;
+      ring.material.fog = false;
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.copy(this.space.vec(target.pos, 0.09));
+      ring.renderOrder = 3;
+      this.targets.add(ring);
     }
   }
 
@@ -263,8 +294,11 @@ export class Overlays {
 
   /** The pointer left the field. */
   leave() {
+    const changed = this.hover.visible || !!this.hoverKey || this.route.children.length > 0;
     this.hover.visible = false;
     this.hoverKey = "";
+    this.showPath(undefined);
+    return changed;
   }
 
   /** Keep the selection ring under `at`, turning slowly; hidden when null. */

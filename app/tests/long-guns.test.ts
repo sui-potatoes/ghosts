@@ -8,7 +8,6 @@ import { gunzipSync } from "node:zlib";
 import * as T from "three";
 import {
     createLongGun,
-    LONG_GUN_GRIP,
     BORE_HEIGHT,
     WEAPON_MOUNTS,
     sizedWeaponPoint,
@@ -21,6 +20,8 @@ import { weaponFinish } from "../../packages/squad/src/studio/weapon-finish.ts";
 import { ATTACHMENTS } from "../../packages/squad/src/catalog.ts";
 import { createFieldSupply } from "../../packages/squad/src/studio/field-supplies.ts";
 import { motionSkeleton } from "@ghosts/squad/motion/clearance";
+import { skinMeshes, posedSurface } from "./gear-collision.ts";
+import { equipmentPose } from "@ghosts/squad/motion/equipment-poses";
 import { nativeClip } from "@ghosts/squad/motion/clips";
 import { mountHandEquipment } from "@ghosts/squad/studio/held-equipment";
 
@@ -51,11 +52,44 @@ for (const kind of ["rifle", "sniper", "plasma"] as const) {
         assert.ok(hits.length > 0);
         assert.ok(Math.abs(hits[0].point.y - gun.userData.muzzle[1]) < 0.003);
     });
+    test(`${kind}: grip and trigger bow form a substantial connected lower assembly`, () => {
+        const gun = createLongGun(kind);
+        gun.updateMatrixWorld(true);
+        const at = (x: number, y: number, z: number) => sizedWeaponPoint(new T.Vector3(-z, x, -y));
+        const side = (x: number, y: number, z = 0.1) =>
+            new T.Raycaster(at(x, y, z), new T.Vector3(z > 0 ? 1 : -1, 0, 0)).intersectObject(gun);
+        // The receiver-to-grip web must remain solid across the former gap.
+        for (let y = -0.03; y <= 0.025; y += 0.005)
+            assert.ok(side(-0.135, y).length, `${kind}: disconnected grip at y=${y}`);
+        // Follow the bottom of the trigger bow all the way back into the grip.
+        for (let x = -0.113; x <= -0.043; x += 0.005)
+            assert.ok(side(x, -0.043).length, `${kind}: detached trigger guard at x=${x}`);
+        const left = side(-0.14, -0.06)[0],
+            right = side(-0.14, -0.06, -0.1)[0];
+        assert.ok(
+            left && right && right.point.x - left.point.x >= 0.023,
+            "grip must retain palm-filling thickness",
+        );
+        const front = new T.Raycaster(at(0, -0.065, 0), new T.Vector3(0, -1, 0)).intersectObject(
+            gun,
+        )[0];
+        const back = new T.Raycaster(at(-0.22, -0.065, 0), new T.Vector3(0, 1, 0)).intersectObject(
+            gun,
+        )[0];
+        assert.ok(
+            front && back && front.point.y - back.point.y >= 0.032,
+            "grip must retain its fore/aft width",
+        );
+    });
     for (const sex of ["female", "male"])
         test(`${kind}/${sex}: trigger grip stays in palm through ready, fire, reload and run`, () => {
             const b = readFileSync(`public/squad/body/${sex}/skin.glb`);
             const root = motionSkeleton(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength));
             const hand = root.getObjectByName("mixamorigRightHand") as T.Bone;
+            const skin = skinMeshes(`public/squad/body/${sex}/skin.glb`, root);
+            const poses = JSON.parse(
+                gunzipSync(readFileSync(`public/squad/motions/${sex}-equipment.bin`)).toString(),
+            );
             const gun = createLongGun(kind),
                 group = new T.Group();
             gun.quaternion.setFromRotationMatrix(
@@ -85,25 +119,59 @@ for (const kind of ["rifle", "sniper", "plasma"] as const) {
                 "rifle_run",
             ]) {
                 mixer.stopAllAction();
-                const clip = nativeClip(
-                    T.AnimationClip.parse(source.find((c: { name: string }) => c.name === name)),
+                const clip = equipmentPose(
+                    nativeClip(
+                        T.AnimationClip.parse(
+                            source.find((c: { name: string }) => c.name === name),
+                        ),
+                    ),
+                    poses,
                 );
                 const action = mixer.clipAction(clip).play();
                 for (const fraction of [0, 0.3, 0.6, 0.99]) {
                     action.time = clip.duration * fraction;
                     mixer.update(0);
                     root.updateMatrixWorld(true);
-                    const palm = hand
-                        .getWorldPosition(new T.Vector3())
-                        .lerp(
-                            root
-                                .getObjectByName("mixamorigRightHandMiddle1")!
-                                .getWorldPosition(new T.Vector3()),
-                            0.8,
-                        );
+                    const surface = posedSurface(skin);
+                    let contact = Infinity;
+                    // Measure skin-to-grip contact, not distance to the old sizing pivot.
+                    for (const y of [-0.025, -0.045, -0.065, -0.085]) {
+                        for (const [dx, dz] of [
+                            [1, 0],
+                            [-1, 0],
+                            [0, 1],
+                            [0, -1],
+                        ]) {
+                            const a = gun.localToWorld(
+                                sizedWeaponPoint(new T.Vector3(-dz * 0.09, -0.14 + dx * 0.09, -y)),
+                            );
+                            const b = gun.localToWorld(
+                                sizedWeaponPoint(new T.Vector3(0, -0.14, -y)),
+                            );
+                            const ray = new T.Raycaster(
+                                a,
+                                b.clone().sub(a).normalize(),
+                                0,
+                                a.distanceTo(b),
+                            );
+                            const shells = ray.intersectObject(gun).filter((hit) => {
+                                const p = group.worldToLocal(hit.point.clone());
+                                return p.x < -0.095 && p.x > -0.19;
+                            });
+                            const fingers = surface
+                                .segment(a, b)
+                                .filter((hit) => hit.region.includes("RightHand"));
+                            for (const shell of shells)
+                                for (const finger of fingers)
+                                    contact = Math.min(
+                                        contact,
+                                        shell.point.distanceTo(new T.Vector3(...finger.point)),
+                                    );
+                        }
+                    }
                     assert.ok(
-                        gun.localToWorld(new T.Vector3(...LONG_GUN_GRIP)).distanceTo(palm) < 0.032,
-                        `${name}@${fraction}`,
+                        contact < 0.008,
+                        `${name}@${fraction}: hand is ${(contact * 1000).toFixed(1)} mm from grip`,
                     );
                 }
             }

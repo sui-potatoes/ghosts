@@ -8,7 +8,13 @@
 /// - default
 module ghosts::recruit;
 
-use ghosts::{armor::Armor, rank::{Self, Rank}, stats::{Self, Stats}, weapon::Weapon};
+use ghosts::{
+    armor::Armor,
+    rank::{Self, Rank},
+    stats::{Self, Stats},
+    visuals::{Self, Visuals},
+    weapon::Weapon
+};
 use std::string::String;
 
 /// Attempt to equip a `Weapon` while a Recruit already it.
@@ -27,7 +33,10 @@ public use fun ghosts::unit::from_recruit as Recruit.to_unit;
 /// directly related to the game mechanics.
 public struct Metadata has drop, store {
     name: String,
-    backstory: String,
+    /// Visual properties of the Recruit, packed by area.
+    visuals: Visuals,
+    /// Voice configuration: index of one of the available voice sets.
+    voice: u8,
 }
 
 /// Defines the Recruit - a unit in the game which users hire, train and send on
@@ -55,7 +64,7 @@ public struct DogTag has key, store {
     id: UID,
     /// The rank of the fallen soldier.
     rank: Rank,
-    /// Metadata (including backstory) of the fallen recruit.
+    /// Metadata (name and looks) of the fallen recruit.
     metadata: Metadata,
 }
 
@@ -100,6 +109,24 @@ public fun rank(r: &Recruit): &Rank { &r.rank }
 /// Get the address of the Recruit's leader.
 public fun leader(r: &Recruit): address { r.leader }
 
+/// Set the leader of the Recruit. Package-only: the frontend makes the
+/// `Account` the leader of its stored recruits, so dog tags and other
+/// spoils know where to go.
+public(package) fun set_leader(r: &mut Recruit, leader: address) {
+    r.leader = leader;
+}
+
+/// Set the `Visuals` of the Recruit. Package-only: exposed through the
+/// recruit editor in the frontend. The name, once received, stays.
+public(package) fun set_visuals(r: &mut Recruit, visuals: Visuals) {
+    r.metadata.visuals = visuals;
+}
+
+/// Set the voice configuration of the Recruit. Package-only.
+public(package) fun set_voice(r: &mut Recruit, voice: u8) {
+    r.metadata.voice = voice;
+}
+
 /// Get the metadata of the Recruit.
 public fun metadata(r: &Recruit): &Metadata { &r.metadata }
 
@@ -110,10 +137,7 @@ public fun rank_up(recruit: &mut Recruit) { recruit.rank.rank_up() }
 public fun default(ctx: &mut TxContext): Recruit {
     Recruit {
         id: object::new(ctx),
-        metadata: Metadata {
-            name: "John Doe",
-            backstory: "A rookie soldier, ready to prove themselves.",
-        },
+        metadata: Metadata { name: "John Doe", visuals: visuals::default(), voice: 0 },
         rank: rank::default(),
         stats: stats::default(),
         weapon: option::none(),
@@ -124,10 +148,10 @@ public fun default(ctx: &mut TxContext): Recruit {
 
 /// Create an unequipped rookie with the given name, default stats, and the
 /// transaction sender as leader.
-public fun new(name: String, backstory: String, ctx: &mut TxContext): Recruit {
+public fun new(name: String, ctx: &mut TxContext): Recruit {
     Recruit {
         id: object::new(ctx),
-        metadata: Metadata { name, backstory },
+        metadata: Metadata { name, visuals: visuals::default(), voice: 0 },
         rank: rank::rookie(),
         stats: stats::default(),
         weapon: option::none(),

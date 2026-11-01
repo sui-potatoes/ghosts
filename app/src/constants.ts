@@ -17,6 +17,15 @@ export const NAMES = {
     domain: "demo.ghosts.sui",
 } as const;
 
+/**
+ * Testnet IDs for the published ghosts Move package and the shared Registry
+ * created by its initializer.
+ */
+export const GHOSTS: { package: string; registry: string } = {
+    package: "0xa3636890b19b1e695cdae1410df6aa87e7dafb278e7fed8e8da0c0b11230a924",
+    registry: "0x7091213eebdedbc7250451fcafe0deb83736f57d829fe8859485b84a8c884ea5",
+};
+
 /** Same Google OAuth client as `app/`; both origins are registered on it. */
 export const GOOGLE_CLIENT_ID =
     "591411088609-6kbt6b07a6np6mq2mnlq97i150amussh.apps.googleusercontent.com";

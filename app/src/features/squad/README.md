@@ -1,19 +1,19 @@
-# Local squad management
+# Squad studio components
 
-`/squad` integrates the existing MPFB character editor into Ghosts. It is a frontend
-preview, available without signing in. It does not read or mutate GameAccount,
-wallet, inventory objects, Move modules, or remote services.
+The MPFB character studio and its panels, used by Headquarters
+(`src/features/headquarters/`, `/headquarters`), which owns the screen, the
+chain data and every write. The former local `/squad` screen now redirects
+there.
 
 ## Boundaries
 
 The domain lives in the `@ghosts/squad` package (`packages/squad/`): roster
-model, catalog and types, stats, armor colors, appearance helpers, the studio
-and motion. This folder is the screen:
+model, catalog and types, stats, armor colors, appearance helpers (including
+the on-chain appearance codec), the studio and motion. This folder holds:
 
-- `useSquad.ts`: versioned local storage, validated on restore. Storage failure
-  leaves a usable in-memory session and a visible notice.
-- `components/`: roster inspector, appearance controls, stats panel, personnel
-  form, viewport.
+- `components/`: the 3D viewport (portraits for every recruit whose saved
+  look has not been drawn), appearance editor, stats panel, weapon preview
+  and motion controls.
 - `squad.css`: scoped screen styles; no changes to global UI tokens.
 
 The studio (`@ghosts/squad/studio/recruit-studio`) is one on-demand Three.js
@@ -21,9 +21,7 @@ context: shared texture/model caches, captured pose and optional motion
 drills, native rig and calibrated weapon attachment. Portraits and item
 thumbnails use the same renderer. Resources are released on route unmount.
 
-Appearance is a draft until Apply; switching recruits prompts to apply/discard.
-Loadout and personnel edits save immediately. The saved appearance also drives
-its portrait. `localStorage` key: `ghosts:squad-preview:v1`.
+The saved appearance drives the portrait; drafts render live in the stage.
 
 ## Rendering budget
 

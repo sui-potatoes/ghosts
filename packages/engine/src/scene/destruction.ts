@@ -8,7 +8,7 @@ import { footprint, type TacticalMap } from "../map.ts";
 import { PropAssets, type PropAsset, type PropDamageStage } from "./prop-assets.ts";
 import { SurfaceDamage } from "./surface-damage.ts";
 import { cracksWhenDamaged } from "./prop-deformation.ts";
-import { Occlusion } from "./occlusion.ts";
+import { BuildingFade, Occlusion } from "./occlusion.ts";
 
 let loaded: Promise<void> | undefined;
 let physics: typeof RAPIER;
@@ -49,6 +49,7 @@ export class Destruction {
   private world!: RAPIER.World;
   private readonly props = new Map<string, PropView>();
   private readonly officeOcclusion = new Occlusion();
+  private readonly buildingFade = new BuildingFade();
   private readonly debris: Debris[] = [];
   private readonly smokeGeometry = new T.PlaneGeometry(1, 1);
   private readonly smokeOpacity = new T.InstancedBufferAttribute(new Float32Array(128), 1);
@@ -94,6 +95,8 @@ export class Destruction {
     return this.debris.some((part) => !!part.body);
   }
 
+  get fading() { return this.officeOcclusion.active; }
+
   get stats() {
     return {
       props: this.props.size,
@@ -116,6 +119,8 @@ export class Destruction {
   }
 
   reset(map: TacticalMap) {
+    this.officeOcclusion.dispose();
+    this.buildingFade.dispose();
     for (const view of this.props.values()) view.damage?.dispose();
     this.world?.free();
     this.world = new physics.World({ x: 0, y: -9.81, z: 0 });
@@ -195,9 +200,9 @@ export class Destruction {
   }
 
   /** Glazing follows its building's camera occlusion rather than floating alone. */
-  syncBuildingVisibility(visible: readonly boolean[]) {
+  syncBuildingVisibility(opacity: readonly number[]) {
     for (const view of this.props.values())
-      if (view.prop.storefront) view.root.visible = visible[view.prop.storefront.building] ?? true;
+      if (view.prop.storefront) this.buildingFade.set(view.root, opacity[view.prop.storefront.building] ?? 1);
   }
 
   isPropVisible(id: string) {
@@ -205,8 +210,8 @@ export class Destruction {
     return !!view && view.root.visible && !view.destroyed;
   }
 
-  syncOfficeVisibility(camera: T.Vector3, points: T.Vector3[]) {
-    this.officeOcclusion.update(camera, points);
+  syncOfficeVisibility(camera: T.Vector3, points: T.Vector3[], dt = 1 / 60) {
+    this.officeOcclusion.update(camera, points, dt);
     for (const view of this.props.values()) if (view.prop.support) {
       const owner = this.props.get(view.prop.support);
       if (owner) view.root.visible = owner.root.visible && !owner.destroyed;
@@ -397,6 +402,8 @@ export class Destruction {
   }
 
   dispose() {
+    this.officeOcclusion.dispose();
+    this.buildingFade.dispose();
     for (const view of this.props.values()) view.damage?.dispose();
     this.group.removeFromParent();
     this.world.free();

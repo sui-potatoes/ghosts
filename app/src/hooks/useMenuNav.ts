@@ -36,9 +36,10 @@ export function useMenuNav(active: boolean) {
                 els[i].click();
                 return true;
             }
-            uiTick();
             const dir = action === "down" ? 1 : -1;
-            els[i < 0 ? 0 : (i + dir + els.length) % els.length].focus();
+            const next = els[i < 0 ? 0 : (i + dir + els.length) % els.length];
+            next.focus();
+            uiTick(next);
             return true;
         });
     }, [active]);

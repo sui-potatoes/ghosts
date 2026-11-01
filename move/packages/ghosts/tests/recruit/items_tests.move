@@ -165,3 +165,45 @@ fun test_weapon_upgrades() {
 
     rifle.destroy();
 }
+
+#[test]
+fun test_weapon_upgrade_kinds() {
+    let ctx = &mut tx_context::dummy();
+    let mut rifle = items::rifle(1, ctx);
+
+    rifle.add_upgrade(items::scope(1));
+    rifle.add_upgrade(items::stock(2));
+    rifle.add_upgrade(items::expanded_clip(3));
+    assert_eq!(rifle.upgrades().length(), 3);
+
+    // a kind frees up once its upgrade comes off
+    let _ = rifle.remove_upgrade(0);
+    rifle.add_upgrade(items::scope(3));
+    assert_eq!(rifle.stats().aim(), 15);
+
+    rifle.destroy();
+}
+
+#[test, expected_failure(abort_code = ghosts::weapon::EUpgradeKindTaken)]
+fun test_weapon_upgrade_kind_taken() {
+    let ctx = &mut tx_context::dummy();
+    let mut rifle = items::rifle(1, ctx);
+
+    rifle.add_upgrade(items::laser_sight(1));
+    rifle.add_upgrade(items::laser_sight(2));
+
+    abort
+}
+
+#[test, expected_failure(abort_code = ghosts::weapon::ETooManyUpgrades)]
+fun test_weapon_upgrade_limit() {
+    let ctx = &mut tx_context::dummy();
+    let mut rifle = items::rifle(1, ctx);
+
+    rifle.add_upgrade(items::scope(1));
+    rifle.add_upgrade(items::laser_sight(1));
+    rifle.add_upgrade(items::stock(1));
+    rifle.add_upgrade(items::expanded_clip(1));
+
+    abort
+}

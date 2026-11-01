@@ -1003,7 +1003,7 @@ fun test_wall() {
 #[test, expected_failure(abort_code = ETileIsWall)]
 fun test_place_recruit_on_wall_fails() {
     let ctx = &mut tx_context::dummy();
-    let recruit = commander::recruit::default(ctx);
+    let recruit = ghosts::recruit::default(ctx);
     let mut map = new(@0.to_id(), 3);
     *&mut map.grid[1, 1].tile_type = TileType::Wall;
     map.place_recruit(&recruit, 1, 1);
@@ -1111,7 +1111,7 @@ fun test_attack_without_line_of_sight_fails() {
     let ctx = &mut tx_context::dummy();
     let mut rng = sui::random::new_generator_from_seed_for_testing(vector[1]);
     let mut map = new(@0.to_id(), 5);
-    let (a, b) = (commander::recruit::default(ctx), commander::recruit::default(ctx));
+    let (a, b) = (ghosts::recruit::default(ctx), ghosts::recruit::default(ctx));
 
     *&mut map.grid[0, 2].tile_type = TileType::Wall;
     map.place_recruit(&a, 0, 0);
@@ -1125,7 +1125,7 @@ fun test_grenade_without_line_of_throw_fails() {
     let ctx = &mut tx_context::dummy();
     let mut rng = sui::random::new_generator_from_seed_for_testing(vector[1]);
     let mut map = new(@0.to_id(), 5);
-    let recruit = commander::recruit::default(ctx);
+    let recruit = ghosts::recruit::default(ctx);
 
     *&mut map.grid[0, 2].tile_type = TileType::Wall;
     map.place_recruit(&recruit, 0, 0);

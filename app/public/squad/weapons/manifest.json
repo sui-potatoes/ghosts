@@ -4,21 +4,21 @@
   "assets": [
     {
       "id": "rifle",
-      "triangles": 25556,
+      "triangles": 25676,
       "materials": 5,
-      "bytes": 2249712
+      "bytes": 2260224
     },
     {
       "id": "sniper",
-      "triangles": 24852,
+      "triangles": 24972,
       "materials": 6,
-      "bytes": 2415724
+      "bytes": 2426332
     },
     {
       "id": "plasma",
-      "triangles": 26240,
+      "triangles": 26360,
       "materials": 7,
-      "bytes": 2509168
+      "bytes": 2519680
     },
     {
       "id": "clip-1",

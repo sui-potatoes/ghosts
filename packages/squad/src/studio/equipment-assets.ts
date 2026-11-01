@@ -43,7 +43,7 @@ export class EquipmentAssets {
         return source.clone();
     }
     private async loadWeaponAsset(id: string): Promise<T.Group> {
-        const gltf = await new GLTFLoader().loadAsync(assetUrl(`weapons/${id}.glb?v=4`));
+        const gltf = await new GLTFLoader().loadAsync(assetUrl(`weapons/${id}.glb?v=5`));
         return gltf.scene;
     }
     private async create(type: Equipment["model"]) {

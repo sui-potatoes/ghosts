@@ -2,6 +2,26 @@
 // SPDX-License-Identifier: MIT
 import * as T from "three";
 
+// Authored hand arcs for the centered, full-size grip.
+const HAND_FIT: Record<string, Record<string, number[]>> = {
+    female: {
+        Thumb1: [-0.507817, 0.012727, 0.839902],
+        Thumb2: [0.457715, -0.054879, 0.937395],
+        Thumb3: [1, 0.1, 0.3],
+        Middle3: [-1, 0, 0.25],
+        Ring3: [-1, 0, 0.25],
+        Middle1: [-0.105492, -0.674895, 0.742532],
+        Middle2: [-0.2, 0, 1],
+    },
+    male: {
+        Thumb1: [-0.255827, 0.377884, 0.944429],
+        Thumb2: [0.916742, -0.01955, 1.727203],
+        Thumb3: [0.633155, 0.154538, 0.840291],
+        Middle3: [-1, 0, 0.25],
+        Ring3: [-0.814817, -0.258262, 0.54198],
+    },
+};
+
 /** Fit the trigger hand around the grip's outside surface; keep the wrist/socket invariant. */
 export function triggerGrip(root: T.Group, weapon: T.Group, sex: string, firing: boolean) {
     root.updateMatrixWorld(true);
@@ -15,7 +35,9 @@ export function triggerGrip(root: T.Group, weapon: T.Group, sex: string, firing:
                   .sub(joint.getWorldPosition(new T.Vector3()))
                   .normalize()
             : new T.Vector3(0, 1, 0).applyQuaternion(joint.getWorldQuaternion(new T.Quaternion()));
-        const to = new T.Vector3(...xyz).transformDirection(weapon.matrixWorld);
+        const to = new T.Vector3(...(HAND_FIT[sex]?.[name] ?? xyz)).transformDirection(
+            weapon.matrixWorld,
+        );
         const world = new T.Quaternion()
             .setFromUnitVectors(from, to)
             .multiply(joint.getWorldQuaternion(new T.Quaternion()));
@@ -43,7 +65,7 @@ export function triggerGrip(root: T.Group, weapon: T.Group, sex: string, firing:
             aim("Index3", [-2.520621, 1.457501, 1]);
         } else {
             aim("Index1", [1, -0.83561, -0.228045]);
-            aim("Index2", [1, -0.11171, 1.036552]);
+            aim("Index2", [0.969019, -0.428388, 0.968634]);
             aim("Index3", [-0.073637, 0.241341, 1]);
         }
     } else {

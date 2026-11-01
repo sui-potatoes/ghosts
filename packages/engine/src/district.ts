@@ -9,6 +9,7 @@ import { STREET, districtBuildings, footprint, surfaceHeight } from './district-
 import { storefrontFaces } from './storefronts';
 import type { StreetKind } from './environment';
 import type { SceneryKit } from './scene/maps';
+import { addPuddles, createPuddleExposure } from './scene/puddles';
 
 const textures: Record<string, T.Texture> = {};
 export async function loadDistrictTextures(renderer: T.WebGLRenderer) {
@@ -322,6 +323,10 @@ export function buildDistrict(scene: T.Scene, kit: SceneryKit) {
     for(const x of [s*1.4-.85,s*1.4+.85]) {block(scene,x,.35,s*10.8,.07,.7,.07,steel);block(scene,x,.045,s*10.8,.18,.09,.6,steel);}
     for(let n=0;n<2;n++)placeProp(kit,'cone',0,scene,s*(.45+n*1.05),0,s*(12.1+n*1.5));
   }
+  // Roofs keep their ground dry even when the camera fades the buildings away.
+  const exposure = createPuddleExposure(occluders.map(({ group }) => group), STREET.reach);
+  for (const ground of [asphalt, paving]) addPuddles(ground, exposure);
+  paving.addEventListener('dispose', () => exposure.texture.dispose());
   return occluders;
 }
 

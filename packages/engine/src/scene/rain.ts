@@ -10,6 +10,9 @@ const DROPS = 650,
   DEPTH = 55;
 
 const wrap = (value: number, size: number) => ((value % size) + size) % size;
+// A streak trails its head along exactly the opposite of its velocity.
+const WIND = -2, FALL = -15, SHUTTER = 0.045;
+const TAIL_X = -WIND * SHUTTER, TAIL_Y = -FALL * SHUTTER;
 
 /** Streaks of rain falling through a box over the district. */
 export class Rain {
@@ -21,14 +24,14 @@ export class Rain {
       const x = (sceneRandom() - 0.5) * WIDTH,
         y = sceneRandom() * HEIGHT,
         z = (sceneRandom() - 0.5) * DEPTH;
-      this.positions.set([x, y, z, x - 0.12, y + 0.65, z + 0.03], i * 6);
+      this.positions.set([x, y, z, x + TAIL_X, y + TAIL_Y, z], i * 6);
     }
     const geometry = new T.BufferGeometry();
     geometry.setAttribute("position", new T.BufferAttribute(this.positions, 3));
     // The animated drops can occupy the entire volume, not just their initial bounds.
     geometry.boundingBox = new T.Box3(
-      new T.Vector3(-WIDTH / 2 - 0.12, 0, -DEPTH / 2),
-      new T.Vector3(WIDTH / 2, HEIGHT + 0.65, DEPTH / 2 + 0.03),
+      new T.Vector3(-WIDTH / 2, 0, -DEPTH / 2),
+      new T.Vector3(WIDTH / 2 + TAIL_X, HEIGHT + TAIL_Y, DEPTH / 2),
     );
     geometry.boundingSphere = geometry.boundingBox.getBoundingSphere(new T.Sphere());
     this.mesh = new T.LineSegments(
@@ -50,10 +53,10 @@ export class Rain {
     if (!this.mesh.visible) return;
     const p = this.positions;
     for (let i = 0; i < p.length; i += 6) {
-      p[i] = wrap(p[i] - dt * 2 + WIDTH / 2, WIDTH) - WIDTH / 2;
-      p[i + 1] = wrap(p[i + 1] - dt * 15, HEIGHT);
-      p[i + 3] = p[i] - 0.12;
-      p[i + 4] = p[i + 1] + 0.65;
+      p[i] = wrap(p[i] + dt * WIND + WIDTH / 2, WIDTH) - WIDTH / 2;
+      p[i + 1] = wrap(p[i + 1] + dt * FALL, HEIGHT);
+      p[i + 3] = p[i] + TAIL_X;
+      p[i + 4] = p[i + 1] + TAIL_Y;
     }
     this.mesh.geometry.attributes.position.needsUpdate = true;
   }
