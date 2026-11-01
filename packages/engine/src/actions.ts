@@ -32,16 +32,16 @@ function syncScene() {
     t = s.targetUnit();
   battlefield.sync();
   // The aimed hostile's plate carries the odds and the predicted hp cut.
-  const aimed = s.mode === "fire" && !game.result ? t : undefined;
+  const aimed = u && s.mode === "fire" && !game.result ? t : undefined;
   battlefield.setAimReadout(
     aimed ?? null,
-    aimed && { chance: game.chance(u, aimed), ...damagePreview(u, aimed) },
+    u && aimed && { chance: game.chance(u, aimed), ...damagePreview(u, aimed) },
   );
   battlefield.showRange(u, s.mode === "move" && !s.busy);
-  if (s.mode === "grenade" && !s.busy) battlefield.showGrenadeRange(u);
+  if (u && s.mode === "grenade" && !s.busy) battlefield.showGrenadeRange(u);
   battlefield.setHover(false);
   battlefield.showPath(undefined);
-  if (s.mode === "move" || game.result) void battlefield.leaveAim();
+  if (!u || s.mode === "move" || game.result) void battlefield.leaveAim();
   else if (s.mode === "fire" && t) void battlefield.aimAt(u, t.pos, "fire");
   else if (s.mode === "grenade") {
     // Keep the overhead camera while choosing the landing point; shoulder shot begins on throw.
@@ -139,7 +139,8 @@ export function select(id: string) {
       return;
     }
     s.target = id;
-    s.mode = "fire";
+    // With nobody selected there is no shooter: the hostile is only marked.
+    if (s.selected) s.mode = "fire";
   } else {
     if (s.selected !== id) audio.speak("select", u);
     s.selected = id;
@@ -147,6 +148,18 @@ export function select(id: string) {
     s.mode = "move";
     s.grenadeTarget = null;
   }
+  audio.tone("click");
+  refresh();
+}
+
+/** Stand the selected operator down: nobody takes orders until the next pick. */
+export function deselect() {
+  const s = session;
+  if (s.busy || !s.selected) return;
+  s.selected = "";
+  s.battlefield.select("");
+  s.mode = "move";
+  s.grenadeTarget = null;
   audio.tone("click");
   refresh();
 }
@@ -162,7 +175,7 @@ export async function fire() {
   const s = session;
   const a = s.selectedUnit(),
     b = s.targetUnit();
-  if (!b) return;
+  if (!a || !b) return;
   await perform(async () => {
     const [shot] = await resolve({ type: "fire", unit: a.id, target: b.id });
     if (shot?.type !== "shot") {
@@ -183,9 +196,9 @@ export async function fire() {
 
 export async function throwGrenade() {
   const s = session;
-  if (!s.grenadeTarget) return;
-  const at: Cell = [...s.grenadeTarget],
-    u = s.selectedUnit();
+  const u = s.selectedUnit();
+  if (!s.grenadeTarget || !u) return;
+  const at: Cell = [...s.grenadeTarget];
   await perform(async () => {
     if (!(await order({ type: "grenade", unit: u.id, at }))) {
       notify(grenadeBlockReason(s.game, u, at) ?? "THROW UNAVAILABLE");
@@ -201,8 +214,13 @@ const STANDING_ORDERS = ["reload", "hunker", "overwatch", "secure"] as const;
 
 export async function action(name: string) {
   const s = session;
-  if (s.busy || !s.game.canAct(s.selectedUnit())) return;
   const u = s.selectedUnit();
+  if (s.busy) return;
+  if (!u) {
+    notify("NO OPERATOR SELECTED");
+    return;
+  }
+  if (!s.game.canAct(u)) return;
   audio.tone("click");
   if (name === "move" || name === "fire" || name === "grenade") {
     if (name === "fire" && s.mode === "fire") {
@@ -231,7 +249,7 @@ export async function pick(p: Cell, id?: string) {
   const s = session;
   if (s.busy || s.game.result) return;
   const u = s.selectedUnit();
-  if (s.mode === "grenade") {
+  if (u && s.mode === "grenade") {
     const reason = grenadeBlockReason(s.game, u, p);
     if (reason) {
       notify(reason);
@@ -243,10 +261,12 @@ export async function pick(p: Cell, id?: string) {
     return;
   }
   if (id) {
-    select(id);
+    // A second click on the operator taking orders stands them down.
+    if (id === s.selected && s.mode === "move") deselect();
+    else select(id);
     return;
   }
-  if (s.mode === "move") {
+  if (u && s.mode === "move") {
     await perform(async () => {
       if (!(await order({ type: "move", unit: u.id, to: p })))
         notify("DESTINATION UNAVAILABLE");

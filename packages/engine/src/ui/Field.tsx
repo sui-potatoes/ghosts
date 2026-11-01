@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { useEffect, useRef, useState, useSyncExternalStore, type RefObject } from "react";
-import { cancelTargeting, fire, pick, select, throwGrenade } from "../actions";
+import { cancelTargeting, deselect, fire, pick, select, throwGrenade } from "../actions";
 import { distance, weapons, type Encounter, type Unit } from "../game";
 import { padActive, padGlyph, padKind, subscribePad } from "../gamepad";
 import { pad2 } from "../html";
@@ -119,8 +119,9 @@ const WHEEL_ICONS: Record<WheelId, IconName> = {
 };
 
 /** Whether the order would land right now, and the hub's one-line reading of it. */
-function wheelStatus(game: Encounter, u: Unit, id: WheelId): { locked: boolean; note: string } {
+function wheelStatus(game: Encounter, u: Unit | undefined, id: WheelId): { locked: boolean; note: string } {
   if (id === "end-turn") return { locked: false, note: "PASS INITIATIVE" };
+  if (!u) return { locked: true, note: "NO OPERATOR" };
   if (!game.canAct(u)) return { locked: true, note: "NO AP" };
   switch (id) {
     case "fire":
@@ -207,14 +208,16 @@ function ActionWheel() {
           );
         })}
         <div className="wheel-center" aria-hidden="true">
-          <small>{u.name}</small>
+          <small>{u?.name ?? "SQUAD"}</small>
           <strong>{WHEEL_ACTIONS[s.wheelIndex].label}</strong>
           <span className={focused.locked ? "locked" : ""}>{focused.note}</span>
-          <span className="wheel-ap">
-            {[0, 1].map((j) => (
-              <i key={j} className={u.ap > j ? "filled" : ""} />
-            ))}
-          </span>
+          {u && (
+            <span className="wheel-ap">
+              {[0, 1].map((j) => (
+                <i key={j} className={u.ap > j ? "filled" : ""} />
+              ))}
+            </span>
+          )}
         </div>
       </div>
     </div>
@@ -244,14 +247,24 @@ function PadHintsBar() {
             [padGlyph("a"), "THROW"],
             [padGlyph("b"), "CANCEL"],
           ]
-        : [
-            [padGlyph("dpad"), "CURSOR"],
-            [padGlyph("a"), "MOVE"],
-            [padGlyph("y"), "ACTIONS"],
-            [`${padGlyph("lb")} ${padGlyph("rb")}`, "OPERATOR"],
-            [padGlyph("rt"), "AIM"],
-            [padGlyph("b"), "PAUSE"],
-          ];
+        : s.selected
+          ? [
+              [padGlyph("dpad"), "CURSOR"],
+              [padGlyph("a"), "MOVE"],
+              [padGlyph("y"), "ACTIONS"],
+              [`${padGlyph("lb")} ${padGlyph("rb")}`, "OPERATOR"],
+              [padGlyph("rt"), "AIM"],
+              [padGlyph("b"), "DESELECT"],
+            ]
+          : [
+              [padGlyph("ls"), "PAN"],
+              [padGlyph("rs"), "ORBIT · TILT"],
+              [`${padGlyph("lt")} ${padGlyph("rt")}`, "ZOOM"],
+              [padGlyph("a"), "SELECT"],
+              [`${padGlyph("lb")} ${padGlyph("rb")}`, "OPERATOR"],
+              [padGlyph("y"), "ACTIONS"],
+              [padGlyph("b"), "PAUSE"],
+            ];
   return (
     <div id="pad-hints" aria-hidden>
       {hints.map(([glyph, label]) => (
@@ -344,7 +357,7 @@ function ViewTools() {
       >
         <Icon name="map" />
       </button>
-      <button id="focus" aria-label="Focus selected operator" onClick={() => battlefield.focus()}>
+      <button id="focus" aria-label="Focus selected operator" disabled={!s.selected} onClick={() => battlefield.focus()}>
         <Icon name="focus" />
       </button>
     </div>
@@ -403,6 +416,7 @@ function TargetingHud() {
   const { game, busy } = s;
   const u = s.selectedUnit(),
     t = s.targetUnit();
+  if (!u) return null;
   const cancel = (
     <button id="cancel-target" disabled={busy} onClick={cancelTargeting}>
       CANCEL <kbd>{cap("cancel")}</kbd>
@@ -531,7 +545,7 @@ function SquadCards() {
             key={a.id}
             className={`squad-card ${s.selected === a.id ? "selected" : ""} ${a.hp <= 0 ? "kia" : ""}`}
             disabled={a.hp <= 0}
-            onClick={() => select(a.id)}
+            onClick={() => (s.selected === a.id ? deselect() : select(a.id))}
           >
             <img src={s.portraits.get(a.id)} alt={`${a.name} facial portrait`} />
             <span className="squad-index">{pad2(i + 1)}</span>

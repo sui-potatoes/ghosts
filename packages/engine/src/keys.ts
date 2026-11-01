@@ -54,7 +54,7 @@ export const COMBAT_LABELS: Record<CombatAction, string> = {
   hunker: "Hunker",
   secure: "Extract",
   confirm: "Confirm, or end turn",
-  cancel: "Cancel targeting, or pause",
+  cancel: "Cancel targeting, deselect, or pause",
   "next-operator": "Next operator",
   camera: "Close camera",
   grid: "Tactical grid",

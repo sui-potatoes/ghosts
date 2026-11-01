@@ -1,7 +1,7 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
-import { action, cancelTargeting, endTurn, fire, pick, select, throwGrenade } from "./actions";
+import { action, cancelTargeting, deselect, endTurn, fire, pick, select, throwGrenade } from "./actions";
 import { distance } from "./game";
 import { combatActionOf, isEditable as typing, type CombatAction } from "./keys";
 import { session } from "./session";
@@ -25,17 +25,20 @@ const ORDERS = new Set(["move", "fire", "grenade", "reload", "overwatch", "hunke
  */
 export function runCombatAction(command: CombatAction, { onPause, reverse }: ControlOptions = {}) {
   const s = session;
-  // A cancel nothing here wants goes to the host's pause menu.
+  // Cancel steps back: out of targeting, then off the selected operator, and
+  // what nothing here wants (or anything mid-animation) to the host's pause menu.
   if (command === "cancel" && s.mode === "move") {
-    onPause?.();
+    if (s.selected && !s.busy) deselect();
+    else onPause?.();
     return;
   }
   if (s.busy) return;
   if (command === "next-operator") {
     const living = s.game.allies;
+    const n = living.length;
     const i = living.findIndex((u) => u.id === s.selected);
-    if (living.length)
-      select(living[(i + (reverse ? -1 : 1) + living.length) % living.length].id);
+    // From no selection, forward starts at the first operator and back at the last.
+    if (n) select(living[i < 0 ? (reverse ? n - 1 : 0) : (i + (reverse ? -1 : 1) + n) % n].id);
     return;
   }
   const { battlefield } = s;
@@ -74,6 +77,11 @@ export function bindControls({ onPause }: ControlOptions = {}): () => void {
       return;
     }
     if (command === "cancel" && s.mode === "move") {
+      if (s.selected && !s.busy) {
+        e.preventDefault();
+        deselect();
+        return;
+      }
       if (!onPause) return;
       e.preventDefault();
       onPause();
@@ -113,6 +121,7 @@ function bindField() {
     const s = session;
     if (s.busy) return;
     const u = s.selectedUnit();
+    if (!u) return;
     if (s.mode === "move" && u.ap) {
       const path = battlefield.previewPath(p);
       battlefield.setHover(!!path);

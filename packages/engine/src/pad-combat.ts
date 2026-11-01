@@ -5,8 +5,8 @@ import { action, endTurn, pick, select } from "./actions";
 import { audio } from "./audio";
 import { runCombatAction, type ControlOptions } from "./controls";
 import type { Cell } from "./game";
-import { cancelDialog, onPad, type PadDir, type PadInput } from "./gamepad";
-import type { PadBindable, PadCombatAction } from "./keys";
+import { cancelDialog, onPad, padActive, type PadDir, type PadInput } from "./gamepad";
+import { PAD_COMBAT_ACTIONS, type PadBindable, type PadCombatAction, type PadCombatBindings } from "./keys";
 import { session } from "./session";
 import { engineSettings } from "./settings";
 
@@ -16,7 +16,8 @@ import { engineSettings } from "./settings";
  * through the player's `padCombat` record (keys.ts), the fixed grammar (A, B,
  * start, the d-pad and the sticks) literally. Only the input shapes
  * that keys do not have live here: the tile cursor, target walking, the
- * radial action wheel and focus inside the engine's dialogs. Registered
+ * radial action wheel, the free camera while nobody is selected, and focus
+ * inside the engine's dialogs. Registered
  * above the app's menu bus — while the encounter owns the screen, menus see
  * nothing; paused or behind a host dialog it yields the pad back.
  */
@@ -116,6 +117,50 @@ function cycleTarget(dir: 1 | -1) {
 const TURN_SPEED = 2.4;
 /** Dolly rate per second of right stick: up (negative) moves the camera in. */
 const ZOOM_SPEED = 1.1;
+/** Free camera: pan in view distances per second, tilt in radians per second. */
+const PAN_SPEED = 0.75;
+const TILT_SPEED = 1.3;
+/** How near the focus, in cells, an operator must stand for A to pick them up. */
+const PICKUP_RANGE = 3;
+
+/** Orders for an operator; their buttons are the free camera's while nobody is selected. */
+const UNIT_ORDERS = new Set<PadCombatAction>(["fire", "grenade", "reload"]);
+
+/** `b` is unbound or bound to an operator's order, so the free camera may take it. */
+function cameraMay(binds: PadCombatBindings, b: PadBindable) {
+  return !PAD_COMBAT_ACTIONS.some((a) => binds[a] === b && !UNIT_ORDERS.has(a));
+}
+
+/** The living operator nearest the camera's focus, within pickup range. */
+function operatorAtFocus() {
+  const { game, battlefield } = session;
+  const at = battlefield.focusCell();
+  if (!at) return undefined;
+  let best: (typeof game.allies)[number] | undefined;
+  let bestDistance = PICKUP_RANGE;
+  for (const u of game.allies) {
+    const d = Math.hypot(u.pos[0] - at[0], u.pos[1] - at[1]);
+    if (d <= bestDistance) [best, bestDistance] = [u, d];
+  }
+  return best;
+}
+
+/**
+ * Nobody selected: the camera gets the whole pad's attention. The left
+ * stick and the d-pad pan, the triggers zoom (unless bound to something
+ * that works without an operator); the right stick's tilt is in the caller.
+ */
+function freeCamera(pad: PadInput, binds: PadCombatBindings, dt: number) {
+  const { battlefield } = session;
+  let x = pad.axis(0) + (pad.held("right") ? 1 : 0) - (pad.held("left") ? 1 : 0);
+  let y = pad.axis(1) + (pad.held("down") ? 1 : 0) - (pad.held("up") ? 1 : 0);
+  const push = Math.hypot(x, y);
+  if (push > 1) [x, y] = [x / push, y / push];
+  if (push) battlefield.pan(x * PAN_SPEED * dt, -y * PAN_SPEED * dt);
+  const zoom =
+    (cameraMay(binds, "lt") && pad.held("lt") ? 1 : 0) - (cameraMay(binds, "rt") && pad.held("rt") ? 1 : 0);
+  if (zoom) battlefield.dolly(1 + zoom * ZOOM_SPEED * dt);
+}
 
 /** Take the pad while the encounter owns the screen. Returns the unbind. */
 export function bindPadCombat({ onPause }: ControlOptions = {}): () => void {
@@ -147,12 +192,20 @@ export function bindPadCombat({ onPause }: ControlOptions = {}): () => void {
 
     // The right stick drives the camera, even mid-animation: sideways
     // orbits, up and down dolly in and out, both smooth and frame-timed.
+    // With nobody selected the camera is free: up and down tilt instead,
+    // and the left stick, the d-pad and the triggers pan and zoom.
+    const free = !s.selected && !s.wheel;
     const rx = pad.axis(2);
     if (rx) battlefield.rotate(rx * TURN_SPEED * dt);
     const ry = pad.axis(3);
-    if (ry) battlefield.dolly(1 + ry * ZOOM_SPEED * dt);
+    if (ry && free) battlefield.tilt(ry * TILT_SPEED * dt);
+    else if (ry) battlefield.dolly(1 + ry * ZOOM_SPEED * dt);
+    if (free) freeCamera(pad, binds, dt);
 
-    if (s.busy || s.resolving) return true;
+    if (s.busy || s.resolving) {
+      if (free) battlefield.markTile(null);
+      return true;
+    }
     if (s.wheel) {
       wheelInput(pad, binds.wheel);
       return true;
@@ -166,7 +219,10 @@ export function bindPadCombat({ onPause }: ControlOptions = {}): () => void {
       runCombatAction("grid");
       return true;
     }
-    if (game.result || game.phase !== "player") return true;
+    if (game.result || game.phase !== "player") {
+      if (free) battlefield.markTile(null);
+      return true;
+    }
     if (bound("wheel")) {
       s.wheel = true;
       s.wheelIndex = 0;
@@ -184,6 +240,14 @@ export function bindPadCombat({ onPause }: ControlOptions = {}): () => void {
     }
     if (bound("next-operator")) {
       runCombatAction("next-operator");
+      return true;
+    }
+    if (free) {
+      // The operator nearest the focus wears the hover tile; A takes them, the focus button centres on them.
+      const near = operatorAtFocus();
+      battlefield.markTile(padActive() && near ? near.pos : null);
+      if (near && pad.pressed("a")) select(near.id);
+      else if (near && bound("focus")) battlefield.focus(near.id);
       return true;
     }
     if (bound("fire")) {
@@ -204,6 +268,7 @@ export function bindPadCombat({ onPause }: ControlOptions = {}): () => void {
     }
 
     const u = s.selectedUnit();
+    if (!u) return true;
     if (s.mode === "fire") {
       if (pad.nav("left")) cycleTarget(-1);
       else if (pad.nav("right")) cycleTarget(1);
