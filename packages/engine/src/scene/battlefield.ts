@@ -40,6 +40,9 @@ export interface BattlefieldOptions {
 
 type SavedCamera = { position: T.Vector3; target: T.Vector3; fov: number };
 
+/** Metres above the boots the camera centres on an operator: the belt, not the tile. */
+const FOCUS_HEIGHT = 1;
+
 /**
  * The 3D encounter: the district, the operatives and the camera. It shows the
  * encounter's state and animates the events the rules emit (`play`); it never
@@ -56,7 +59,8 @@ export class Battlefield {
   game: Encounter;
   renderMode: RenderMode = "battery";
   timeOfDay: TimeOfDay = "night";
-  selected = "v";
+  /** The selected operator's id; "" with nobody selected. */
+  selected = "";
   cinematic = false;
   paused = false;
   disposed = false;
@@ -286,7 +290,7 @@ export class Battlefield {
     this.invalidate();
   }
 
-  showRange(u: Unit, show: boolean) {
+  showRange(u: Unit | undefined, show: boolean) {
     this.overlays.showRange(this.game, u, show);
   }
 
@@ -311,6 +315,14 @@ export class Battlefield {
     if (this.overlays.hoverAt(p)) this.invalidate();
   }
 
+  /** The hover tile on `p`, or hidden on null; renders only on a change. */
+  markTile(p: Cell | null) {
+    const moved = !!p && this.overlays.hoverAt(p);
+    if (!moved && this.overlays.hoverVisible === !!p) return;
+    this.overlays.setHover(!!p);
+    this.invalidate();
+  }
+
   // === Camera ===
 
   select(id: string) {
@@ -322,6 +334,7 @@ export class Battlefield {
     const rig = this.units.rig(id);
     if (!rig) return;
     const target = rig.root.position.clone();
+    target.y += FOCUS_HEIGHT;
     const offset = this.camera.position.clone().sub(this.controls.target);
     const from = this.controls.target.clone();
     this.tween(0.6, (t) => {
@@ -350,6 +363,39 @@ export class Battlefield {
   }
 
   /**
+   * Slide the view over the field, the focus and the camera together:
+   * `right` and `forward` are screen directions in fractions of the camera's
+   * distance to its focus, so a stick pans at one on-screen pace at any zoom.
+   */
+  pan(right: number, forward: number) {
+    if (this.aimKey || this.cameraMotion) return;
+    const f = this.controls.target.clone().sub(this.camera.position);
+    const reach = f.length();
+    f.setY(0).normalize();
+    const step = new T.Vector3(-f.z, 0, f.x).multiplyScalar(right * reach).addScaledVector(f, forward * reach);
+    this.controls.target.add(step);
+    this.camera.position.add(step);
+    this.controls.update();
+    this.invalidate();
+  }
+
+  /** Tip the camera toward overhead (`angle` > 0) or the horizon, within the controls' limits. */
+  tilt(angle: number) {
+    if (this.aimKey || this.cameraMotion) return;
+    const { controls } = this;
+    const orbit = new T.Spherical().setFromVector3(this.camera.position.clone().sub(controls.target));
+    orbit.phi = T.MathUtils.clamp(orbit.phi - angle, controls.minPolarAngle, controls.maxPolarAngle);
+    this.camera.position.setFromSpherical(orbit).add(controls.target);
+    controls.update();
+    this.invalidate();
+  }
+
+  /** The cell under the camera's focus, or null off the map. */
+  focusCell(): Cell | null {
+    return this.space.cellAt(this.controls.target);
+  }
+
+  /**
    * A screen-space step (up = away from the viewer) as the nearest grid step
    * under the current camera: stick directions follow the view, not the map.
    */
@@ -360,11 +406,15 @@ export class Battlefield {
     return Math.abs(x) >= Math.abs(z) ? [Math.sign(x), 0] : [0, Math.sign(z)];
   }
 
-  /** Close camera on the selected operator, or the tactical overview. */
+  /** Close camera on the selected operator (on the focus, with nobody selected), or the tactical overview. */
   view(cinematic: boolean) {
     this.cinematic = cinematic;
-    const u = this.units.rig(this.selected)!;
-    const target = cinematic ? u.root.position.clone().add(new T.Vector3(0, 0.7, 0)) : new T.Vector3(0, 0, -0.3);
+    const rig = this.units.rig(this.selected);
+    const target = !cinematic
+      ? new T.Vector3(0, 0, -0.3)
+      : rig
+        ? rig.root.position.clone().add(new T.Vector3(0, 0.7, 0))
+        : this.controls.target.clone();
     const position = target.clone().add(cinematic ? new T.Vector3(6, 3.5, 6) : new T.Vector3(22, 25, 28));
     const start = this.camera.position.clone(),
       startTarget = this.controls.target.clone();

@@ -23,7 +23,8 @@ export class Session {
   driver: EncounterDriver;
   readonly makeDriver: DriverFactory;
   battlefield!: Battlefield;
-  selected: string;
+  /** The operator taking orders; "" when none is (the opening state, and after a deselect). */
+  selected = "";
   target: string;
   mode: Mode = "move";
   busy = false;
@@ -51,7 +52,6 @@ export class Session {
     this.game = new Encounter(scenario);
     this.makeDriver = makeDriver;
     this.driver = makeDriver(this.game);
-    this.selected = this.game.allies[0]?.id ?? "";
     this.target = this.game.enemies[0]?.id ?? "";
   }
 
@@ -79,27 +79,29 @@ export class Session {
     return this.panel !== null || this.debrief;
   }
 
-  selectedUnit(): Unit {
-    return this.game.unit(this.selected)!;
+  selectedUnit(): Unit | undefined {
+    return this.game.unit(this.selected);
   }
 
   targetUnit(): Unit | undefined {
     return this.game.unit(this.target);
   }
 
-  /** Keep the selection on the living: the first ally standing, the first hostile left. */
+  /** Keep the selection on the living: a fallen operator is deselected, the aim moves to the first hostile left. */
   settleSelection() {
     const { game } = this;
-    if (!game.allies.some((u) => u.id === this.selected) && game.allies.length) {
-      this.selected = game.allies[0].id;
-      this.battlefield.select(this.selected);
+    if (this.selected && !game.allies.some((u) => u.id === this.selected)) {
+      this.selected = "";
+      this.mode = "move";
+      this.grenadeTarget = null;
+      this.battlefield.select("");
     }
     if (!game.enemies.some((u) => u.id === this.target)) this.target = game.enemies[0]?.id ?? "";
   }
 
-  /** Back to the opening selection; the caller swaps `game` first. */
+  /** Back to the opening state, nobody selected; the caller swaps `game` first. */
   resetSelection() {
-    this.selected = this.game.allies[0]?.id ?? "";
+    this.selected = "";
     this.target = this.game.enemies[0]?.id ?? "";
     this.mode = "move";
     this.grenadeTarget = null;

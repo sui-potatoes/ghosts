@@ -105,7 +105,13 @@ export function IntelPanel() {
                 <span>
                   <strong>{e.name}</strong>
                   <small>
-                    {e.role} <i>/</i> {distance(u.pos, e.pos)} TILES
+                    {e.role}
+                    {u && (
+                      <>
+                        {" "}
+                        <i>/</i> {distance(u.pos, e.pos)} TILES
+                      </>
+                    )}
                   </small>
                 </span>
                 <span className="target-hp">
@@ -113,8 +119,14 @@ export function IntelPanel() {
                   <small>HP</small>
                 </span>
                 <span className="hit-chance">
-                  {game.chance(u, e)}
-                  <small>%</small>
+                  {u ? (
+                    <>
+                      {game.chance(u, e)}
+                      <small>%</small>
+                    </>
+                  ) : (
+                    "—"
+                  )}
                 </span>
               </button>
             ))
@@ -153,6 +165,17 @@ function ContextCard() {
   const { game } = s;
   const u = s.selectedUnit(),
     t = s.targetUnit();
+  if (!u)
+    return (
+      <div id="context-card">
+        <div className="section-title">
+          LOADOUT <span>—</span>
+        </div>
+        <div className="action-instruction">
+          <span className="amber-text">NO OPERATOR SELECTED</span>
+        </div>
+      </div>
+    );
   return (
     <div id="context-card">
       <div className="section-title">
@@ -213,15 +236,17 @@ export function CommandDeck() {
   const padDriving = useSyncExternalStore(subscribePad, padActive);
   const { game, busy } = s;
   const u = s.selectedUnit();
-  const cannot = busy || !game.canAct(u);
+  const cannot = busy || !u || !game.canAct(u);
   if (padDriving) return null;
-  const disabled: Record<string, boolean> = {
-    reload: u.ammo === u.clip,
-    grenade: u.grenade,
-    fire: !u.ammo || !game.enemies.length,
-    overwatch: !u.ammo,
-    secure: game.secured || distance(u.pos, game.relay) > 0,
-  };
+  const disabled: Record<string, boolean> = u
+    ? {
+        reload: u.ammo === u.clip,
+        grenade: u.grenade,
+        fire: !u.ammo || !game.enemies.length,
+        overwatch: !u.ammo,
+        secure: game.secured || distance(u.pos, game.relay) > 0,
+      }
+    : {};
   const label = (id: string, title: string) =>
     id === "fire" && s.mode === "fire"
       ? "Confirm shot"
@@ -229,7 +254,7 @@ export function CommandDeck() {
         ? "Confirm throw"
         : title;
   const cost = (id: string) =>
-    id === "fire" ? (u.weapon === "pistol" ? "1 AP" : "ENDS TURN") : id === "overwatch" || id === "hunker" ? "ALL AP" : "1 AP";
+    id === "fire" ? (u?.weapon === "pistol" ? "1 AP" : "ENDS TURN") : id === "overwatch" || id === "hunker" ? "ALL AP" : "1 AP";
   return (
     <>
       <section className="command-deck" aria-label="Operator action controls">
@@ -237,15 +262,25 @@ export function CommandDeck() {
           <span className="selected-mark">
             <Icon name="shield" />
           </span>
-          <div>
-            <small>SELECTED OPERATOR</small>
-            <strong>
-              {u.name} <span>/ {u.role}</span>
-            </strong>
-            <span className="operator-meta">
-              {u.ap} AP <i>·</i> {u.ammo} / {u.clip} ROUNDS <i>·</i> {game.cover(u) > 0 ? "IN COVER" : "EXPOSED"}
-            </span>
-          </div>
+          {u ? (
+            <div>
+              <small>SELECTED OPERATOR</small>
+              <strong>
+                {u.name} <span>/ {u.role}</span>
+              </strong>
+              <span className="operator-meta">
+                {u.ap} AP <i>·</i> {u.ammo} / {u.clip} ROUNDS <i>·</i> {game.cover(u) > 0 ? "IN COVER" : "EXPOSED"}
+              </span>
+            </div>
+          ) : (
+            <div>
+              <small>NO OPERATOR SELECTED</small>
+              <strong>
+                SQUAD <span>/ STANDING BY</span>
+              </strong>
+              <span className="operator-meta">CLICK AN OPERATOR, OR PRESS THEIR NUMBER</span>
+            </div>
+          )}
         </div>
         <div className="action-list">
           {ORDERS.map(({ id, icon, title }) => (
