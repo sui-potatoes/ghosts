@@ -962,14 +962,14 @@ Records: <code>Grenade</code>, then the records of <code><a href="./map.md#comma
 
 ## Function `explode`
 
-Apply area damage centered at <code>(x, y)</code>: every unit in the von Neumann
-neighborhood of <code>radius</code> (center included) takes <code>damage</code>, reduced by its
-armor and dodged only if <code>can_dodge</code>. With <code>env_damage</code>, covers in the area
-are destroyed (<code>Cover</code> -> <code>Empty</code>). Shared by grenades and area weapons.
+Apply area damage centered at `(x, y)`: every unit in the von Neumann
+neighborhood of `radius` (center included) takes `damage`, reduced by its
+armor and dodged only if `can_dodge`. With `env_damage`, covers in the area
+are destroyed (`Cover` -> `Empty`). Shared by grenades and area weapons.
 
-Records: <code>Explosion</code>, then <code>[Dodged]</code>, <code>Damage</code>, <code>[UnitKIA]</code> per unit in
-the area. Tiles are visited in the order of <code>Grid.von_neumann_neighbors</code>
-with the center tile last; a replay must walk them in the same order.
+Records: `Explosion`, then `[Dodged]`, `Damage`, `[UnitKIA]` per unit in
+the area. Tiles are visited in the order of `Grid.von_neumann_neighbors`
+with the center tile last.
 
 
 <pre><code><b>fun</b> <a href="./map.md#commander_map_explode">explode</a>(<a href="./map.md#commander_map">map</a>: &<b>mut</b> <a href="./map.md#commander_map_Map">commander::map::Map</a>, rng: &<b>mut</b> <a href="../../.doc-deps/sui/random.md#sui_random_RandomGenerator">sui::random::RandomGenerator</a>, x: u16, y: u16, radius: u16, damage: u8, env_damage: bool, can_dodge: bool): vector&lt;<a href="./history.md#commander_history_Record">commander::history::Record</a>&gt;
@@ -1638,7 +1638,7 @@ Creates a demo map #1.
 - Map: 01 - 7x7 LEGO prototype.
 - Unit positions: (0, 3), (1, 6), (6, 5)
 - Firing lane in the demo: (3, 1) <-> (0, 3)
-- Goal: close encounter with low and high cover to test line of sight and cover mechanics.
+- Contains low and high cover around a close-range firing lane.
 - Schema:
 
 ```

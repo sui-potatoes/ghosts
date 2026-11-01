@@ -250,7 +250,7 @@ roofless office includes workstations, meeting furniture, an archive and two
 open doorways. Movement footprints and cover come from `office/plan.ts`;
 `Destruction` renders the same props with cached rigid fragments. Desks and
 filing cabinets provide low cover; glass and chairs only block movement.
-Missed shots and grenades damage furniture, while steel walls and security
+Missed shots and grenades damage furniture, while steel walls and
 doors require blasts. Their vision panes shatter independently. Destroyed
 props release owned movement / cover cells; shared cells remain blocked until
 all owners break. Desktop items and task lamps follow their supporting desk.

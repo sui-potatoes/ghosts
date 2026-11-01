@@ -2,17 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * The one place transactions are signed and sent. `<TransactionSender />` is
- * mounted once in the shell; `sendTransaction` is callable from anywhere
- * without React context. Every transaction sends AS the connected account —
- * and signs with this device's session key whenever one is authorized in the
- * account's on-chain alias set, so a rename or a combat order costs no
- * passkey ceremony. Without an authorized key the wallet signs as before.
- * Session management itself passes `{ passkey: true }`: a session key must
- * never mint or remove sessions on its own.
- *
- * Sends are serialized: rapid transactions otherwise race for the same gas
- * coin and equivocate.
+ * Exposes transaction sending through the mounted TransactionSender.
+ * Sends are serialized and default to the connected account as sender.
+ * With session-key support, a missing session is authorized through the
+ * wallet before sending. Otherwise the wallet signs the transaction.
+ * `{ passkey: true }` selects the wallet signer directly.
  */
 
 import {
@@ -31,7 +25,7 @@ import type { ExecutedTransaction } from "./executor";
 import { supportsSessionKeys } from "./session-key";
 
 export interface SendOptions {
-    /** Always the wallet ceremony — for anything that manages sessions. */
+    /** Use the wallet signer directly, bypassing session authorization. */
     passkey?: boolean;
 }
 
@@ -40,11 +34,9 @@ type Send = (tx: Transaction, opts?: SendOptions) => Promise<ExecutedTransaction
 let send: Send | null = null;
 
 /**
- * Sign and send `tx` as the connected account — with the session key when
- * this device holds an authorized one, with the wallet otherwise — behind
- * any other transaction in flight. Returns `null` when no wallet is signed
- * in — callers treating on-chain work as optional skip silently — and
- * rejects when the transaction fails (in simulation or on chain).
+ * Queue `tx` through the mounted sender, selecting or authorizing a session
+ * signer unless `passkey` is set or session keys are unsupported. Returns
+ * null when no sender is mounted; rejects if authorization or sending fails.
  */
 export function sendTransaction(
     tx: Transaction,

@@ -24,16 +24,14 @@ const SRC = "/sounds/ui-tick.wav";
 /** The audible window of the sample: skip the attack, keep the knock. */
 const OFFSET = 0.02;
 const LENGTH = 0.08;
-/** The band-pass keeps a narrow slice of the sample's energy; make up for it
- * so the top of the Interface slider is genuinely loud. */
+/** Gain multiplier applied after the band-pass filter. */
 const MAKEUP = 2;
 
 let ctx: AudioContext | null = null;
 let clip: AudioBuffer | null = null;
 let loading = false;
 
-/** The context and clip, first wanted on an interaction; the first tick may
- * still be loading and stays silent, which a cursor sound can afford. */
+/** Create or resume the context, start loading the clip, and report if it is loaded. */
 function ensure(): boolean {
     ctx ??= new AudioContext();
     // Created before the first gesture the context sits suspended; keep asking.

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 export type RenderMode = "battery" | "smooth";
-/** Null means no animation frame should be requested at all. */
+/** Return 60 FPS when active, 30 when idle, or null when hidden or idle in battery mode. */
 export function renderCadence(
   mode: RenderMode,
   visible: boolean,

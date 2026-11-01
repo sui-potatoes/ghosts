@@ -90,7 +90,7 @@ export class Units {
     return id ? this.game.unit(id) : undefined;
   }
 
-  /** True while any rig is in a motion the loop must keep rendering. */
+  /** True when any unit rig reports that it is busy. */
   get busy() {
     for (const r of this.rigs.values()) if (r.busy) return true;
     return false;
@@ -142,7 +142,7 @@ export class Units {
     }
   }
 
-  /** Points the camera must keep in view: chest height of every living unit. */
+  /** World-space chest positions of living units with loaded rigs. */
   chestPoints(into: T.Vector3[]): T.Vector3[] {
     const points: T.Vector3[] = [];
     let sample = 0;

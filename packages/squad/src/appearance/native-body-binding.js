@@ -3,7 +3,7 @@
 
 import * as T from "three";
 const canonical = (name) => name.replace(/[^a-zA-Z0-9]/g, "");
-/** Move the combat skeleton into native rest anatomy; never reshape the native body to the old rig. */
+/** Copy native rest transforms and inverse bind matrices onto matching combat bones. */
 export function bindNativeSkeleton(skeleton, rig) {
     // SkeletonUtils clones may share inverse matrices with other operators. Own them before editing.
     skeleton.boneInverses = skeleton.boneInverses.map((matrix) => matrix.clone());

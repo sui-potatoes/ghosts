@@ -104,7 +104,7 @@ export function sanitizeCombatBindings(raw: unknown): CombatBindings {
   return out;
 }
 
-/** True when typing into `target` should win over game bindings. */
+/** True if target is an Element in an input, select, textarea or contenteditable element. */
 export function isEditable(target: unknown): boolean {
   return target instanceof Element && !!target.closest("input, select, textarea, [contenteditable]");
 }

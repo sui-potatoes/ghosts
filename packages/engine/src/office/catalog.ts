@@ -24,7 +24,7 @@ export const officeCatalog = [
   ["desk-tray", "Document trays", "Desktop"],
   ["cubicle", "Fabric cubicle", "Architecture"],
   ["glass-door", "Glass door", "Architecture"],
-  ["steel-door", "Security door", "Architecture"],
+  ["steel-door", "Steel door", "Architecture"],
   ["keypad", "PIN access pad", "Equipment"],
   ["steel-wall", "Steel wall", "Architecture"],
   ["window-wall", "Steel / glass wall", "Architecture"],

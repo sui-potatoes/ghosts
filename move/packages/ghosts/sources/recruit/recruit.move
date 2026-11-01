@@ -122,10 +122,8 @@ public fun default(ctx: &mut TxContext): Recruit {
     }
 }
 
-/// Create a new `Recruit` with the given name and backstory.
-/// TODOs:
-/// - [ ] restrict who can submit new names and backstory. Right now anyone can
-///       create a Recruit with any name and backstory.
+/// Create an unequipped rookie with the given name, default stats, and the
+/// transaction sender as leader.
 public fun new(name: String, backstory: String, ctx: &mut TxContext): Recruit {
     Recruit {
         id: object::new(ctx),

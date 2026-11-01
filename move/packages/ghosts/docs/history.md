@@ -3,11 +3,8 @@
 
 # Module `commander::history`
 
-Stores history of a single Game relaxing the need for event queries and
-providing a single point of truth.
-
-It replaces events API, providing all key game events in an easy to read
-minimalistic representation.
+Stores game action records in order and emits `HistoryUpdated` when
+records are added or appended.
 
 
 -  [Struct `History`](#commander_history_History)
@@ -367,9 +364,7 @@ Create empty history.
 
 ## Function `add`
 
-Add a single record.
-WARNING: if you're adding multiple record in the same transaction,
-    use <code><a href="./history.md#commander_history_append">append</a></code> to emit a single event!
+Append one record and emit a `HistoryUpdated` event containing it.
 
 
 <pre><code><b>public</b> <b>fun</b> <a href="./history.md#commander_history_add">add</a>(h: &<b>mut</b> <a href="./history.md#commander_history_History">commander::history::History</a>, record: <a href="./history.md#commander_history_Record">commander::history::Record</a>)
@@ -396,7 +391,7 @@ WARNING: if you're adding multiple record in the same transaction,
 
 ## Function `append`
 
-Add a new <code><a href="./history.md#commander_history_Record">Record</a></code> to the <code><a href="./history.md#commander_history_History">History</a></code> log.
+Append the records in order and emit one `HistoryUpdated` event with them.
 
 
 <pre><code><b>public</b> <b>fun</b> <a href="./history.md#commander_history_append">append</a>(h: &<b>mut</b> <a href="./history.md#commander_history_History">commander::history::History</a>, records: vector&lt;<a href="./history.md#commander_history_Record">commander::history::Record</a>&gt;)
@@ -806,7 +801,7 @@ Deserialize <code><a href="./history.md#commander_history_History">History</a></
 
 ## Function `from_bcs`
 
-Serialize <code><a href="./history.md#commander_history_History">History</a></code> to bytes.
+Deserialize `History` from the BCS reader.
 
 
 <pre><code><b>public</b>(package) <b>fun</b> <a href="./history.md#commander_history_from_bcs">from_bcs</a>(bcs: &<b>mut</b> <a href="../../.doc-deps/sui/bcs.md#sui_bcs_BCS">sui::bcs::BCS</a>): <a href="./history.md#commander_history_History">commander::history::History</a>

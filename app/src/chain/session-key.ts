@@ -2,24 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * The device session key: an ephemeral ed25519 keypair that, once the owner
- * aliases it on chain (`sui::address_alias`), signs transactions AS the main
- * account without further passkey ceremonies.
+ * Creates and stores an Ed25519 session key in IndexedDB. The private key is
+ * generated as a non-extractable WebCrypto CryptoKey; the public key and
+ * creation and last-use timestamps are stored alongside it.
  *
- * Security model — the strongest a web page can hold a signing key:
- * - The private key is a NON-EXTRACTABLE WebCrypto `CryptoKey`. Its bytes
- *   never exist in JavaScript: not at creation, not at signing, and no code
- *   path (including an XSS payload) can export them. A compromised page can
- *   at worst use the key while it runs; it cannot steal it for later.
- * - The key handle lives in IndexedDB, scoped to this origin and device, and
- *   never leaves the browser's own key store. Nothing is written to
- *   localStorage, nothing is serialized, there is no backup or export path:
- *   losing the device loses the key, which is the point — the on-chain alias
- *   is removed from any device that still has the passkey.
- * - Scope is bounded on chain, not in the browser: the key is powerful only
- *   while its address sits in the owner's `AddressAliases` set, and the
- *   Sessions panel shows every authorized key with its last action, so stale
- *   ones get terminated.
+ * SessionSigner signs bytes with the stored key and updates its last-use
+ * timestamp. The alias and sender modules handle on-chain authorization and
+ * renewal; this module exposes the key's age check and local deletion.
  */
 
 import { Signer, type PublicKey, type SignatureScheme } from "@mysten/sui/cryptography";
@@ -30,7 +19,7 @@ const STORE = "keys";
 const SLOT = "current";
 
 export interface StoredSessionKey {
-    /** Non-extractable private key; only `sign` ever touches it. */
+    /** Non-extractable WebCrypto private key used by SessionSigner.sign. */
     privateKey: CryptoKey;
     /** Raw 32-byte ed25519 public key. */
     publicKey: Uint8Array;
@@ -64,10 +53,8 @@ async function inStore<T>(
 }
 
 /**
- * Whether this browser can hold a session key safely: WebCrypto ed25519 with
- * a non-extractable private key. Modern Safari, Chrome and Firefox do; where
- * it is missing the feature stays off rather than falling back to a softer
- * store.
+ * Attempts to generate an Ed25519 keypair and returns whether its private
+ * key is non-extractable. Returns false if generation fails.
  */
 export async function supportsSessionKeys(): Promise<boolean> {
     try {
@@ -123,18 +110,17 @@ export function sessionAddress(key: StoredSessionKey): string {
 }
 
 /**
- * Hard lifetime of a session key, from creation — not from last use, so a
- * copied browser profile goes dark on schedule no matter how busy it keeps
- * itself. Renewal is one passkey prompt, run automatically by the sender.
+ * Local expiry threshold measured from key creation, used by sessionExpired.
+ * On-chain alias removal is handled separately by the alias module.
  */
 export const SESSION_TTL_MS = 7 * 86_400_000;
 
-/** Whether `key` is past its lifetime and must self-expire. */
+/** Whether the key's age exceeds SESSION_TTL_MS. */
 export function sessionExpired(key: StoredSessionKey): boolean {
     return Date.now() - key.createdAt > SESSION_TTL_MS;
 }
 
-/** Signs with the non-extractable key; the bytes never surface. */
+/** Signs bytes with the stored WebCrypto key and records the last-use time. */
 export class SessionSigner extends Signer {
     constructor(private readonly key: StoredSessionKey) {
         super();

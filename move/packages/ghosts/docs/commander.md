@@ -141,7 +141,7 @@ A preset is a map that is required to start a new game.
 <code><a href="./map.md#commander_map">map</a>: <a href="./map.md#commander_map_Map">commander::map::Map</a></code>
 </dt>
 <dd>
- The map that will be cloned and used for the new game.
+ The map copied when a game starts from this preset.
 </dd>
 <dt>
 <code>name: <a href="../../.doc-deps/std/string.md#std_string_String">std::string::String</a></code>
@@ -176,8 +176,7 @@ A preset is a map that is required to start a new game.
 
 ## Struct `Host`
 
-Host is an object created to mark a hosted game. An account joining a hosted
-game will consume this object and create a new <code><a href="./commander.md#commander_commander_Game">Game</a></code> with it.
+Stores the game ID, name, timestamp and host address for a hosted game.
 
 
 <pre><code><b>public</b> <b>struct</b> <a href="./commander.md#commander_commander_Host">Host</a> <b>has</b> key
@@ -224,8 +223,7 @@ game will consume this object and create a new <code><a href="./commander.md#com
 
 ## Struct `Game`
 
-A single instance of the game. A <code><a href="./commander.md#commander_commander_Game">Game</a></code> object is created when a new game is
-started, it contains the Map and the
+Stores a game's map, player addresses, spawn positions, history and recruits.
 
 
 <pre><code><b>public</b> <b>struct</b> <a href="./commander.md#commander_commander_Game">Game</a> <b>has</b> key
@@ -351,8 +349,8 @@ Stack limit of public games in the <code><a href="./commander.md#commander_comma
 
 ## Function `publish_map`
 
-Register a new <code>Map</code> so it can be played.
-Spawn positions must be in bounds, walkable and unoccupied.
+Deserialize and share a map preset. Abort if a spawn position is malformed,
+out of bounds, unwalkable or occupied.
 
 
 <pre><code><b>public</b> <b>fun</b> <a href="./commander.md#commander_commander_publish_map">publish_map</a>(cmd: &<b>mut</b> <a href="./commander.md#commander_commander_Commander">commander::commander::Commander</a>, name: <a href="../../.doc-deps/std/string.md#std_string_String">std::string::String</a>, bytes: vector&lt;u8&gt;, ctx: &<b>mut</b> <a href="../../.doc-deps/sui/tx_context.md#sui_tx_context_TxContext">sui::tx_context::TxContext</a>)

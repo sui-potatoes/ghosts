@@ -1,11 +1,8 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
-/// Stores history of a single Game relaxing the need for event queries and
-/// providing a single point of truth.
-///
-/// It replaces events API, providing all key game events in an easy to read
-/// minimalistic representation.
+/// Stores game action records in order and emits `HistoryUpdated` when
+/// records are added or appended.
 module ghosts::history;
 
 use sui::{bcs::{Self, BCS}, event};
@@ -18,7 +15,7 @@ public struct HistoryUpdated(vector<Record>) has copy, drop;
 
 /// A single record in the history.
 public enum Record has copy, drop, store {
-    /// Block header for attack action.
+    /// Block header for reload action.
     Reload(vector<u16>),
     /// Next turn action.
     NextTurn(u16),
@@ -48,16 +45,14 @@ public enum Record has copy, drop, store {
 /// Create empty history.
 public fun empty(): History { History(vector[]) }
 
-/// Add a single record.
-/// WARNING: if you're adding multiple record in the same transaction,
-///     use `append` to emit a single event!
+/// Append one record and emit a `HistoryUpdated` event containing it.
 public fun add(h: &mut History, record: Record) {
     let History(history) = h;
     event::emit(HistoryUpdated(vector[record]));
     history.push_back(record);
 }
 
-/// Add a new `Record` to the `History` log.
+/// Append the records in order and emit one `HistoryUpdated` event with them.
 public fun append(h: &mut History, records: vector<Record>) {
     let History(history) = h;
     event::emit(HistoryUpdated(records));
@@ -133,7 +128,7 @@ public fun from_bytes(bytes: vector<u8>): History {
     from_bcs(&mut bcs::new(bytes))
 }
 
-/// Serialize `History` to bytes.
+/// Deserialize `History` from the BCS reader.
 public(package) fun from_bcs(bcs: &mut BCS): History {
     let records = bcs.peel_vec!(|bcs| {
         match (bcs.peel_enum_tag()) {

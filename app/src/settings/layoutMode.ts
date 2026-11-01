@@ -12,10 +12,8 @@ import { DEFAULTS, LAYOUTS, useSettings, useSettingsSection, type LayoutChoice }
 export type LayoutMode = "desktop" | "controller";
 
 /**
- * The effective settings layout: the stored choice, with "auto" following the
- * pad CONNECTION. Connection is stable — `padActive` flaps between the pad and
- * the mouse on every input, and a layout that re-arranges itself mid-gesture
- * would be unusable.
+ * Returns the stored layout choice; "auto" selects the controller layout
+ * while a pad is connected and the desktop layout otherwise.
  */
 export function useLayoutMode(): LayoutMode {
     const [settings] = useSettings();

@@ -78,10 +78,7 @@ function layoutChoice(v: unknown): LayoutChoice {
 }
 
 /**
- * Menu bindings are not rebindable yet, so the defaults always win: a stored
- * copy may predate newer actions or default keys (persisted settings freeze
- * the whole section). Parse per-action from storage again once a rebind UI
- * exists.
+ * Returns the default menu bindings without reading stored bindings.
  */
 function bindings(): Bindings {
     return DEFAULT_BINDINGS;
