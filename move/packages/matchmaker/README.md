@@ -119,7 +119,11 @@ waiting player to their bucket. The shared object itself never grows.
 | Worst case              | 1 table read plus one load per non-empty bucket in reach    | capacity per loaded bucket |
 
 The ring walk over the bitmap is pure arithmetic on a local value. The number of rings is
-bounded by `(window + max_window) / bucket_size`.
+bounded by `(window + max_window) / bucket_size`, and the walk ends at the farthest occupied
+bucket in reach. Each loaded bucket is pruned and checked in a single pass.
+
+`tests/bench_tests.move` holds larger workloads; `sui move test -s` prints the gas each test
+uses.
 
 ## License
 
