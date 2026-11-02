@@ -7,6 +7,8 @@ authors = ["Damir Shamanaev (damirka.ru@gmail.com)"]
 [dependencies]
 bit_field = { r.mvr = "@potatoes/bit-field" }
 name_gen = { git = "https://github.com/sui-potatoes/app.git", subdir = "packages/name-gen", rev = "main" }
+glicko = { git = "https://github.com/sui-potatoes/app.git", subdir = "packages/glicko", rev = "main" }
+matchmaker = { local = "../matchmaker" }
 format = { r.mvr = "@potatoes/format" }
 codec = { r.mvr = "@potatoes/codec" }
 grid = { r.mvr = "@potatoes/grid" }
