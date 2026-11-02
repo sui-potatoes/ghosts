@@ -189,26 +189,47 @@ public fun find_game<T>(
     // farthest ring a compatible ticket can sit in
     let reach = ((window + mm.config.max_window) / mm.config.bucket_size + 1).min(MAX_BUCKET);
 
-    let mut candidates = vector[];
+    // occupied buckets within reach the walk has yet to visit
+    let all = 0u256.bitwise_not();
+    let low = if (center > reach) center - reach else 0;
+    let high = (center + reach).min(MAX_BUCKET);
+    let mut pending = mm.occupied & (all << (low as u8)) & (all >> ((MAX_BUCKET - high) as u8));
+
+    // indices of the compatible tickets in the bucket below and the one above
+    let (mut below, mut above) = (vector[], vector[]);
     let mut d = 0;
-    while (d <= reach && candidates.is_empty()) {
-        if (d <= center && mm.is_occupied(center - d)) {
-            candidates.append(mm.scan_bucket((center - d) as u8, rating, window, now));
+    while (pending != 0 && below.is_empty() && above.is_empty()) {
+        if (d <= center) {
+            let bit = 1u256 << ((center - d) as u8);
+            if (pending & bit != 0) {
+                pending = pending ^ bit;
+                below = mm.scan_bucket((center - d) as u8, rating, window, now);
+            };
         };
-        if (d > 0 && center + d <= MAX_BUCKET && mm.is_occupied(center + d)) {
-            candidates.append(mm.scan_bucket((center + d) as u8, rating, window, now));
+        if (d > 0 && center + d <= MAX_BUCKET) {
+            let bit = 1u256 << ((center + d) as u8);
+            if (pending & bit != 0) {
+                pending = pending ^ bit;
+                above = mm.scan_bucket((center + d) as u8, rating, window, now);
+            };
         };
         d = d + 1;
     };
 
-    if (candidates.is_empty()) {
+    let count = below.length() + above.length();
+    if (count == 0) {
         mm.insert(ticket);
         return (id, option::none())
     };
 
-    let opponent = candidates[rng.generate_u64_in_range(0, candidates.length() - 1)];
-    let bucket = mm.config.bucket_of(opponent.rating);
-    mm.take(bucket, opponent.player);
+    // the walk stopped one ring past the candidates
+    let ring = d - 1;
+    let pick = rng.generate_u64_in_range(0, count - 1);
+    let opponent = if (pick < below.length()) {
+        mm.take_at((center - ring) as u8, below[pick])
+    } else {
+        mm.take_at((center + ring) as u8, above[pick - below.length()])
+    };
 
     let players = vector[opponent.player, player];
 
@@ -269,51 +290,54 @@ fun is_occupied<T>(mm: &Matchmaker<T>, bucket: u64): bool {
     mm.occupied & (1u256 << (bucket as u8)) != 0
 }
 
-/// Prune an occupied bucket, then return its tickets compatible with the
-/// caller.
+/// Drop the expired tickets of an occupied bucket and return the indices of
+/// the rest compatible with the caller, in a single pass. Removes the bucket
+/// if it ends up empty.
 fun scan_bucket<T>(
     mm: &mut Matchmaker<T>,
     bucket: u8,
     rating: u64,
     window: u64,
     now: u64,
-): vector<Ticket> {
-    mm.prune_bucket(bucket, now);
-    if (!mm.is_occupied(bucket as u64)) return vector[];
-
-    let tickets: &vector<Ticket> = df::borrow(&mm.id, Bucket(bucket));
-    let mut compatible = vector[];
-    tickets.do_ref!(|t| {
-        if (rating.diff(t.rating) <= window + mm.config.window(t, now)) compatible.push_back(*t);
-    });
-    compatible
-}
-
-/// Drop expired tickets of an occupied bucket, keeping the order of the rest.
-/// Removes the bucket if it ends up empty.
-fun prune_bucket<T>(mm: &mut Matchmaker<T>, bucket: u8, now: u64) {
-    let ttl = mm.config.ticket_ttl_ms;
+): vector<u64> {
+    let Config { window_step, window_step_ms, max_window, ticket_ttl_ms, .. } = mm.config;
     let tickets: &mut vector<Ticket> = df::borrow_mut(&mut mm.id, Bucket(bucket));
+    let mut compatible = vector[];
+    let mut len = tickets.length();
     let mut i = 0;
-    while (i < tickets.length()) {
-        if (now - tickets[i].since_ms > ttl) {
+    while (i < len) {
+        let t = &tickets[i];
+        let waited = now - t.since_ms;
+        if (waited > ticket_ttl_ms) {
             let Ticket { player, .. } = tickets.remove(i);
             mm.players.remove(player);
             mm.size = mm.size - 1;
-        } else i = i + 1;
+            len = len - 1;
+        } else {
+            let grown = t.window + waited / window_step_ms * window_step;
+            let limit = window + if (grown < max_window) grown else max_window;
+            let diff = if (rating > t.rating) rating - t.rating else t.rating - rating;
+            if (diff <= limit) compatible.push_back(i);
+            i = i + 1;
+        }
     };
 
     let is_empty = tickets.is_empty();
     if (is_empty) mm.remove_bucket(bucket);
+    compatible
 }
 
 /// Store a ticket in its bucket, evicting the oldest one if the bucket is full.
 fun insert<T>(mm: &mut Matchmaker<T>, ticket: Ticket) {
     let bucket = mm.config.bucket_of(ticket.rating);
     let capacity = mm.config.bucket_capacity;
+    mm.players.add(ticket.player, bucket);
+    mm.size = mm.size + 1;
+
     if (!mm.is_occupied(bucket as u64)) {
-        df::add(&mut mm.id, Bucket(bucket), vector<Ticket>[]);
+        df::add(&mut mm.id, Bucket(bucket), vector[ticket]);
         mm.occupied = mm.occupied | (1u256 << bucket);
+        return
     };
 
     let tickets: &mut vector<Ticket> = df::borrow_mut(&mut mm.id, Bucket(bucket));
@@ -322,22 +346,32 @@ fun insert<T>(mm: &mut Matchmaker<T>, ticket: Ticket) {
         mm.players.remove(player);
         mm.size = mm.size - 1;
     };
-
     tickets.push_back(ticket);
-    mm.players.add(ticket.player, bucket);
-    mm.size = mm.size + 1;
 }
 
 /// Remove a player's ticket from a bucket. Removes the bucket if it ends up
 /// empty.
 fun take<T>(mm: &mut Matchmaker<T>, bucket: u8, player: address): Ticket {
     let tickets: &mut vector<Ticket> = df::borrow_mut(&mut mm.id, Bucket(bucket));
-    let idx = tickets.find_index!(|t| t.player == player).destroy_some();
-    let ticket = tickets.remove(idx);
+    let index = tickets.find_index!(|t| t.player == player).destroy_some();
+    let ticket = tickets.remove(index);
     let is_empty = tickets.is_empty();
 
     if (is_empty) mm.remove_bucket(bucket);
     mm.players.remove(player);
+    mm.size = mm.size - 1;
+    ticket
+}
+
+/// Remove the ticket at `index` of a bucket. Removes the bucket if it ends up
+/// empty.
+fun take_at<T>(mm: &mut Matchmaker<T>, bucket: u8, index: u64): Ticket {
+    let tickets: &mut vector<Ticket> = df::borrow_mut(&mut mm.id, Bucket(bucket));
+    let ticket = tickets.remove(index);
+    let is_empty = tickets.is_empty();
+
+    if (is_empty) mm.remove_bucket(bucket);
+    mm.players.remove(ticket.player);
     mm.size = mm.size - 1;
     ticket
 }
