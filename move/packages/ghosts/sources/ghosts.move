@@ -1,10 +1,10 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
-/// Stores player recruits, gear, dog tags and replays in shared `Account`
-/// objects. The `Registry` maps owner addresses to account IDs; `new_account`
-/// aborts if the sender already has an entry. Account mutations call
-/// `authorize` to compare the transaction sender with the stored owner.
+/// Stores player recruits, gear, dog tags, replays and ratings in shared
+/// `Account` objects. The `Registry` maps owner addresses to account IDs;
+/// `new_account` aborts if the sender already has an entry. Account mutations
+/// call `authorize` to compare the transaction sender with the stored owner.
 module ghosts::ghosts;
 
 use ghosts::{
@@ -15,10 +15,11 @@ use ghosts::{
     weapon::Weapon,
     weapon_upgrade::WeaponUpgrade
 };
+use glicko::glicko::{Self, Rating};
 use name_gen::name_gen;
 use sui::{
     object_table::{Self, ObjectTable},
-    random::{Random, RandomGenerator},
+    random::Random,
     table::{Self, Table},
     table_vec::{Self, TableVec}
 };
@@ -56,7 +57,7 @@ public struct Registry has key {
     visual_presets: vector<vector<u256>>,
 }
 
-/// Shared storage for a player's recruits, gear, dog tags and replays.
+/// Shared storage for a player's recruits, gear, dog tags, replays and rating.
 /// Mutation functions compare the transaction sender with `owner`. Recruit
 /// and gear deposits are public; their removal functions are package-visible.
 public struct Account has key {
@@ -75,6 +76,11 @@ public struct Account has key {
     dog_tags: TableVec<DogTag>,
     /// Saved `Replay`s of played games.
     replays: TableVec<Replay>,
+    /// Glicko rating the player is matched by in `commander::find_game`.
+    rating: Rating,
+    /// Matchmaking order ID while the player searches for a game. Blocks
+    /// another search until `commander::cancel_search` clears it.
+    search: Option<ID>,
 }
 
 // === Account Creation ===
@@ -94,6 +100,8 @@ public fun new_account(registry: &mut Registry, ctx: &mut TxContext) {
         upgrades: vector[],
         dog_tags: table_vec::empty(ctx),
         replays: table_vec::empty(ctx),
+        rating: glicko::default(),
+        search: option::none(),
     };
 
     registry.accounts.add(owner, account.id.to_inner());
@@ -127,17 +135,22 @@ entry fun hire_recruits(acc: &mut Account, registry: &Registry, rng: &Random, ct
         let name = if (is_female) name_gen::new_female_name(&mut rng)
         else name_gen::new_male_name(&mut rng);
         let first = if (is_female) PRESET_DRAWS else 0;
+        let draws = vector::tabulate!(PRESET_DRAWS, |i| {
+            let pool = &mut pools[first + i];
+            let j = rng.generate_u64_in_range(0, pool.length() - 1);
+            pool.swap_remove(j)
+        });
 
         // head and eyes come from one preset, so hair and brows stay a pair;
         // face, body and outfit are each drawn from another preset of the gender
         let presets = &registry.visual_presets;
-        let identity = &presets[take(&mut pools[first], &mut rng)];
+        let identity = &presets[draws[0]];
         let visuals = visuals::new_unchecked(
             identity[0],
-            presets[take(&mut pools[first + 1], &mut rng)][1],
+            presets[draws[1]][1],
             identity[2],
-            presets[take(&mut pools[first + 2], &mut rng)][3],
-            presets[take(&mut pools[first + 3], &mut rng)][4],
+            presets[draws[2]][3],
+            presets[draws[3]][4],
         );
 
         let mut recruit = recruit::new(name, ctx);
@@ -146,12 +159,6 @@ entry fun hire_recruits(acc: &mut Account, registry: &Registry, rng: &Random, ct
         recruit.set_voice(if (is_female) 1 else 0);
         acc.recruits.add(object::id(&recruit), recruit);
     });
-}
-
-/// Take a random index out of a pool.
-fun take(pool: &mut vector<u64>, rng: &mut RandomGenerator): u64 {
-    let i = rng.generate_u64_in_range(0, pool.length() - 1);
-    pool.swap_remove(i)
 }
 
 /// Edit a stored `Recruit`: visual properties (packed by area, up to 32 `u8`
@@ -310,6 +317,14 @@ public fun remove_replay(acc: &mut Account, index: u64, ctx: &mut TxContext): Re
     acc.replays.swap_remove(index)
 }
 
+// === Matchmaking ===
+
+/// Set or clear the matchmaking order the `Account` is searching under.
+public(package) fun set_search(acc: &mut Account, search: Option<ID>, ctx: &mut TxContext) {
+    acc.authorize(ctx);
+    acc.search = search;
+}
+
 // === Authorization ===
 
 /// Abort with `ENotOwner` if the sender differs from the account's owner.
@@ -337,6 +352,12 @@ public(package) fun weapon_mut(acc: &mut Account, weapon_id: ID, ctx: &mut TxCon
 
 /// Get the owner of the `Account`.
 public fun owner(acc: &Account): address { acc.owner }
+
+/// Get the player's Glicko rating.
+public fun rating(acc: &Account): Rating { acc.rating }
+
+/// Get the matchmaking order ID, if the player is searching for a game.
+public fun search(acc: &Account): Option<ID> { acc.search }
 
 /// Check whether an address has an `Account`.
 public fun has_account(registry: &Registry, addr: address): bool {
@@ -367,6 +388,9 @@ fun init(ctx: &mut TxContext) {
         visual_presets: visual_presets(),
     });
 }
+
+#[test_only]
+public fun init_for_testing(ctx: &mut TxContext) { init(ctx) }
 
 /// The looks hires are mixed from: 16 male, then 16 female presets, encoded
 /// with the appearance codec in `@ghosts/squad` (codec version 1).
@@ -624,6 +648,7 @@ fun test_account_lifecycle() {
     ts.next_tx(user);
     let mut acc = ts.take_shared<Account>();
     assert_eq!(acc.owner(), user);
+    assert_eq!(acc.rating(), glicko::default());
     assert!(registry.has_account(user));
     assert_eq!(registry.account_of(user), object::id(&acc));
 
@@ -714,21 +739,6 @@ fun test_hire_recruits() {
     ts::return_shared(rng);
     ts::return_shared(acc);
     ts.end();
-}
-
-#[test]
-fun test_take_draws_without_replacement() {
-    use std::unit_test::assert_eq;
-
-    let mut rng = sui::random::new_generator_for_testing();
-    let mut pool = vector::tabulate!(PRESETS_PER_GENDER, |i| i);
-    let mut seen = vector[];
-    PRESETS_PER_GENDER.do!(|_| {
-        let index = take(&mut pool, &mut rng);
-        assert!(!seen.contains(&index));
-        seen.push_back(index);
-    });
-    assert_eq!(pool.length(), 0);
 }
 
 #[test, expected_failure(abort_code = ERecruitLimitReached)]

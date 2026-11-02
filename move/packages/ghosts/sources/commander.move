@@ -5,10 +5,11 @@
 /// which is used to store recent games, their metadata and the map presets.
 ///
 /// Additionally, handles the interaction between players, such as hosting a
-/// game, joining it, canceling a game, etc.
+/// game, joining it, matchmaking, canceling a game, etc.
 module ghosts::commander;
 
-use ghosts::{history::{Self, History}, map::{Self, Map}, recruit::Recruit, replay};
+use ghosts::{ghosts::Account, history::{Self, History}, map::{Self, Map}, recruit::Recruit, replay};
+use matchmaker::matchmaker::{Self, Matchmaker};
 use std::string::String;
 use sui::{
     bcs,
@@ -25,6 +26,8 @@ const EInvalidGame: u64 = 2;
 const ENotYourRecruit: u64 = 3;
 const ENoPositions: u64 = 4;
 const EInvalidPosition: u64 = 5;
+const EAlreadySearching: u64 = 6;
+const ENotSearching: u64 = 7;
 
 /// Stack limit of public games in the `Commander` object.
 const PUBLIC_GAMES_LIMIT: u64 = 20;
@@ -168,6 +171,51 @@ public fun join_game(
     id.delete();
 }
 
+// === Multiplayer Features: Matchmaking ===
+
+/// Search for an opponent with the rating stored in the `Account`, accepting
+/// those within its current deviation. If a compatible player is waiting, the
+/// two are paired and nothing is left to wait for. Otherwise the order stays in
+/// the queue and the `Account` keeps its ID, so another search aborts until
+/// `cancel_search` clears it.
+entry fun find_game(
+    mm: &mut Matchmaker<Commander>,
+    acc: &mut Account,
+    rng: &Random,
+    clock: &Clock,
+    ctx: &mut TxContext,
+) {
+    acc.authorize(ctx);
+    assert!(acc.search().is_none(), EAlreadySearching);
+
+    let rating = acc.rating();
+    let window = rating.current_deviation(clock.timestamp_ms());
+    let mut rng = rng.new_generator(ctx);
+    let permit = internal::permit<Commander>();
+    let (order, found) = matchmaker::find_game(
+        permit,
+        mm,
+        rating.rating(),
+        window,
+        &mut rng,
+        clock,
+        ctx,
+    );
+
+    if (found.is_none()) acc.set_search(option::some(order), ctx);
+}
+
+/// Stop searching: take the order out of the queue if it is still there and
+/// clear it from the `Account`. Also frees an `Account` whose order was already
+/// filled by an opponent or dropped as expired.
+public fun cancel_search(mm: &mut Matchmaker<Commander>, acc: &mut Account, ctx: &mut TxContext) {
+    acc.authorize(ctx);
+    assert!(acc.search().is_some(), ENotSearching);
+
+    if (mm.is_queued(ctx.sender())) mm.cancel_game(ctx);
+    acc.set_search(option::none(), ctx);
+}
+
 // === New Game Registration & Removal ===
 
 /// Start a new game with a custom map passed directly as a byte array.
@@ -306,7 +354,8 @@ public fun turn(self: &Game): u16 { self.map.turn() }
 
 // === Init ===
 
-/// On publish, share the `Commander` object with map presets. Demos have reserved IDs 0 and 1.
+/// On publish, share the `Commander` object with map presets and the
+/// matchmaking queue. Demos have reserved IDs 0 and 1.
 fun init(ctx: &mut TxContext) {
     let id = object::new(ctx);
     let id_address = id.to_address();
@@ -338,4 +387,130 @@ fun init(ctx: &mut TxContext) {
     }, id_address);
 
     transfer::share_object(Commander { id, games: vec_map::empty() });
+
+    let permit = internal::permit<Commander>();
+    matchmaker::new(permit, matchmaker::default_config(), ctx).share();
+}
+
+// === Tests ===
+
+#[test_only]
+use ghosts::ghosts::{Self, Registry};
+#[test_only]
+use sui::{clock, random, test_scenario::{Self as ts, Scenario}};
+
+#[test_only]
+const ALICE: address = @0xA11CE;
+#[test_only]
+const BOB: address = @0xB0B;
+
+#[test_only]
+/// Publish the game with the `Random` object and open an `Account` for Alice
+/// and Bob.
+fun setup(): Scenario {
+    let mut ts = ts::begin(@0);
+    init(ts.ctx());
+    ghosts::init_for_testing(ts.ctx());
+    random::create_for_testing(ts.ctx());
+
+    vector[ALICE, BOB].do!(|player| {
+        ts.next_tx(player);
+        let mut registry = ts.take_shared<Registry>();
+        registry.new_account(ts.ctx());
+        ts::return_shared(registry);
+    });
+
+    ts.next_tx(ALICE);
+    ts
+}
+
+#[test_only]
+/// Take the shared `Account`s of Alice and Bob.
+fun take_accounts(ts: &Scenario): (Account, Account) {
+    let registry = ts.take_shared<Registry>();
+    let alice = ts.take_shared_by_id<Account>(registry.account_of(ALICE));
+    let bob = ts.take_shared_by_id<Account>(registry.account_of(BOB));
+    ts::return_shared(registry);
+    (alice, bob)
+}
+
+#[test]
+fun test_matchmaking() {
+    use std::unit_test::assert_eq;
+
+    let mut ts = setup();
+    let mut mm = ts.take_shared<Matchmaker<Commander>>();
+    let rng = ts.take_shared<Random>();
+    let clock = clock::create_for_testing(ts.ctx());
+    let (mut alice, mut bob) = take_accounts(&ts);
+
+    // nobody is waiting: Alice's order is queued and her `Account` keeps its ID
+    find_game(&mut mm, &mut alice, &rng, &clock, ts.ctx());
+    assert!(mm.is_queued(ALICE));
+    assert!(alice.search().is_some());
+
+    // Alice cancels: the order leaves the queue and the `Account` is free again
+    cancel_search(&mut mm, &mut alice, ts.ctx());
+    assert!(!mm.is_queued(ALICE));
+    assert!(alice.search().is_none());
+
+    // Alice queues again and Bob is paired with her right away
+    find_game(&mut mm, &mut alice, &rng, &clock, ts.ctx());
+    let order = alice.search();
+    ts.next_tx(BOB);
+    find_game(&mut mm, &mut bob, &rng, &clock, ts.ctx());
+    assert_eq!(mm.queue_length(), 0);
+    assert!(bob.search().is_none());
+
+    // Alice's order was filled, her `Account` waits on it until she cancels
+    ts.next_tx(ALICE);
+    assert_eq!(alice.search(), order);
+    cancel_search(&mut mm, &mut alice, ts.ctx());
+    assert!(alice.search().is_none());
+
+    ts::return_shared(mm);
+    ts::return_shared(rng);
+    ts::return_shared(alice);
+    ts::return_shared(bob);
+    clock.destroy_for_testing();
+    ts.end();
+}
+
+#[test, expected_failure(abort_code = EAlreadySearching)]
+fun test_find_game_twice_fail() {
+    let mut ts = setup();
+    let mut mm = ts.take_shared<Matchmaker<Commander>>();
+    let rng = ts.take_shared<Random>();
+    let clock = clock::create_for_testing(ts.ctx());
+    let (mut alice, _bob) = take_accounts(&ts);
+
+    find_game(&mut mm, &mut alice, &rng, &clock, ts.ctx());
+    find_game(&mut mm, &mut alice, &rng, &clock, ts.ctx());
+
+    abort
+}
+
+#[test, expected_failure(abort_code = ENotSearching)]
+fun test_cancel_search_not_searching_fail() {
+    let mut ts = setup();
+    let mut mm = ts.take_shared<Matchmaker<Commander>>();
+    let (mut alice, _bob) = take_accounts(&ts);
+
+    cancel_search(&mut mm, &mut alice, ts.ctx());
+
+    abort
+}
+
+#[test, expected_failure(abort_code = ghosts::ENotOwner)]
+fun test_find_game_with_foreign_account_fail() {
+    let mut ts = setup();
+    let mut mm = ts.take_shared<Matchmaker<Commander>>();
+    let rng = ts.take_shared<Random>();
+    let clock = clock::create_for_testing(ts.ctx());
+    let (_alice, mut bob) = take_accounts(&ts);
+
+    // Alice tries to queue with Bob's rating
+    find_game(&mut mm, &mut bob, &rng, &clock, ts.ctx());
+
+    abort
 }
