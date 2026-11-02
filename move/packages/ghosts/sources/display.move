@@ -1,91 +1,59 @@
-// // Copyright (c) Sui Potatoes
-// // SPDX-License-Identifier: MIT
+// Copyright (c) Sui Potatoes
+// SPDX-License-Identifier: MIT
 
-// /// Implements Sui Object Display for objects in the game.
-// module ghosts::display;
+/// Implements Sui Object Display (V2, `sui::display_registry`) for objects in
+/// the game.
+///
+/// Each function creates and shares the `Display` for one type, proving type
+/// ownership with an `internal::Permit` issued by the module that defines the
+/// type, and returns the `DisplayCap` which manages the fields later on.
+///
+/// The `DisplayRegistry` holds a single `Display` per type, so each function
+/// succeeds only once: call them right after publishing. The first caller gets
+/// the `DisplayCap`, any following call aborts.
+module ghosts::display;
 
-// use ghosts::{armor::Armor, recruit::{DogTag, Recruit}, weapon::Weapon};
-// use sui::{display, package};
+use ghosts::{armor::{Self, Armor}, recruit::{Self, DogTag, Recruit}, weapon::{Self, Weapon}};
+use sui::display_registry::{DisplayCap, DisplayRegistry};
 
-// public struct DISPLAY has drop {}
+/// Create and share the `Display` for the `Recruit` object.
+public fun recruit(registry: &mut DisplayRegistry, ctx: &mut TxContext): DisplayCap<Recruit> {
+    let (mut display, cap) = registry.new(recruit::permit(), ctx);
+    display.set(&cap, "name", "{metadata.name}");
+    display.set(&cap, "description", "A Ghosts operative.");
+    display.set(&cap, "image_url", "https://potatoes.app/images/recruit.webp");
+    display.set(&cap, "link", "https://potatoes.app/commander/recruit/{id}");
+    display.share();
+    cap
+}
 
-// /// Creates Display objects for the Recruit and Weapon objects.
-// fun init(otw: DISPLAY, ctx: &mut TxContext) {
-//     let publisher = package::claim(otw, ctx);
+/// Create and share the `Display` for the `DogTag` object.
+public fun dog_tag(registry: &mut DisplayRegistry, ctx: &mut TxContext): DisplayCap<DogTag> {
+    let (mut display, cap) = registry.new(recruit::dog_tag_permit(), ctx);
+    display.set(&cap, "name", "{metadata.name}");
+    display.set(&cap, "description", "Fallen in the line of duty.");
+    display.set(&cap, "image_url", "https://potatoes.app/images/recruit.webp");
+    display.set(&cap, "link", "https://potatoes.app/commander/recruit/{id}");
+    display.share();
+    cap
+}
 
-//     // Display for the `Recruit` object.
-//     let recruit_display = {
-//         let mut display = display::new<Recruit>(&publisher, ctx);
-//         display.add(b"name".to_string(), b"{metadata.name} (Rank: {rank})".to_string());
-//         display.add(b"description".to_string(), b"A Ghosts operative.".to_string());
-//         display.add(
-//             b"image_url".to_string(),
-//             b"https://potatoes.app/images/recruit.webp".to_string(),
-//         );
-//         display.add(
-//             b"link".to_string(),
-//             b"https://potatoes.app/commander/recruit/{id}".to_string(),
-//         );
-//         display.update_version();
-//         display
-//     };
+/// Create and share the `Display` for the `Weapon` object.
+public fun weapon(registry: &mut DisplayRegistry, ctx: &mut TxContext): DisplayCap<Weapon> {
+    let (mut display, cap) = registry.new(weapon::permit(), ctx);
+    display.set(&cap, "name", "{name}");
+    display.set(&cap, "description", "A weapon that Recruits can use in battle.");
+    display.set(&cap, "image_url", "https://potatoes.app/images/weapon.webp");
+    display.share();
+    cap
+}
 
-//     // Display for the `Weapon` object.
-//     let weapon_display = {
-//         let mut display = display::new<Weapon>(&publisher, ctx);
-//         display.add(b"name".to_string(), b"{name}".to_string());
-//         display.add(
-//             b"description".to_string(),
-//             b"A weapon that Recruits can use in battle.".to_string(),
-//         );
-//         display.add(
-//             b"image_url".to_string(),
-//             b"https://potatoes.app/images/weapon.webp".to_string(),
-//         );
-//         display.add(b"link".to_string(), b"".to_string());
-//         display.update_version();
-//         display
-//     };
-
-//     // Armor display
-//     let armor_display = {
-//         let mut display = display::new<Armor>(&publisher, ctx);
-//         display.add(b"name".to_string(), b"{name}".to_string());
-//         display.add(
-//             b"description".to_string(),
-//             b"Armor that Recruits can wear in battle.".to_string(),
-//         );
-//         display.add(
-//             b"image_url".to_string(),
-//             b"https://potatoes.app/images/armor-light.webp".to_string(),
-//         );
-//         display.add(b"link".to_string(), b"".to_string());
-//         display.update_version();
-//         display
-//     };
-
-//     // Display for the `DogTag` object.
-//     let dogtag_display = {
-//         let mut display = display::new<DogTag>(&publisher, ctx);
-//         display.add(b"name".to_string(), b"{metadata.name} (Rank: {rank})".to_string());
-//         display.add(b"description".to_string(), b"Fallen in the line of duty.".to_string());
-//         display.add(
-//             b"image_url".to_string(),
-//             b"https://potatoes.app/images/recruit.webp".to_string(),
-//         );
-//         display.add(
-//             b"link".to_string(),
-//             b"https://potatoes.app/commander/recruit/{id}".to_string(),
-//         );
-//         display.update_version();
-//         display
-//     };
-
-//     let sender = ctx.sender();
-
-//     transfer::public_transfer(recruit_display, sender);
-//     transfer::public_transfer(weapon_display, sender);
-//     transfer::public_transfer(dogtag_display, sender);
-//     transfer::public_transfer(armor_display, sender);
-//     transfer::public_transfer(publisher, sender);
-// }
+/// Create and share the `Display` for the `Armor` object.
+public fun armor(registry: &mut DisplayRegistry, ctx: &mut TxContext): DisplayCap<Armor> {
+    let (mut display, cap) = registry.new(armor::permit(), ctx);
+    display.set(&cap, "name", "{name}");
+    display.set(&cap, "description", "Armor that Recruits can wear in battle.");
+    display.set(&cap, "image_url", "https://potatoes.app/images/armor-light.webp");
+    display.share();
+    cap
+}

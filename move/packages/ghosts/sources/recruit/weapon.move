@@ -50,6 +50,10 @@ public fun destroy(weapon: Weapon) {
     id.delete();
 }
 
+/// Issue a `Permit` for the `Weapon` type. Package-only: used to create
+/// `Display<Weapon>` in the `display` module.
+public(package) fun permit(): internal::Permit<Weapon> { internal::permit() }
+
 /// Get the name of the `Weapon`.
 public fun name(w: &Weapon): String { w.name }
 

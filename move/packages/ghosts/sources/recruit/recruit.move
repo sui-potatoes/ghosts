@@ -185,6 +185,14 @@ public(package) fun kill(recruit: Recruit, ctx: &mut TxContext): DogTag {
     DogTag { id: object::new(ctx), rank, metadata }
 }
 
+/// Issue a `Permit` for the `Recruit` type. Package-only: used to create
+/// `Display<Recruit>` in the `display` module.
+public(package) fun permit(): internal::Permit<Recruit> { internal::permit() }
+
+/// Issue a `Permit` for the `DogTag` type. Package-only: used to create
+/// `Display<DogTag>` in the `display` module.
+public(package) fun dog_tag_permit(): internal::Permit<DogTag> { internal::permit() }
+
 #[test]
 fun test_rank_up_and_accessors() {
     use std::unit_test::{assert_eq, assert_ref_eq};
