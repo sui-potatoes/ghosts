@@ -39,6 +39,10 @@ public fun destroy(armor: Armor) {
     id.delete();
 }
 
+/// Issue a `Permit` for the `Armor` type. Package-only: used to create
+/// `Display<Armor>` in the `display` module.
+public(package) fun permit(): internal::Permit<Armor> { internal::permit() }
+
 // === Reads ===
 
 /// Get the name of the `Armor`.
