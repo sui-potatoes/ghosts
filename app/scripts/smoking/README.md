@@ -17,9 +17,18 @@ exhale), followed by a **1.6-second return blend** to the first pose: **5 second
 total. The lighting and discard sections are excluded. The cigarette remains
 visible and lit across the seam, and breath emission follows the captured exhale.
 
-The build preserves captured upper-body orientations and finger segment directions.
-Each hand and finger bone gets its own anatomical roll correction from the bind
-palm plane. Foot and toe rotations are transferred relative to the two rigs’ bind
+The native pelvis and spine stay in their neutral bind rotations throughout the
+loop, including the return blend. The smoking gesture uses the captured head and arm orientations
+and finger segment directions, fitted around that neutral torso. Copying absolute
+source spine orientations into the differently aligned native rig bows the chest.
+Clavicles also start from their native bind rotations; only the arm contact solver
+can adjust them if needed to reach the mouth.
+The free left arm uses a simple relaxed pose with a slight elbow bend. Its wrist,
+palm and fingers retain their native bind relationships throughout the loop;
+the captured hip gesture and finger transforms are not applied to that hand.
+The smoking right arm, hand and fingers receive anatomical roll correction from
+the bind palm plane along the whole chain, avoiding a wrist-only twist.
+Foot and toe rotations are transferred relative to the two rigs’ bind
 orientations; copying their absolute orientations pitched the native soles down.
 Both ankles are held at their planted positions with an offline two-bone leg fit,
 so native proportions do not leave one foot floating. The recorded weight shift
@@ -27,7 +36,7 @@ and knee planes are retained, with pelvis height limited to the available leg re
 Hand/lip contact is fitted to native proportions while preserving the elbow plane.
 
 Both outputs include input hashes and the source interval, and are rounded to six
-decimal places before compression (about 86 KiB each). No runtime IK is needed.
+decimal places before compression (about 44 KiB each). No runtime IK is needed.
 The game's existing coordinate adapter handles the combat rig. `source.bin` still
 contains the complete original capture so the trim is reproducible.
 

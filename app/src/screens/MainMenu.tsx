@@ -2,8 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { useCurrentAccount } from "@mysten/dapp-kit-react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 
+import { useMatchSearch } from "../chain";
+import { SearchClock } from "../components/MatchStatus";
 import { TitleBackdrop } from "../components/TitleBackdrop";
 import { PadHints } from "../components/PadHints";
 import { NETWORK } from "../constants";
@@ -14,21 +17,60 @@ const SOURCE = "https://github.com/sui-potatoes/ghosts";
 
 type Entry = {
     label: string;
-    /** Why the entry is disabled, shown as a right-aligned tag. */
-    tag?: string;
+    /** Keeps the row, and its focus, when the label changes with its state. */
+    id?: string;
+    /** A right-aligned tag: why the entry is disabled, or its state. */
+    tag?: ReactNode;
     disabled?: boolean;
     onClick?: () => void;
 };
 
 /**
- * Title screen. The demos are local playtests; Headquarters keeps the squad on chain.
- * Networked modes remain disabled until their account flow is ready.
+ * Title screen. The demos are local playtests; Headquarters keeps the squad on
+ * chain and Find Match puts it in the queue, hiring one first for a player without.
  */
 export default function MainMenu() {
     const navigate = useNavigate();
     const account = useCurrentAccount();
     // Up/Down and Confirm come off the input bus, whatever produced them.
     const items = useMenuNav(true);
+    const match = useMatchSearch();
+
+    // A suspension lifts on its own, while the menu is up.
+    const [now, setNow] = useState(() => Date.now());
+    const { suspendedUntilMs } = match;
+    useEffect(() => {
+        if (suspendedUntilMs <= Date.now()) return;
+        const timer = window.setInterval(() => setNow(Date.now()), 1000);
+        return () => window.clearInterval(timer);
+    }, [suspendedUntilMs]);
+    const suspended = suspendedUntilMs > now;
+
+    // One row through the search: find a match, leave the queue, get back to the game.
+    const findMatch: Entry = match.playing
+        ? { id: "match", label: "Resume Match", onClick: () => navigate("/match") }
+        : suspended
+          ? {
+                id: "match",
+                label: "Find Match",
+                tag: `suspended ${Math.ceil((suspendedUntilMs - now) / 60_000)}m`,
+                disabled: true,
+            }
+          : match.matched
+            ? { id: "match", label: "Match Found", tag: "starting" }
+            : match.searching
+              ? {
+                    id: "match",
+                    label: "Cancel Search",
+                    tag: <SearchClock sinceMs={Number(match.searching.sinceMs)} />,
+                    onClick: match.cancel,
+                }
+              : {
+                    id: "match",
+                    label: "Find Match",
+                    tag: match.hiring ? "hiring squad" : undefined,
+                    onClick: account ? match.find : requestSignIn,
+                };
 
     // The local playtest is available with or without a connected account.
     const entries: Entry[] = [
@@ -41,8 +83,7 @@ export default function MainMenu() {
             onClick: () => navigate("/demo-2"),
         },
         ...(account ? [] : [{ label: "Login", onClick: requestSignIn }]),
-        { label: "Ranked", tag: "soon", disabled: true },
-        { label: "Public", tag: "soon", disabled: true },
+        findMatch,
         { label: "Headquarters", onClick: () => navigate("/headquarters") },
         { label: "Level Editor", tag: "tool", onClick: () => navigate("/editor") },
         { label: "Leaderboard", tag: "soon", disabled: true },
@@ -66,7 +107,7 @@ export default function MainMenu() {
                 <nav aria-label="Main menu" className="flex flex-col border-t border-line">
                     {entries.map((e, i) => (
                         <button
-                            key={e.label}
+                            key={e.id ?? e.label}
                             ref={(el) => {
                                 items.current[i] = el;
                             }}
@@ -80,6 +121,7 @@ export default function MainMenu() {
                         </button>
                     ))}
                 </nav>
+                {match.error && <p className="label -mt-8 normal-case text-warn">{match.error}</p>}
 
                 <PadHints
                     entries={[

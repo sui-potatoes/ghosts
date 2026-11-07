@@ -20,7 +20,7 @@ import { weaponFinish } from "../../packages/squad/src/studio/weapon-finish.ts";
 import { ATTACHMENTS } from "../../packages/squad/src/catalog.ts";
 import { createFieldSupply } from "../../packages/squad/src/studio/field-supplies.ts";
 import { motionSkeleton } from "@ghosts/squad/motion/clearance";
-import { skinMeshes, posedSurface } from "./gear-collision.ts";
+import { skinMeshes, posedSurface, rigidAsset } from "./gear-collision.ts";
 import { equipmentPose } from "@ghosts/squad/motion/equipment-poses";
 import { nativeClip } from "@ghosts/squad/motion/clips";
 import { mountHandEquipment } from "@ghosts/squad/studio/held-equipment";
@@ -313,3 +313,220 @@ test("compact optics and lasers, distinct magazine capacities, and current expor
         );
     }
 });
+
+test("exported plasma: rail bridges the receiver and is supported across the shroud", () => {
+    const gun = rigidAsset("public/squad/weapons/plasma.glb");
+    gun.updateMatrixWorld(true);
+    const at = (x: number, y: number, z: number) => sizedWeaponPoint(new T.Vector3(-z, x, -y));
+    for (let x = -0.16; x <= 0.32; x += 0.004) {
+        const hits = new T.Raycaster(at(x, 0.083, 0.1), new T.Vector3(1, 0, 0)).intersectObject(
+            gun,
+        );
+        assert(hits.length, `top rail has a gap at ${x}`);
+    }
+    // Each saddle must connect the center rail to both outer shroud panels.
+    for (const x of [0.172, 0.243, 0.319]) {
+        for (const z of [-0.04, 0, 0.04]) {
+            const hits = new T.Raycaster(at(x, 0.1, z), new T.Vector3(0, 0, 1)).intersectObject(
+                gun,
+            );
+            assert(
+                hits.some((h) => h.distance < 0.03),
+                `unsupported rail saddle at ${x}/${z}`,
+            );
+        }
+    }
+});
+
+test("exported plasma: lower shroud saddles and muzzle yokes connect both sides", () => {
+    const gun = rigidAsset("public/squad/weapons/plasma.glb");
+    gun.updateMatrixWorld(true);
+    const at = (x: number, y: number, z: number) => sizedWeaponPoint(new T.Vector3(-z, x, -y));
+    const underside = (x: number, z: number) => {
+        const hits = new T.Raycaster(at(x, 0, z), new T.Vector3(0, 0, -1)).intersectObject(gun);
+        assert(
+            hits.some((h) => h.distance < 0.026),
+            `missing lower connector at ${x}/${z}`,
+        );
+    };
+    // Scan across the full opening, not just the panel edges or central barrel.
+    for (const x of [0.196, 0.245, 0.323])
+        for (let z = -0.044; z <= 0.044; z += 0.004) underside(x, z);
+    for (const x of [0.337, 0.394]) for (let z = -0.03; z <= 0.03; z += 0.003) underside(x, z);
+    // The front saddle must reach the fore-end through a continuous lower spine.
+    for (let x = 0.26; x < 0.34; x += 0.004) underside(x, 0);
+});
+
+test("exported plasma: all stencil vertices sit immediately above solid panels", () => {
+    const gun = rigidAsset("public/squad/weapons/plasma.glb");
+    gun.updateMatrixWorld(true);
+    const stencils = gun.getObjectByName("plasma_Stencils")!;
+    assert(stencils, "export includes warning labels");
+    const solids: T.Object3D[] = [];
+    gun.traverse((part) => {
+        if (part instanceof T.Mesh && part.parent !== stencils) solids.push(part);
+    });
+    let count = 0;
+    stencils.traverse((part) => {
+        if (!(part instanceof T.Mesh)) return;
+        const positions = part.geometry.attributes.position;
+        for (let i = 0; i < positions.count; i++) {
+            const point = new T.Vector3()
+                .fromBufferAttribute(positions, i)
+                .applyMatrix4(part.matrixWorld);
+            const outward = new T.Vector3(Math.sign(point.x), 0, 0);
+            const ray = new T.Raycaster(
+                point.clone().addScaledVector(outward, 0.002),
+                outward.negate(),
+                0,
+                0.003,
+            );
+            const hit = ray.intersectObjects(solids, false)[0];
+            assert(
+                hit && hit.distance >= 0.002 && hit.distance < 0.0024,
+                `stencil floats or is buried at ${point.toArray()}: ${hit?.distance}`,
+            );
+            count++;
+        }
+    });
+    assert(count > 100, "checked every exported label vertex");
+});
+
+for (const sex of ["female", "male"]) {
+    test(`${sex}: trigger fingers keep distinct rows and a rounded joint bend`, () => {
+        const file = readFileSync(`public/squad/body/${sex}/skin.glb`);
+        const root = motionSkeleton(
+            file.buffer.slice(file.byteOffset, file.byteOffset + file.length),
+        );
+        const source = JSON.parse(
+            gunzipSync(readFileSync(`public/squad/motions/${sex}.bin`)).toString(),
+        );
+        const poses = JSON.parse(
+            gunzipSync(readFileSync(`public/squad/motions/${sex}-equipment.bin`)).toString(),
+        );
+        const mixer = new T.AnimationMixer(root);
+        const joint = (finger: string, n: number) =>
+            root.getObjectByName(`mixamorigRightHand${finger}${n}`)!;
+        const point = (finger: string, n: number) =>
+            joint(finger, n).getWorldPosition(new T.Vector3());
+        for (const name of ["idle_weight_shift", "rifle_burst", "sniper_shot", "reload"]) {
+            mixer.stopAllAction();
+            const clip = equipmentPose(
+                nativeClip(
+                    T.AnimationClip.parse(source.find((c: { name: string }) => c.name === name)),
+                ),
+                poses,
+            );
+            const action = mixer.clipAction(clip).play();
+            for (const fraction of [0, 0.5, 0.99]) {
+                action.time = clip.duration * fraction;
+                mixer.update(0);
+                root.updateMatrixWorld(true);
+                for (const [a, b] of [
+                    ["Middle", "Ring"],
+                    ["Ring", "Pinky"],
+                ]) {
+                    const spacing = point(a, 2).distanceTo(point(b, 2));
+                    const knuckles = point(a, 1).distanceTo(point(b, 1));
+                    assert(spacing >= knuckles * 0.6, `${name}: ${a}/${b} bunch together`);
+                }
+                for (const finger of ["Index", "Middle", "Ring", "Pinky"]) {
+                    const segments = [
+                        point(finger, 2).sub(point(finger, 1)).normalize(),
+                        point(finger, 3).sub(point(finger, 2)).normalize(),
+                        new T.Vector3(0, 1, 0)
+                            .applyQuaternion(
+                                joint(finger, 3).getWorldQuaternion(new T.Quaternion()),
+                            )
+                            .normalize(),
+                    ];
+                    for (let i = 1; i < segments.length; i++)
+                        assert(
+                            segments[i - 1].dot(segments[i]) > 0,
+                            `${name}: ${finger} folds more than 90 degrees at joint ${i + 1}`,
+                        );
+                }
+            }
+        }
+    });
+}
+
+for (const sex of ["female", "male"]) {
+    for (const model of ["rifle", "sniper"]) {
+        test(`${sex}/${model}: thumb web stays relaxed and the trigger fingertip does not hook back`, () => {
+            const file = readFileSync(`public/squad/body/${sex}/skin.glb`);
+            const root = motionSkeleton(
+                file.buffer.slice(file.byteOffset, file.byteOffset + file.length),
+            );
+            const source = JSON.parse(
+                gunzipSync(readFileSync(`public/squad/motions/${sex}.bin`)).toString(),
+            );
+            const poses = JSON.parse(
+                gunzipSync(
+                    readFileSync(
+                        `public/squad/motions/${sex}${model === "sniper" ? "-sniper" : ""}-equipment.bin`,
+                    ),
+                ).toString(),
+            );
+            const reference = JSON.parse(
+                readFileSync("scripts/equipment-fit/references.json", "utf8"),
+            )[sex];
+            const thumb = root.getObjectByName("mixamorigLeftHandThumb1")!;
+            const neutral = new T.Quaternion().fromArray(
+                reference.ready.rotations[thumb.name].local,
+            );
+            const index = [1, 2, 3].map((n) =>
+                root.getObjectByName(`mixamorigRightHandIndex${n}`)!,
+            );
+            const mixer = new T.AnimationMixer(root);
+            for (const name of [
+                "idle_weight_shift",
+                "rifle_idle",
+                "rifle_run",
+                "rifle_burst",
+                "sniper_shot",
+            ]) {
+                mixer.stopAllAction();
+                const clip = equipmentPose(
+                    nativeClip(
+                        T.AnimationClip.parse(
+                            source.find((c: { name: string }) => c.name === name),
+                        ),
+                    ),
+                    poses,
+                );
+                const action = mixer.clipAction(clip).play();
+                for (const fraction of [0, 0.5, 0.99]) {
+                    action.time = clip.duration * fraction;
+                    mixer.update(0);
+                    root.updateMatrixWorld(true);
+                    assert(
+                        thumb.quaternion.angleTo(neutral) < T.MathUtils.degToRad(45),
+                        `${name}: support thumb metacarpal pulls the web away from the palm`,
+                    );
+                    const segments = [
+                        index[1]
+                            .getWorldPosition(new T.Vector3())
+                            .sub(index[0].getWorldPosition(new T.Vector3()))
+                            .normalize(),
+                        index[2]
+                            .getWorldPosition(new T.Vector3())
+                            .sub(index[1].getWorldPosition(new T.Vector3()))
+                            .normalize(),
+                        new T.Vector3(0, 1, 0)
+                            .applyQuaternion(index[2].getWorldQuaternion(new T.Quaternion()))
+                            .normalize(),
+                    ];
+                    assert(
+                        segments[0].dot(segments[2]) > 0,
+                        `${name}: trigger fingertip reverses direction`,
+                    );
+                    assert(
+                        segments[1].angleTo(segments[2]) < T.MathUtils.degToRad(35),
+                        `${name}: trigger finger has a sharp distal hook`,
+                    );
+                }
+            }
+        });
+    }
+}

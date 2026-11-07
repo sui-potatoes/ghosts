@@ -1,0 +1,32 @@
+{
+    "name": "@ghosts/agent",
+    "version": "0.0.0",
+    "private": true,
+    "type": "module",
+    "description": "Headless SDK and MCP server for agents playing Ghosts: observe the game, enumerate legal actions, act. Nothing here touches the app or the renderer.",
+    "exports": {
+        ".": "./src/index.ts",
+        "./mcp": "./src/mcp.ts"
+    },
+    "bin": {
+        "ghosts-mcp": "./src/bin/mcp.ts",
+        "ghosts-bot": "./src/bin/bot.ts",
+        "ghosts-fleet": "./src/bin/fleet.ts"
+    },
+    "scripts": {
+        "mcp": "node --experimental-strip-types src/bin/mcp.ts",
+        "bot": "node --experimental-strip-types src/bin/bot.ts",
+        "fleet": "node --no-warnings --experimental-strip-types src/bin/fleet.ts",
+        "test": "node --experimental-strip-types --test tests/*.test.ts",
+        "typecheck": "tsc -p ."
+    },
+    "dependencies": {
+        "@modelcontextprotocol/sdk": "^1.32.2",
+        "@mysten/sui": "^2.17.0",
+        "zod": "^4.0.0"
+    },
+    "devDependencies": {
+        "@types/node": "^22",
+        "typescript": "^5.8.3"
+    }
+}

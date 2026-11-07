@@ -1,14 +1,34 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
-import type { ReactNode } from "react";
-import { Link, NavLink } from "react-router-dom";
+import type { MouseEvent, ReactNode } from "react";
+import { Link, NavLink, useNavigate } from "react-router-dom";
 
-/** The Headquarters header: back to the menu, and the Squad / Armory sections. */
-export function HqHeader({ status }: { status?: ReactNode }) {
+/**
+ * The Headquarters header: back to the menu, and the Squad / Armory sections.
+ * `guard` gets a say before any of its links leaves the screen (unsaved
+ * changes); it calls `go` to carry on.
+ */
+export function HqHeader({
+    status,
+    guard,
+}: {
+    status?: ReactNode;
+    guard?: (go: () => void) => void;
+}) {
+    const navigate = useNavigate();
+    const via = (to: string) => (e: MouseEvent) => {
+        if (!guard) return;
+        e.preventDefault();
+        guard(() => navigate(to));
+    };
     return (
         <header className="squad-header">
-            <Link to="/" className="squad-back label text-secondary hover:text-accent">
+            <Link
+                to="/"
+                className="squad-back label text-secondary hover:text-accent"
+                onClick={via("/")}
+            >
                 ‹ Menu
             </Link>
             <h1 className="squad-title">Headquarters</h1>
@@ -16,7 +36,9 @@ export function HqHeader({ status }: { status?: ReactNode }) {
                 <NavLink to="/headquarters" end>
                     Squad
                 </NavLink>
-                <NavLink to="/headquarters/armory">Armory</NavLink>
+                <NavLink to="/headquarters/armory" onClick={via("/headquarters/armory")}>
+                    Armory
+                </NavLink>
             </nav>
             <div className="squad-save">
                 <small role="status">{status}</small>

@@ -62,7 +62,7 @@ entry fun find(
     let mut rng = rng.new_generator(ctx);
     let permit = internal::permit<RANKED>();
 
-    let (_order, found) = matchmaker::find_game(permit, mm, rating.rating(), window, &mut rng, clock, ctx);
+    let (_order, found) = matchmaker::find_game(permit, mm, &mut rng, clock, rating.rating(), window, ctx);
     found.do!(|m| {
         // m.players() is [waiting player, sender]; create the game here
     });
@@ -74,17 +74,19 @@ public fun cancel(mm: &mut Matchmaker<RANKED>, ctx: &mut TxContext) {
 }
 ```
 
-`find_game` returns the sender's order ID either way. When it pairs the sender, it emits a
-`MatchFound { match_id, players }` event whose `match_id` is the waiting player's order ID, so the
-waiting player can recognise the pairing they were drawn into.
+`find_game` returns the sender's order ID either way, and a `Match` carries the ID of the waiting
+player's order. The matchmaker emits no events: the game package records the outcome wherever its
+players can read it.
 
 ## API
 
 - `new<T>(permit, config, ctx)` / `share(mm)` - create and share a matchmaker.
-- `find_game<T>(permit, &mut mm, rating, window, &mut rng, &clock, ctx): (ID, Option<Match>)` -
+- `find_game<T>(permit, &mut mm, &mut rng, &clock, rating, window, ctx): (ID, Option<Match>)` -
   queue or pair; returns the sender's order ID. Aborts with `EAlreadyQueued` if the sender has a
   live ticket; an expired one is replaced.
 - `cancel_game(&mut mm, ctx)` - leave the queue. Aborts with `ENotQueued` if not waiting.
+- `remove_ticket<T>(permit, &mut mm, player)` - remove another player's ticket; the module defining
+  `T` decides when. Aborts with `ENotQueued` if they are not waiting.
 - `set_config<T>(permit, &mut mm, config)` - replace the parameters; only while the queue is
   empty.
 - `new_config(bucket_size, bucket_capacity, window_step, window_step_ms, max_window, ticket_ttl_ms)`

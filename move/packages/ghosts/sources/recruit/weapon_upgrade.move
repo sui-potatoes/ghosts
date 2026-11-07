@@ -20,7 +20,7 @@ public struct WeaponUpgrade has drop, store {
 }
 
 /// Create a new `WeaponUpgrade` with the provided parameters.
-public fun new(name: String, kind: u8, tier: u8, modifier: Stats): WeaponUpgrade {
+public(package) fun new(name: String, kind: u8, tier: u8, modifier: Stats): WeaponUpgrade {
     WeaponUpgrade { name, kind, tier, modifier }
 }
 

@@ -54,8 +54,40 @@ public fun major(): Rank { Rank::Major }
 /// Create a new `Colonel` rank.
 public fun colonel(): Rank { Rank::Colonel }
 
+/// The experience a recruit needs for the rank after this one, in total. A
+/// `Colonel` is as far as it goes.
+public fun next_rank_xp(rank: &Rank): Option<u16> {
+    match (rank) {
+        Rank::Rookie => option::some(3),
+        Rank::Squaddie => option::some(8),
+        Rank::Corporal => option::some(15),
+        Rank::Sergeant => option::some(25),
+        Rank::Lieutenant => option::some(40),
+        Rank::Captain => option::some(60),
+        Rank::Major => option::some(90),
+        Rank::Colonel => option::none(),
+    }
+}
+
+/// The rank's place in the order, a `Rookie` being 0.
+public fun ordinal(rank: &Rank): u8 {
+    match (rank) {
+        Rank::Rookie => 0,
+        Rank::Squaddie => 1,
+        Rank::Corporal => 2,
+        Rank::Sergeant => 3,
+        Rank::Lieutenant => 4,
+        Rank::Captain => 5,
+        Rank::Major => 6,
+        Rank::Colonel => 7,
+    }
+}
+
+/// Whether the rank is the given one or above it.
+public fun at_least(rank: &Rank, other: &Rank): bool { rank.ordinal() >= other.ordinal() }
+
 /// Promotes the rank of the Recruit.
-public fun rank_up(rank: &mut Rank) {
+public(package) fun rank_up(rank: &mut Rank) {
     *rank =
         match (rank) {
             Rank::Rookie => Rank::Squaddie,

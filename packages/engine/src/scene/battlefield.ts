@@ -69,6 +69,8 @@ export class Battlefield {
   aimReady: Promise<void> = Promise.resolve();
   onPick: (p: Cell, id?: string) => void = () => {};
   onHover: (p: Cell) => void = () => {};
+  /** The pointer left the field, taking the preview with it. */
+  onLeave: () => void = () => {};
 
   private readonly space: Space;
   private readonly units: Units;
@@ -246,10 +248,14 @@ export class Battlefield {
       if (p && this.overlays.hoverAt(p)) {
         this.invalidate();
         this.onHover(p);
-      } else if (!p && this.overlays.leave()) this.invalidate();
+      } else if (!p && this.overlays.leave()) {
+        this.onLeave();
+        this.invalidate();
+      }
     });
     host.addEventListener("pointerleave", () => {
       this.overlays.leave();
+      this.onLeave();
       this.invalidate();
     });
   }
@@ -303,6 +309,11 @@ export class Battlefield {
 
   showPath(path: Cell[] | undefined, grenade = false) {
     this.overlays.showPath(path, grenade);
+  }
+
+  /** Mark the tiles with a weapon lying on them. */
+  showDropped(cells: Cell[]) {
+    if (this.overlays.showDropped(cells)) this.invalidate();
   }
 
   previewPath(p: Cell) {
@@ -583,12 +594,10 @@ export class Battlefield {
       case "shot":
         return this.shot(unit(event.unit), unit(event.target), event.hit, event.environment ?? []);
       case "reload":
+      case "pick-up":
         return this.units.reload(unit(event.unit));
       case "grenade":
-        return this.units.grenade(unit(event.unit), event.at, () => {
-          this.destruction.apply(event.environment ?? [], this.space.vec(event.at, 0.2));
-          this.invalidate();
-        });
+        return this.throwAt(unit(event.unit), event.at, event.environment ?? []);
       case "hunker":
         return this.units.hunker(unit(event.unit));
       case "overwatch":
@@ -596,8 +605,26 @@ export class Battlefield {
     }
   }
 
+  /** A shot fired ahead of its outcome: the target reacts once `hit` is known. */
+  fire(a: Unit, b: Unit, hit: Promise<boolean>) {
+    return this.shot(a, b, hit, []);
+  }
+
+  /** A grenade thrown and gone off; whoever it hurt reacts once `settled`. */
+  throwAt(u: Unit, at: Cell, environment: PropDamage[], settled?: Promise<unknown>) {
+    return this.units.grenade(
+      u,
+      at,
+      () => {
+        this.destruction.apply(environment, this.space.vec(at, 0.2));
+        this.invalidate();
+      },
+      settled,
+    );
+  }
+
   /** A shot, with a camera kick on each tracer when it is framed over the shooter's shoulder. */
-  private shot(a: Unit, b: Unit, hit: boolean, environment: PropDamage[]) {
+  private shot(a: Unit, b: Unit, hit: boolean | Promise<boolean>, environment: PropDamage[]) {
     const shoulder = this.aimUnit === a.id;
     const kick = a.weapon === "sniper" ? 0.11 : 0.035;
     // The shoulder camera is settled before the trigger is pulled; each kick returns to it.

@@ -11,12 +11,20 @@ import type { Encounter } from "./game.ts";
  * already brought up to date — an async driver submits a transaction, decodes
  * the events from its effects and `ingest`s them before resolving. The session
  * plays whatever comes back, one event at a time, and never decides anything.
+ *
+ * A remote driver may answer a guaranteed order at once and settle it behind the
+ * scene. An outcome that takes dice arrives when it arrives, and the session
+ * starts on the order without waiting for it.
  */
 export interface EncounterDriver {
+  /** Answers take a round trip: start on shots and throws before the outcome is in. */
+  remote?: boolean;
   /** Carry out one order; empty when refused. The rules are updated before this resolves. */
   resolve(command: Command): Promise<GameEvent[]>;
-  /** The whole hostile turn, one event at a time; may be lazy or async. */
+  /** The player's turn is over: the whole hostile turn, one event at a time; may be lazy or async. */
   hostilePhase(): Iterable<GameEvent> | AsyncIterable<GameEvent>;
+  /** Follow the other side without ending anything; returns when it is the player's turn. */
+  watch?(): AsyncIterable<GameEvent>;
 }
 
 /** Builds the driver for a (re)started encounter; a host passes its own to `<Encounter>`. */

@@ -29,15 +29,15 @@ fun player(n: u64): address { address::from_u256(n as u256) }
 /// `find_game` as player number `n`; returns whether they were paired.
 fun find(
     mm: &mut Matchmaker<BENCH>,
+    rng: &mut RandomGenerator,
+    clock: &Clock,
     n: u64,
     rating: u64,
     window: u64,
-    rng: &mut RandomGenerator,
-    clock: &Clock,
 ): bool {
     let ctx = &mut tx_context::new_from_hint(player(n), n, 0, 0, 0);
     let permit = internal::permit<BENCH>();
-    let (_, found) = matchmaker::find_game(permit, mm, rating, window, rng, clock, ctx);
+    let (_, found) = matchmaker::find_game(permit, mm, rng, clock, rating, window, ctx);
     found.is_some()
 }
 
@@ -46,14 +46,14 @@ fun find(
 /// are the ratings.
 fun fill(
     mm: &mut Matchmaker<BENCH>,
-    first: u64,
-    last: u64,
     rng: &mut RandomGenerator,
     clock: &Clock,
+    first: u64,
+    last: u64,
 ) {
     first.range_do_eq!(last, |bucket| PER_BUCKET.do!(|i| {
         let rating = bucket * 100 + i;
-        assert!(!find(mm, rating, rating, 0, rng, clock));
+        assert!(!find(mm, rng, clock, rating, rating, 0));
     }));
 }
 
@@ -62,7 +62,7 @@ fun fill(
 /// all of them without finding a match.
 fun bench_queue_without_match() {
     let (mut mm, clock, mut rng) = setup();
-    fill(&mut mm, 10, 19, &mut rng, &clock);
+    fill(&mut mm, &mut rng, &clock, 10, 19);
     assert_eq!(mm.queue_length(), 10 * PER_BUCKET);
 
     destroy(mm);
@@ -74,9 +74,9 @@ fun bench_queue_without_match() {
 /// empty.
 fun bench_match_from_crowded_buckets() {
     let (mut mm, clock, mut rng) = setup();
-    fill(&mut mm, 13, 17, &mut rng, &clock);
+    fill(&mut mm, &mut rng, &clock, 13, 17);
 
-    (5 * PER_BUCKET).do!(|i| assert!(find(&mut mm, 10_000 + i, 1550, 350, &mut rng, &clock)));
+    (5 * PER_BUCKET).do!(|i| assert!(find(&mut mm, &mut rng, &clock, 10_000 + i, 1550, 350)));
     assert_eq!(mm.queue_length(), 0);
 
     destroy(mm);
@@ -87,10 +87,10 @@ fun bench_match_from_crowded_buckets() {
 /// One call walks every ring and prunes 300 expired tickets.
 fun bench_prune_expired() {
     let (mut mm, mut clock, mut rng) = setup();
-    fill(&mut mm, 10, 19, &mut rng, &clock);
+    fill(&mut mm, &mut rng, &clock, 10, 19);
 
     clock.set_for_testing(TTL_MS + 1);
-    assert!(!find(&mut mm, 10_000, 1500, 0, &mut rng, &clock));
+    assert!(!find(&mut mm, &mut rng, &clock, 10_000, 1500, 0));
     assert_eq!(mm.queue_length(), 1);
 
     destroy(mm);
@@ -101,7 +101,7 @@ fun bench_prune_expired() {
 /// 300 players leave the queue in the order they joined.
 fun bench_cancel() {
     let (mut mm, clock, mut rng) = setup();
-    fill(&mut mm, 10, 19, &mut rng, &clock);
+    fill(&mut mm, &mut rng, &clock, 10, 19);
 
     10u64.range_do_eq!(19, |bucket| PER_BUCKET.do!(|i| {
         let n = bucket * 100 + i;

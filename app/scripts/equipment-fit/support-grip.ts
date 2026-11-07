@@ -60,12 +60,23 @@ export function supportGrip(root: T.Group, weapon: T.Group, sex: string, model =
         aim(`Hand${finger}2`, new T.Vector3(0, 1, model === "sniper" ? 0.12 : 0.05));
         aim(`Hand${finger}3`, new T.Vector3(0, 1, 0.15));
     }
-    aim(
-        "HandThumb1",
+    // Keep the metacarpal beside the palm and curl the free thumb joints
+    // progressively along the side of the fore-end.
+    const narrow = model === "sniper";
+    const angles =
         sex === "female"
-            ? new T.Vector3(0.123988, 0.757271, 0.523058)
-            : new T.Vector3(0, 1, model === "sniper" ? 0.15 : 0.3),
-    );
-    aim("HandThumb2", new T.Vector3(0.15, 1, model === "sniper" ? -0.25 : -0.1));
-    aim("HandThumb3", new T.Vector3(0.7, 0.5, model === "sniper" ? -0.2 : -0.1));
+            ? narrow
+                ? [45, 55, 65]
+                : [45, 65, 75]
+            : narrow
+              ? [45, 45, 55]
+              : [35, 35, 45];
+    const offset = sex === "male" ? (narrow ? -0.1 : 0.2) : 0;
+    angles.forEach((degrees, index) => {
+        const angle = T.MathUtils.degToRad(degrees);
+        aim(
+            `HandThumb${index + 1}`,
+            new T.Vector3(Math.sin(angle), Math.cos(angle), offset - index * 0.08),
+        );
+    });
 }

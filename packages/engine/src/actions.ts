@@ -7,7 +7,7 @@ import { Encounter, type Cell } from "./game";
 import { applyDeploymentNames } from "./squad-bridge";
 // @ts-ignore Native editor adapter is shared JavaScript.
 import { deployment } from "./mpfb-characters.js";
-import { present } from "./presenter";
+import { present, presentShot, presentThrow } from "./presenter";
 import { session } from "./session";
 import { bestShotTarget, damagePreview, defaultGrenadeTarget, grenadeBlockReason } from "./targeting";
 
@@ -28,6 +28,7 @@ function syncScene() {
   const { game, battlefield } = s;
   battlefield.invalidate();
   s.settleSelection();
+  battlefield.showDropped((game.authority?.dropped() ?? []).map((d) => d.cell));
   const u = s.selectedUnit(),
     t = s.targetUnit();
   battlefield.sync();
@@ -55,7 +56,7 @@ export function refresh() {
   const s = session;
   if (s.state !== "ready") return;
   syncScene();
-  if (s.game.result && !s.busy && !s.resultShown && !s.dialogOpen) {
+  if (s.game.result && !s.game.scenario.versus && !s.busy && !s.resultShown && !s.dialogOpen) {
     s.resultShown = true;
     s.debrief = true;
   }
@@ -177,12 +178,30 @@ export async function fire() {
     b = s.targetUnit();
   if (!a || !b) return;
   await perform(async () => {
-    const [shot] = await resolve({ type: "fire", unit: a.id, target: b.id });
-    if (shot?.type !== "shot") {
-      notify("NO SHOT AVAILABLE");
-      return;
+    const command: Command = { type: "fire", unit: a.id, target: b.id };
+    let shot: GameEvent | undefined;
+    if (s.driver.remote) {
+      // The order goes out and the operator opens fire at once; only what the
+      // shot did waits for the answer.
+      const answer = resolve(command).then(([e]) => (e?.type === "shot" ? e : null));
+      await presentShot(a, b, answer);
+      shot = (await answer) ?? undefined;
+      s.battlefield.sync();
+      refresh();
+      if (!shot) {
+        s.mode = "move";
+        await s.battlefield.leaveAim();
+        notify("ORDER REFUSED", "miss");
+        return;
+      }
+    } else {
+      [shot] = await resolve(command);
+      if (shot?.type !== "shot") {
+        notify("NO SHOT AVAILABLE");
+        return;
+      }
+      await play([shot]);
     }
-    await play([shot]);
     s.mode = "move";
     await s.battlefield.leaveAim();
     notify(
@@ -200,7 +219,17 @@ export async function throwGrenade() {
   if (!s.grenadeTarget || !u) return;
   const at: Cell = [...s.grenadeTarget];
   await perform(async () => {
-    if (!(await order({ type: "grenade", unit: u.id, at }))) {
+    const command: Command = { type: "grenade", unit: u.id, at };
+    if (s.driver.remote) {
+      // The throw and the blast are certain; only who it hurt waits for the answer.
+      const environment = s.game.map.blastProps(at);
+      const answer = resolve(command);
+      await presentThrow(u, at, environment, answer);
+      const thrown = (await answer).length > 0;
+      s.battlefield.sync();
+      refresh();
+      if (!thrown) notify("ORDER REFUSED", "miss");
+    } else if (!(await order(command))) {
       notify(grenadeBlockReason(s.game, u, at) ?? "THROW UNAVAILABLE");
       return;
     }
@@ -210,7 +239,10 @@ export async function throwGrenade() {
   });
 }
 
-const STANDING_ORDERS = ["reload", "hunker", "overwatch", "secure"] as const;
+const STANDING_ORDERS = ["reload", "pick-up", "hunker", "overwatch", "secure"] as const;
+
+/** Orders the bundled rules have and a game against a player does not. */
+const VERSUS_OFF = ["overwatch", "hunker", "secure"];
 
 export async function action(name: string) {
   const s = session;
@@ -221,6 +253,11 @@ export async function action(name: string) {
     return;
   }
   if (!s.game.canAct(u)) return;
+  if (s.game.scenario.versus && VERSUS_OFF.includes(name)) return;
+  if (name === "pick-up" && !s.game.weaponAt(u.pos)) {
+    notify("NO WEAPON HERE");
+    return;
+  }
   audio.tone("click");
   if (name === "move" || name === "fire" || name === "grenade") {
     if (name === "fire" && s.mode === "fire") {
@@ -282,6 +319,37 @@ export async function endTurn() {
   s.grenadeTarget = null;
   await battlefield.leaveAim();
   await perform(() => play(s.driver.hostilePhase()));
+}
+
+/** Wait out the other side's turn: an encounter can open on it. */
+export async function watchOpponent() {
+  const s = session;
+  await perform(() => play(s.driver.watch?.() ?? s.driver.hostilePhase()));
+}
+
+/**
+ * The game moved on to the other side's turn without this player: follow it. Safe
+ * to call at any time, and again: it waits for the scene, leaves a running phase
+ * alone, picks up a watch that stopped, and never ends the player's own turn.
+ */
+export async function followOpponent() {
+  const s = session;
+  if (s.state !== "ready" || s.busy) return;
+  await watchOpponent();
+}
+
+/**
+ * The driver found the field out of line with what really happened, after an
+ * order it had already answered was refused: play the way back, once the player
+ * is out of what they are in the middle of, and say so.
+ */
+export async function correctEncounter(events: GameEvent[], message: string) {
+  const s = session;
+  while (s.busy) await new Promise((resolve) => setTimeout(resolve, 100));
+  if (s.state !== "ready") return;
+  await perform(() => play(events));
+  refresh();
+  notify(message, "miss");
 }
 
 /** A fresh encounter with the same deployed squad, then the deployment briefing. */

@@ -10,6 +10,8 @@
  */
 import { reset, showBriefing } from "./actions";
 
+export { correctEncounter, followOpponent } from "./actions";
+
 export { Encounter, type EncounterProps } from "./ui/Encounter";
 export { blackRain, type Scenario, type UnitSpec } from "./scenario";
 export { scenarioById, scenarios } from "./scenarios";

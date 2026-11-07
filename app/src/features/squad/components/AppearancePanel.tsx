@@ -9,6 +9,7 @@ import {
     BROWS,
     BROW_CONTROLS,
     EYE_PRESETS,
+    DEFAULT_LENS_TINT,
     GLASSES,
     HAIR,
     SCARS,
@@ -390,7 +391,15 @@ export function AppearancePanel({ value: s, onChange, dirty, onSave, onReset, on
                             label="Eyewear"
                             value={s.glasses}
                             options={GLASSES}
-                            onChange={(glasses) => patch({ glasses })}
+                            // Putting eyewear on starts from the default tint, not
+                            // whatever a bare face last stored.
+                            onChange={(glasses) =>
+                                patch(
+                                    s.glasses === "none"
+                                        ? { glasses, lensTint: DEFAULT_LENS_TINT }
+                                        : { glasses },
+                                )
+                            }
                         />
                         {s.glasses !== "none" && (
                             <>

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { useCurrentAccount } from "@mysten/dapp-kit-react";
+import { useState } from "react";
 
 import {
     FREE_RECRUITS,
@@ -13,6 +14,7 @@ import {
     useGhostsAction,
     type ChainRecruit,
 } from "../../chain";
+import { LoadingSpinner } from "../../components/LoadingSpinner";
 import { requestSignIn } from "../../signIn";
 import { Gate } from "./components/Chrome";
 import { useSlots } from "./mapping";
@@ -33,11 +35,18 @@ export function useHeadquarters() {
     const slots = useSlots(recruitsQuery.data ?? [], FREE_RECRUITS);
     const recruits = slots.filter((s): s is ChainRecruit => !!s);
 
-    const loading =
+    const reading =
         ghostsEnabled &&
         !!connected &&
         (accountId.isPending ||
             (!!accountId.data && (account.isPending || recruitsQuery.isPending)));
+    // Syncing covers the first read per address only. Later reads (the account
+    // id appearing after the first hire, a refetch) keep the screen mounted, so
+    // the hire deck can turn its cards over instead of vanishing behind a gate.
+    const owner = connected?.address ?? null;
+    const [synced, setSynced] = useState<string | null>(null);
+    if (owner && !reading && synced !== owner) setSynced(owner);
+    const loading = reading && synced !== owner;
 
     const gate = !ghostsEnabled ? (
         <Gate heading="AWAITING DEPLOYMENT">
@@ -47,14 +56,13 @@ export function useHeadquarters() {
         </Gate>
     ) : !connected ? (
         <Gate heading="IDENTIFICATION REQUIRED" action="Sign in" onAction={requestSignIn}>
-            Headquarters keeps your squad on chain. Sign in to raise one.
+            Sign in to see your squad.
         </Gate>
     ) : loading ? (
-        <Gate heading="SECURE LINE">Reading the chain…</Gate>
+        <LoadingSpinner />
     ) : account.isError || recruitsQuery.isError ? (
-        <Gate heading="SQUAD FILE UNREADABLE">
-            Your account is on chain, but its records do not match this build — usually a{" "}
-            <code>GHOSTS</code> package id from before a Move change. (
+        <Gate heading="SQUAD UNAVAILABLE">
+            This version of the game can't read your squad. (
             {String((account.error ?? recruitsQuery.error)?.message ?? "decode failed")})
         </Gate>
     ) : null;

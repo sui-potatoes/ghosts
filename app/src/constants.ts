@@ -18,12 +18,20 @@ export const NAMES = {
 } as const;
 
 /**
- * Testnet IDs for the published ghosts Move package and the shared Registry
- * created by its initializer.
+ * Testnet IDs for the published ghosts Move package and what its initializer
+ * creates: the Registry, the matchmaking queue and the frozen map preset games
+ * start on.
  */
-export const GHOSTS: { package: string; registry: string } = {
-    package: "0xa3636890b19b1e695cdae1410df6aa87e7dafb278e7fed8e8da0c0b11230a924",
-    registry: "0x7091213eebdedbc7250451fcafe0deb83736f57d829fe8859485b84a8c884ea5",
+export const GHOSTS: {
+    package: string;
+    registry: string;
+    matchmaker: string;
+    preset: string;
+} = {
+    package: "0x4f8185ac8635183a930bb6f0e03066a101da08226bb4d007167def4755019669",
+    registry: "0xcf4f9f6db6633a75bd2a300a3fc446bbc9ff765bc75dbb9b9124a48035b7b9ec",
+    matchmaker: "0xb5cea6ea414f22709ff12a5ec428439edf9a6e38e837844bb073aa29b5817fb2",
+    preset: "0x44fa50392011fe2419a7a7ffa18dee9fc4797ff95697f352c8fe574524220a9e",
 };
 
 /** Same Google OAuth client as `app/`; both origins are registered on it. */

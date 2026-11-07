@@ -5,7 +5,7 @@ import { ATTACHMENTS, ATTACHMENT_SLOTS, ATTACHMENT_SLOT_NAMES } from "@ghosts/sq
 import { formatStat, VISIBLE, type Stats, type StatRow } from "@ghosts/squad/stats";
 import type { AttachmentSlot } from "@ghosts/squad/types";
 
-import type { ChainRecruit, Requisition } from "../../../chain";
+import { priceOf, rankAllows, rankFor, type ChainRecruit, type Requisition } from "../../../chain";
 import {
     attachmentFor,
     fitCount,
@@ -51,6 +51,7 @@ function StatCompare({ rows, now, next }: { rows: StatRow[]; now: Stats; next?: 
 /** Who carries the item, and handing it to someone else. */
 function Issue({
     kind,
+    gear,
     carrier,
     recruits,
     busy,
@@ -58,6 +59,7 @@ function Issue({
     onReturn,
 }: {
     kind: "weapon" | "armor";
+    gear: Gear;
     carrier: ChainRecruit | null;
     recruits: ChainRecruit[];
     busy: boolean;
@@ -74,22 +76,26 @@ function Issue({
                 {recruits.map((r) => {
                     const current = r.objectId === carrier?.objectId;
                     const holding = kind === "weapon" ? r.weapon : r.armor;
+                    // a looted weapon stays with whoever carries it, whatever their rank
+                    const allowed = current || rankAllows(r, gear);
                     return (
                         <button
                             key={r.objectId}
                             aria-pressed={current}
-                            disabled={busy || current}
+                            disabled={busy || current || !allowed}
                             onClick={() => onIssue(r)}
                         >
                             <strong>{r.metadata.name}</strong>
                             <small>
                                 {current
                                     ? "Carrying"
-                                    : holding
-                                      ? `Swap for ${holding.name}`
-                                      : kind === "weapon"
-                                        ? "Standard issue"
-                                        : "No armor"}
+                                    : !allowed
+                                      ? `Needs ${gear.requiredRank?.$kind}`
+                                      : holding
+                                        ? `Swap for ${holding.name}`
+                                        : kind === "weapon"
+                                          ? "Standard issue"
+                                          : "No armor"}
                             </small>
                         </button>
                     );
@@ -154,7 +160,7 @@ export function WeaponBench(props: {
             />
 
             <div className="inventory-heading">
-                <h4>Fittings</h4>
+                <h4>Mods</h4>
                 <span>One per type · three max</span>
             </div>
             <div className="hq-fittings">
@@ -196,7 +202,7 @@ export function WeaponBench(props: {
                                             )}
                                             <b>T{tier}</b>
                                             <small>
-                                                {on ? "fitted" : count ? `×${count}` : "mint"}
+                                                {on ? "fitted" : count ? `×${count}` : "new"}
                                             </small>
                                         </button>
                                     );
@@ -210,8 +216,8 @@ export function WeaponBench(props: {
             <div className="hq-bench-actions">
                 <span>
                     {changed
-                        ? `${changes} change${changes === 1 ? "" : "s"}${minted ? ` · ${minted} minted (testnet)` : ""}`
-                        : "Fittings as issued"}
+                        ? `${changes} change${changes === 1 ? "" : "s"}${minted ? ` · ${minted} requisitioned` : ""}`
+                        : "Mods as issued"}
                 </span>
                 <button disabled={!changed || busy} onClick={() => props.onDraft(fit)}>
                     Reset
@@ -221,12 +227,13 @@ export function WeaponBench(props: {
                     disabled={!changed || busy}
                     onClick={props.onApply}
                 >
-                    Apply fittings <span>↗</span>
+                    Apply mods <span>↗</span>
                 </button>
             </div>
 
             <Issue
                 kind="weapon"
+                gear={held.item}
                 carrier={held.carrier}
                 recruits={props.recruits}
                 busy={busy || changed}
@@ -234,9 +241,7 @@ export function WeaponBench(props: {
                 onReturn={props.onReturn}
             />
             {changed && (
-                <p className="sq-footnote">
-                    Apply or reset the fittings before issuing this rifle.
-                </p>
+                <p className="sq-footnote">Apply or reset the mods before issuing this rifle.</p>
             )}
         </div>
     );
@@ -268,6 +273,7 @@ export function ArmorBench(props: {
             </p>
             <Issue
                 kind="armor"
+                gear={props.held.item}
                 carrier={props.held.carrier}
                 recruits={props.recruits}
                 busy={props.busy}
@@ -349,6 +355,7 @@ export function RequisitionBench(props: {
     groups: { title: string; entries: CatalogEntry[] }[];
     preview: string | null;
     busy: boolean;
+    credits: number;
     onPreview(key: string): void;
     onRequisition(entry: CatalogEntry): void;
 }) {
@@ -356,12 +363,13 @@ export function RequisitionBench(props: {
         <div className="hq-bench">
             <div className="sq-panel-heading">
                 <div>
-                    <span className="sq-eyebrow">REQUISITION · TESTNET</span>
+                    <span className="sq-eyebrow">REQUISITION</span>
                     <h3>Supply catalog</h3>
                 </div>
             </div>
             <p className="sq-footnote">
-                Requisitions mint gear straight into your account, free until the economy lands.
+                Gear goes straight to the racks. You have {props.credits} credits. Better gear can
+                only be issued to recruits of high enough rank.
             </p>
             {props.groups.map((group) => (
                 <section key={group.title}>
@@ -381,12 +389,19 @@ export function RequisitionBench(props: {
                                     <span className="hq-gear-text">
                                         <strong>{entry.label}</strong>
                                         <small>{entry.detail}</small>
+                                        <small>
+                                            {priceOf(entry.requisition)} credits
+                                            {rankFor(entry.requisition) !== "Rookie" &&
+                                                ` · ${rankFor(entry.requisition)} and above`}
+                                        </small>
                                     </span>
                                 </button>
                                 <button
                                     className="hq-catalog-mint"
-                                    disabled={props.busy}
-                                    aria-label={`Requisition ${entry.label}`}
+                                    disabled={
+                                        props.busy || props.credits < priceOf(entry.requisition)
+                                    }
+                                    aria-label={`Buy ${entry.label} for ${priceOf(entry.requisition)} credits`}
                                     onClick={() => props.onRequisition(entry)}
                                 >
                                     ＋

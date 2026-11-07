@@ -17,7 +17,8 @@ interface Segment {
     length: number;
 }
 
-/** One continuous rest-space warp is shared by skin, garments and armor.
+/** A continuous rest-space warp fits skin and flexible garments. Rigid equipment
+ * follows assembly anchors without changing its authored proportions.
  * It changes cross-sections without moving joints, so captured motion and hand
  * sockets remain compatible. Stature scales the entire assembled native rig. */
 export class BodyDeformation {
@@ -77,7 +78,15 @@ export class BodyDeformation {
         const side = input.x < 0 ? 0 : 1;
         const upper = smooth(this.hip.y - 0.14, this.hip.y + 0.12, input.y);
         const head = 1 - smooth(this.neck.y - 0.1, this.neck.y - 0.015, input.y);
-        const torso = 1 - smooth(this.shoulder * 0.65, this.shoulder * 1.3, Math.abs(input.x));
+        // The pelvis is wider than the rib cage. Reusing the shoulder cutoff here
+        // pinched the outer hips while expanding their neighbors into angular lobes.
+        const ribMask = 1 - smooth(this.shoulder * 0.65, this.shoulder * 1.3, Math.abs(input.x));
+        const pelvisMask = 1 - smooth(this.shoulder * 1.3, this.shoulder * 2, Math.abs(input.x));
+        const torso = T.MathUtils.lerp(
+            pelvisMask,
+            ribMask,
+            smooth(this.hip.y + 0.06, this.hip.y + 0.28, input.y),
+        );
         const chestArea = bell(this.chest.y + 0.055, 0.23, input.y);
         const waistArea = bell(this.waist.y, 0.19, input.y);
         const hipArea = bell(this.hip.y - 0.04, 0.22, input.y);
@@ -88,7 +97,7 @@ export class BodyDeformation {
             0.035 * muscle * waistArea +
             0.15 * chest * chestArea +
             0.22 * waist * waistArea +
-            0.17 * hips * hipArea;
+            0.12 * hips * hipArea;
         const depth =
             0.14 * build +
             0.08 * muscle * chestArea +
@@ -161,6 +170,12 @@ export class BodyDeformation {
     /** Called once on owned geometry, never per animation frame or on cached GLTFs. */
     geometry(geometry: T.BufferGeometry) {
         if (!this.active) return;
+        const groups = geometry.getAttribute("_rigid_fit");
+        const anchors = geometry.userData.rigidFit as { center: number[] }[] | undefined;
+        const offsets = anchors?.map(({ center }) => {
+            const p = new T.Vector3().fromArray(center);
+            return this.point(p, new T.Vector3()).sub(p);
+        });
         const positions = geometry.getAttribute("position"),
             normals = geometry.getAttribute("normal");
         const p = new T.Vector3(),
@@ -173,6 +188,14 @@ export class BodyDeformation {
             probe = new T.Vector3();
         for (let i = 0; i < positions.count; i++) {
             p.fromBufferAttribute(positions, i);
+            const group = groups?.getX(i) ?? 0;
+            if (group) {
+                const offset = offsets?.[group - 1];
+                if (!offset) throw Error(`Missing rigid fit assembly ${group}`);
+                moved.copy(p).add(offset);
+                positions.setXYZ(i, moved.x, moved.y, moved.z);
+                continue; // Translation preserves normals, UVs and all pairwise distances.
+            }
             this.point(p, moved);
             if (normals) {
                 n.fromBufferAttribute(normals, i).normalize();

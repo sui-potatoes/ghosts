@@ -3,6 +3,7 @@
 
 import type { Appearance, Schema, Sex } from "../types";
 export const GLASSES: [string, string][];
+export const DEFAULT_LENS_TINT: number;
 export const SCARS: [string, string][];
 export const HAIR: [string, string][];
 export const BROWS: [string, string][];

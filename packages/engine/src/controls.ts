@@ -15,7 +15,7 @@ export interface ControlOptions {
   reverse?: boolean;
 }
 
-const ORDERS = new Set(["move", "fire", "grenade", "reload", "overwatch", "hunker", "secure"]);
+const ORDERS = new Set(["move", "fire", "grenade", "reload", "pick-up", "overwatch", "hunker", "secure"]);
 
 
 /**
@@ -130,5 +130,11 @@ function bindField() {
       battlefield.setHover(true);
       battlefield.showPath([u.pos, p], true);
     }
+  };
+  // A throw already aimed stays on the field while the pointer goes for its confirm button.
+  battlefield.onLeave = () => {
+    const s = session;
+    const u = s.selectedUnit();
+    if (u && s.mode === "grenade" && s.grenadeTarget) battlefield.showPath([u.pos, s.grenadeTarget], true);
   };
 }

@@ -173,7 +173,7 @@ const hex = (r: number, g: number, b: number) =>
 
 // === Codec ===
 
-/** Encode a look into the five areas `ghosts::ghosts::edit_recruit` takes. */
+/** Encode a look into the five areas `ghosts::account::edit_recruit` takes. */
 export function encodeVisuals(a: Appearance, armor: ArmorColors): VisualAreas {
   const body = normalizeBody(a.body);
   const colors = normalizeArmorColors(armor);

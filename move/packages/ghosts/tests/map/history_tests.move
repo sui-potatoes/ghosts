@@ -17,7 +17,7 @@ fun test_all_records() {
     history.add(history::new_miss());
     history.add(history::new_critical_hit(0));
     history.add(history::new_damage(10));
-    history.add(history::new_kia(@0.to_id()));
+    history.add(history::new_kia(@0.to_id(), 0, 0));
     history.add(history::new_grenade(vector[0, 0], vector[0, 2]));
     history.add(history::new_explosion(0, 2, 2));
     history.add(history::new_move(vector[0, 0, grid::direction::down!()]));

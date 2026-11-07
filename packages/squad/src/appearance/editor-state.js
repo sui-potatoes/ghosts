@@ -86,11 +86,13 @@ export const TATTOOS = [
     ["diamond", "Diamond"],
     ["dots", "Three dots"],
 ];
+/** Lens tint when eyewear goes on: shaded, eyes still readable behind it. */
+export const DEFAULT_LENS_TINT = 0.5;
 export const baseState = () => ({
     glasses: "none",
     glassesColor: "#272b2c",
     lensColor: "#344448",
-    lensTint: 0,
+    lensTint: DEFAULT_LENS_TINT,
     scar: "none",
     scarPlace: "cheekLeft",
     scarAmount: 0.6,
@@ -605,7 +607,7 @@ export function randomIdentity(schema, sex, random = Math.random, previous = nul
               )
             : "none";
     s.glassesColor = pick(["#272b2c", "#5c4634", "#a5967b"], random);
-    s.lensTint = s.glasses === "ballistic" ? 0.45 : s.glasses === "aviator" ? 0.65 : 0;
+    s.lensTint = s.glasses === "ballistic" ? 0.45 : s.glasses === "aviator" ? 0.65 : DEFAULT_LENS_TINT;
     s.scar =
         random() < 0.3
             ? pick(

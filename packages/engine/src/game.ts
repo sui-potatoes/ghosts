@@ -4,7 +4,7 @@
 import { CELL, TacticalMap, type Cell } from "./map.ts";
 import { describe, type Command, type GameEvent } from "./events.ts";
 import { blackRain, type Scenario } from "./scenario.ts";
-// Local presentation simulation. Rules reference commander::{unit,map,stats}; no chain imports.
+// Local presentation simulation. Rules reference ghosts::{unit,map,stats}; no chain imports.
 export type { Cell };
 export type Weapon = "rifle" | "sniper" | "pistol";
 export const weapons = {
@@ -81,9 +81,27 @@ export function initialUnits(scenario: Scenario = blackRain): Unit[] {
     };
   });
 }
+/**
+ * What whoever decides an encounter says about its ground and its shots, when
+ * that isn't the bundled rules: the odds on screen and the paths offered are
+ * then the ones that will really apply.
+ */
+export interface GameAuthority {
+  /** The chance `a` hits `b`, in percent; 0 when the shot can't be taken. */
+  chance(a: Unit, b: Unit): number;
+  /** The cover `at` has against a shot from `from`. */
+  cover(from: Unit, at: Unit): number;
+  clearShot(from: Cell, to: Cell): boolean;
+  clearThrow(from: Cell, to: Cell): boolean;
+  terrain(cell: Cell): "open" | "cover" | "blocked";
+  /** The weapons lying on the field, for a unit standing there to take up. */
+  dropped(): { cell: Cell; name: string }[];
+}
 export class Encounter {
   readonly scenario: Scenario;
   readonly map: TacticalMap;
+  /** Whoever decides this encounter, when it isn't the bundled rules. */
+  authority?: GameAuthority;
   units: Unit[];
   // Encounter-local credit, shared by direct fire, overwatch and grenades.
   kills: Record<string, number> = {};
@@ -114,6 +132,8 @@ export class Encounter {
     return this.units.filter((u) => u.enemy && u.hp > 0);
   }
   get result() {
+    if (this.scenario.versus)
+      return !this.allies.length ? "defeat" : !this.enemies.length ? "victory" : null;
     return !this.allies.length
       ? "defeat"
       : !this.enemies.length && this.secured
@@ -182,7 +202,8 @@ export class Encounter {
         if (event.killed) this.creditKill(a, b);
         return;
       }
-      case "reload": {
+      case "reload":
+      case "pick-up": {
         const u = this.unit(event.unit)!;
         u.ammo = u.clip;
         u.magazines[u.weapon] = u.ammo;
@@ -273,6 +294,9 @@ export class Encounter {
           return this.throwGrenade(u, command.at);
         case "reload":
           return this.reload(u);
+        // only whoever decides the game has anything lying around
+        case "pick-up":
+          return null;
         case "hunker":
           return this.hunker(u);
         case "overwatch":
@@ -284,9 +308,27 @@ export class Encounter {
       }
     });
   }
+  /** The name of a weapon lying on a cell, if there is one. */
+  weaponAt(cell: Cell) {
+    return this.authority?.dropped().find((d) => key(d.cell) === key(cell))?.name ?? null;
+  }
+  /** Whether a shot from one cell to another has a clear line. */
+  shotBlocked(from: Cell, to: Cell) {
+    return this.authority ? !this.authority.clearShot(from, to) : this.map.coverPeek(from, to).blocked;
+  }
+  /** Whether a throw from one cell can land on another. */
+  throwBlocked(from: Cell, to: Cell) {
+    return !!this.authority && !this.authority.clearThrow(from, to);
+  }
+  private groundOpen(p: Cell) {
+    return this.authority ? this.authority.terrain(p) === "open" : this.map.open(p);
+  }
+  private groundCover(p: Cell) {
+    return this.authority ? this.authority.terrain(p) === "cover" : this.map.isCover(p);
+  }
   walkable(p: Cell, unit?: Unit) {
     return (
-      this.map.open(p) &&
+      this.groundOpen(p) &&
       !this.units.some((u) => u !== unit && u.hp > 0 && key(u.pos) === key(p))
     );
   }
@@ -308,7 +350,7 @@ export class Encounter {
           const next = [...path, p];
           found.set(key(p), next);
           queue.push(next);
-        } else if (this.map.isCover(p)) {
+        } else if (this.groundCover(p)) {
           const landing: Cell = [p[0] + p[0] - x, p[1] + p[1] - z];
           if (
             path.length + 1 <= unit.mobility &&
@@ -340,13 +382,18 @@ export class Encounter {
       type: "move",
       unit: u.id,
       path,
-      vault: path.some((c) => this.map.isCover(c)),
+      vault: path.some((c) => this.groundCover(c)),
       cover: this.coverValue(p, false) > 0,
     });
     return path;
   }
+  /** Whether a unit arriving on `p` would take cover there. */
+  coverAt(p: Cell) {
+    return this.coverValue(p, false) > 0;
+  }
   /** Defense against `attacker` (or against anyone, without one): walls, barriers, hunkering. */
   cover(u: Unit, attacker?: Unit) {
+    if (attacker && this.authority) return this.authority.cover(attacker, u);
     return this.coverValue(u.pos, u.hunkered, attacker);
   }
   private coverValue(pos: Cell, hunkered: boolean, attacker?: Unit) {
@@ -366,6 +413,7 @@ export class Encounter {
     return barrier ? (hunkered ? 50 : 25) : hunkered ? 20 : 0;
   }
   chance(a: Unit, b: Unit) {
+    if (this.authority) return this.authority.chance(a, b);
     const d = distance(a.pos, b.pos);
     if (d > a.range + 3 || this.map.coverPeek(a.pos, b.pos).blocked) return 0;
     return Math.max(
@@ -383,7 +431,7 @@ export class Encounter {
       b.hp > 0 &&
       a.enemy !== b.enemy &&
       distance(a.pos, b.pos) <= a.range + 3 &&
-      !this.map.coverPeek(a.pos, b.pos).blocked
+      !this.shotBlocked(a.pos, b.pos)
     );
   }
   attack(a: Unit, b: Unit) {

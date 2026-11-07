@@ -14,8 +14,9 @@ import { getSettings } from "../settings/store";
 import { audioFocused } from "./focus";
 import { gain } from "./levels";
 
+export { callPlayerBack } from "./alert";
 export { audioFocused, subscribeAudioFocus } from "./focus";
-export { previewDialogue, previewEffect } from "./preview";
+export { previewDialogue, previewEffect, previewVoice } from "./preview";
 export { playTheme, stopTheme } from "./theme";
 export { uiConfirm, uiTick } from "./ui";
 

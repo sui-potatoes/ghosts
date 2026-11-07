@@ -58,7 +58,6 @@ import {
     type Selection,
 } from "../features/headquarters/components/ArmoryInventory";
 import { Gate, HqHeader } from "../features/headquarters/components/Chrome";
-import { TxOverlay } from "../features/headquarters/components/TxOverlay";
 import { useEquipmentImages } from "../features/headquarters/equipmentImages";
 import { armorModel, weaponModel } from "../features/headquarters/mapping";
 import { useHeadquarters } from "../features/headquarters/useHeadquarters";
@@ -85,6 +84,7 @@ export default function Armory() {
         <ArmoryView
             accountId={accountId.data}
             upgrades={account.data?.upgrades}
+            credits={Number(account.data?.credits ?? 0)}
             armory={armory}
             recruits={recruits}
             action={action}
@@ -98,9 +98,11 @@ export interface ArmoryViewProps {
     /** The account id; null when the address has none, undefined while unknown. */
     accountId: string | null | undefined;
     upgrades: ChainUpgrade[] | undefined;
+    /** What the player has to spend. */
+    credits: number;
     armory: { weapons: ChainWeapon[]; armors: ChainArmor[] };
     recruits: ChainRecruit[];
-    action: { busy: string | null; error: string; run(steps: Step[]): Promise<boolean> };
+    action: { busy: boolean; error: string; run(steps: Step[]): Promise<boolean> };
     /** A notice to show instead of the workspace (deployment, sign-in, reading). */
     gate: ReactNode;
     /** A weapon or armor to open with (`?item=`). */
@@ -111,6 +113,7 @@ export interface ArmoryViewProps {
 export function ArmoryView({
     accountId,
     upgrades: held,
+    credits,
     armory,
     recruits,
     action,
@@ -152,7 +155,7 @@ export function ArmoryView({
             ? { kind: "weapon", id: weapons[0].item.id }
             : category === "armor" && armors[0]
               ? { kind: "armor", id: armors[0].item.id }
-              : category === "upgrades" && ATTACHMENTS.find((a) => stock[a.id] || fitted[a.id])
+              : category === "mods" && ATTACHMENTS.find((a) => stock[a.id] || fitted[a.id])
                 ? {
                       kind: "upgrade",
                       attachment: ATTACHMENTS.find((a) => stock[a.id] || fitted[a.id])!.id,
@@ -209,7 +212,7 @@ export function ArmoryView({
                 }),
             },
             {
-                title: "Upgrades",
+                title: "Mods",
                 entries: ATTACHMENTS.map((a) => ({
                     key: a.id,
                     label: a.name,
@@ -248,7 +251,7 @@ export function ArmoryView({
         return null;
     }, [current?.kind, current && "attachment" in current ? current.attachment : null, preview]);
 
-    const busy = !!action.busy;
+    const busy = action.busy;
     const acc = accountId ?? null;
 
     function select(s: Selection) {
@@ -256,14 +259,14 @@ export function ArmoryView({
         if (s.kind === "requisition") setPreview(null);
     }
 
-    function run(label: string, build: () => ReturnType<typeof requisitionTx>) {
-        return action.run([{ label, build }]);
+    function run(build: () => ReturnType<typeof requisitionTx>) {
+        return action.run([build]);
     }
 
     async function apply() {
         if (!weapon || !acc) return;
         const id = weapon.item.id;
-        const ok = await run(`Fitting ${weapon.item.name}`, () =>
+        const ok = await run(() =>
             fittingsTx(
                 acc,
                 { id, upgrades: weapon.item.upgrades ?? [] },
@@ -282,7 +285,7 @@ export function ArmoryView({
 
     function issue(kind: "weapon" | "armor", held: Held<Gear>, to: ChainRecruit) {
         if (!acc) return;
-        void run(`Issuing ${held.item.name} to ${to.metadata.name}`, () =>
+        void run(() =>
             issueTx(acc, kind, held.item.id, held.carrier?.objectId ?? null, {
                 id: to.objectId,
                 equipped: !!(kind === "weapon" ? to.weapon : to.armor),
@@ -293,7 +296,7 @@ export function ArmoryView({
     function store(kind: "weapon" | "armor", held: Held<Gear>) {
         if (!acc || !held.carrier) return;
         const from = held.carrier.objectId;
-        void run(`Storing ${held.item.name}`, () =>
+        void run(() =>
             kind === "weapon" ? unequipWeaponTx(acc, from) : unequipArmorTx(acc, from),
         );
     }
@@ -311,7 +314,7 @@ export function ArmoryView({
     return (
         <main className="squad-screen hq-screen">
             <HqHeader
-                status={`${weapons.length} weapons · ${armors.length} armor · ${Object.values(stock).reduce((n, c) => n + c, 0)} upgrades`}
+                status={`${credits} credits · ${weapons.length} weapons · ${armors.length} armor · ${Object.values(stock).reduce((n, c) => n + c, 0)} mods`}
             />
             {gate ??
                 (noAccount ? (
@@ -403,7 +406,7 @@ export function ArmoryView({
                                         busy={busy}
                                         notice={
                                             fitCount(draft) >= MAX_FITTINGS
-                                                ? "Three fittings is the limit — clear a type to fit another."
+                                                ? "Three mods is the limit — clear a type to fit another."
                                                 : ""
                                         }
                                         onDraft={(next) =>
@@ -467,12 +470,11 @@ export function ArmoryView({
                                         groups={catalog}
                                         preview={preview}
                                         busy={busy}
+                                        credits={credits}
                                         onPreview={setPreview}
                                         onRequisition={(entry) =>
                                             acc &&
-                                            void run(`Requisitioning ${entry.label}`, () =>
-                                                requisitionTx(acc, entry.requisition),
-                                            )
+                                            void run(() => requisitionTx(acc, entry.requisition))
                                         }
                                     />
                                 )}
@@ -480,7 +482,6 @@ export function ArmoryView({
                         </section>
                     </div>
                 ))}
-            <TxOverlay label={action.busy} />
             <PadHints className="squad-pad-hints" entries={[["b", "Back"]]} />
         </main>
     );

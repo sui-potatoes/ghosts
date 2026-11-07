@@ -11,9 +11,11 @@ import { SettingsOverlay } from "./settings/SettingsView";
 type Props = {
     open: boolean;
     onResume: () => void;
-    onBriefing: () => void;
-    onRestart: () => void;
+    /** Left out where a briefing or a restart makes no sense: a match. */
+    onBriefing?: () => void;
+    onRestart?: () => void;
     onQuit: () => void;
+    quitLabel?: string;
 };
 
 type View = "menu" | "options";
@@ -23,7 +25,14 @@ type View = "menu" | "options";
  * Confirm activates, Back resumes. Options is the same settings view as
  * the Settings screen, so nothing is lost by changing them here.
  */
-export function PauseMenu({ open, onResume, onBriefing, onRestart, onQuit }: Props) {
+export function PauseMenu({
+    open,
+    onResume,
+    onBriefing,
+    onRestart,
+    onQuit,
+    quitLabel = "Quit to menu",
+}: Props) {
     const [view, setView] = useState<View>("menu");
     // Up/Down and Confirm come off the input bus, whatever produced them.
     const items = useMenuNav(open && view === "menu");
@@ -42,10 +51,10 @@ export function PauseMenu({ open, onResume, onBriefing, onRestart, onQuit }: Pro
 
     const entries = [
         { label: "Resume", onClick: onResume },
-        { label: "Briefing", onClick: onBriefing },
+        ...(onBriefing ? [{ label: "Briefing", onClick: onBriefing }] : []),
         { label: "Options", onClick: () => setView("options") },
-        { label: "Restart encounter", onClick: onRestart },
-        { label: "Quit to menu", onClick: onQuit },
+        ...(onRestart ? [{ label: "Restart encounter", onClick: onRestart }] : []),
+        { label: quitLabel, onClick: onQuit },
     ];
 
     return (

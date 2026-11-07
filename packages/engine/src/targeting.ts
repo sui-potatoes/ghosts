@@ -27,13 +27,13 @@ export function shotBlockReason(
     return "NO TARGET";
   if (distance(unit.pos, target.pos) > unit.range + 3)
     return "OUT OF RANGE";
-  if (game.map.coverPeek(unit.pos,target.pos).blocked) return "WALL BLOCKS SHOT";
+  if (game.shotBlocked(unit.pos, target.pos)) return "WALL BLOCKS SHOT";
   return null;
 }
 export function bestShotTarget(game: Encounter, unit: Unit): Unit | undefined {
   return [...game.enemies].sort((a, b) => {
-    const ar = distance(unit.pos, a.pos) <= unit.range + 3 && !game.map.coverPeek(unit.pos,a.pos).blocked,
-      br = distance(unit.pos, b.pos) <= unit.range + 3 && !game.map.coverPeek(unit.pos,b.pos).blocked;
+    const ar = distance(unit.pos, a.pos) <= unit.range + 3 && !game.shotBlocked(unit.pos, a.pos),
+      br = distance(unit.pos, b.pos) <= unit.range + 3 && !game.shotBlocked(unit.pos, b.pos);
     return (
       Number(br) - Number(ar) ||
       game.chance(unit, b) - game.chance(unit, a) ||
@@ -46,7 +46,7 @@ export function bestShotTarget(game: Encounter, unit: Unit): Unit | undefined {
 export function shootingTargets(game: Encounter, unit: Unit, from: Cell = unit.pos): Unit[] {
   if (unit.hp <= 0 || game.result) return [];
   return game.units.filter((target) => target.hp > 0 && target.enemy !== unit.enemy &&
-    distance(from, target.pos) <= unit.range + 3 && !game.map.coverPeek(from, target.pos).blocked);
+    distance(from, target.pos) <= unit.range + 3 && !game.shotBlocked(from, target.pos));
 }
 export function grenadeBlockReason(
   game: Encounter,
@@ -59,6 +59,7 @@ export function grenadeBlockReason(
   if (!game.map.inBounds(point)) return "OUTSIDE THE DISTRICT";
   if (distance(unit.pos, point) > 5)
     return "OUT OF THROW RANGE";
+  if (game.throwBlocked(unit.pos, point)) return "WALL BLOCKS THROW";
   return null;
 }
 export function defaultGrenadeTarget(game: Encounter, unit: Unit): Cell {

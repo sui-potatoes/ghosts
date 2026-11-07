@@ -224,13 +224,19 @@ export async function activeSessionSigner(
     if (!key || sessionExpired(key)) return null;
     const address = sessionAddress(key);
     const stamp = `${owner}:${address}`;
-    if (!membership || membership.stamp !== stamp || Date.now() > membership.until) {
+    const look = async () => {
         const state = await aliasesState(client, owner).catch(() => null);
         membership = {
             stamp,
             until: Date.now() + 30_000,
             ok: !!state?.members.includes(address),
         };
+    };
+    if (!membership || membership.stamp !== stamp) await look();
+    else if (Date.now() > membership.until) {
+        // Behind the send, not in its way: a key removed meanwhile is refused on chain.
+        membership.until = Date.now() + 30_000;
+        void look();
     }
-    return membership.ok ? new SessionSigner(key) : null;
+    return membership?.ok ? new SessionSigner(key) : null;
 }

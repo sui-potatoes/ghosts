@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
 import * as T from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { installBodySuit } from "@ghosts/squad/appearance/native-body-binding";
 import { BodyDeformation } from "@ghosts/squad/appearance/body-shape";
 import { BODY_CONTROLS, normalizeBody } from "@ghosts/squad/body";
 import { normalize, shuffleFace } from "@ghosts/squad/appearance/editor-state";
@@ -179,7 +180,7 @@ for (const sex of ["male", "female"]) {
         assert.equal(new BodyDeformation(body, { height: -1 }).heightScale, 0.91);
     });
 
-    test(`${sex}: every armor and civilian outfit follows the same shape field through motion`, async () => {
+    test(`${sex}: rigid equipment retains dimensions while fabric follows body shape through motion`, async () => {
         const source = await load(`public/squad/body/${sex}/skin.glb`),
             body = skins(source)[0];
         const raw = JSON.parse(
@@ -209,11 +210,33 @@ for (const sex of ["male", "female"]) {
                     Object.fromEntries(BODY_CONTROLS.map(({ key }) => [key, sign])),
                 );
                 const before = originals.map((g) => g.attributes.position);
+                const offsets = new Map<number, T.Vector3>();
+                let rigidVertices = 0;
                 for (const [n, mesh] of meshes.entries()) {
                     mesh.geometry = originals[n].clone();
                     warp.geometry(mesh.geometry);
                     const positions = mesh.geometry.attributes.position;
-                    for (let i = 0; i < positions.count; i += 53) {
+                    for (let i = 0; i < positions.count; i++) {
+                        const group = mesh.geometry.getAttribute("_rigid_fit")?.getX(i) ?? 0;
+                        if (group) {
+                            rigidVertices++;
+                            const delta = new T.Vector3()
+                                .fromBufferAttribute(positions, i)
+                                .sub(new T.Vector3().fromBufferAttribute(before[n], i));
+                            const first = offsets.get(group);
+                            if (first)
+                                assert(
+                                    first.distanceTo(delta) < 2e-7,
+                                    `${kind}: assembly ${group} stays rigid across materials`,
+                                );
+                            else offsets.set(group, delta);
+                            assert.equal(
+                                mesh.geometry.attributes.normal.getX(i),
+                                originals[n].attributes.normal.getX(i),
+                            );
+                            continue;
+                        }
+                        if (i % 53) continue;
                         const expected = warp.point(
                             new T.Vector3().fromBufferAttribute(before[n], i),
                             new T.Vector3(),
@@ -225,6 +248,8 @@ for (const sex of ["male", "female"]) {
                         );
                     }
                 }
+                if (kind !== "office-worker")
+                    assert(rigidVertices > 100, `${kind}: rigid assembly data shipped`);
                 root.scale.setScalar(warp.heightScale);
                 const mixer = new T.AnimationMixer(root);
                 for (const clip of clips) {
@@ -254,5 +279,64 @@ for (const sex of ["male", "female"]) {
             }
             originals.forEach((g) => g.dispose());
         }
+    });
+}
+
+for (const sex of ["female", "male"]) {
+    test(`${sex}: field uniform smooths covered anatomy without changing exposed skin or binding`, async () => {
+        const root = await load(`public/squad/body/${sex}/skin.glb`),
+            body = skins(root)[0];
+        const geometry = body.geometry,
+            before = geometry.attributes.position.clone();
+        const normals = geometry.attributes.normal.clone();
+        const readWeights = () =>
+            Array.from({ length: geometry.attributes.skinWeight.count }, (_, i) =>
+                [0, 1, 2, 3].map((k) => geometry.attributes.skinWeight.getComponent(i, k)),
+            );
+        const weights = readWeights();
+        const indices = Array.from(geometry.index!.array);
+        const neck = body.skeleton.bones
+            .find((b) => b.name.endsWith("Neck"))!
+            .getWorldPosition(new T.Vector3()).y;
+        const chest = body.skeleton.bones
+            .find((b) => b.name.endsWith("Spine2"))!
+            .getWorldPosition(new T.Vector3()).y;
+        installBodySuit(body, 1.8, body.skeleton);
+        const after = geometry.attributes.position;
+        let changed = 0,
+            peakBefore = -Infinity,
+            peakAfter = -Infinity;
+        for (let i = 0; i < before.count; i++) {
+            const a = new T.Vector3().fromBufferAttribute(before, i),
+                b = new T.Vector3().fromBufferAttribute(after, i);
+            let hand = 0;
+            for (let k = 0; k < 4; k++)
+                if (
+                    /Hand/.test(
+                        body.skeleton.bones[geometry.attributes.skinIndex.getComponent(i, k)].name,
+                    )
+                )
+                    hand += geometry.attributes.skinWeight.getComponent(i, k);
+            if (a.y > neck + 0.05 || hand > 0.5 || a.y < 0.25) {
+                assert(a.equals(b), "face, hands and feet retain exact positions");
+                for (let k = 0; k < 3; k++)
+                    assert.equal(
+                        normals.getComponent(i, k),
+                        geometry.attributes.normal.getComponent(i, k),
+                        `preserved normal at ${a.toArray()} hand=${hand}`,
+                    );
+            }
+            if (a.distanceTo(b) > 0.001) changed++;
+            if (a.y > chest - 0.09 && a.y < chest && Math.abs(a.x) > 0.04 && Math.abs(a.x) < 0.15) {
+                peakBefore = Math.max(peakBefore, a.z);
+                peakAfter = Math.max(peakAfter, b.z);
+            }
+            assert(a.distanceTo(b) < 0.035, "tailoring stays local to the garment surface");
+        }
+        assert(changed > 100, "uniform has a tailored surface");
+        if (sex === "female")
+            assert(peakAfter < peakBefore - 0.004, "shirt removes the pointed chest apex");
+        assert.deepEqual(readWeights(), weights);
+        assert.deepEqual(Array.from(geometry.index!.array), indices);
     });
 }

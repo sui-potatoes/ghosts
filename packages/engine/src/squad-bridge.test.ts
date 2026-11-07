@@ -32,6 +32,23 @@ test("saved equipment, colors, appearance and renamed recruits survive reset map
   const reset=initialUnits();applyDeploymentNames(reset,looks);assert.equal(reset[0].name,'NOVA');
   assert.equal(JSON.stringify(squad),raw);
 });
+test("allies get their recruits wherever the hostiles sit among the units", () => {
+  const squad=initialSquad();
+  squad.recruits[0].callsign='NOVA';
+  squad.recruits[1].callsign='ONYX';
+  // a game on chain lists units by tile, so the player who goes first comes last
+  const units=initialUnits(), hostilesFirst=[...units.filter(u=>u.enemy),...units.filter(u=>!u.enemy)];
+  const looks=deploymentLooks(squad.recruits,hostilesFirst), allies=hostilesFirst.filter(u=>!u.enemy);
+  assert.equal(looks.get(allies[0].id)!.callsign,'NOVA');
+  assert.equal(looks.get(allies[1].id)!.callsign,'ONYX');
+  assert.equal(looks.get(allies[0].id)!.armorId,squad.recruits[0].equipment.armor);
+});
+test("a recruit with the unit's id wins over squad order", () => {
+  const squad=initialSquad(), units=initialUnits(), last=squad.recruits.at(-1)!;
+  last.id=units[0].id;
+  last.callsign='MATCHED';
+  assert.equal(deploymentLooks(squad.recruits,units).get(units[0].id)!.callsign,'MATCHED');
+});
 test("no saved squad falls back to the showcase, and personnel text cannot become markup", () => {
   assert.equal(deploymentLooks([],initialUnits()).get('v')!.armorId,'nyx-mid');
   assert.equal(escapeHTML('<b>"Vex" & Co</b>'),'&lt;b&gt;&quot;Vex&quot; &amp; Co&lt;/b&gt;');

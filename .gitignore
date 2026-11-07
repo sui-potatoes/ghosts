@@ -13,3 +13,6 @@ node_modules
 # Working material: source art, pipeline intermediates, raw captures
 scratch/
 __pycache__/
+
+# TypeScript incremental build state
+*.tsbuildinfo

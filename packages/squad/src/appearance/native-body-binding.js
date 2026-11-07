@@ -38,9 +38,134 @@ export function remapNativeWeights(geometry, nativeSkeleton, combatSkeleton, ski
     geometry.setAttribute("skinIndex", new T.Uint16BufferAttribute(joints, 4));
     geometry.setAttribute("skinWeight", new T.Float32BufferAttribute(weights, 4));
 }
+/** Give the field uniform its own relaxed surface instead of painting fabric
+ * directly onto anatomical detail. Weld UV seams only for the smoothing solve;
+ * indices, UVs, skin weights and exposed skin remain untouched. */
+function tailorUniform(geometry, skeleton) {
+    const positions = geometry.attributes.position,
+        index = geometry.index;
+    const boneY = (name) =>
+        skeleton.bones.find((b) => b.name.endsWith(name)).getWorldPosition(new T.Vector3()).y;
+    const chest = boneY("Spine2"),
+        neck = boneY("Neck"),
+        hip = boneY("Hips"),
+        knee = boneY("LeftLeg");
+    const keys = new Map(),
+        vertices = [],
+        lookup = [];
+    const fade = (a, b, x) => T.MathUtils.smoothstep(x, a, b);
+    for (let i = 0; i < positions.count; i++) {
+        const p = new T.Vector3().fromBufferAttribute(positions, i);
+        const key = p
+            .toArray()
+            .map((v) => Math.round(v * 1e6))
+            .join(",");
+        let id = keys.get(key);
+        if (id === undefined) {
+            id = vertices.length;
+            keys.set(key, id);
+            const front = fade(0.03, 0.09, p.z);
+            const shirt =
+                front *
+                (1 - fade(0.14, 0.21, Math.abs(p.x))) *
+                fade(chest - 0.17, chest - 0.1, p.y) *
+                (1 - fade(neck - 0.045, neck - 0.005, p.y));
+            const trousers =
+                fade(knee + 0.08, hip - 0.18, p.y) *
+                (1 - fade(hip - 0.02, hip + 0.06, p.y)) *
+                (1 - fade(0.24, 0.35, Math.abs(p.x)));
+            vertices.push({ p, ids: [], neighbors: new Set(), shirt, amount: trousers * 0.6 });
+        }
+        lookup[i] = id;
+        vertices[id].ids.push(i);
+    }
+    for (let i = 0; i < index.count; i += 3) {
+        const ids = [lookup[index.getX(i)], lookup[index.getX(i + 1)], lookup[index.getX(i + 2)]];
+        for (const a of ids) for (const b of ids) if (a !== b) vertices[a].neighbors.add(b);
+    }
+    // Sample in physical space, not topological rings: the source has dense
+    // nipple loops, which ordinary neighbor smoothing leaves as pointed peaks.
+    const cells = new Map();
+    for (const { p } of vertices) {
+        if (p.z < 0.035 || Math.abs(p.x) > 0.2 || p.y < chest - 0.23 || p.y > neck + 0.015)
+            continue;
+        const key = `${Math.round(p.x / 0.008)},${Math.round(p.y / 0.008)}`;
+        const cell = cells.get(key) || { p: new T.Vector3(), count: 0 };
+        cell.p.add(p);
+        cell.count++;
+        cells.set(key, cell);
+    }
+    const samples = [...cells.values()].map(({ p, count }) => p.multiplyScalar(1 / count));
+    for (const v of vertices) {
+        if (!v.shirt) continue;
+        let sum = 0,
+            depth = 0;
+        for (const q of samples) {
+            const distance = (q.x - v.p.x) ** 2 + (q.y - v.p.y) ** 2;
+            if (distance > 0.08 ** 2) continue;
+            const w = Math.exp(-distance / 0.032 ** 2);
+            depth += q.z * w;
+            sum += w;
+        }
+        if (sum) v.p.z = T.MathUtils.lerp(v.p.z, depth / sum, v.shirt);
+    }
+    // Local relaxation softens gluteal/upper-thigh creases without moving joints.
+    for (let pass = 0; pass < 16; pass++) {
+        const next = vertices.map(({ p, neighbors, amount }) => {
+            if (!amount || !neighbors.size) return p.clone();
+            const mean = new T.Vector3();
+            for (const n of neighbors) mean.add(vertices[n].p);
+            return p
+                .clone()
+                .lerp(mean.multiplyScalar(1 / neighbors.size), 0.36 * amount)
+                .setY(p.y);
+        });
+        vertices.forEach((v, i) => v.p.copy(next[i]));
+    }
+    for (const v of vertices) for (const i of v.ids) positions.setXYZ(i, v.p.x, v.p.y, v.p.z);
+    const originalNormals = geometry.attributes.normal.clone(),
+        normals = geometry.attributes.normal;
+    const sums = vertices.map(() => new T.Vector3());
+    for (let i = 0; i < index.count; i += 3) {
+        const ids = [lookup[index.getX(i)], lookup[index.getX(i + 1)], lookup[index.getX(i + 2)]];
+        const [a, b, c] = ids.map((id) => vertices[id].p);
+        const normal = b.clone().sub(a).cross(c.clone().sub(a));
+        for (const id of ids) sums[id].add(normal);
+    }
+    sums.forEach((n) => n.normalize());
+    for (let pass = 0; pass < 3; pass++) {
+        const next = sums.map((n, i) => {
+            const v = vertices[i];
+            if (!v.shirt) return n.clone();
+            const mean = new T.Vector3();
+            for (const j of v.neighbors) mean.add(sums[j]);
+            return n
+                .clone()
+                .lerp(mean.normalize(), 0.5 * v.shirt)
+                .normalize();
+        });
+        sums.forEach((n, i) => n.copy(next[i]));
+    }
+    vertices.forEach((v, id) => {
+        const affected =
+            v.amount ||
+            v.shirt ||
+            [...v.neighbors].some((n) => vertices[n].amount || vertices[n].shirt);
+        for (const i of v.ids) {
+            const n = affected ? sums[id] : new T.Vector3().fromBufferAttribute(originalNormals, i);
+            normals.setXYZ(i, n.x, n.y, n.z);
+        }
+    });
+    positions.needsUpdate = normals.needsUpdate = true;
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
+}
+
 /** The neckline is evaluated per fragment, so the fabric edge cannot reveal mesh triangles. */
 export function installBodySuit(mesh, top, nativeSkeleton, gloves = false) {
     const g = mesh.geometry;
+    mesh.updateWorldMatrix(true, false);
+    tailorUniform(g, nativeSkeleton);
     const joints = g.attributes.skinIndex,
         weights = g.attributes.skinWeight;
     const depth = new Float32Array(joints.count),

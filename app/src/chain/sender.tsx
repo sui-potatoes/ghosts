@@ -22,6 +22,8 @@ import { useEffect } from "react";
 
 import { activeSessionSigner, authorizeDevice, expireSessionKey } from "./alias";
 import type { ExecutedTransaction } from "./executor";
+import { FastLane, type ExecutedOrder, type Order } from "./fast-lane";
+import { trackSaving } from "./saving";
 import { supportsSessionKeys } from "./session-key";
 
 export interface SendOptions {
@@ -32,6 +34,21 @@ export interface SendOptions {
 type Send = (tx: Transaction, opts?: SendOptions) => Promise<ExecutedTransaction>;
 
 let send: Send | null = null;
+let sendOrderNow: ((order: Order) => Promise<ExecutedOrder>) | null = null;
+let fastLane: FastLane | null = null;
+
+/**
+ * Queue a game order on the fast lane, in line with every other send. Null when
+ * no sender is mounted; rejects when the chain refuses it or `order` throws.
+ */
+export function sendOrder(order: Order): Promise<ExecutedOrder> | null {
+    return sendOrderNow ? sendOrderNow(order) : null;
+}
+
+/** Have the fast lane ready before the first order goes out. */
+export function prepareOrders() {
+    fastLane?.prepare();
+}
 
 /**
  * Queue `tx` through the mounted sender, selecting or authorizing a session
@@ -59,6 +76,8 @@ export function TransactionSender() {
     useEffect(() => {
         if (!account) {
             send = null;
+            sendOrderNow = null;
+            fastLane = null;
             return;
         }
         const owner = account.address;
@@ -66,8 +85,11 @@ export function TransactionSender() {
         void expireSessionKey(client, owner).catch(() => {});
         let tail: Promise<unknown> = Promise.resolve();
         const wallet = () => new CurrentAccountSigner(dAppKit as unknown as DAppKit);
+        const fast = new FastLane(client, owner);
         const execute = async (tx: Transaction, signer: Signer) => {
             tx.setSenderIfNotSet(owner);
+            // This may spend the coin the fast lane is tracking.
+            fast.forgetGas();
             const result = await client.core.signAndExecuteTransaction({
                 transaction: tx,
                 signer,
@@ -80,8 +102,7 @@ export function TransactionSender() {
             }
             return result.Transaction;
         };
-        const run = async (tx: Transaction, opts?: SendOptions): Promise<ExecutedTransaction> => {
-            if (opts?.passkey) return execute(tx, wallet());
+        const signerNow = async (): Promise<Signer> => {
             let session = await activeSessionSigner(client, owner);
             if (!session && (await supportsSessionKeys())) {
                 // No authorized session: authorizing this device is the passkey's
@@ -92,15 +113,22 @@ export function TransactionSender() {
                     await execute(authTx, wallet());
                 });
             }
-            return execute(tx, session ?? wallet());
+            return session ?? wallet();
         };
-        send = (tx, opts) => {
-            const turn = tail.then(() => run(tx, opts));
+        const run = async (tx: Transaction, opts?: SendOptions): Promise<ExecutedTransaction> =>
+            execute(tx, opts?.passkey ? wallet() : await signerNow());
+        const inLine = <T,>(job: () => Promise<T>): Promise<T> => {
+            const turn = tail.then(job);
             tail = turn.catch(() => {});
-            return turn;
+            return trackSaving(turn);
         };
+        send = (tx, opts) => inLine(() => run(tx, opts));
+        sendOrderNow = (order) => inLine(async () => fast.execute(order, await signerNow()));
+        fastLane = fast;
         return () => {
             send = null;
+            sendOrderNow = null;
+            fastLane = null;
         };
     }, [client, account, dAppKit]);
 

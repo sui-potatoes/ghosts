@@ -36,6 +36,8 @@ export function useBcsObject<T, Input = T>({
         queryKey: ["object", id],
         enabled: enabled && !!id,
         refetchInterval,
+        // A poll is someone waiting on the chain, and they may be in another tab.
+        refetchIntervalInBackground: true,
         queryFn: async (): Promise<T> => {
             const { object } = await client.core.getObject({
                 objectId: id!,

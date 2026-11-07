@@ -50,14 +50,16 @@ export function IntelPanel() {
         <div className="section-title">
           MISSION OBJECTIVES <span>02</span>
         </div>
-        <div className={`objective ${game.secured ? "complete" : ""}`}>
-          <i>◇</i>
-          <div>
-            {objectives.secure.title}
-            <small>{objectives.secure.detail}</small>
+        {!game.scenario.versus && (
+          <div className={`objective ${game.secured ? "complete" : ""}`}>
+            <i>◇</i>
+            <div>
+              {objectives.secure.title}
+              <small>{objectives.secure.detail}</small>
+            </div>
+            <span>01</span>
           </div>
-          <span>01</span>
-        </div>
+        )}
         <div className={`objective ${!game.enemies.length ? "complete" : ""}`}>
           <i>◇</i>
           <div>
@@ -224,6 +226,7 @@ const ORDERS: { id: CombatAction; icon: IconName; title: string }[] = [
   { id: "fire", icon: "cross", title: "Fire weapon" },
   { id: "grenade", icon: "grenade", title: "Grenade" },
   { id: "reload", icon: "reload", title: "Reload" },
+  { id: "pick-up", icon: "download", title: "Take weapon" },
   { id: "overwatch", icon: "eye", title: "Overwatch" },
   { id: "hunker", icon: "shield", title: "Hunker" },
   { id: "secure", icon: "download", title: "Extract" },
@@ -252,7 +255,9 @@ export function CommandDeck() {
       ? "Confirm shot"
       : id === "grenade" && s.mode === "grenade" && s.grenadeTarget
         ? "Confirm throw"
-        : title;
+        : id === "pick-up" && u
+          ? `Take ${game.weaponAt(u.pos)}`
+          : title;
   const cost = (id: string) =>
     id === "fire" ? (u?.weapon === "pistol" ? "1 AP" : "ENDS TURN") : id === "overwatch" || id === "hunker" ? "ALL AP" : "1 AP";
   return (
@@ -283,7 +288,11 @@ export function CommandDeck() {
           )}
         </div>
         <div className="action-list">
-          {ORDERS.map(({ id, icon, title }) => (
+          {ORDERS.filter(
+            ({ id }) =>
+              (id !== "pick-up" || (!!u && !!game.weaponAt(u.pos))) &&
+              (!game.scenario.versus || !["overwatch", "hunker", "secure"].includes(id)),
+          ).map(({ id, icon, title }) => (
             <button
               key={id}
               data-action={id}

@@ -77,11 +77,28 @@ for (const sex of ["female", "male"]) {
     root.traverse((b) => {
         if (source.rest[b.name]) nodes.push(b);
     });
-    const rest = nodes.map((b) => ({ p: b.position.clone() }));
-    // Native and Mixamo hand bones have different transverse axes. Reconcile
-    // their anatomical roll without changing the captured segment directions.
+    const rest = nodes.map((b) => ({ p: b.position.clone(), q: b.quaternion.clone() }));
+    const leftArm = root.getObjectByName("mixamorigLeftArm")!;
+    const leftElbow = root.getObjectByName("mixamorigLeftForeArm")!;
+    const leftHand = root.getObjectByName("mixamorigLeftHand")!;
+    const aimSegment = (bone: T.Object3D, child: T.Object3D, direction: T.Vector3) => {
+        const from = child
+            .getWorldPosition(new T.Vector3())
+            .sub(bone.getWorldPosition(new T.Vector3()))
+            .normalize();
+        const world = new T.Quaternion()
+            .setFromUnitVectors(from, direction.normalize())
+            .multiply(bone.getWorldQuaternion(new T.Quaternion()));
+        bone.quaternion.copy(
+            bone.parent!.getWorldQuaternion(new T.Quaternion()).invert().multiply(world),
+        );
+        bone.updateMatrixWorld(true);
+    };
+    // Native and Mixamo arm/hand bones have different transverse axes. Match
+    // the anatomical roll along the entire chain, not just the wrist: otherwise
+    // the forearm twists against the corrected hand and collapses the elbow.
     const corrections = new Map<string, T.Quaternion>();
-    for (const side of ["Right", "Left"]) {
+    for (const side of ["Right"]) {
         const name = (s: string) => `mixamorig${side}Hand${s}`;
         const position = (s: string) =>
             root.getObjectByName(name(s))!.getWorldPosition(new T.Vector3());
@@ -100,7 +117,12 @@ for (const sex of ["female", "male"]) {
                 new T.Matrix4().makeBasis(x, y, x.clone().cross(y)),
             );
         };
-        for (const b of nodes.filter((b) => b.name.startsWith(name("")))) {
+        for (const b of nodes.filter(
+            (b) =>
+                b.name.startsWith(name("")) ||
+                b.name === `mixamorig${side}Arm` ||
+                b.name === `mixamorig${side}ForeArm`,
+        )) {
             const nativeQ = b.getWorldQuaternion(new T.Quaternion());
             const sourceQ = new T.Quaternion().fromArray(source.rest[b.name].q);
             corrections.set(
@@ -125,8 +147,10 @@ for (const sex of ["female", "male"]) {
                 .multiply(b.getWorldQuaternion(new T.Quaternion())),
         );
     }
-    // Long bones use +Y along each segment. Retain captured body directions;
-    // hands and feet require the anatomical frame corrections above.
+    // Keep the native pelvis, spine and clavicles neutral. Absolute source
+    // orientations bend the differently aligned native chest; smoking is an
+    // arm/head action. Arm contact fitting may adjust a clavicle if needed.
+    // Descendants are still fitted in world space against this neutral torso.
     const hips = root.getObjectByName("mixamorigHips")!;
     const hipRest = hips.position.clone();
     const ratio = hips.getWorldPosition(new T.Vector3()).y / source.rest.mixamorigHips.p[1];
@@ -153,6 +177,15 @@ for (const sex of ["female", "male"]) {
         const frame = source.frames[Math.round(sourceTime * source.fps)];
         nodes.forEach((b, i) => {
             b.position.copy(rest[i].p);
+            if (
+                /^mixamorig(?:Hips|Spine[12]?|Left(?:Shoulder|Arm|ForeArm|Hand.*)|RightShoulder)$/.test(
+                    b.name,
+                )
+            ) {
+                b.quaternion.copy(rest[i].q);
+                b.updateMatrixWorld(true);
+                return;
+            }
             const world = new T.Quaternion().fromArray(frame.rotations[b.name]);
             if (corrections.has(b.name)) world.multiply(corrections.get(b.name)!);
             b.quaternion.copy(
@@ -172,6 +205,11 @@ for (const sex of ["female", "male"]) {
         hips.position.x -= source.frames[0].hips[0] * ratio;
         hips.position.z -= source.frames[0].hips[2] * ratio;
         root.updateMatrixWorld(true);
+        // The free arm hangs beside the body with a small natural elbow bend.
+        // Preserve native wrist/palm/finger relationships instead of importing
+        // the source's hip gesture and independently twisted finger frames.
+        aimSegment(leftArm, leftElbow, new T.Vector3(0.15, -1, -0.02));
+        aimSegment(leftElbow, leftHand, new T.Vector3(0.08, -1, 0.13));
         // Fit the drag contact to native proportions while preserving the
         // corrected wrist orientation and captured elbow plane.
         const contact = 1 - T.MathUtils.smoothstep(sourceTime, 8.5, 9.1);

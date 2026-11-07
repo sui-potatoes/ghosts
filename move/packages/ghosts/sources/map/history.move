@@ -1,17 +1,13 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
-/// Stores game action records in order and emits `HistoryUpdated` when
-/// records are added or appended.
+/// Stores game action records in order.
 module ghosts::history;
 
-use sui::{bcs::{Self, BCS}, event};
+use sui::bcs::{Self, BCS};
 
 /// Stores history of actions.
 public struct History(vector<Record>) has drop, store;
-
-/// Event that marks an update in `History` for tx sender.
-public struct HistoryUpdated(vector<Record>) has copy, drop;
 
 /// A single record in the history.
 public enum Record has copy, drop, store {
@@ -36,8 +32,11 @@ public enum Record has copy, drop, store {
     CriticalHit(u8),
     /// Block header for grenade action: the unit at `origin` throws at `target`.
     Grenade { origin: vector<u16>, target: vector<u16> },
-    UnitKIA(ID),
+    /// A unit fell, and the tile it fell on.
+    UnitKIA(ID, u16, u16),
     Dodged,
+    /// A unit on this tile took the weapon lying there.
+    PickUp(u16, u16),
 }
 
 // === History API ===
@@ -45,17 +44,15 @@ public enum Record has copy, drop, store {
 /// Create empty history.
 public fun empty(): History { History(vector[]) }
 
-/// Append one record and emit a `HistoryUpdated` event containing it.
+/// Append one record.
 public fun add(h: &mut History, record: Record) {
     let History(history) = h;
-    event::emit(HistoryUpdated(vector[record]));
     history.push_back(record);
 }
 
-/// Append the records in order and emit one `HistoryUpdated` event with them.
+/// Append the records in order.
 public fun append(h: &mut History, records: vector<Record>) {
     let History(history) = h;
-    event::emit(HistoryUpdated(records));
     history.append(records);
 }
 
@@ -85,7 +82,10 @@ public fun new_critical_hit(dmg: u8): Record { Record::CriticalHit(dmg) }
 public fun new_damage(dmg: u8): Record { Record::Damage(dmg) }
 
 /// Create new `Record::UnitKIA` history record.
-public fun new_kia(id: ID): Record { Record::UnitKIA(id) }
+public fun new_kia(id: ID, x: u16, y: u16): Record { Record::UnitKIA(id, x, y) }
+
+/// Create new `Record::PickUp` history record.
+public fun new_pick_up(x: u16, y: u16): Record { Record::PickUp(x, y) }
 
 /// Create new `Record::Grenade` history record: unit at `origin` throws at `target`.
 public fun new_grenade(origin: vector<u16>, target: vector<u16>): Record {
@@ -114,11 +114,23 @@ public fun list_kia(r: &vector<Record>): vector<ID> {
     let mut units_kia = vector[];
     r.do_ref!(
         |e| match (e) {
-            Record::UnitKIA(id) => units_kia.push_back(*id),
+            Record::UnitKIA(id, _, _) => units_kia.push_back(*id),
             _ => (),
         },
     );
     units_kia
+}
+
+/// The tiles the units in `list_kia` fell on, in the same order.
+public fun list_kia_tiles(r: &vector<Record>): vector<vector<u16>> {
+    let mut tiles = vector[];
+    r.do_ref!(
+        |e| match (e) {
+            Record::UnitKIA(_, x, y) => tiles.push_back(vector[*x, *y]),
+            _ => (),
+        },
+    );
+    tiles
 }
 
 // === Compatibility / Conversion ===
@@ -148,8 +160,9 @@ public(package) fun from_bcs(bcs: &mut BCS): History {
                 origin: bcs.peel_vec!(|bcs| bcs.peel_u16()),
                 target: bcs.peel_vec!(|bcs| bcs.peel_u16()),
             },
-            10 => Record::UnitKIA(bcs.peel_address().to_id()),
+            10 => Record::UnitKIA(bcs.peel_address().to_id(), bcs.peel_u16(), bcs.peel_u16()),
             11 => Record::Dodged,
+            12 => Record::PickUp(bcs.peel_u16(), bcs.peel_u16()),
             _ => abort,
         }
     });

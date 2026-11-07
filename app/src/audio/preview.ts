@@ -26,7 +26,7 @@ const last = new Map<string[], string>();
 /** A take that is not the one used last time; the new one stops the current. */
 function play(takes: string[], volume: number) {
     if (volume <= 0) return;
-    const fresh = takes.filter((url) => url !== last.get(takes));
+    const fresh = takes.length > 1 ? takes.filter((url) => url !== last.get(takes)) : takes;
     const url = fresh[Math.floor(Math.random() * fresh.length)];
     if (!url) return;
     last.set(takes, url);
@@ -39,6 +39,21 @@ function play(takes: string[], volume: number) {
 /** A squad voice line at the dialogue level just set. */
 export function previewDialogue() {
     play(VOICE_LINES, channelLevel("voice"));
+}
+
+/** One line per recorded voice, the same phrase for all so they compare like for like. */
+const AUDITIONS = new Map(
+    RECORDED.map((voice) => [`${voice.sex}-${voice.index}`, [lineUrl("commander", voice)]]),
+);
+
+/**
+ * A recruit's voice saying the audition line, at the dialogue level. Voice ids
+ * are the chain's: even ids male, odd female, `id >> 1` the take index. Voices
+ * without recordings stay silent.
+ */
+export function previewVoice(id: number) {
+    const takes = AUDITIONS.get(`${id % 2 === 1 ? "female" : "male"}-${(id >> 1) + 1}`);
+    if (takes) play(takes, channelLevel("voice"));
 }
 
 /** A weapon sound at the effects level just set. */

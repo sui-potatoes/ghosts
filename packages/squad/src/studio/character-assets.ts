@@ -14,8 +14,9 @@ import { frontSurface, shapeBrow } from "../appearance/brow-shape.js";
 import { installBlush, updateBlush } from "../appearance/skin-blush.js";
 import { installScars, updateScars } from "../appearance/skin-scars.js";
 import { installBodySuit, remapNativeWeights } from "../appearance/native-body-binding.js";
-import { createEyewear } from "../appearance/eyewear.js";
+import { createEyewear, lensOpacity } from "../appearance/eyewear.js";
 import { nativeTattoo } from "../appearance/mpfb-tattoo.js";
+import { breather } from "./breather";
 import type { Appearance, ArmorColors, Sex } from "../types";
 
 export const assetUrl = (path: string) => `${import.meta.env.BASE_URL}squad/${path}`;
@@ -54,7 +55,50 @@ export interface Character {
     idleClip: T.AnimationClip;
     heightScale: number;
     setArmorColors(colors: ArmorColors): void;
+    /**
+     * Apply a look that differs from the built one only in surface style (see
+     * `STYLE`) to the existing materials. False when anything else changed:
+     * the caller builds a new character instead.
+     */
+    restyle(next: Appearance): boolean;
     dispose(): void;
+}
+/**
+ * Appearance fields that only colour or tint existing materials. Editing
+ * them restyles a built character in place; every other field (face and body
+ * shape, hair and brow styles, eyewear type, tattoos) changes geometry and
+ * needs a rebuild.
+ */
+const STYLE = new Set<keyof Appearance>([
+    "name",
+    "skinTint",
+    "warmth",
+    "roughness",
+    "blushColor",
+    "blushAmount",
+    "blushPlacement",
+    "blushSpread",
+    "scar",
+    "scarPlace",
+    "scarAmount",
+    "hairColor",
+    "browColor",
+    "browDensity",
+    "glassesColor",
+    "lensColor",
+    "lensTint",
+]);
+function paintSkin(m: T.MeshStandardMaterial, s: Appearance) {
+    m.color
+        .set(s.skinTint)
+        .multiply(
+            new T.Color().setRGB(
+                1 - Math.max(0, -s.warmth) * 0.06,
+                1 - Math.abs(s.warmth) * 0.035,
+                1 - Math.max(0, s.warmth) * 0.12,
+            ),
+        );
+    m.roughness = s.roughness;
 }
 async function json<T>(url: string): Promise<T> {
     const response = await fetch(url);
@@ -106,7 +150,26 @@ function hideBodyInsideBoots(body: T.SkinnedMesh) {
     }
     geometry.setIndex(visible);
 }
-function smoothNormals(g: T.BufferGeometry, base: Float32Array) {
+/** Vertices sharing a rest position, per source geometry: the same for every build. */
+const seams = new WeakMap<T.BufferGeometry, number[][]>();
+function coincident(source: T.BufferGeometry, base: Float32Array) {
+    let result = seams.get(source);
+    if (!result) {
+        const groups = new Map<string, number[]>();
+        for (let i = 0; i < base.length; i += 3) {
+            const key = [base[i], base[i + 1], base[i + 2]]
+                .map((v) => Math.round(v * 1e6))
+                .join(",");
+            const list = groups.get(key) ?? [];
+            list.push(i);
+            groups.set(key, list);
+        }
+        result = [...groups.values()];
+        seams.set(source, result);
+    }
+    return result;
+}
+function smoothNormals(g: T.BufferGeometry, base: Float32Array, source: T.BufferGeometry) {
     const p = g.attributes.position.array,
         index = g.index!.array,
         sums = new Float32Array(p.length);
@@ -126,15 +189,8 @@ function smoothNormals(g: T.BufferGeometry, base: Float32Array) {
             sums[k + 2] += normal.z;
         }
     }
-    const groups = new Map<string, number[]>();
-    for (let i = 0; i < p.length; i += 3) {
-        const key = [base[i], base[i + 1], base[i + 2]].map((v) => Math.round(v * 1e6)).join(",");
-        const list = groups.get(key) ?? [];
-        list.push(i);
-        groups.set(key, list);
-    }
     const normals = new Float32Array(p.length);
-    for (const group of groups.values()) {
+    for (const group of coincident(source, base)) {
         normal.set(0, 0, 0);
         for (const i of group) normal.add(a.fromArray(sums, i));
         normal.normalize();
@@ -149,7 +205,8 @@ function deform(
     w: Record<string, number>,
     skin: boolean,
 ) {
-    const geometry = (mesh.geometry = mesh.geometry.clone());
+    const original = mesh.geometry,
+        geometry = (mesh.geometry = original.clone());
     mesh.material = material(mesh).clone();
     const source = geometry.attributes.position,
         base = new Float32Array(source.count * 3);
@@ -171,91 +228,105 @@ function deform(
     }
     geometry.setAttribute("position", new T.BufferAttribute(p, 3));
     mesh.userData = { base, original: mesh.material };
-    if (skin) smoothNormals(geometry, base);
+    if (skin) smoothNormals(geometry, base, original);
     else geometry.computeVertexNormals();
     geometry.computeBoundingSphere();
     mesh.frustumCulled = false;
 }
+/**
+ * Decoded assets shared by every `CharacterAssets` for the session: the
+ * squad stage, the armory's thumbnails, the title scene and the encounter
+ * each used to download and decode the same bodies, parts, outfits and
+ * textures on their own. Characters only ever use clones (geometry and
+ * materials are copied before they change), so the sources stay intact and
+ * are never disposed; a failed load is forgotten so the next request retries.
+ */
+const shared = {
+    loader: new GLTFLoader(),
+    // Bitmaps decode off the main thread; a plain image decodes on its first draw.
+    bitmapLoader:
+        typeof createImageBitmap === "function"
+            ? new T.ImageBitmapLoader().setOptions({ premultiplyAlpha: "none" })
+            : null,
+    textureLoader: new T.TextureLoader(),
+    parts: new Map<string, Promise<Part>>(),
+    manifests: new Map<string, Promise<Manifest>>(),
+    textures: new Map<string, Promise<T.Texture>>(),
+    armor: new Map<string, Promise<GLTF>>(),
+    fieldKit: new Map<Sex, Promise<GLTF>>(),
+    mounts: new Map<Sex, Promise<WeaponMount>>(),
+    poses: new Map<string, Promise<T.AnimationClip>>(),
+};
+function remember<K, V>(map: Map<K, Promise<V>>, key: K, load: () => Promise<V>): Promise<V> {
+    let hit = map.get(key);
+    if (!hit) {
+        const promise = load();
+        map.set(key, promise);
+        promise.catch(() => {
+            if (map.get(key) === promise) map.delete(key);
+        });
+        hit = promise;
+    }
+    return hit;
+}
 export class CharacterAssets {
-    private loader = new GLTFLoader();
-    private textureLoader = new T.TextureLoader();
-    private parts = new Map<string, Promise<Part>>();
-    private manifests = new Map<string, Promise<Manifest>>();
-    private textures = new Map<string, Promise<T.Texture>>();
-    private armor = new Map<string, Promise<GLTF>>();
-    private fieldKit = new Map<Sex, Promise<GLTF>>();
-    private mounts = new Map<Sex, Promise<WeaponMount>>();
-    private poses = new Map<string, Promise<T.AnimationClip>>();
     private disposed = false;
     private getPart(sex: Sex, key: string): Promise<Part> {
         const root = key === "skin" ? "body" : "editor",
             id = `${root}/${sex}/${key}`;
-        if (!this.manifests.has(`${root}/${sex}`))
-            this.manifests.set(
-                `${root}/${sex}`,
-                json<Manifest>(assetUrl(`${root}/${sex}/manifest.json`)),
-            );
-        if (!this.parts.has(id))
-            this.parts.set(
-                id,
-                (async () => {
-                    const [gltf, manifest, response] = await Promise.all([
-                        this.loader.loadAsync(assetUrl(`${id}.glb`)),
-                        this.manifests.get(`${root}/${sex}`)!,
-                        fetch(assetUrl(`${id}.morphs.bin`)),
-                    ]);
-                    if (!response.ok) throw Error("Unable to load character morphs.");
-                    const blob = await response.blob();
-                    const packed = await new Response(
-                        blob.stream().pipeThrough(new DecompressionStream("gzip")),
-                    ).arrayBuffer();
-                    return {
-                        gltf,
-                        meta: manifest.parts[key],
-                        top: manifest.top,
-                        packed,
-                    };
-                })(),
-            );
-        return this.parts.get(id)!;
+        return remember(shared.parts, id, async () => {
+            const [gltf, manifest, response] = await Promise.all([
+                shared.loader.loadAsync(assetUrl(`${id}.glb`)),
+                remember(shared.manifests, `${root}/${sex}`, () =>
+                    json<Manifest>(assetUrl(`${root}/${sex}/manifest.json`)),
+                ),
+                fetch(assetUrl(`${id}.morphs.bin`)),
+            ]);
+            if (!response.ok) throw Error("Unable to load character morphs.");
+            const blob = await response.blob();
+            const packed = await new Response(
+                blob.stream().pipeThrough(new DecompressionStream("gzip")),
+            ).arrayBuffer();
+            return {
+                gltf,
+                meta: manifest.parts[key],
+                top: manifest.top,
+                packed,
+            };
+        });
     }
     private texture(path: string) {
-        if (!this.textures.has(path))
-            this.textures.set(
-                path,
-                this.textureLoader.loadAsync(assetUrl(path)).then((t) => {
-                    t.flipY = false;
-                    t.colorSpace = T.SRGBColorSpace;
-                    t.anisotropy = 2;
-                    return t;
-                }),
-            );
-        return this.textures.get(path)!;
+        return remember(shared.textures, path, () =>
+            (shared.bitmapLoader
+                ? shared.bitmapLoader.loadAsync(assetUrl(path)).then((b) => new T.Texture(b))
+                : shared.textureLoader.loadAsync(assetUrl(path))
+            ).then((t) => {
+                t.needsUpdate = true;
+                t.flipY = false;
+                t.colorSpace = T.SRGBColorSpace;
+                t.anisotropy = 2;
+                return t;
+            }),
+        );
     }
     private pose(sex: Sex, model: string) {
         const key = `${sex}/${model === "sniper" ? "sniper" : "rifle"}`;
-        if (!this.poses.has(key))
-            this.poses.set(
-                key,
-                Promise.all([
-                    json<Parameters<typeof T.AnimationClip.parse>[0]>(
-                        assetUrl(`body/${sex}/idle.json`),
-                    ),
-                    loadEquipmentPoses(sex, model),
-                ]).then(([data, poses]) =>
-                    equipmentPose(nativeClip(T.AnimationClip.parse(data)), poses),
+        return remember(shared.poses, key, () =>
+            Promise.all([
+                json<Parameters<typeof T.AnimationClip.parse>[0]>(
+                    assetUrl(`body/${sex}/idle.json`),
                 ),
-            );
-        return this.poses.get(key)!;
+                loadEquipmentPoses(sex, model),
+            ]).then(([data, poses]) =>
+                equipmentPose(nativeClip(T.AnimationClip.parse(data)), poses),
+            ),
+        );
     }
     private armorAsset(id: string, sex: Sex) {
         const key = `${id}-${sex}`;
-        if (!this.armor.has(key))
-            this.armor.set(
-                key,
-                this.loader.loadAsync(assetUrl(`armor/${key}.glb?v=${id === "spectre" ? 7 : 10}`)),
-            );
-        return this.armor.get(key)!;
+        return remember(shared.armor, key, () =>
+            shared.loader.loadAsync(assetUrl(`armor/${key}.glb?v=${id === "spectre" ? 8 : 11}`)),
+        );
     }
     async create(
         s: Appearance,
@@ -267,25 +338,27 @@ export class CharacterAssets {
         if (this.disposed) throw Error("Studio closed.");
         const office = look === "office-worker";
         const keys = ["skin", "eyes", "lashes", s.brows, s.hair].filter((k) => k !== "none");
-        if (!this.mounts.has(s.sex))
-            this.mounts.set(
-                s.sex,
-                json<WeaponMount>(assetUrl(`body/${s.sex}/weapon-mount.json?v=2`)),
-            );
-        if (!office && !this.fieldKit.has(s.sex))
-            this.fieldKit.set(
-                s.sex,
-                this.loader.loadAsync(assetUrl(`armor/field-kit-${s.sex}.glb?v=9`)),
-            );
         const [parts, skinTexture, eyeTexture, pose, mount, kit] = await Promise.all([
             Promise.all(keys.map((key) => this.getPart(s.sex, key))),
             this.texture(`editor/textures/${s.skin}_${s.sex}.webp`),
             this.texture(`editor/textures/eye-${s.eyes}.webp`),
             office ? Promise.resolve(null) : this.pose(s.sex, weaponModel),
-            this.mounts.get(s.sex)!,
-            office ? this.armorAsset("office-worker", s.sex) : this.fieldKit.get(s.sex)!,
+            remember(shared.mounts, s.sex, () =>
+                json<WeaponMount>(assetUrl(`body/${s.sex}/weapon-mount.json?v=3`)),
+            ),
+            office
+                ? this.armorAsset("office-worker", s.sex)
+                : remember(shared.fieldKit, s.sex, () =>
+                      shared.loader.loadAsync(assetUrl(`armor/field-kit-${s.sex}.glb?v=10`)),
+                  ),
         ]);
         if (this.disposed) throw Error("Studio closed.");
+        // A build is a few hundred milliseconds of geometry work; pausing
+        // between its steps keeps the screen responding while it runs.
+        const pause = async () => {
+            await breather();
+            if (this.disposed) throw Error("Studio closed.");
+        };
         const root = clone(parts[0].gltf.scene) as T.Group,
             body = meshes(root)[0] as T.SkinnedMesh;
         const w = weights(s);
@@ -295,22 +368,17 @@ export class CharacterAssets {
         const top = parts[0].top,
             m = material(body);
         m.map = skinTexture;
-        m.color
-            .set(s.skinTint)
-            .multiply(
-                new T.Color().setRGB(
-                    1 - Math.max(0, -s.warmth) * 0.06,
-                    1 - Math.abs(s.warmth) * 0.035,
-                    1 - Math.max(0, s.warmth) * 0.12,
-                ),
-            );
-        m.roughness = s.roughness;
+        paintSkin(m, s);
+        /** The look the geometry was built for; restyles move only its style fields. */
+        let built = s;
         m.metalness = 0;
         installBlush(body, top);
         updateBlush(body, s);
         installScars(body, top);
         updateScars(body, s);
+        await pause();
         if (!office) installBodySuit(body, top, body.skeleton, armorId?.startsWith("nyx") ?? false);
+        await pause();
         const headIndex = body.skeleton.bones.findIndex((b) => b.name.endsWith("Head"));
         function attach(g: T.BufferGeometry, mat: T.Material, nativeSkeleton?: T.Skeleton) {
             if (nativeSkeleton) remapNativeWeights(g, nativeSkeleton, body.skeleton, true);
@@ -336,7 +404,12 @@ export class CharacterAssets {
             body.geometry.index!.array,
         );
         let eyes: T.SkinnedMesh | undefined;
-        for (let i = 1; i < parts.length; i++)
+        // Materials a restyle recolours in place.
+        const hairMaterials: T.MeshStandardMaterial[] = [],
+            browMaterials: T.MeshStandardMaterial[] = [],
+            eyewear: Record<string, T.MeshStandardMaterial> = {};
+        for (let i = 1; i < parts.length; i++) {
+            await pause();
             for (const [j, source] of meshes(parts[i].gltf.scene).entries()) {
                 const mesh = source.clone();
                 deform(mesh, parts[i].meta.primitives[j], parts[i].packed, w, false);
@@ -358,6 +431,8 @@ export class CharacterAssets {
                     mat.alphaTest = 0.15;
                     mat.alphaToCoverage = true;
                 }
+                if (key.startsWith("brow")) browMaterials.push(mat);
+                else if (key !== "eyes" && key !== "lashes") hairMaterials.push(mat);
                 if (key.startsWith("brow")) {
                     const positions = mesh.geometry.attributes.position;
                     positions.array.set(shapeBrow(positions.array as Float32Array, s, surface));
@@ -368,9 +443,13 @@ export class CharacterAssets {
                 attached.userData.nativePart = key;
                 if (key === "eyes") eyes = attached;
             }
+        }
+        await pause();
         if (eyes) {
-            for (const part of createEyewear(s, body.geometry, eyes.geometry))
+            for (const part of createEyewear(s, body.geometry, eyes.geometry)) {
                 attach(part.g, part.material).userData.nativePart = "eyewear";
+                eyewear[part.key] = part.material as T.MeshStandardMaterial;
+            }
             const tattoo = nativeTattoo(s, body.geometry, top, eyes.geometry);
             if (tattoo) {
                 const accessory = attach(tattoo.g, tattoo.material);
@@ -379,12 +458,15 @@ export class CharacterAssets {
             }
         }
         // Civilian clothing replaces the entire field kit, including its boots and belt.
-        const kitMeshes = meshes(kit.scene).map((source) => {
+        const kitMeshes: T.SkinnedMesh[] = [];
+        for (const source of meshes(kit.scene)) {
+            await pause();
             const skin = source as T.SkinnedMesh;
             const attached = attach(skin.geometry.clone(), material(skin).clone(), skin.skeleton);
             attached.userData.nativePart = office ? "office-worker" : "field-kit";
-            return attached;
-        });
+            kitMeshes.push(attached);
+        }
+        await pause();
         if (office) {
             // Keep the original vertex buffer and weights for contact sampling and morphs;
             // omit only enclosed triangles to prevent skin showing through moving cloth.
@@ -418,6 +500,7 @@ export class CharacterAssets {
         if (!office && armorId && ["spectre", "nyx", "nyx-mid", "nyx-heavy"].includes(armorId)) {
             const armor = await this.armorAsset(armorId, s.sex);
             for (const source of meshes(armor.scene)) {
+                await pause();
                 const skin = source as T.SkinnedMesh;
                 const armorMaterial = material(skin).clone();
                 armorMaterials.push(armorMaterial);
@@ -425,8 +508,10 @@ export class CharacterAssets {
                     "armor";
             }
         }
+        await pause();
         const physique = new BodyDeformation(body, s.body);
         for (const mesh of meshes(root)) physique.geometry(mesh.geometry);
+        await pause();
         // Office idle is authored in the original rest coordinates before stature scaling.
         const idleClip = office ? officeIdle(root) : pose!;
         root.scale.multiplyScalar(physique.heightScale);
@@ -437,6 +522,11 @@ export class CharacterAssets {
         }
         root.updateMatrixWorld(true);
         body.skeleton.update();
+        // Posed bounds skin every vertex; each mesh's is kept, so take them one at a time.
+        for (const mesh of [body, ...kitMeshes]) {
+            mesh.computeBoundingBox();
+            await pause();
+        }
         const bounds = new T.Box3().setFromObject(body);
         // Ground the sole, not the bare foot hidden inside it.
         for (const mesh of kitMeshes) bounds.expandByObject(mesh);
@@ -455,6 +545,31 @@ export class CharacterAssets {
             mount,
             idleClip,
             heightScale: physique.heightScale,
+            restyle(next) {
+                const fields = new Set([...Object.keys(built), ...Object.keys(next)]);
+                for (const field of fields as Set<keyof Appearance>)
+                    if (
+                        !STYLE.has(field) &&
+                        JSON.stringify(built[field]) !== JSON.stringify(next[field])
+                    )
+                        return false;
+                paintSkin(m, next);
+                updateBlush(body, next);
+                updateScars(body, next);
+                for (const mat of hairMaterials) mat.color.set(next.hairColor);
+                for (const mat of browMaterials) {
+                    mat.color.set(next.browColor);
+                    mat.opacity = next.browDensity;
+                }
+                eyewear["glasses-frame"]?.color.set(next.glassesColor);
+                const lens = eyewear["glasses-lens"];
+                if (lens) {
+                    lens.color.set(next.lensColor);
+                    lens.opacity = lensOpacity(next.lensTint);
+                }
+                built = next;
+                return true;
+            },
             setArmorColors(colors) {
                 paintArmor(armorMaterials, colors);
             },
@@ -475,28 +590,8 @@ export class CharacterAssets {
             },
         };
     }
+    /** Stops this owner's pending builds; the shared sources stay for the next owner. */
     dispose() {
         this.disposed = true;
-        for (const promise of this.textures.values())
-            void promise.then((t) => t.dispose()).catch(() => {});
-        for (const promise of this.parts.values())
-            void promise.then((p) => this.release(p.gltf)).catch(() => {});
-        for (const promise of this.armor.values())
-            void promise.then((g) => this.release(g)).catch(() => {});
-        for (const promise of this.fieldKit.values())
-            void promise.then((g) => this.release(g)).catch(() => {});
-    }
-    private release(gltf: GLTF) {
-        gltf.scene.traverse((o) => {
-            if (o instanceof T.Mesh) {
-                o.geometry.dispose();
-                for (const mat of Array.isArray(o.material) ? o.material : [o.material]) {
-                    for (const value of Object.values(mat))
-                        if (value instanceof T.Texture) value.dispose();
-                    mat.dispose();
-                }
-                if (o instanceof T.SkinnedMesh) o.skeleton.dispose();
-            }
-        });
     }
 }

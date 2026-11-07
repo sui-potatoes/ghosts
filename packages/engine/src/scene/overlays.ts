@@ -80,6 +80,8 @@ export class Overlays {
   readonly grid: T.LineSegments;
   private readonly range = new T.Group();
   private readonly route = new T.Group();
+  private readonly dropped = new T.Group();
+  private droppedKey = "";
   private readonly targets = new T.Group();
   private targeting: { game: Encounter; unit: Unit } | null = null;
   private targetKey = "";
@@ -99,7 +101,7 @@ export class Overlays {
     this.selector.rotation.x = -Math.PI / 2;
     this.hover.rotation.x = -Math.PI / 2;
     this.hover.visible = false;
-    scene.add(this.range, this.route, this.targets, this.grid, this.selector, this.hover);
+    scene.add(this.dropped, this.range, this.route, this.targets, this.grid, this.selector, this.hover);
   }
 
   /** Cell edges over the whole map, following the ground (curbs, ramps). */
@@ -290,6 +292,24 @@ export class Overlays {
 
   setHover(visible: boolean) {
     this.hover.visible = visible;
+  }
+
+  /** Mark the tiles with a weapon lying on them; false when they are already marked. */
+  showDropped(cells: Cell[]): boolean {
+    const signature = cells.map(key).join("|");
+    if (signature === this.droppedKey) return false;
+    this.droppedKey = signature;
+    clearGroup(this.dropped);
+    for (const cell of cells) {
+      const mark = new T.Mesh(
+        new T.RingGeometry(CELL * 0.2, CELL * 0.28, 6),
+        new T.MeshBasicMaterial({ color: 0xe9c58a, transparent: true, opacity: 0.85, side: T.DoubleSide }),
+      );
+      mark.rotation.x = -Math.PI / 2;
+      mark.position.copy(this.space.vec(cell, 0.08));
+      this.dropped.add(mark);
+    }
+    return true;
   }
 
   /** The pointer left the field. */

@@ -7,6 +7,7 @@ import { assetUrl, CharacterAssets, type Character } from "@ghosts/squad/studio/
 import { nativeClip } from "@ghosts/squad/motion/clips";
 import { EquipmentAssets } from "@ghosts/squad/studio/equipment-assets";
 import { mountHandEquipment } from "@ghosts/squad/studio/held-equipment";
+import { queueBuild } from "./title-build-queue";
 import { loadTitleRifleIdle } from "./title-motion";
 import { SmokingEffect } from "@ghosts/squad/motion/smoking";
 import { soleMinimum } from "@ghosts/squad/motion/sole-contact";
@@ -31,7 +32,7 @@ export function createTitleResident(
     async function loadClip() {
         const sex = preset.appearance.sex;
         if (pose === "idle") return loadTitleRifleIdle(sex);
-        const response = await fetch(assetUrl(`motions/${sex}-smoking.bin`));
+        const response = await fetch(assetUrl(`motions/${sex}-smoking.bin?v=3`));
         if (!response.ok) throw new Error("Title smoking motion could not load.");
         const data = await new Response(
             (await response.blob()).stream().pipeThrough(new DecompressionStream("gzip")),
@@ -53,7 +54,7 @@ export function createTitleResident(
 
     const ready = (async () => {
         const [personResult, clipResult, rifleResult] = await Promise.allSettled([
-            assets.create(preset.appearance, "nyx-mid", "rest"),
+            queueBuild(() => assets.create(preset.appearance, "nyx-mid", "rest")),
             loadClip(),
             equipment?.get("rifle"),
         ]);

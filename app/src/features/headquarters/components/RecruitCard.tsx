@@ -8,7 +8,7 @@ import { VOICES, type ChainRecruit } from "../../../chain";
 interface Props {
     /** The slot's recruit; null shows the card face down. */
     recruit: ChainRecruit | null;
-    /** Slot number, also the flip's stagger. */
+    /** Slot number, also the roster flip's stagger (the deck paces its own). */
     index: number;
     variant: "deck" | "roster";
     portrait?: string;
@@ -18,6 +18,8 @@ interface Props {
     /** Unsaved changes on this recruit. */
     dirty?: boolean;
     disabled?: boolean;
+    /** For a focus-walked menu of cards. */
+    buttonRef?(el: HTMLButtonElement | null): void;
     onClick(): void;
 }
 
@@ -35,15 +37,22 @@ export function RecruitCard({
     pending,
     dirty,
     disabled,
+    buttonRef,
     onClick,
 }: Props) {
     const down = !recruit;
     const slot = String(index + 1).padStart(2, "0");
     return (
         <button
+            ref={buttonRef}
             className={`hq-card hq-card-${variant} ${down ? "is-down" : ""} ${pending && down ? "is-pending" : ""} ${selected ? "selected" : ""}`}
-            style={{ "--hq-flip-delay": `${index * 160}ms` } as CSSProperties}
-            aria-pressed={variant === "roster" && !down ? !!selected : undefined}
+            style={
+                {
+                    "--hq-flip-delay": variant === "roster" ? `${index * 160}ms` : "0ms",
+                    "--hq-slot": index,
+                } as CSSProperties
+            }
+            aria-pressed={!down && selected !== undefined ? selected : undefined}
             aria-label={recruit ? recruit.metadata.name : `Vacant slot ${slot}: hire recruits`}
             disabled={disabled}
             onClick={onClick}
@@ -80,7 +89,7 @@ export function RecruitCard({
                     <span className="hq-card-vacant">
                         <small>{slot}</small>
                         <strong>{pending ? "Incoming" : "Vacant"}</strong>
-                        <span>{pending ? "Drawing on chain…" : "Free hire"}</span>
+                        {!pending && <span>Free hire</span>}
                     </span>
                 </span>
             </span>

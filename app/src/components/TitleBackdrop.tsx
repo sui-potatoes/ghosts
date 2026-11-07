@@ -13,21 +13,30 @@ export function TitleBackdrop() {
     useEffect(() => {
         let cancelled = false;
         let city: TitleCity | undefined;
-        void import("./title-city")
-            .then(({ createTitleCity }) => {
-                if (!cancelled && host.current) {
-                    city = createTitleCity(
-                        host.current,
-                        () => setReady(true),
-                        () => setReady(false),
-                    );
-                }
-            })
-            .catch(() => {
-                if (!cancelled) setReady(false);
-            });
+        // The poster covers the wait, so the scene starts once the menu has
+        // painted and the browser is idle: the menu answers input from the start.
+        const start = () =>
+            void import("./title-city")
+                .then(({ createTitleCity }) => {
+                    if (!cancelled && host.current) {
+                        city = createTitleCity(
+                            host.current,
+                            () => setReady(true),
+                            () => setReady(false),
+                        );
+                    }
+                })
+                .catch(() => {
+                    if (!cancelled) setReady(false);
+                });
+        const idle = typeof window.requestIdleCallback === "function";
+        const handle = idle
+            ? window.requestIdleCallback(start, { timeout: 1200 })
+            : window.setTimeout(start, 300);
         return () => {
             cancelled = true;
+            if (idle) window.cancelIdleCallback(handle);
+            else window.clearTimeout(handle);
             city?.dispose();
         };
     }, []);

@@ -17,6 +17,11 @@ type Props = {
     confirmLabel: string;
     /** The cancelling button's label, when "Cancel" would read wrong. */
     cancelLabel?: string;
+    /**
+     * The cancelling button's own action, when it is a choice rather than a
+     * retreat (Save beside Discard); back and the backdrop still just close.
+     */
+    onCancel?: () => void;
     /** Destructive confirm (sign out, terminate): the button reads amber. */
     danger?: boolean;
     onConfirm: () => void;
@@ -37,6 +42,7 @@ export function ConfirmDialog({
     children,
     confirmLabel,
     cancelLabel,
+    onCancel,
     danger,
     onConfirm,
     onClose,
@@ -51,7 +57,8 @@ export function ConfirmDialog({
 
     useBack(open ? onClose : null);
 
-    const act = (which: 0 | 1) => (which === 1 ? onConfirm() : onClose());
+    const cancel = onCancel ?? onClose;
+    const act = (which: 0 | 1) => (which === 1 ? onConfirm() : cancel());
     const busRef = useRef({ choice, act });
     busRef.current = { choice, act };
 
@@ -100,7 +107,7 @@ export function ConfirmDialog({
                         className="btn confirm-btn"
                         data-selected={choice === 0 || undefined}
                         onMouseEnter={() => setChoice(0)}
-                        onClick={onClose}
+                        onClick={cancel}
                     >
                         {cancelLabel ?? "Cancel"}
                     </button>

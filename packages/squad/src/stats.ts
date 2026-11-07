@@ -2,15 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Mirror of `commander::stats` in the Sui Potatoes Move package
- * (`packages/commander/sources/recruit/stats.move` there).
+ * Mirror of `ghosts::stats` in the ghosts Move package
+ * (`move/packages/ghosts/sources/recruit/stats.move`).
  *
  * Fifteen u8 fields packed into one u128 in field order, lowest byte first.
  * A modifier byte with the sign bit set (0x80 | n) means −n. A recruit goes
  * into battle with their own stats plus the primary weapon's plus the armor's,
  * combined the way `unit.move` does it. Sidearm and utility are not part of
  * that value. Nothing here reads the chain; the presets are the ones
- * `commander::items` mints, copied by hand.
+ * `ghosts::items` mints, copied by hand.
  */
 
 import type { Recruit } from "./types";
@@ -90,7 +90,7 @@ export function unpack(value: bigint): Stats {
 }
 
 /**
- * `commander::items` presets by catalog id. The armor presets are
+ * `ghosts::items` presets by catalog id. The armor presets are
  * `items::armor(1..3)`, the rifles `items::rifle(1..3)`. The sidearm has no
  * chain preset yet, so it carries a frontend one in the same encoding.
  */
@@ -101,7 +101,7 @@ export const ITEM_STATS: Record<string, Stats> = {
   srs9: unpack(0x03_05_00_00_01_14_14_01_05n << 48n),
   // items::rifle(3) "Plasma Rifle": 6 DMG, 1 SPREAD, +30% CRIT, 0 AREA, 5 RANGE, 3 AMMO
   plasma: unpack(0x03_05_00_00_01_1e_1e_01_06n << 48n),
-  // Frontend preset: a service pistol until commander mints one.
+  // Frontend preset: a service pistol until the package mints one.
   k12: stats({
     damage: 3,
     spread: 1,

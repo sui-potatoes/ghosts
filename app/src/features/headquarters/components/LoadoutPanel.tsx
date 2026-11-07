@@ -11,6 +11,7 @@ import type { ArmorColors, Recruit as LocalRecruit } from "@ghosts/squad/types";
 
 import {
     issueTx,
+    rankAllows,
     unequipArmorTx,
     unequipWeaponTx,
     type ChainArmor,
@@ -31,7 +32,7 @@ interface Props {
     armors: ChainArmor[];
     images: Record<string, string>;
     busy: boolean;
-    act(label: string, build: () => Transaction): void;
+    act(build: () => Transaction): void;
 }
 
 const armoryLink = (id?: string) => `/headquarters/armory${id ? `?item=${id}` : ""}`;
@@ -98,7 +99,7 @@ export function LoadoutPanel(props: Props) {
                     {recruit.weapon ? (
                         <>
                             <div className="inventory-heading">
-                                <h4>Fittings</h4>
+                                <h4>Mods</h4>
                                 <span>
                                     {Object.keys(fit).length} / {MAX_FITTINGS}
                                 </span>
@@ -121,11 +122,7 @@ export function LoadoutPanel(props: Props) {
                                 <button
                                     className="btn sq-equipped"
                                     disabled={busy}
-                                    onClick={() =>
-                                        act(`Storing ${recruit.weapon!.name}`, () =>
-                                            unequipWeaponTx(accountId, rid),
-                                        )
-                                    }
+                                    onClick={() => act(() => unequipWeaponTx(accountId, rid))}
                                 >
                                     Return to armory
                                 </button>
@@ -147,11 +144,7 @@ export function LoadoutPanel(props: Props) {
                             <button
                                 className="btn sq-equipped"
                                 disabled={busy}
-                                onClick={() =>
-                                    act(`Storing ${recruit.armor!.name}`, () =>
-                                        unequipArmorTx(accountId, rid),
-                                    )
-                                }
+                                onClick={() => act(() => unequipArmorTx(accountId, rid))}
                             >
                                 Return {recruit.armor.name} to armory
                             </button>
@@ -174,9 +167,9 @@ export function LoadoutPanel(props: Props) {
                     return (
                         <button
                             key={g.objectId}
-                            disabled={busy}
+                            disabled={busy || !rankAllows(recruit, g)}
                             onClick={() =>
-                                act(`Issuing ${g.name} to ${recruit.metadata.name}`, () =>
+                                act(() =>
                                     issueTx(
                                         accountId,
                                         slot === "primary" ? "weapon" : "armor",
@@ -196,7 +189,9 @@ export function LoadoutPanel(props: Props) {
                             <strong>{g.name}</strong>
                             <small>
                                 {slot === "primary" ? `${fitted} / ${MAX_FITTINGS} fitted · ` : ""}
-                                Issue to {first}
+                                {rankAllows(recruit, g)
+                                    ? `Issue to ${first}`
+                                    : `Needs ${g.requiredRank.$kind}`}
                             </small>
                         </button>
                     );

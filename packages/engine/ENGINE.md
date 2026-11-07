@@ -9,7 +9,7 @@ with the tests, the build, lint and a play-through green.
 
 - **Rules** (`scenario.ts`, `map.ts`, `game.ts`, `events.ts`, `ai.ts`,
   `targeting.ts`): pure TypeScript, no DOM, no three, deterministic from a
-  seed, tested under `node --test`. Mirrors the `commander` Move rules so an
+  seed, tested under `node --test`. Mirrors the `ghosts` Move rules so an
   encounter can later be verified on chain.
 - **Scene** (`scene/`, `district.ts`, `humans.ts`, …): three.js. Shows state and
   animates events; never decides an outcome.

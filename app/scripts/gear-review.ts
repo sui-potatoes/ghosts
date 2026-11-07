@@ -40,14 +40,16 @@ const select = (name: string) =>
 const view = select("View"),
     pose = select("Pose"),
     sexSelect = select("Body"),
+    physiqueSelect = select("Physique"),
     weapon = select("Weapon"),
     page = select("Sheet");
 pose.innerHTML = motions
     .map(([name, label]) => `<option value="${name}">${label}</option>`)
     .join("");
 pose.value = "idle_weight_shift";
+physiqueSelect.value = new URLSearchParams(location.search).get("physique") || "0";
 page.innerHTML =
-    '<option value="single">Single pose</option>' +
+    '<option value="single">Single pose</option><option value="smoking">Smoking loop</option>' +
     Array.from(
         { length: 7 },
         (_, i) => `<option value="${i}">Poses ${i * 6 + 1}–${Math.min(38, (i + 1) * 6)}</option>`,
@@ -101,6 +103,20 @@ async function build() {
         const center = new T.Box3().setFromObject(model).getCenter(new T.Vector3());
         controls.target.copy(center);
         camera.position.copy(center).add(new T.Vector3(-0.08, 0.07, -1.1));
+        if (new URLSearchParams(location.search).has("underside")) {
+            // Inventory presentation restores authoring axes: +X muzzle, +Y up.
+            camera.position
+                .copy(center)
+                .add(
+                    new T.Vector3(
+                        0.4,
+                        -0.65,
+                        new URLSearchParams(location.search).get("underside") === "opposite"
+                            ? 0.72
+                            : -0.72,
+                    ),
+                );
+        }
         controls.update();
         draw();
         labels.textContent = weapon.selectedOptions[0].text + " / STANDALONE PROFILE";
@@ -169,11 +185,25 @@ async function build() {
         const sex = sexSelect.value as Sex,
             recruit = initialSquad().recruits.find((r) => r.appearance.sex === sex)!;
         const c = (character = await people.create(
-            recruit.appearance,
+            {
+                ...recruit.appearance,
+                body: (() => {
+                    const value = Number(physiqueSelect.value);
+                    return {
+                        height: 0,
+                        build: value,
+                        muscle: value,
+                        chest: value,
+                        waist: value,
+                        hips: value,
+                    };
+                })(),
+            },
             view.value === "orbit-unit"
                 ? "nyx-heavy"
-                : ["none", "grip", "wrist", "trigger"].includes(view.value) ||
-                    view.value.startsWith("orbit-")
+                : ["none", "grip", "wrist", "trigger", "thumb", "trigger-top"].includes(
+                        view.value,
+                    ) || view.value.startsWith("orbit-")
                   ? null
                   : view.value,
             "rest",
@@ -244,7 +274,7 @@ async function build() {
             return new WeaponCarry(g, c.root.getObjectByName("mixamorigLeftHand")!);
         });
         const mixer = new T.AnimationMixer(c.root);
-        function apply(name: string) {
+        function apply(name: string, sampleTime?: number) {
             carries.forEach((c) => c.update(false));
             mixer.stopAllAction();
             const index = name.startsWith("pistol_") ? 1 : 0;
@@ -258,7 +288,15 @@ async function build() {
                 }
             if (name === "toss_grenade") carries[index].prepare(clip, c.root);
             const action = mixer.clipAction(clip).play();
-            action.time = name === "idle_weight_shift" ? 0.8 : clip.duration * 0.5;
+            const sample = new URLSearchParams(location.search).get("time");
+            action.time =
+                sampleTime ??
+                (sample === null
+                    ? name === "idle_weight_shift"
+                        ? 0.8
+                        : clip.duration * 0.5
+                    : T.MathUtils.clamp(Number(sample), 0, clip.duration - 0.001));
+            if (name === "standing_smoking") guns.forEach((g) => (g.visible = false));
             mixer.update(0);
             c.root.updateMatrixWorld(true);
             carries[index].update(name === "toss_grenade");
@@ -306,6 +344,33 @@ async function build() {
             apply(pose.value);
             controls.target.set(0, 1.22, 0);
             camera.position.set(1.7, 1.37, 0.2);
+            if (new URLSearchParams(location.search).has("fit")) {
+                const hips = c.root
+                    .getObjectByName("mixamorigHips")!
+                    .getWorldPosition(new T.Vector3());
+                const framing = new URLSearchParams(location.search).get("fit");
+                controls.target
+                    .copy(hips)
+                    .add(
+                        new T.Vector3(
+                            0,
+                            framing === "lower" ? -0.15 : framing === "chest" ? 0.3 : 0.06,
+                            0,
+                        ),
+                    );
+                guns.forEach((g) => (g.visible = false));
+                camera.position.copy(controls.target).add(new T.Vector3(0.45, 0.15, 1.1));
+                if (framing === "free-hand") {
+                    controls.target
+                        .copy(
+                            c.root
+                                .getObjectByName("mixamorigLeftHand")!
+                                .getWorldPosition(new T.Vector3()),
+                        )
+                        .add(new T.Vector3(0, -0.05, 0));
+                    camera.position.copy(controls.target).add(new T.Vector3(0.35, 0.08, 0.4));
+                }
+            }
             if (view.value === "grip") {
                 const gun = guns[0];
                 controls.target.copy(gun.localToWorld(new T.Vector3(0.12, 0.005, 0)));
@@ -328,6 +393,23 @@ async function build() {
                     ),
                 );
             }
+            if (view.value === "thumb" || view.value === "trigger-top") {
+                const gun = guns[0];
+                controls.target.copy(
+                    gun.localToWorld(
+                        new T.Vector3(
+                            ...(view.value === "thumb" ? [0.12, -0.01, 0.025] : [-0.12, -0.04, 0]),
+                        ),
+                    ),
+                );
+                camera.position.copy(
+                    gun.localToWorld(
+                        new T.Vector3(
+                            ...(view.value === "thumb" ? [0.27, 0.1, 0.27] : [0.15, 0.18, -0.18]),
+                        ),
+                    ),
+                );
+            }
             controls.update();
             draw();
             labels.textContent = `${view.selectedOptions[0].text} / ${sex.toUpperCase()} / ${pose.selectedOptions[0].text}`;
@@ -337,9 +419,13 @@ async function build() {
             camera.aspect = 200 / 425;
             camera.updateProjectionMatrix();
             for (let i = 0; i < 6; i++) {
-                const item = motions[start + i];
+                const sampleTime = [0, 0.8, 1.6, 2.5, 3.6, 4.6][i];
+                const item =
+                    page.value === "smoking"
+                        ? ["standing_smoking", `Smoking · ${sampleTime.toFixed(1)}s`]
+                        : motions[start + i];
                 if (!item) continue;
-                apply(item[0]);
+                apply(item[0], page.value === "smoking" ? sampleTime : undefined);
                 for (let a = 0; a < 2; a++) {
                     const x = (i % 3) * 400 + a * 200,
                         y = 425 * (1 - Math.floor(i / 3));
@@ -359,7 +445,7 @@ async function build() {
                     draw();
                 }
                 const label = document.createElement("div");
-                label.textContent = `${start + i + 1}. ${item[1]}`;
+                label.textContent = `${page.value === "smoking" ? i + 1 : start + i + 1}. ${item[1]}`;
                 label.style.cssText = `position:absolute;left:${(i % 3) * 400 + 10}px;top:${Math.floor(i / 3) * 425 + 10}px;font-size:13px;width:380px;letter-spacing:0px`;
                 labels.append(label);
             }
@@ -368,7 +454,7 @@ async function build() {
     status.textContent = `${sexSelect.value.toUpperCase()} · ${weapon.selectedOptions[0].text} · ${view.selectedOptions[0].text} · AUDIO DISABLED`;
 }
 let queue = build();
-for (const control of [view, pose, sexSelect, weapon, page])
+for (const control of [view, pose, sexSelect, physiqueSelect, weapon, page])
     control.onchange = () => {
         queue = queue.then(build).catch((e) => {
             status.textContent = String(e);

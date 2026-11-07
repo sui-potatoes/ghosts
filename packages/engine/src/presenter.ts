@@ -2,9 +2,41 @@
 // SPDX-License-Identifier: MIT
 
 import { audio } from "./audio";
+import type { PropDamage } from "./environment";
 import { pad2 } from "./html";
 import type { GameEvent } from "./events";
+import type { Cell, Unit } from "./game";
 import { session } from "./session";
+
+/**
+ * A shot whose outcome is still on its way: the operator fires now, the target
+ * reacts when the answer comes. `outcome` is null when the order was refused.
+ */
+export async function presentShot(
+  a: Unit,
+  b: Unit,
+  outcome: Promise<Extract<GameEvent, { type: "shot" }> | null>,
+) {
+  const { battlefield } = session;
+  await battlefield.aimReady;
+  audio.speak("fire", a);
+  audio.tone(a.weapon);
+  await battlefield.fire(a, b, outcome.then((shot) => !!shot?.hit));
+  const shot = await outcome;
+  if (shot?.killed) audio.speak("kill", a);
+  else if (shot?.hit) audio.speak("hit", b);
+}
+
+/** A throw whose casualties are still on their way: it flies and goes off now, they react when the answer comes. */
+export async function presentThrow(u: Unit, at: Cell, environment: PropDamage[], answer: Promise<unknown>) {
+  const { battlefield } = session;
+  await battlefield.aimAt(u, at, "grenade");
+  audio.speak("grenade", u);
+  audio.tone("pin");
+  await battlefield.throwAt(u, at, environment, answer);
+  audio.tone("grenade");
+  session.notify("FRAGMENTATION / AREA IMPACT");
+}
 
 /**
  * Plays one event: the scene animates it, operatives voice it, the status line
@@ -19,6 +51,7 @@ export async function present(event: GameEvent) {
       if (event.vault && !unit!.enemy) notify("TRAVERSING LOW COVER");
       audio.speak(event.cover ? "cover" : "move", unit!);
       await battlefield.play(event);
+      if (!unit!.enemy && game.weaponAt(unit!.pos)) notify(`${game.weaponAt(unit!.pos)!.toUpperCase()} ON THE GROUND`);
       return;
     case "shot": {
       const target = game.unit(event.target)!;
@@ -39,6 +72,11 @@ export async function present(event: GameEvent) {
       audio.tone("reload", unit!.weapon);
       await battlefield.play(event);
       if (!unit!.enemy) notify(`${unit!.name} / MAGAZINE READY`);
+      return;
+    case "pick-up":
+      audio.tone("reload", unit!.weapon);
+      await battlefield.play(event);
+      notify(`${unit!.name} / ${event.weapon.toUpperCase()} TAKEN`);
       return;
     case "grenade":
       await battlefield.aimAt(unit!, event.at, "grenade");

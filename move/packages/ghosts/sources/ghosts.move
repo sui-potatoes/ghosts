@@ -1,826 +1,2152 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
-/// Stores player recruits, gear, dog tags, replays and ratings in shared
-/// `Account` objects. The `Registry` maps owner addresses to account IDs;
-/// `new_account` aborts if the sender already has an entry. Account mutations
-/// call `authorize` to compare the transaction sender with the stored owner.
+/// The frontend module for the game: the map preset, matchmaking and the `Game`.
+///
+/// Players find each other in the queue and whoever finds a match starts the
+/// `Game` for both. Its `Account`s stand for the players: every call takes one
+/// and checks the sender controls it. Turns last `TURN_LIMIT_MS`, and first
+/// both get `DEPLOY_LIMIT_MS` to pick their squads, then they take turns. A player
+/// who runs out of time cannot act anymore, and any player can move the game on.
+///
+/// The goal is to eliminate the other side. The proof is the `Game` itself: a
+/// recruit only leaves a squad by falling, which the `Map` decides, leaving a
+/// `DogTag` behind. A side with nobody on the map after deployment has lost.
+/// `complete_game` then sends everyone home and deletes the `Game`, and is anyone's
+/// to call.
+///
+/// Every state has a way out, and whoever made it necessary pays for it with
+/// `SUSPENSION_MS` without searching: leaving a match unstarted, not deploying,
+/// abandoning the game, or missing `MAX_MISSED_TURNS` turns in a row. A game that
+/// goes nowhere ends in a draw at `MAX_TURNS`, without blame.
+///
+/// A game is what the rest of the game runs on. It moves both ratings, and pays both
+/// sides credits by how it ended, with experience for the recruits who come home and
+/// whatever kills they made. The fallen are gone for good, armor included, but their
+/// weapons stay where they fell for anyone to take up, and whoever does keeps them.
 module ghosts::ghosts;
 
 use ghosts::{
-    armor::Armor,
-    recruit::{Self, DogTag, Recruit},
-    replay::Replay,
-    visuals,
-    weapon::Weapon,
-    weapon_upgrade::WeaponUpgrade
+    account::Account,
+    history::{Self, History, Record},
+    map::{Self, Map},
+    recruit::{DogTag, Recruit},
+    weapon::Weapon
 };
-use glicko::glicko::{Self, Rating};
-use name_gen::name_gen;
-use sui::{
-    object_table::{Self, ObjectTable},
-    random::Random,
-    table::{Self, Table},
-    table_vec::{Self, TableVec}
-};
+use matchmaker::matchmaker::{Self, Matchmaker};
+use std::string::String;
+use sui::{clock::Clock, object_table::{Self, ObjectTable}, random::Random, vec_map::{Self, VecMap}};
 
-/// Trying to create an `Account` when the sender already has one.
-const EAccountExists: u64 = 0;
-/// Trying to modify an `Account` not owned by the sender.
-const ENotOwner: u64 = 1;
-/// Trying to hire a free `Recruit` while the squad is already full.
-const ERecruitLimitReached: u64 = 2;
-/// Invalid voice configuration passed to the recruit editor.
-const EInvalidVoice: u64 = 3;
+const ENotPlayer: u64 = 1;
+const ENoPositions: u64 = 4;
+const EAlreadySearching: u64 = 6;
+const ENotSearching: u64 = 7;
+const ESearchNotTimedOut: u64 = 8;
+/// The `Account` is suspended for misbehaving.
+const ESuspended: u64 = 9;
+/// The game is over: no more turns or actions.
+const EGameOver: u64 = 10;
+/// It is another player's turn.
+const ENotYourTurn: u64 = 11;
+/// The turn ran out of time: no more actions, only `next_turn`.
+const ETurnExpired: u64 = 12;
+/// The other player's turn is still running.
+const ETurnNotExpired: u64 = 13;
+/// The tile holds no unit of the player.
+const ENotYourUnit: u64 = 14;
+/// The time to deploy is over.
+const EDeploymentOver: u64 = 15;
+/// The players are still picking their squads.
+const EStillDeploying: u64 = 16;
+/// This side picked its squad already.
+const EAlreadyDeployed: u64 = 21;
+/// The game is still running.
+const EGameNotOver: u64 = 17;
+/// The `Account` has no recruits to play with.
+const ENoSquad: u64 = 22;
+/// The opponent is still waiting on the match: start the game, or take the
+/// suspension with `cancel_search`.
+const EOpponentWaiting: u64 = 23;
+/// There is no weapon on the unit's tile.
+const ENoWeaponHere: u64 = 24;
 
-/// The number of `Recruit`s an `Account` can hold hired for free.
-const FREE_RECRUITS: u64 = 4;
-/// Number of visual presets per gender in the `Registry`.
-const PRESETS_PER_GENDER: u64 = 16;
-/// Independent preset draws per recruit: identity (head and eyes), face, body
-/// and outfit.
-const PRESET_DRAWS: u64 = 4;
-/// Number of available voice configurations. The current interface uses
-/// `0` (male) and `1` (female); the rest are reserved.
-const NUM_VOICES: u8 = 4;
+/// How long a search stays in the queue; past it, anyone can cancel it.
+const SEARCH_TIMEOUT_MS: u64 = 120_000;
+/// How long the players have to pick their squads once matched.
+const DEPLOY_LIMIT_MS: u64 = 120_000;
+/// How long a player has for their turn.
+const TURN_LIMIT_MS: u64 = 90_000;
+/// How long a player cannot search for a game after misbehaving. Kept short while
+/// the game is in testing.
+const SUSPENSION_MS: u64 = 60_000;
+/// How many turns in a row a player can miss before the game counts as abandoned.
+const MAX_MISSED_TURNS: u8 = 3;
+/// How long a game can go on before it ends in a draw: 30 rounds.
+const MAX_TURNS: u16 = 60;
 
-/// Shared registry of all `Account`s. Maps the owner's wallet address to the
-/// ID of their `Account`: a single lookup both resolves an address to its
-/// account and enforces the one-account-per-address rule.
-public struct Registry has key {
+/// What a game pays each side, in credits, by how it ended.
+const WIN_CREDITS: u64 = 100;
+const DRAW_CREDITS: u64 = 60;
+const LOSS_CREDITS: u64 = 40;
+/// A win handed over by an opponent who left pays no more than a loss, so that two
+/// accounts have nothing to farm from each other.
+const WALKOVER_CREDITS: u64 = 40;
+/// What each kill pays on top, in credits.
+const KILL_CREDITS: u64 = 20;
+/// What a recruit earns, in experience, for coming home.
+const SURVIVAL_XP: u16 = 1;
+/// What a recruit earns, in experience, for each kill.
+const KILL_XP: u16 = 2;
+/// What a recruit earns, in experience, for coming home from a win.
+const WIN_XP: u16 = 1;
+/// A game left before this many turns pays nobody anything.
+const MIN_TURNS_TO_PAY: u16 = 2;
+
+/// Identifies this game's matchmaking queue, `Matchmaker<Ghosts>`.
+public struct Ghosts()
+
+/// The map games are played on, created once on publish. Frozen, so that games
+/// starting at the same time never wait on each other.
+public struct Preset has key {
     id: UID,
-    accounts: Table<address, ID>,
-    /// Visual presets hires are mixed from: each entry is the packed area
-    /// values `[head, face, eyes, body, outfit]` (see `ghosts::visuals`). The
-    /// first `PRESETS_PER_GENDER` entries are male presets, the next ones
-    /// female.
-    visual_presets: vector<vector<u256>>,
+    /// The map copied when a game starts from this preset.
+    map: Map,
+    /// The name of the preset, purely for display purposes.
+    name: String,
+    /// Stores the spawn positions of recruits, which is what sets the size of a
+    /// squad on this map. The first half goes to the first player, the second
+    /// half to the second.
+    positions: vector<vector<u8>>,
 }
 
-/// Shared storage for a player's recruits, gear, dog tags, replays and rating.
-/// Mutation functions compare the transaction sender with `owner`. Recruit
-/// and gear deposits are public; their removal functions are package-visible.
-public struct Account has key {
+/// A weapon lying on a tile, for any unit standing there to take up.
+public struct Dropped has store {
+    x: u16,
+    y: u16,
+    weapon: Weapon,
+}
+
+/// A game between `Account`s, shared between them.
+public struct Game has key {
     id: UID,
-    /// The address which created - and controls - the `Account`.
-    owner: address,
-    /// The player's `Recruit`s, stored by their ID.
+    map: Map,
+    /// `Account` IDs of the players, in turn order. An index is a player's side.
+    players: vector<ID>,
+    /// The recruits each side has on the map; the fallen are taken out.
+    squads: vector<vector<ID>>,
+    /// The dog tags of the recruits each side lost: the proof of elimination.
+    fallen: vector<vector<DogTag>>,
+    /// The spawn positions each side has left, used from the back.
+    positions: vector<vector<vector<u8>>>,
+    /// History of the game.
+    history: History,
+    /// Temporarily stores recruits for the duration of the game.
+    /// If recruits are KIA, they're "killed" upon removal from this table.
     recruits: ObjectTable<ID, Recruit>,
-    /// Unequipped `Weapon`s - the armory, stored by ID.
-    weapons: ObjectTable<ID, Weapon>,
-    /// Unequipped `Armor`s, stored by ID.
-    armors: ObjectTable<ID, Armor>,
-    /// Unattached `WeaponUpgrade` values stored inline.
-    upgrades: vector<WeaponUpgrade>,
-    /// Dog tags of fallen recruits - the memorial wall.
-    dog_tags: TableVec<DogTag>,
-    /// Saved `Replay`s of played games.
-    replays: TableVec<Replay>,
-    /// Glicko rating the player is matched by in `commander::find_game`.
-    rating: Rating,
-    /// Matchmaking order ID while the player searches for a game. Blocks
-    /// another search until `commander::cancel_search` clears it.
-    search: Option<ID>,
-}
-
-// === Account Creation ===
-
-/// Create an `Account` for the sender and share it. One per address, enforced
-/// by the `Registry`.
-public fun new_account(registry: &mut Registry, ctx: &mut TxContext) {
-    let owner = ctx.sender();
-    assert!(!registry.accounts.contains(owner), EAccountExists);
-
-    let account = Account {
-        id: object::new(ctx),
-        owner,
-        recruits: object_table::new(ctx),
-        weapons: object_table::new(ctx),
-        armors: object_table::new(ctx),
-        upgrades: vector[],
-        dog_tags: table_vec::empty(ctx),
-        replays: table_vec::empty(ctx),
-        rating: glicko::default(),
-        search: option::none(),
-    };
-
-    registry.accounts.add(owner, account.id.to_inner());
-    transfer::share_object(account);
-}
-
-// === Recruits ===
-
-/// Hire the free squad: tops the `Account` up to `FREE_RECRUITS` recruits
-/// with random names, looks and voices. Covers the initial set and
-/// replacements for the fallen - hiring is free while the squad is not full.
-entry fun hire_recruits(acc: &mut Account, registry: &Registry, rng: &Random, ctx: &mut TxContext) {
-    acc.authorize(ctx);
-
-    let count = acc.recruits.length();
-    assert!(count < FREE_RECRUITS, ERecruitLimitReached);
-
-    let mut rng = rng.new_generator(ctx);
-    // Presets are drawn without replacement within a batch: one pool of
-    // indices per gender and per draw (identity, face, body, outfit), so no
-    // two recruits hired together share any part of their look.
-    let mut pools = vector::tabulate!(2 * PRESET_DRAWS, |i| {
-        let offset = if (i < PRESET_DRAWS) 0 else PRESETS_PER_GENDER;
-        vector::tabulate!(PRESETS_PER_GENDER, |j| offset + j)
-    });
-
-    (FREE_RECRUITS - count).do!(|_| {
-        // flip a coin for the gender: it picks the name, the voice and the half
-        // of the presets the look is mixed from
-        let is_female = rng.generate_bool();
-        let name = if (is_female) name_gen::new_female_name(&mut rng)
-        else name_gen::new_male_name(&mut rng);
-        let first = if (is_female) PRESET_DRAWS else 0;
-        let draws = vector::tabulate!(PRESET_DRAWS, |i| {
-            let pool = &mut pools[first + i];
-            let j = rng.generate_u64_in_range(0, pool.length() - 1);
-            pool.swap_remove(j)
-        });
-
-        // head and eyes come from one preset, so hair and brows stay a pair;
-        // face, body and outfit are each drawn from another preset of the gender
-        let presets = &registry.visual_presets;
-        let identity = &presets[draws[0]];
-        let visuals = visuals::new_unchecked(
-            identity[0],
-            presets[draws[1]][1],
-            identity[2],
-            presets[draws[2]][3],
-            presets[draws[3]][4],
-        );
-
-        let mut recruit = recruit::new(name, ctx);
-        recruit.set_leader(acc.id.to_address());
-        recruit.set_visuals(visuals);
-        recruit.set_voice(if (is_female) 1 else 0);
-        acc.recruits.add(object::id(&recruit), recruit);
-    });
-}
-
-/// Edit a stored `Recruit`: visual properties (packed by area, up to 32 `u8`
-/// values each) and voice configuration. The name is fixed once the Recruit
-/// is received and cannot be changed.
-public fun edit_recruit(
-    acc: &mut Account,
-    recruit_id: ID,
-    head: vector<u8>,
-    face: vector<u8>,
-    eyes: vector<u8>,
-    body: vector<u8>,
-    outfit: vector<u8>,
-    voice: u8,
-    ctx: &mut TxContext,
-) {
-    acc.authorize(ctx);
-    assert!(voice < NUM_VOICES, EInvalidVoice);
-
-    let recruit = &mut acc.recruits[recruit_id];
-    recruit.set_visuals(visuals::new(head, face, eyes, body, outfit));
-    recruit.set_voice(voice);
-}
-
-/// Store a `Recruit` in the `Account`. The `Account` becomes the recruit's
-/// leader, so dog tags and other spoils are sent to it.
-public fun add_recruit(acc: &mut Account, mut recruit: Recruit, ctx: &mut TxContext) {
-    acc.authorize(ctx);
-    recruit.set_leader(acc.id.to_address());
-    acc.recruits.add(object::id(&recruit), recruit);
-}
-
-/// Remove and return a stored `Recruit` after checking the sender is the owner.
-public(package) fun remove_recruit(
-    acc: &mut Account,
-    recruit_id: ID,
-    ctx: &mut TxContext,
-): Recruit {
-    acc.authorize(ctx);
-    acc.recruits.remove(recruit_id)
-}
-
-// === Gear: Weapons, Armor, Upgrades ===
-
-/// Store a `Weapon` in the `Account`'s armory.
-public fun add_weapon(acc: &mut Account, weapon: Weapon, ctx: &mut TxContext) {
-    acc.authorize(ctx);
-    acc.weapons.add(object::id(&weapon), weapon);
-}
-
-/// Remove and return a stored `Weapon` after checking the sender is the owner.
-public(package) fun remove_weapon(acc: &mut Account, weapon_id: ID, ctx: &mut TxContext): Weapon {
-    acc.authorize(ctx);
-    acc.weapons.remove(weapon_id)
-}
-
-/// Store an `Armor` in the `Account`.
-public fun add_armor(acc: &mut Account, armor: Armor, ctx: &mut TxContext) {
-    acc.authorize(ctx);
-    acc.armors.add(object::id(&armor), armor);
-}
-
-/// Remove and return a stored `Armor` after checking the sender is the owner.
-public(package) fun remove_armor(acc: &mut Account, armor_id: ID, ctx: &mut TxContext): Armor {
-    acc.authorize(ctx);
-    acc.armors.remove(armor_id)
-}
-
-/// Store a `WeaponUpgrade` in the `Account`.
-public fun add_upgrade(acc: &mut Account, upgrade: WeaponUpgrade, ctx: &mut TxContext) {
-    acc.authorize(ctx);
-    acc.upgrades.push_back(upgrade);
-}
-
-/// Remove and return the `WeaponUpgrade` at an index after checking the owner.
-public(package) fun remove_upgrade(
-    acc: &mut Account,
-    index: u64,
-    ctx: &mut TxContext,
-): WeaponUpgrade {
-    acc.authorize(ctx);
-    acc.upgrades.remove(index)
-}
-
-// === Equipment Management ===
-
-/// Equip a stored `Weapon` on a stored `Recruit`.
-public fun equip_weapon(acc: &mut Account, recruit_id: ID, weapon_id: ID, ctx: &mut TxContext) {
-    acc.authorize(ctx);
-    let weapon = acc.weapons.remove(weapon_id);
-    acc.recruits[recruit_id].add_weapon(weapon);
-}
-
-/// Unequip the `Weapon` from a stored `Recruit`, back into the armory.
-public fun unequip_weapon(acc: &mut Account, recruit_id: ID, ctx: &mut TxContext) {
-    acc.authorize(ctx);
-    let weapon = acc.recruits[recruit_id].remove_weapon();
-    acc.weapons.add(object::id(&weapon), weapon);
-}
-
-/// Equip a stored `Armor` on a stored `Recruit`.
-public fun equip_armor(acc: &mut Account, recruit_id: ID, armor_id: ID, ctx: &mut TxContext) {
-    acc.authorize(ctx);
-    let armor = acc.armors.remove(armor_id);
-    acc.recruits[recruit_id].add_armor(armor);
-}
-
-/// Unequip the `Armor` from a stored `Recruit`, back into the `Account`.
-public fun unequip_armor(acc: &mut Account, recruit_id: ID, ctx: &mut TxContext) {
-    acc.authorize(ctx);
-    let armor = acc.recruits[recruit_id].remove_armor();
-    acc.armors.add(object::id(&armor), armor);
-}
-
-/// Attach a stored `WeaponUpgrade` to a `Weapon` in the armory.
-public fun attach_upgrade(acc: &mut Account, weapon_id: ID, index: u64, ctx: &mut TxContext) {
-    acc.authorize(ctx);
-    let upgrade = acc.upgrades.remove(index);
-    acc.weapons[weapon_id].add_upgrade(upgrade);
-}
-
-/// Detach a `WeaponUpgrade` from a `Weapon` in the armory, back into the `Account`.
-public fun detach_upgrade(acc: &mut Account, weapon_id: ID, index: u8, ctx: &mut TxContext) {
-    acc.authorize(ctx);
-    let upgrade = acc.weapons[weapon_id].remove_upgrade(index);
-    acc.upgrades.push_back(upgrade);
-}
-
-// === Dog Tags ===
-
-/// Store a `DogTag` on the `Account`'s memorial wall.
-public fun add_dog_tag(acc: &mut Account, dog_tag: DogTag, ctx: &mut TxContext) {
-    acc.authorize(ctx);
-    acc.dog_tags.push_back(dog_tag);
-}
-
-/// Take a `DogTag` off the memorial wall by its index.
-/// Swaps with the last element, so the order of the remaining tags changes.
-public fun remove_dog_tag(acc: &mut Account, index: u64, ctx: &mut TxContext): DogTag {
-    acc.authorize(ctx);
-    acc.dog_tags.swap_remove(index)
-}
-
-// === Replays ===
-
-/// Store a `Replay` in the `Account`.
-public fun add_replay(acc: &mut Account, replay: Replay, ctx: &mut TxContext) {
-    acc.authorize(ctx);
-    acc.replays.push_back(replay);
-}
-
-/// Take a `Replay` out of the `Account` by its index.
-/// Swaps with the last element, so the order of the remaining replays changes.
-public fun remove_replay(acc: &mut Account, index: u64, ctx: &mut TxContext): Replay {
-    acc.authorize(ctx);
-    acc.replays.swap_remove(index)
+    /// The players are picking their squads, until `deploy_until_ms`.
+    deploying: bool,
+    deploy_until_ms: u64,
+    /// When the current turn started.
+    turn_started_ms: u64,
+    /// How many turns in a row each side let run out.
+    missed: vector<u8>,
+    /// The `Account` that abandoned the game, or missed too many turns.
+    abandoned_by: Option<ID>,
+    /// Each side's kills, by the recruit who made them. Fire on one's own side
+    /// doesn't count.
+    kills: vector<VecMap<ID, u8>>,
+    /// The weapons the fallen left behind. Whatever is still here when the game
+    /// ends goes with it.
+    dropped: vector<Dropped>,
 }
 
 // === Matchmaking ===
 
-/// Set or clear the matchmaking order the `Account` is searching under.
-public(package) fun set_search(acc: &mut Account, search: Option<ID>, ctx: &mut TxContext) {
-    acc.authorize(ctx);
-    acc.search = search;
-}
-
-// === Authorization ===
-
-/// Abort with `ENotOwner` if the sender differs from the account's owner.
-public(package) fun authorize(acc: &Account, ctx: &mut TxContext) {
-    assert!(acc.owner == ctx.sender(), ENotOwner);
-}
-
-/// Return a mutable reference to a stored `Recruit` after checking the owner.
-public(package) fun recruit_mut(
+/// Search for an opponent with the rating stored in the `Account`, accepting
+/// those within its current deviation. The outcome lands on the `Account`:
+/// `Matched` when a compatible player was waiting, and the sender follows up
+/// with `start_game`; `Searching` otherwise. Either way another search aborts
+/// until `cancel_search` clears it. A suspended `Account` cannot search.
+entry fun find_game(
+    mm: &mut Matchmaker<Ghosts>,
     acc: &mut Account,
-    recruit_id: ID,
+    rng: &Random,
+    clock: &Clock,
     ctx: &mut TxContext,
-): &mut Recruit {
+) {
     acc.authorize(ctx);
-    &mut acc.recruits[recruit_id]
+    assert!(acc.is_idle(), EAlreadySearching);
+
+    let rating = acc.rating();
+    let now = clock.timestamp_ms();
+    assert!(now >= acc.suspended_until(), ESuspended);
+    assert!(acc.num_recruits() > 0, ENoSquad);
+
+    let window = rating.current_deviation(now);
+    let mut rng = rng.new_generator(ctx);
+    let permit = internal::permit<Ghosts>();
+    let (order, found) = matchmaker::find_game(
+        permit,
+        mm,
+        &mut rng,
+        clock,
+        rating.rating(),
+        window,
+        ctx,
+    );
+
+    if (found.is_some()) {
+        let m = found.destroy_some();
+        acc.set_matched(m.match_id(), m.players()[0]);
+    } else acc.start_search(order, now);
 }
 
-/// Return a mutable reference to a stored `Weapon` after checking the owner.
-public(package) fun weapon_mut(acc: &mut Account, weapon_id: ID, ctx: &mut TxContext): &mut Weapon {
+/// Follow-up to a `find_game` that paired the sender: start the game on
+/// the preset and put both `Account`s into it, which is how the player who was
+/// waiting learns about the match. They go first. The `opponent` id comes from
+/// `Registry.accounts`.
+public fun start_game(
+    acc: &mut Account,
+    opponent: &mut Account,
+    preset: &Preset,
+    clock: &Clock,
+    ctx: &mut TxContext,
+) {
     acc.authorize(ctx);
-    &mut acc.weapons[weapon_id]
+
+    let half = preset.positions.length() / 2;
+    let id = object::new(ctx);
+    let now = clock.timestamp_ms();
+    acc.start_match(opponent, id.to_inner(), now, SEARCH_TIMEOUT_MS);
+
+    let mut positions = vector[vector[], vector[]];
+    preset
+        .positions
+        .length()
+        .do!(|i| positions[if (i < half) 0 else 1].push_back(preset.positions[i]));
+
+    transfer::share_object(Game {
+        id,
+        map: preset.map.clone(),
+        players: vector[object::id(opponent), object::id(acc)],
+        squads: vector[vector[], vector[]],
+        fallen: vector[vector[], vector[]],
+        positions,
+        history: history::empty(),
+        recruits: object_table::new(ctx),
+        deploying: true,
+        deploy_until_ms: now + DEPLOY_LIMIT_MS,
+        turn_started_ms: now,
+        missed: vector[0, 0],
+        abandoned_by: option::none(),
+        kills: vector[vec_map::empty(), vec_map::empty()],
+        dropped: vector[],
+    });
+}
+
+/// Leave the queue, taking the order out if it is still there. The owner can do
+/// this at any time, anyone else once a search has run past `SEARCH_TIMEOUT_MS`.
+///
+/// The owner can also walk away from a match they hold, for `SUSPENSION_MS`: the
+/// player they took out of the queue is left with nothing. `release_match` is the
+/// free way out, once that player is gone. A game ends through `abandon_game` or
+/// `complete_game` instead.
+public fun cancel_search(
+    mm: &mut Matchmaker<Ghosts>,
+    acc: &mut Account,
+    clock: &Clock,
+    ctx: &mut TxContext,
+) {
+    assert!(!acc.is_idle() && acc.playing().is_none(), ENotSearching);
+
+    let owner = acc.owner();
+    let now = clock.timestamp_ms();
+    if (ctx.sender() != owner) {
+        assert!(acc.search_timed_out(now, SEARCH_TIMEOUT_MS), ESearchNotTimedOut);
+    } else if (acc.is_matched()) {
+        acc.suspend(now + SUSPENSION_MS);
+    };
+
+    if (mm.is_queued(owner)) {
+        matchmaker::remove_ticket(internal::permit<Ghosts>(), mm, owner);
+    };
+    acc.clear_search();
+}
+
+/// Let go of a match the opponent is no longer waiting on, without blame: they
+/// cancelled, or their search ran out.
+public fun release_match(
+    acc: &mut Account,
+    opponent: &Account,
+    clock: &Clock,
+    ctx: &mut TxContext,
+) {
+    acc.authorize(ctx);
+
+    let now = clock.timestamp_ms();
+    assert!(!acc.is_waited_on_by(opponent, now, SEARCH_TIMEOUT_MS), EOpponentWaiting);
+    acc.clear_search();
+}
+
+// === Ending the Game ===
+
+/// Give up a running game: it is over for both players and the other one wins.
+/// `complete_game` then sends everyone home, as after any other ending, and
+/// suspends the `Account` for `SUSPENSION_MS`.
+public fun abandon_game(game: &mut Game, acc: &Account, ctx: &mut TxContext) {
+    game.side(acc, ctx);
+    assert!(!game.is_over(), EGameOver);
+
+    game.abandoned_by.fill(object::id(acc));
+}
+
+/// Wrap up a game that is over and delete it. Anyone can call this, so neither
+/// player can keep the other in: the survivors go back to their `Account`s, the
+/// dog tags onto their walls, the result onto their scores, both `Account`s are
+/// `Idle` again, and whoever abandoned the game or never deployed is suspended
+/// for `SUSPENSION_MS`.
+public fun complete_game(
+    mut game: Game,
+    first: &mut Account,
+    second: &mut Account,
+    clock: &Clock,
+    _ctx: &mut TxContext,
+) {
+    assert!(game.is_over(), EGameNotOver);
+    assert!(
+        object::id(first) == game.players[0] && object::id(second) == game.players[1],
+        ENotPlayer,
+    );
+
+    let now = clock.timestamp_ms();
+    if (game.misbehaved(0)) first.suspend(now + SUSPENSION_MS);
+    if (game.misbehaved(1)) second.suspend(now + SUSPENSION_MS);
+
+    // nobody showing up isn't a game: it goes on no score and moves no rating
+    let winner = game.winner();
+    if (!game.nobody_showed()) {
+        first.add_result(winner);
+        second.add_result(winner);
+        first.rate_game(second, winner, now);
+    };
+
+    // worked out up front: going home empties a squad, which reads as never showing
+    let (credits_first, xp_first) = game.earnings(0, winner);
+    let (credits_second, xp_second) = game.earnings(1, winner);
+    game.send_home(first, 0, credits_first, xp_first);
+    game.send_home(second, 1, credits_second, xp_second);
+    first.clear_search();
+    second.clear_search();
+
+    let Game { id, map, recruits, fallen, dropped, .. } = game;
+    map.destroy();
+    recruits.destroy_empty();
+    fallen.destroy!(|tags| tags.destroy_empty());
+    dropped.destroy!(|Dropped { weapon, .. }| weapon.destroy());
+    id.delete();
+}
+
+// === Game Actions ===
+
+/// Pick the squad: recruits from the `Account`, placed on the side's spawn
+/// positions, as many as the map has for a side. Once per side, in any order,
+/// within `DEPLOY_LIMIT_MS` of the match. The first turn starts as soon as both
+/// sides have deployed.
+entry fun deploy_squad(
+    game: &mut Game,
+    acc: &mut Account,
+    clock: &Clock,
+    recruit_ids: vector<ID>,
+    ctx: &mut TxContext,
+) {
+    let side = game.side(acc, ctx);
+    let now = clock.timestamp_ms();
+
+    assert!(!game.is_over(), EGameOver);
+    assert!(game.deploying && now <= game.deploy_until_ms, EDeploymentOver);
+    assert!(game.squads[side].is_empty(), EAlreadyDeployed);
+    assert!(!recruit_ids.is_empty(), ENoPositions);
+    assert!(recruit_ids.length() <= game.positions[side].length(), ENoPositions);
+
+    recruit_ids.do!(|recruit_id| {
+        let recruit = acc.remove_recruit(recruit_id, ctx);
+        let position = game.positions[side].pop_back();
+        let record = game.map.place_recruit(&recruit, position[0] as u16, position[1] as u16);
+
+        game.squads[side].push_back(recruit_id);
+        game.recruits.add(recruit_id, recruit);
+        game.history.add(record);
+    });
+
+    if (game.squads.all!(|squad| !squad.is_empty())) game.begin_match(now);
+}
+
+/// Move a unit along the path, the first point is the current position of the unit.
+entry fun move_unit(
+    game: &mut Game,
+    acc: &Account,
+    clock: &Clock,
+    path: vector<u8>,
+    ctx: &mut TxContext,
+) {
+    game.begin_unit_action(acc, clock, path[0] as u16, path[1] as u16, ctx);
+    game.history.add(game.map.move_unit(path))
+}
+
+/// Perform a reload action, replenishing ammo.
+entry fun perform_reload(
+    game: &mut Game,
+    acc: &Account,
+    clock: &Clock,
+    x: u16,
+    y: u16,
+    ctx: &mut TxContext,
+) {
+    game.begin_unit_action(acc, clock, x, y, ctx);
+    game.history.add(game.map.perform_reload(x, y))
+}
+
+/// Take up a weapon lying on the unit's tile, leaving the one the recruit carries
+/// in its place. A recruit on the standard issue rifle has nothing to leave. Costs
+/// 1 AP and comes with a full magazine. The weapon goes home with the recruit: rank
+/// only matters for issuing gear at headquarters.
+entry fun pick_up_weapon(
+    game: &mut Game,
+    acc: &Account,
+    clock: &Clock,
+    x: u16,
+    y: u16,
+    ctx: &mut TxContext,
+) {
+    let recruit_id = game.begin_unit_action(acc, clock, x, y, ctx);
+
+    let index = game.dropped.find_index!(|d| d.x == x && d.y == y);
+    assert!(index.is_some(), ENoWeaponHere);
+    let Dropped { weapon, .. } = game.dropped.swap_remove(index.destroy_some());
+
+    let recruit = &mut game.recruits[recruit_id];
+    if (recruit.weapon().is_some()) {
+        game.dropped.push_back(Dropped { x, y, weapon: recruit.remove_weapon() });
+    };
+    recruit.add_weapon(weapon);
+    game.history.add(game.map.perform_pick_up(&game.recruits[recruit_id], x, y));
+}
+
+/// Perform a grenade throw action.
+entry fun perform_grenade(
+    game: &mut Game,
+    acc: &Account,
+    rng: &Random,
+    clock: &Clock,
+    x0: u16,
+    y0: u16,
+    x1: u16,
+    y1: u16,
+    ctx: &mut TxContext,
+) {
+    let attacker = game.begin_unit_action(acc, clock, x0, y0, ctx);
+
+    let mut rng = rng.new_generator(ctx);
+    let history = game.map.perform_grenade(&mut rng, x0, y0, x1, y1);
+
+    game.bury_fallen(attacker, &history, ctx);
+    game.history.append(history)
+}
+
+/// Perform an attack action.
+entry fun perform_attack(
+    game: &mut Game,
+    acc: &Account,
+    rng: &Random,
+    clock: &Clock,
+    x0: u16,
+    y0: u16,
+    x1: u16,
+    y1: u16,
+    ctx: &mut TxContext,
+) {
+    let attacker = game.begin_unit_action(acc, clock, x0, y0, ctx);
+
+    let mut rng = rng.new_generator(ctx);
+    let history = game.map.perform_attack(&mut rng, x0, y0, x1, y1);
+
+    game.bury_fallen(attacker, &history, ctx);
+    game.history.append(history)
+}
+
+/// Switch to the next turn: the current player at any time, the other one once
+/// the turn is out of time, which goes against the player who let it run out:
+/// `MAX_MISSED_TURNS` in a row abandon the game. Past the time to deploy, it also
+/// ends the deployment of a side that did not make it: the first turn starts, or
+/// the game is over.
+entry fun next_turn(game: &mut Game, acc: &Account, clock: &Clock, ctx: &mut TxContext) {
+    let side = game.side(acc, ctx);
+    assert!(!game.is_over(), EGameOver);
+
+    let now = clock.timestamp_ms();
+    if (game.deploying) {
+        assert!(now > game.deploy_until_ms, EStillDeploying);
+        return game.begin_match(now)
+    };
+
+    let active = game.active_side();
+    if (side == active) {
+        *&mut game.missed[active] = 0;
+    } else {
+        assert!(now - game.turn_started_ms > TURN_LIMIT_MS, ETurnNotExpired);
+        *&mut game.missed[active] = game.missed[active] + 1;
+        if (game.missed[active] == MAX_MISSED_TURNS) {
+            game.abandoned_by.fill(game.players[active]);
+            return
+        };
+    };
+
+    game.history.add(game.map.next_turn());
+    game.turn_started_ms = now;
 }
 
 // === Getters ===
 
-/// Get the owner of the `Account`.
-public fun owner(acc: &Account): address { acc.owner }
+/// Get the current turn of the game.
+public fun turn(self: &Game): u16 { self.map.turn() }
 
-/// Get the player's Glicko rating.
-public fun rating(acc: &Account): Rating { acc.rating }
+/// Get the `Account` that won a game that is over: whoever did not abandon it, or
+/// the side with someone left. None for a draw, or while the game is on.
+public fun winner(self: &Game): Option<ID> {
+    if (!self.is_over()) return option::none();
 
-/// Get the matchmaking order ID, if the player is searching for a game.
-public fun search(acc: &Account): Option<ID> { acc.search }
+    let (first, second) = (self.players[0], self.players[1]);
+    if (self.abandoned_by.is_some()) {
+        return option::some(if (self.abandoned_by == option::some(first)) second else first)
+    };
 
-/// Check whether an address has an `Account`.
-public fun has_account(registry: &Registry, addr: address): bool {
-    registry.accounts.contains(addr)
+    let (first_out, second_out) = (self.squads[0].is_empty(), self.squads[1].is_empty());
+    if (first_out == second_out) option::none() else option::some(if (second_out) first else second)
 }
 
-/// Get the ID of the `Account` owned by an address. Aborts if there is none.
-public fun account_of(registry: &Registry, addr: address): ID {
-    registry.accounts[addr]
+// === Internal ===
+
+/// The side of the `Account` in the game, after checking the sender controls it.
+fun side(game: &Game, acc: &Account, ctx: &mut TxContext): u64 {
+    acc.authorize(ctx);
+    let (found, side) = game.players.index_of(&object::id(acc));
+    assert!(found, ENotPlayer);
+    side
 }
 
-/// Number of `Recruit`s in the `Account`.
-public fun num_recruits(acc: &Account): u64 { acc.recruits.length() }
+/// The side whose turn it is.
+fun active_side(game: &Game): u64 {
+    (game.map.turn() as u64) % game.players.length()
+}
 
-/// Number of `DogTag`s on the memorial wall.
-public fun num_dog_tags(acc: &Account): u64 { acc.dog_tags.length() }
+/// A game ends when a player abandons it, when a side has nobody on the map after
+/// deployment, whether all its recruits fell or it never picked any, or at
+/// `MAX_TURNS`.
+fun is_over(game: &Game): bool {
+    game.abandoned_by.is_some()
+        || (
+            !game.deploying
+                && (game.map.turn() >= MAX_TURNS || game.squads.any!(|squad| squad.is_empty()))
+        )
+}
 
-/// Number of saved `Replay`s.
-public fun num_replays(acc: &Account): u64 { acc.replays.length() }
+/// Whether a side is to blame for how the game ended: it abandoned the game, or
+/// the deployment ended without it having anyone to show, fallen or alive.
+fun misbehaved(game: &Game, side: u64): bool {
+    game.abandoned_by == option::some(game.players[side])
+        || (!game.deploying && game.squads[side].is_empty() && game.fallen[side].is_empty())
+}
 
-// === Init ===
+/// Deployment is over: the first turn starts now.
+fun begin_match(game: &mut Game, now: u64) {
+    game.deploying = false;
+    game.turn_started_ms = now;
+}
 
-/// On publish, share the `Registry` with the initial set of visual presets.
-fun init(ctx: &mut TxContext) {
-    transfer::share_object(Registry {
-        id: object::new(ctx),
-        accounts: table::new(ctx),
-        visual_presets: visual_presets(),
+/// Whether neither side deployed anyone.
+fun nobody_showed(game: &Game): bool {
+    !game.deploying
+        && game.squads.all!(|squad| squad.is_empty())
+        && game.fallen.all!(|tags| tags.is_empty())
+}
+
+/// What a side earns from how the game ended: credits, and experience for each
+/// recruit coming home. Nothing for a side that left or never showed, for one whose
+/// opponent never showed, or for one left behind before the game got anywhere.
+fun earnings(game: &Game, side: u64, winner: Option<ID>): (u64, u16) {
+    let other = 1 - side;
+    if (game.abandoned_by == option::some(game.players[other])) {
+        if (game.turn() < MIN_TURNS_TO_PAY) return (0, 0);
+        return (WALKOVER_CREDITS, SURVIVAL_XP)
+    };
+    if (game.misbehaved(side) || game.misbehaved(other)) return (0, 0);
+
+    if (winner.is_none()) (DRAW_CREDITS, SURVIVAL_XP) else if (
+        winner == option::some(game.players[side])
+    ) (WIN_CREDITS, SURVIVAL_XP + WIN_XP) else (LOSS_CREDITS, SURVIVAL_XP)
+}
+
+/// Hand a side's survivors and dog tags over to its `Account`, with what it earned.
+/// Kills pay on top of a game that pays at all.
+fun send_home(game: &mut Game, acc: &mut Account, side: u64, credits: u64, xp: u16) {
+    if (credits > 0) {
+        let mut kills = 0u64;
+        game.kills[side].length().do!(|i| {
+            let (_, count) = game.kills[side].get_entry_by_idx(i);
+            kills = kills + (*count as u64);
+        });
+        acc.pay(credits + kills * KILL_CREDITS);
+
+        game.squads[side].do_ref!(|id| {
+            let made = game.kills[side].try_get(id).destroy_or!(0);
+            game.recruits[*id].add_xp(xp + (made as u16) * KILL_XP);
+        });
+    };
+
+    let squad = game.squads[side];
+    squad.do!(|id| acc.return_recruit(game.recruits.remove(id)));
+    *&mut game.squads[side] = vector[];
+
+    let fallen = &mut game.fallen[side];
+    while (!fallen.is_empty()) acc.add_fallen(fallen.pop_back());
+}
+
+/// Check the sender can act: their turn, in time, in a running game. Returns their side.
+fun begin_turn_action(game: &mut Game, acc: &Account, clock: &Clock, ctx: &mut TxContext): u64 {
+    let side = game.side(acc, ctx);
+    assert!(!game.is_over(), EGameOver);
+    assert!(!game.deploying, EStillDeploying);
+    assert!(side == game.active_side(), ENotYourTurn);
+    assert!(clock.timestamp_ms() - game.turn_started_ms <= TURN_LIMIT_MS, ETurnExpired);
+    *&mut game.missed[side] = 0;
+    side
+}
+
+/// Check the sender can give an order to the unit at `(x, y)`. Returns its recruit.
+fun begin_unit_action(
+    game: &mut Game,
+    acc: &Account,
+    clock: &Clock,
+    x: u16,
+    y: u16,
+    ctx: &mut TxContext,
+): ID {
+    let side = game.begin_turn_action(acc, clock, ctx);
+    let unit = game.map.unit(x, y);
+    assert!(unit.is_some(), ENotYourUnit);
+    let recruit = unit.borrow().recruit_id();
+    assert!(game.squads[side].contains(&recruit), ENotYourUnit);
+    recruit
+}
+
+/// Take the fallen recruits out of their squads, keeping their dog tags, leaving
+/// their weapons where they fell, and crediting `attacker` for the other side's.
+fun bury_fallen(game: &mut Game, attacker: ID, records: &vector<Record>, ctx: &mut TxContext) {
+    let attacker_side = if (game.squads[0].contains(&attacker)) 0 else 1;
+    let tiles = history::list_kia_tiles(records);
+
+    history::list_kia(records).length().do!(|n| {
+        let id = history::list_kia(records)[n];
+        if (id.to_address() == @0) return; // skip empty addresses
+
+        let side = if (game.squads[0].contains(&id)) 0 else 1;
+        let (found, i) = game.squads[side].index_of(&id);
+        if (!found) return; // a unit the preset placed, no recruit behind it
+
+        game.squads[side].swap_remove(i);
+        let (dog_tag, weapon) = game.recruits.remove(id).kill(ctx);
+        game.fallen[side].push_back(dog_tag);
+
+        let (x, y) = (tiles[n][0], tiles[n][1]);
+        weapon.do!(|weapon| game.dropped.push_back(Dropped { x, y, weapon }));
+
+        if (side != attacker_side) {
+            let kills = &mut game.kills[attacker_side];
+            if (kills.contains(&attacker)) {
+                let count = &mut kills[&attacker];
+                *count = *count + 1;
+            } else kills.insert(attacker, 1);
+        };
     });
 }
 
-#[test_only]
-public fun init_for_testing(ctx: &mut TxContext) { init(ctx) }
+// === Init ===
 
-/// The looks hires are mixed from: 16 male, then 16 female presets, encoded
-/// with the appearance codec in `@ghosts/squad` (codec version 1).
-fun visual_presets(): vector<vector<u256>> {
-    // presets:begin - generated by `pnpm --dir app build:visual-presets`
-    vector[
-        vector[
-            0xa6282a260000990000202835038000007c66cb9080ffffff03b30301,
-            0x8080808080674d80ac808080c63a80a68080b38080ac80b380a0806d938099,
-            0x8080808060ff80808080263342048080808080808080805a808080ac5a05,
-            0x8e6084be7a6a00,
-            0x4844342c2b270093903c59595243413c,
-        ],
-        vector[
-            0xa6282a2600009900001e1e20018000007c66cb9080ffffff028c0201,
-            0x8080808080b9c080ac8080c080a66080b98da080808080938080ac998080a6,
-            0x8080808080ff80808080263342008080808080808080808f80808080b300,
-            0x9b8e9ebe7fa700,
-            0x4844342c2b27003d71be3d3a359aa8ab,
-        ],
-        vector[
-            0xa6282a260000990000445263028000007c66cb9080ffffff03730701,
-            0x8080808080605a7167806080c05aa6c08080808080a0ac80a093805a80ac67,
-            0x8080808080ff808080802633420880808080808080808067808080a08004,
-            0x7c776dbe5a7500,
-            0x4844342c2b270073a0b4302c27373463,
-        ],
-        vector[
-            0x6c282a2603038a0300649cbd008e0100546dbb5e60cae5ee019c0201,
-            0x73807478984838594969ab954f5f6d316783915b63897d97a85886929fa9a0,
-            0x756c5a796dfe52d069d2446380024cac65919ba05c6e8eb67a8698a8bb02,
-            0x848a7398837a00,
-            0x48443434465c0061a0b92a2e29425d55,
-        ],
-        vector[
-            0xb9423b39020471000026354901500030708cd59c95dce7f700900401,
-            0x8b536679826c7250474f7055c652bfb2605c6d9da5838a6b918659534dab5c,
-            0x9aac6f7ca2c3c55f5a76263549008b936e6fa18e7f967ba06b765ea96301,
-            0x685f83a2a78b00,
-            0x4844342c2b270093903c59595243413c,
-        ],
-        vector[
-            0x7d282a260001ac0204446078007501507c66cbbaa5ffffff02830101,
-            0x87617c6d6ec2ada345605263af3f9fb5516c87787a7b898f659b50566d5e72,
-            0x6f79a9877f7f53ad737444607804625d8c9c73976994825a9962976bb205,
-            0x8b847188918d00,
-            0x734844342c2b27043d71be3d3a359aa8ab,
-        ],
-        vector[
-            0x6e363d500008730000202a4d00580000546dbbb370cae5ee008f0701,
-            0x8e6b7f9296808d5aae9e8aba727f9470a9847267a07a8346938c8d8a658646,
-            0x8fa09b8067c640b47b96202a4d0b6077c175966f967c5e6fa09a9aa75502,
-            0x7a917b9d649400,
-            0x4844347b96a50073a0b4302c27373463,
-        ],
-        vector[
-            0xac363d5003066a030044607803a90142694ea7ba8cdce7f701860601,
-            0x6c778aaf8d7ca060b75482567d4b7b8f6a6da8848cc38ba997835c5b69ada5,
-            0x728b5a926d7e749475b34460780071a390ae5a77a9909463a38a6d626600,
-            0x675a67a1676a00,
-            0x4844342c2b270061a0b92a2e29425d55,
-        ],
-        vector[
-            0x92423b390200a800007980860173012a694ea77c63ffffff045a0201,
-            0x8672a0a0645b55aa9e646a5fc93baaaf53a5568a618f64865c8f85a76850b7,
-            0x82aa757a7ccfa430977f798086076d726793829e6dbc705a8ba197b15304,
-            0x725e6eb97c9b00,
-            0x4844342c2b270093903c59595243413c,
-        ],
-        vector[
-            0xb7423b39020061000044607803ab004b694ea7738cdddfe502740501,
-            0x8fa4a67793573a716d9e93b152985255c9745c81a081908c9d93796f7f5489,
-            0x8ea96b7e88d6b4d02ead446078047b8ec5755e756d6d5f635c9da2847d05,
-            0x8367718f607800,
-            0x4844342c2b27003d71be3d3a359aa8ab,
-        ],
-        vector[
-            0x77423b390100a501001c1e2100750100694ea7ba80ffffff04830201,
-            0xa47e648e85794a66a2665e58b42eb0b83d6b9170a593ac749c86606d6bbc77,
-            0x818e987062c76252c1921c1e210299a668559892997299b177a380a8ae01,
-            0x969698c0785400,
-            0x4844347b96a50073a0b4302c27373463,
-        ],
-        vector[
-            0xaf423b3902017a0200798086028c00007c66cb935edce7f7005f0301,
-            0x67946d9d80717d8d9863b67f5450745466665a825f716c6593837b72ab485d,
-            0x8386836f7794a6575d8c798086068298b1678269a576445f73a389594e07,
-            0x84916da6887b00,
-            0x4844347b96a50061a0b92a2e29425d55,
-        ],
-        vector[
-            0x6a423b3902009203001c1e2100580128694ea7bd83cae5ee045c0601,
-            0x9b79aa976fa394aa946a7a5286569a92537a6575a37f8451a5905f5250be61,
-            0x7ea27ca47b7f4932b6451c1e210a7e90636d718b6a728460aca497985502,
-            0x886a8a91789200,
-            0x4844342c2b270093903c59595243413c,
-        ],
-        vector[
-            0x7d282a260200af0100202a4d03960100694ea77192bfd3ea00a50701,
-            0x88849f76655242a98c8f46a1b491cca1967977807b86946f5d7f8a83858789,
-            0x9194847e53ab6a5db66b202a4d0b775b5d6e9da97ad3525f96679f74a805,
-            0x9e647c83757100,
-            0x4844347b96a5003d71be3d3a359aa8ab,
-        ],
-        vector[
-            0xb5423b390200a30300649cbd0066013a546dbbbb62ffffff02860101,
-            0x83a4908f836961abbb648a508e4d8a785da25f83816a9a8c7b66a4b8a5a55f,
-            0x6778706c6ac4834f605644638008819e64649a8b76768b9f7e7978776002,
-            0x8699809d847800,
-            0x734844347b96a50473a0b4302c27373463,
-        ],
-        vector[
-            0x8c282a2602008b030026356e014d00437c66cb685ddce7f701950401,
-            0x7cb16d586758457ba2a69ac26aa15673bc5da18b839e5d7c8aa2745b714296,
-            0x688e8aaa99767a65498926356e037085b3815c7ea68860576a8c93828f07,
-            0x8a78a683898800,
-            0x4844342c2b270061a0b92a2e29425d55,
-        ],
-        vector[
-            0xa6282a260000990000202835058000007c66cb9080ffffff00a60101,
-            0x8080808080a0ac808080a6675480804d80805a80808067548080a49c806780,
-            0x8080808080ff80808080263342018080808080808080808d80808080a602,
-            0x6869848b897a01,
-            0x4844342c2b270093903c59595243413c,
-        ],
-        vector[
-            0xa6282a260000990000202835068000007c66cb9080ffffff02a60201,
-            0x8080808080c6d380998080c080c05a80ac8080808080809d8080a0998069a9,
-            0x8080808067ff80808080263342048080808080808080808080808099b900,
-            0x9c5e9e9b84aa01,
-            0x4844342c2b27003d71be3d3a359aa8ab,
-        ],
-        vector[
-            0xa6282a260000990000201b19058000007c66cb9080ffffff01800501,
-            0x80808080808073805a80809380805a6080806080806d804d8080808067808d,
-            0x8080808080ff808080802633420880808080808080d9804db38080808d01,
-            0x947f67a65f5701,
-            0x4844342c2b270073a0b4302c27373463,
-        ],
-        vector[
-            0x7a363d5003016c02001c1e21058201007c66cb61a0dddfe504740401,
-            0x8d8b75798777718dbb6d8850833a979d56697783737b8a9880985d4e526da5,
-            0x7b9fa161729e407c807d1c1e2101ae6abe6577556c635970856e816c7c07,
-            0x7b8fa5c0987101,
-            0x48443434465c0061a0b92a2e29425d55,
-        ],
-        vector[
-            0x9e363d500000870000a7b4b805960100546dbba972bfd3ea006c0701,
-            0x795c7e7b7e4c379f4d79428cb7a8c4aa978d51889f86789377688c9f729a7e,
-            0x7b93768947a55c32814c565e630aa477ca6e7c858f85507c8397998b8b02,
-            0x678680b56e5a01,
-            0x4844342c2b270093903c59595243413c,
-        ],
-        vector[
-            0x9e282a260000ae0300649cbd064d00007c66cb8c5bdddfe502920201,
-            0x9f75a69b858ea45781678b3e76419a924e889b74a29c79556d7e767dac6a5c,
-            0x6268938582e0568ac88c44638003604c6c649ba18cbb92a78d7e85584805,
-            0x8a946db37cae01,
-            0x4844347b96a5003d71be3d3a359aa8ab,
-        ],
-        vector[
-            0xb4282a2602008f0201a7b4b804b20130708cd59e7dffffff03540301,
-            0xa49463866c8377b182a192bc777da56cb26654879b6d65757c9962647255a3,
-            0x75a5a07d638d9f71464c565e63078774c770957587745c769369a57d7606,
-            0x8e946786968301,
-            0x4844347b96a50073a0b4302c27373463,
-        ],
-        vector[
-            0xaf282a260107a3020126356e04bf0132708cd5855abfd3ea02590201,
-            0x5f93987276aec6744b5082478d539386575a6c83666b724479a5505480414e,
-            0x89637296a8f45c307b9926356e036c876d818c5f8c7791668a959ca2a901,
-            0x7f83768b5c7201,
-            0x48443434465c0161a0b92a2e29425d55,
-        ],
-        vector[
-            0xba282a2602006c01041c1e2105670024694ea78b86dce7f7015a0301,
-            0x8382848856c5c36f715e84557d538693538e738fa0a3a48f756196ae7097ba,
-            0x6b88799165acaf68c0501c1e2108ba87887ca57b89cb6ca5689d6659c402,
-            0x7a7b9ea6677d01,
-            0x48443434465c0093903c59595243413c,
-        ],
-        vector[
-            0x8e363d50010077010079808605a9013a546dbb5c78bfd3ea05840601,
-            0x9a7f8b75845757697662b87a524b663a64554e895c71a59e76a757505bafb0,
-            0x686b7da156e366b26ca3798086039757bc7b6f8f9f854e5a7e686f727607,
-            0x7f9784aeb26c01,
-            0x4844342c2b27003d71be3d3a359aa8ab,
-        ],
-        vector[
-            0x8d423b390200a10003649cbd048c0100694ea74b7dcae5ee03940701,
-            0x60ae7f99643f416d70865696aa9fc8c09ba15682a05485807a8ea6b850568f,
-            0x8d53a69f93b9b2417fa844638004618d7e87816685bf646da69d80605701,
-            0x6e996ab86e7f01,
-            0x48443434465c0073a0b4302c27373463,
-        ],
-        vector[
-            0x87363d5002038700002635490476004c546dbb4d9adce7f7019c0301,
-            0x63728a7682656e90c44d5b53c547b1b13ea3b28da0827aac7a549bbf5b77bb,
-            0x9480669990a94a9a79af263549098e917f7c6b9171ba5b52a38478978104,
-            0x818e728b8faf01,
-            0x4844347b96a50061a0b92a2e29425d55,
-        ],
-        vector[
-            0xbc423b390206ac0004202a4d069f002c694ea7899fcae5ee035a0601,
-            0x8e7b7486657277527d69aa825a546b576b756e814e9f6d8c79936c52998872,
-            0x979156ae88e2b4797087202a4d088e84c57b9f7381a061643f6c6a63ae07,
-            0x6a6599be8bb001,
-            0x48443434465c0293903c59595243413c,
-        ],
-        vector[
-            0x78282a2602007a00034460780667012c7c66cb7b5cffffff02700101,
-            0xa9a46d798ea9b68675b08ec873629682bb88848dbf777a708e7fa6bf76b969,
-            0x736f5965888c79645da34460780a498c925b758565908e569a81748a4e04,
-            0x897c868e9e6d01,
-            0x4844347b96a5003d71be3d3a359aa8ab,
-        ],
-        vector[
-            0x97282a2602057e0200202a4d04680047694ea79491dddfe5017e0401,
-            0x7975867c9a6f606271585357d148a7af447ea890b78380479363819a9db558,
-            0x85759f9f52ed708bada5202a4d057b7ca29d797779d3625d94697d7ebf06,
-            0x6788a596aea501,
-            0x48443434465c0073a0b4302c27373463,
-        ],
-        vector[
-            0x7e282a260300830200a7b4b805720100708cd58063ffffff03740301,
-            0x8e7c7ca29c506d78b09b94bb7382926aaeb3805ba08b736b8461a9bab0944e,
-            0x787c975f50de5d8d7b65565e63078074799870599bca8a639d75979b8407,
-            0x676780918e7701,
-            0x48443434465c0061a0b92a2e29425d55,
-        ],
-    ]
-    // presets:end
+/// On publish, share the matchmaking queue and freeze the map preset, which is
+/// generated from a scene: see `pnpm --dir app build:map-preset`.
+fun init(ctx: &mut TxContext) {
+    let id = object::new(ctx);
+    transfer::freeze_object(Preset {
+        map: map::black_rain(id.to_inner()),
+        name: "Black Rain",
+        positions: map::black_rain_positions(),
+        id,
+    });
+
+    // the default buckets and windows, with tickets as long-lived as a search
+    let config = matchmaker::new_config(100, 32, 50, 30_000, 1_000, SEARCH_TIMEOUT_MS);
+    matchmaker::new(internal::permit<Ghosts>(), config, ctx).share();
 }
 
 // === Tests ===
 
 #[test_only]
-use sui::test_scenario as ts;
+use ghosts::{account::{Self, Registry}, items, recruit as recruit_module};
 #[test_only]
-use ghosts::items;
+use sui::{clock, random, test_scenario::{Self as ts, Scenario}};
 
-#[test]
-fun test_account_lifecycle() {
-    use std::unit_test::assert_eq;
+#[test_only]
+const ALICE: address = @0xA11CE;
+#[test_only]
+const BOB: address = @0xB0B;
+#[test_only]
+const CAROL: address = @0xCA401;
 
-    let user = @0xA11CE;
-    let mut ts = ts::begin(user);
+/// Everything a game needs, held across the transactions of a test.
+#[test_only]
+public struct Fixture {
+    ts: Scenario,
+    registry: Registry,
+    mm: Matchmaker<Ghosts>,
+    rng: Random,
+    clock: Clock,
+    preset: Preset,
+    alice: Account,
+    bob: Account,
+    /// The armed recruit each player starts with.
+    alice_recruit: ID,
+    bob_recruit: ID,
+}
+
+/// Publish the game, open an `Account` for Alice and Bob, and play on Demo 1:
+/// one recruit a side keeps the tests short.
+#[test_only]
+fun setup(): Fixture {
+    setup_on!(|id| map::demo_1(id), vector[vector[0, 3], vector[6, 5]])
+}
+
+/// `setup` with the matches on another map: Demo 2 has two recruits a side.
+#[test_only]
+fun setup_on_demo_2(): Fixture {
+    let positions = vector[vector[8, 2], vector[7, 6], vector[1, 2], vector[1, 7]];
+    setup_on!(|id| map::demo_2(id), positions)
+}
+
+#[test_only]
+macro fun setup_on($map: |ID| -> Map, $positions: vector<vector<u8>>): Fixture {
+    let mut ts = ts::begin(@0);
     init(ts.ctx());
+    account::init_for_testing(ts.ctx());
+    random::create_for_testing(ts.ctx());
 
-    // create an account for the user
-    ts.next_tx(user);
+    ts.next_tx(ALICE);
+    let id = object::new(ts.ctx());
+    let preset = Preset {
+        map: $map(id.to_inner()),
+        name: "Test",
+        positions: $positions,
+        id,
+    };
+
     let mut registry = ts.take_shared<Registry>();
-    new_account(&mut registry, ts.ctx());
+    registry.new_account(ts.ctx());
+    ts.next_tx(BOB);
+    registry.new_account(ts.ctx());
+    ts.next_tx(ALICE);
 
-    ts.next_tx(user);
-    let mut acc = ts.take_shared<Account>();
-    assert_eq!(acc.owner(), user);
-    assert_eq!(acc.rating(), glicko::default());
-    assert!(registry.has_account(user));
-    assert_eq!(registry.account_of(user), object::id(&acc));
+    let mut alice = ts.take_shared_by_id<Account>(registry.account_of(ALICE));
+    let mut bob = ts.take_shared_by_id<Account>(registry.account_of(BOB));
+    let alice_recruit = hire(&mut alice, ts.ctx());
+    ts.next_tx(BOB);
+    let bob_recruit = hire(&mut bob, ts.ctx());
+    ts.next_tx(ALICE);
+    let mm = ts.take_shared<Matchmaker<Ghosts>>();
+    let rng = ts.take_shared<Random>();
+    let clock = clock::create_for_testing(ts.ctx());
 
-    // hire a recruit, stash gear
-    let recruit = recruit::new("Jane Doe", ts.ctx());
-    let recruit_id = object::id(&recruit);
-    acc.add_recruit(recruit, ts.ctx());
+    Fixture {
+        ts,
+        registry,
+        mm,
+        rng,
+        clock,
+        preset,
+        alice,
+        bob,
+        alice_recruit,
+        bob_recruit,
+    }
+}
 
-    // customize the recruit: looks and voice (the name stays)
-    acc.edit_recruit(
-        recruit_id,
-        vector[1, 2],
-        vector[3],
-        vector[4, 5],
-        vector[6],
-        vector[7],
-        1,
-        ts.ctx(),
-    );
-
-    let weapon = items::rifle(1, ts.ctx());
-    let weapon_id = object::id(&weapon);
-    acc.add_weapon(weapon, ts.ctx());
-    acc.add_armor(items::armor(1, ts.ctx()), ts.ctx());
-    acc.add_upgrade(items::scope(1), ts.ctx());
-
-    // attach the scope to the stored rifle, then arm the recruit with it
-    acc.attach_upgrade(weapon_id, 0, ts.ctx());
-    assert_eq!(acc.upgrades.length(), 0);
-    acc.equip_weapon(recruit_id, weapon_id, ts.ctx());
-    assert!(acc.recruits[recruit_id].weapon().is_some());
-
-    // change of heart: strip the rifle and put the scope back on the shelf
-    acc.unequip_weapon(recruit_id, ts.ctx());
-    acc.detach_upgrade(weapon_id, 0, ts.ctx());
-    assert_eq!(acc.upgrades.length(), 1);
-    assert_eq!(acc.weapons[weapon_id].upgrades().length(), 0);
-
-    // the recruit falls in battle; keep the dog tag
-    let dog_tag = acc.remove_recruit(recruit_id, ts.ctx()).kill(ts.ctx());
-    acc.add_dog_tag(dog_tag, ts.ctx());
-    assert_eq!(acc.num_dog_tags(), 1);
-    acc.remove_dog_tag(0, ts.ctx()).throw_away();
-
+#[test_only]
+fun finish(f: Fixture) {
+    let Fixture { ts, registry, mm, rng, clock, preset, alice, bob, .. } = f;
     ts::return_shared(registry);
-    ts::return_shared(acc);
+    ts::return_shared(mm);
+    ts::return_shared(rng);
+    ts::return_shared(alice);
+    ts::return_shared(bob);
+    let Preset { id, map, .. } = preset;
+    map.destroy();
+    id.delete();
+    clock.destroy_for_testing();
     ts.end();
 }
 
+/// Alice queues, Bob finds her and starts the game. Alice goes first.
+#[test_only]
+fun start(f: &mut Fixture): Game {
+    f.ts.next_tx(ALICE);
+    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
+    f.ts.next_tx(BOB);
+    find_game(&mut f.mm, &mut f.bob, &f.rng, &f.clock, f.ts.ctx());
+    start_game(&mut f.bob, &mut f.alice, &f.preset, &f.clock, f.ts.ctx());
+    f.ts.next_tx(ALICE);
+    f.ts.take_shared<Game>()
+}
+
+/// A recruit armed like the ones in `demo_test`, in the `Account` of the sender.
+#[test_only]
+fun hire(acc: &mut Account, ctx: &mut TxContext): ID {
+    let mut recruit = recruit_module::new("Jane Doe", ctx);
+    recruit.add_armor(items::armor(2, ctx));
+    recruit.add_weapon(items::rifle(3, ctx));
+    let id = object::id(&recruit);
+    acc.add_recruit(recruit, ctx);
+    id
+}
+
+/// Both sides pick their recruit: Alice stands at (0, 3), Bob at (6, 5), Alice is next.
+#[test_only]
+fun deploy(f: &mut Fixture, game: &mut Game) {
+    f.ts.next_tx(ALICE);
+    deploy_squad(game, &mut f.alice, &f.clock, vector[f.alice_recruit], f.ts.ctx());
+
+    f.ts.next_tx(BOB);
+    deploy_squad(game, &mut f.bob, &f.clock, vector[f.bob_recruit], f.ts.ctx());
+
+    f.ts.next_tx(ALICE);
+}
+
 #[test]
-fun test_hire_recruits() {
+fun test_search_and_start() {
     use std::unit_test::assert_eq;
 
-    let user = @0xA11CE;
-    let mut ts = ts::begin(user);
+    let mut fixture = setup();
+    let f = &mut fixture;
+
+    // nobody is waiting: Alice's order is queued and her `Account` records it
+    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
+    assert!(f.mm.is_queued(ALICE));
+    assert!(f.alice.search_order().is_some());
+
+    // Alice cancels: the order leaves the queue and the `Account` is free again
+    cancel_search(&mut f.mm, &mut f.alice, &f.clock, f.ts.ctx());
+    assert!(!f.mm.is_queued(ALICE));
+    assert!(f.alice.is_idle());
+
+    // Alice queues again and Bob is paired with her right away
+    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
+    f.ts.next_tx(BOB);
+    find_game(&mut f.mm, &mut f.bob, &f.rng, &f.clock, f.ts.ctx());
+    assert_eq!(f.mm.queue_length(), 0);
+    assert_eq!(f.bob.opponent(), option::some(ALICE));
+    assert!(f.alice.search_order().is_some());
+
+    // Bob's follow-up starts the game for both, with Alice going first
+    start_game(&mut f.bob, &mut f.alice, &f.preset, &f.clock, f.ts.ctx());
+    f.ts.next_tx(ALICE);
+    let game = f.ts.take_shared<Game>();
+    let id = object::id(&game);
+    assert_eq!(f.alice.playing(), option::some(id));
+    assert_eq!(f.bob.playing(), option::some(id));
+    assert_eq!(game.players, vector[object::id(&f.alice), object::id(&f.bob)]);
+    assert_eq!(game.active_side(), 0);
+    assert_eq!(game.positions, vector[vector[vector[0, 3]], vector[vector[6, 5]]]);
+    assert!(game.deploying);
+    assert_eq!(game.deploy_until_ms, DEPLOY_LIMIT_MS);
+
+    ts::return_shared(game);
+    fixture.finish();
+}
+
+/// The one map: Black Rain, three recruits a side, on tiles a recruit can stand
+/// on, and nothing else frozen next to it.
+#[test]
+fun test_map_preset() {
+    use std::unit_test::assert_eq;
+
+    let mut ts = ts::begin(@0);
     init(ts.ctx());
+    let frozen = ts.next_tx(ALICE).frozen();
+    assert_eq!(frozen.length(), 1);
 
-    // `Random` can only be created by the system address
-    ts.next_tx(@0);
-    sui::random::create_for_testing(ts.ctx());
-
-    ts.next_tx(user);
-    let mut registry = ts.take_shared<Registry>();
-    let rng = ts.take_shared<Random>();
-    new_account(&mut registry, ts.ctx());
-
-    ts.next_tx(user);
-    let mut acc = ts.take_shared<Account>();
-
-    // deposit one recruit manually, then top the squad up to the free limit
-    let recruit = recruit::new("Jane Doe", ts.ctx());
-    let recruit_id = object::id(&recruit);
-    acc.add_recruit(recruit, ts.ctx());
-    acc.hire_recruits(&registry, &rng, ts.ctx());
-    assert_eq!(acc.num_recruits(), FREE_RECRUITS);
-
-    // the looks hires are mixed from: 16 + 16 presets, five areas, codec version 1
-    assert_eq!(registry.visual_presets.length(), 2 * PRESETS_PER_GENDER);
-    registry.visual_presets.do_ref!(|preset| {
-        assert_eq!(preset.length(), 5);
-        assert_eq!(preset[0] & 0xff, 1);
+    let preset = ts.take_immutable_by_id<Preset>(frozen[0]);
+    assert_eq!(preset.map.id(), frozen[0]);
+    assert_eq!(preset.positions.length(), 6);
+    preset.positions.do_ref!(|position| {
+        let (x, y) = (position[0] as u16, position[1] as u16);
+        assert!(preset.map.is_tile_walkable(x, y));
+        assert!(!preset.map.tile_has_unit(x, y));
     });
 
-    // the account itself leads every stored recruit
-    assert_eq!(acc.recruits[recruit_id].leader(), object::id_address(&acc));
-
-    ts::return_shared(registry);
-    ts::return_shared(rng);
-    ts::return_shared(acc);
+    ts::return_immutable(preset);
     ts.end();
 }
 
-#[test, expected_failure(abort_code = ERecruitLimitReached)]
-fun test_hire_recruits_full_squad_fail() {
-    let user = @0xA11CE;
-    let mut ts = ts::begin(user);
-    init(ts.ctx());
+#[test]
+fun test_anyone_cancels_after_timeout() {
+    let mut fixture = setup();
+    let f = &mut fixture;
 
-    // `Random` can only be created by the system address
-    ts.next_tx(@0);
-    sui::random::create_for_testing(ts.ctx());
+    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
+    f.clock.set_for_testing(SEARCH_TIMEOUT_MS + 1);
+    f.ts.next_tx(BOB);
+    cancel_search(&mut f.mm, &mut f.alice, &f.clock, f.ts.ctx());
+    assert!(!f.mm.is_queued(ALICE));
+    assert!(f.alice.is_idle());
 
-    ts.next_tx(user);
-    let mut registry = ts.take_shared<Registry>();
-    let rng = ts.take_shared<Random>();
-    new_account(&mut registry, ts.ctx());
+    fixture.finish();
+}
 
-    ts.next_tx(user);
-    let mut acc = ts.take_shared<Account>();
-    acc.hire_recruits(&registry, &rng, ts.ctx());
-    acc.hire_recruits(&registry, &rng, ts.ctx()); // squad is already full - aborts
+#[test, expected_failure(abort_code = ESearchNotTimedOut)]
+fun test_cancel_foreign_search_before_timeout_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+
+    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
+    f.clock.set_for_testing(SEARCH_TIMEOUT_MS);
+    f.ts.next_tx(BOB);
+    cancel_search(&mut f.mm, &mut f.alice, &f.clock, f.ts.ctx());
 
     abort
 }
 
-#[test, expected_failure(abort_code = EInvalidVoice)]
-fun test_edit_recruit_invalid_voice_fail() {
-    let user = @0xA11CE;
-    let mut ts = ts::begin(user);
-    init(ts.ctx());
+#[test, expected_failure(abort_code = ESearchNotTimedOut)]
+fun test_cancel_foreign_match_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
 
-    ts.next_tx(user);
-    let mut registry = ts.take_shared<Registry>();
-    new_account(&mut registry, ts.ctx());
+    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
+    f.ts.next_tx(BOB);
+    find_game(&mut f.mm, &mut f.bob, &f.rng, &f.clock, f.ts.ctx());
 
-    ts.next_tx(user);
-    let mut acc = ts.take_shared<Account>();
-    let recruit = recruit::new("Jane Doe", ts.ctx());
-    let recruit_id = object::id(&recruit);
-    acc.add_recruit(recruit, ts.ctx());
-    acc.edit_recruit(
-        recruit_id,
-        vector[],
-        vector[],
-        vector[],
-        vector[],
-        vector[],
-        NUM_VOICES,
-        ts.ctx(),
+    // a match has no timeout: only its owner clears it
+    f.clock.set_for_testing(SEARCH_TIMEOUT_MS + 1);
+    f.ts.next_tx(ALICE);
+    cancel_search(&mut f.mm, &mut f.bob, &f.clock, f.ts.ctx());
+
+    abort
+}
+
+#[test, expected_failure(abort_code = EAlreadySearching)]
+fun test_find_game_twice_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
+    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
+    abort
+}
+
+#[test, expected_failure(abort_code = EAlreadySearching)]
+fun test_find_game_while_playing_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let _game = f.start();
+    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
+    abort
+}
+
+#[test, expected_failure(abort_code = ENotSearching)]
+fun test_cancel_search_not_searching_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    cancel_search(&mut f.mm, &mut f.alice, &f.clock, f.ts.ctx());
+    abort
+}
+
+#[test, expected_failure(abort_code = ENotSearching)]
+fun test_cancel_search_while_playing_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let _game = f.start();
+    // leaving a game is not a matter of cancelling a search
+    cancel_search(&mut f.mm, &mut f.alice, &f.clock, f.ts.ctx());
+    abort
+}
+
+#[test, expected_failure(abort_code = account::ENotOwner)]
+fun test_find_game_with_foreign_account_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    // Alice tries to queue with Bob's rating
+    find_game(&mut f.mm, &mut f.bob, &f.rng, &f.clock, f.ts.ctx());
+    abort
+}
+
+#[test, expected_failure(abort_code = account::ENotMatched)]
+fun test_start_game_without_match_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    f.ts.next_tx(BOB);
+    start_game(&mut f.bob, &mut f.alice, &f.preset, &f.clock, f.ts.ctx());
+    abort
+}
+
+#[test, expected_failure(abort_code = account::ENotOpponent)]
+fun test_start_game_after_opponent_moved_on_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+
+    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
+    f.ts.next_tx(BOB);
+    find_game(&mut f.mm, &mut f.bob, &f.rng, &f.clock, f.ts.ctx());
+
+    // Alice moves on before Bob's follow-up: her new order is none of his
+    f.ts.next_tx(ALICE);
+    cancel_search(&mut f.mm, &mut f.alice, &f.clock, f.ts.ctx());
+    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
+
+    f.ts.next_tx(BOB);
+    start_game(&mut f.bob, &mut f.alice, &f.preset, &f.clock, f.ts.ctx());
+    abort
+}
+
+#[test, expected_failure(abort_code = account::ENotOwner)]
+fun test_start_game_from_foreign_account_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+
+    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
+    f.ts.next_tx(BOB);
+    find_game(&mut f.mm, &mut f.bob, &f.rng, &f.clock, f.ts.ctx());
+
+    f.ts.next_tx(ALICE);
+    start_game(&mut f.bob, &mut f.alice, &f.preset, &f.clock, f.ts.ctx());
+    abort
+}
+
+/// A whole game on the Demo 1 map: both sides deploy, Bob closes in and they
+/// trade fire until one falls. The game is then over, both players leave for
+/// free, the fallen recruit's dog tag lands on the wall, and the game is gone.
+#[test]
+fun test_full_game() {
+    use std::unit_test::assert_eq;
+    use grid::direction::{up, left};
+
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut game = f.start();
+    f.deploy(&mut game);
+    assert_eq!(game.turn(), 0);
+    assert!(!game.deploying);
+    assert_eq!(game.squads[0].length(), 1);
+    assert_eq!(game.squads[1].length(), 1);
+
+    // Alice waits; Bob moves into the firing lane and shoots
+    next_turn(&mut game, &f.alice, &f.clock, f.ts.ctx());
+    f.ts.next_tx(BOB);
+    let path = vector[6, 5, up!(), up!(), left!(), left!(), left!(), left!(), up!()];
+    move_unit(&mut game, &f.bob, &f.clock, path, f.ts.ctx());
+    perform_attack(&mut game, &f.bob, &f.rng, &f.clock, 3, 1, 0, 3, f.ts.ctx());
+
+    let mut turns = 0u64;
+    while (!game.is_over()) {
+        assert!(turns < 200);
+        turns = turns + 1;
+
+        if (game.active_side() == 1) {
+            next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());
+            f.ts.next_tx(ALICE);
+            if (game.map.unit(0, 3).borrow().ammo() == 0) {
+                perform_reload(&mut game, &f.alice, &f.clock, 0, 3, f.ts.ctx());
+            };
+            perform_attack(&mut game, &f.alice, &f.rng, &f.clock, 0, 3, 3, 1, f.ts.ctx());
+        } else {
+            next_turn(&mut game, &f.alice, &f.clock, f.ts.ctx());
+            f.ts.next_tx(BOB);
+            if (game.map.unit(3, 1).borrow().ammo() == 0) {
+                perform_reload(&mut game, &f.bob, &f.clock, 3, 1, f.ts.ctx());
+            };
+            perform_attack(&mut game, &f.bob, &f.rng, &f.clock, 3, 1, 0, 3, f.ts.ctx());
+        };
+    };
+
+    // exactly one side fell, with a dog tag to show for it
+    let alice_won = game.squads[0].length() == 1;
+    let (winner, loser) = if (alice_won) (0, 1) else (1, 0);
+    assert_eq!(game.squads[loser].length(), 0);
+    assert_eq!(game.fallen[loser].length(), 1);
+    assert_eq!(game.fallen[winner].length(), 0);
+    assert!(game.abandoned_by.is_none());
+
+    assert_eq!(game.winner(), option::some(game.players[winner]));
+
+    // a stranger can wrap it up: both are `Idle`, and nobody is suspended
+    f.ts.next_tx(CAROL);
+    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    assert!(f.alice.is_idle() && f.bob.is_idle());
+    assert_eq!(f.alice.suspended_until(), 0);
+    assert_eq!(f.bob.suspended_until(), 0);
+
+    // the survivor is home, and the fallen recruit's dog tag is on the wall
+    assert_eq!(f.alice.num_recruits(), if (alice_won) 1 else 0);
+    assert_eq!(f.bob.num_recruits(), if (alice_won) 0 else 1);
+    assert_eq!(f.alice.num_dog_tags(), if (alice_won) 0 else 1);
+    assert_eq!(f.bob.num_dog_tags(), if (alice_won) 1 else 0);
+
+    // the score has it too
+    let (alice_wins, alice_losses, _) = f.alice.score();
+    assert_eq!(alice_wins, if (alice_won) 1 else 0);
+    assert_eq!(alice_losses, if (alice_won) 0 else 1);
+
+    // and the game is gone
+    f.ts.next_tx(CAROL);
+    assert!(!ts::has_most_recent_shared<Game>());
+    fixture.finish();
+}
+
+#[test]
+fun test_next_turn_after_time_limit() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut game = f.start();
+    f.deploy(&mut game);
+
+    // Alice's turn runs out: Bob moves the game on, and the clock starts anew
+    f.clock.set_for_testing(TURN_LIMIT_MS + 1);
+    f.ts.next_tx(BOB);
+    next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());
+    assert_eq!(game.turn(), 1);
+    assert_eq!(game.turn_started_ms, TURN_LIMIT_MS + 1);
+
+    // Bob's own turn can be ended by Bob at any time
+    next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());
+    assert_eq!(game.turn(), 2);
+
+    ts::return_shared(game);
+    fixture.finish();
+}
+
+#[test, expected_failure(abort_code = ETurnNotExpired)]
+fun test_next_turn_of_running_turn_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut game = f.start();
+    f.deploy(&mut game);
+
+    f.clock.set_for_testing(TURN_LIMIT_MS);
+    f.ts.next_tx(BOB);
+    next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());
+
+    abort
+}
+
+#[test]
+fun test_act_at_time_limit() {
+    use grid::direction::down;
+
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut game = f.start();
+    f.deploy(&mut game);
+
+    f.clock.set_for_testing(TURN_LIMIT_MS);
+    move_unit(&mut game, &f.alice, &f.clock, vector[0, 3, down!()], f.ts.ctx());
+
+    ts::return_shared(game);
+    fixture.finish();
+}
+
+#[test, expected_failure(abort_code = ETurnExpired)]
+fun test_order_after_time_limit_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut game = f.start();
+    f.deploy(&mut game);
+
+    f.clock.set_for_testing(TURN_LIMIT_MS + 1);
+    perform_reload(&mut game, &f.alice, &f.clock, 0, 3, f.ts.ctx());
+
+    abort
+}
+
+/// The clock of the first turn starts when the last side has deployed, and the
+/// sides can do so in any order.
+#[test]
+fun test_deploy_in_any_order() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut game = f.start();
+
+    f.ts.next_tx(BOB);
+    deploy_squad(&mut game, &mut f.bob, &f.clock, vector[f.bob_recruit], f.ts.ctx());
+    assert!(game.deploying);
+
+    f.clock.set_for_testing(DEPLOY_LIMIT_MS);
+    f.ts.next_tx(ALICE);
+    deploy_squad(&mut game, &mut f.alice, &f.clock, vector[f.alice_recruit], f.ts.ctx());
+
+    assert!(!game.deploying);
+    assert_eq!(game.turn_started_ms, DEPLOY_LIMIT_MS);
+    assert_eq!(game.active_side(), 0);
+    assert_eq!(f.alice.num_recruits(), 0);
+
+    ts::return_shared(game);
+    fixture.finish();
+}
+
+/// The match preset's squad: three recruits picked out of four.
+#[test]
+fun test_pick_squad_on_match_preset() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup_on!(|id| map::black_rain(id), map::black_rain_positions());
+    let f = &mut fixture;
+    let mut game = f.start();
+
+    let picked = vector[
+        f.alice_recruit,
+        hire(&mut f.alice, f.ts.ctx()),
+        hire(&mut f.alice, f.ts.ctx()),
+    ];
+    let benched = hire(&mut f.alice, f.ts.ctx());
+    deploy_squad(&mut game, &mut f.alice, &f.clock, picked, f.ts.ctx());
+
+    assert_eq!(game.squads[0], picked);
+    assert_eq!(game.positions[0].length(), 0);
+    assert_eq!(f.alice.num_recruits(), 1);
+    assert!(game.map.unit(11, 10).is_some() && game.map.unit(12, 8).is_some());
+    assert!(f.alice.recruits_contain_for_testing(benched));
+
+    ts::return_shared(game);
+    fixture.finish();
+}
+
+#[test, expected_failure(abort_code = ENoPositions)]
+fun test_pick_more_than_map_allows_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut game = f.start();
+
+    let squad = vector[f.alice_recruit, hire(&mut f.alice, f.ts.ctx())];
+    deploy_squad(&mut game, &mut f.alice, &f.clock, squad, f.ts.ctx());
+
+    abort
+}
+
+#[test, expected_failure(abort_code = ENoPositions)]
+fun test_pick_nobody_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut game = f.start();
+
+    deploy_squad(&mut game, &mut f.alice, &f.clock, vector[], f.ts.ctx());
+
+    abort
+}
+
+#[test, expected_failure(abort_code = EAlreadyDeployed)]
+fun test_deploy_twice_fail() {
+    let mut fixture = setup_on_demo_2();
+    let f = &mut fixture;
+    let mut game = f.start();
+
+    let second = hire(&mut f.alice, f.ts.ctx());
+    deploy_squad(&mut game, &mut f.alice, &f.clock, vector[f.alice_recruit], f.ts.ctx());
+    deploy_squad(&mut game, &mut f.alice, &f.clock, vector[second], f.ts.ctx());
+
+    abort
+}
+
+#[test, expected_failure(abort_code = EDeploymentOver)]
+fun test_deploy_after_time_limit_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut game = f.start();
+
+    f.clock.set_for_testing(DEPLOY_LIMIT_MS + 1);
+    deploy_squad(&mut game, &mut f.alice, &f.clock, vector[f.alice_recruit], f.ts.ctx());
+
+    abort
+}
+
+#[test, expected_failure(abort_code = EDeploymentOver)]
+fun test_deploy_after_both_deployed_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut game = f.start();
+    f.deploy(&mut game);
+
+    let id = hire(&mut f.alice, f.ts.ctx());
+    deploy_squad(&mut game, &mut f.alice, &f.clock, vector[id], f.ts.ctx());
+
+    abort
+}
+
+#[test, expected_failure(abort_code = EStillDeploying)]
+fun test_order_during_deployment_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut game = f.start();
+
+    deploy_squad(&mut game, &mut f.alice, &f.clock, vector[f.alice_recruit], f.ts.ctx());
+    perform_reload(&mut game, &f.alice, &f.clock, 0, 3, f.ts.ctx());
+
+    abort
+}
+
+#[test, expected_failure(abort_code = EStillDeploying)]
+fun test_next_turn_during_deployment_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut game = f.start();
+
+    f.clock.set_for_testing(DEPLOY_LIMIT_MS);
+    next_turn(&mut game, &f.alice, &f.clock, f.ts.ctx());
+
+    abort
+}
+
+#[test, expected_failure(abort_code = ENotYourTurn)]
+fun test_order_out_of_turn_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut game = f.start();
+    f.deploy(&mut game);
+
+    f.ts.next_tx(BOB);
+    perform_reload(&mut game, &f.bob, &f.clock, 6, 5, f.ts.ctx());
+
+    abort
+}
+
+#[test, expected_failure(abort_code = ENotYourUnit)]
+fun test_order_opponents_unit_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut game = f.start();
+    f.deploy(&mut game);
+
+    perform_reload(&mut game, &f.alice, &f.clock, 6, 5, f.ts.ctx());
+
+    abort
+}
+
+#[test, expected_failure(abort_code = ENotYourUnit)]
+fun test_order_empty_tile_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut game = f.start();
+    f.deploy(&mut game);
+
+    perform_reload(&mut game, &f.alice, &f.clock, 2, 2, f.ts.ctx());
+
+    abort
+}
+
+#[test, expected_failure(abort_code = account::ENotOwner)]
+fun test_act_with_foreign_account_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut game = f.start();
+
+    // Alice signs, Bob's `Account` is passed
+    next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());
+
+    abort
+}
+
+#[test, expected_failure(abort_code = ENotPlayer)]
+fun test_act_as_stranger_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut game = f.start();
+
+    f.ts.next_tx(CAROL);
+    f.registry.new_account(f.ts.ctx());
+    f.ts.next_tx(CAROL);
+    let carol = f.ts.take_shared_by_id<Account>(f.registry.account_of(CAROL));
+    next_turn(&mut game, &carol, &f.clock, f.ts.ctx());
+
+    abort
+}
+
+/// Whoever picks nobody in time has lost, and is suspended for it.
+#[test]
+fun test_no_show_loses() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut game = f.start();
+
+    // Alice never deploys; Bob does, and moves the game on when the time is up
+    f.ts.next_tx(BOB);
+    deploy_squad(&mut game, &mut f.bob, &f.clock, vector[f.bob_recruit], f.ts.ctx());
+    assert!(!game.is_over());
+
+    f.clock.set_for_testing(DEPLOY_LIMIT_MS + 1);
+    next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());
+    assert!(game.is_over());
+    assert_eq!(game.winner(), option::some(game.players[1]));
+
+    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    assert!(f.alice.is_idle() && f.bob.is_idle());
+    assert_eq!(f.alice.suspended_until(), DEPLOY_LIMIT_MS + 1 + SUSPENSION_MS);
+    assert_eq!(f.bob.suspended_until(), 0);
+    assert_eq!(f.alice.num_recruits(), 1);
+    assert_eq!(f.bob.num_recruits(), 1);
+
+    fixture.finish();
+}
+
+/// Nobody picks anyone: a draw, both are free of the game, and both are suspended.
+#[test]
+fun test_nobody_shows() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut game = f.start();
+
+    f.clock.set_for_testing(DEPLOY_LIMIT_MS + 1);
+    next_turn(&mut game, &f.alice, &f.clock, f.ts.ctx());
+    assert!(game.is_over());
+    assert!(game.winner().is_none());
+
+    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    assert!(f.alice.is_idle() && f.bob.is_idle());
+    assert_eq!(f.alice.suspended_until(), DEPLOY_LIMIT_MS + 1 + SUSPENSION_MS);
+    assert_eq!(f.bob.suspended_until(), DEPLOY_LIMIT_MS + 1 + SUSPENSION_MS);
+
+    fixture.finish();
+}
+
+/// Abandoning while the other side is still picking is not their fault.
+#[test]
+fun test_abandon_during_deployment() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut game = f.start();
+
+    abandon_game(&mut game, &f.alice, f.ts.ctx());
+    assert_eq!(game.winner(), option::some(object::id(&f.bob)));
+    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+
+    assert_eq!(f.alice.suspended_until(), SUSPENSION_MS);
+    assert_eq!(f.bob.suspended_until(), 0);
+    assert!(f.alice.is_idle() && f.bob.is_idle());
+
+    fixture.finish();
+}
+
+/// Missing turns in a row abandons the game, whoever is keeping count.
+#[test]
+fun test_missed_turns_abandon_the_game() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut game = f.start();
+    f.deploy(&mut game);
+
+    // Alice has gone quiet: Bob moves past her turn and ends his own, three times
+    let mut now = 0u64;
+    MAX_MISSED_TURNS.do!(|_| {
+        now = now + TURN_LIMIT_MS + 1;
+        f.clock.set_for_testing(now);
+        f.ts.next_tx(BOB);
+        next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());
+        if (!game.is_over()) next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());
+    });
+
+    assert!(game.is_over());
+    assert_eq!(game.abandoned_by, option::some(object::id(&f.alice)));
+    assert_eq!(game.winner(), option::some(object::id(&f.bob)));
+
+    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    assert_eq!(f.alice.suspended_until(), now + SUSPENSION_MS);
+    assert_eq!(f.bob.suspended_until(), 0);
+    assert_eq!(f.alice.num_recruits(), 1);
+    assert_eq!(f.bob.num_recruits(), 1);
+
+    fixture.finish();
+}
+
+/// Coming back clears the count: only turns missed in a row add up.
+#[test]
+fun test_acting_resets_missed_turns() {
+    use std::unit_test::assert_eq;
+    use grid::direction::{down, up};
+
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut game = f.start();
+    f.deploy(&mut game);
+
+    // Alice misses one, and is back for the next
+    let mut now = TURN_LIMIT_MS + 1;
+    f.clock.set_for_testing(now);
+    f.ts.next_tx(BOB);
+    next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());
+    assert_eq!(game.missed[0], 1);
+    next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());
+
+    f.ts.next_tx(ALICE);
+    move_unit(&mut game, &f.alice, &f.clock, vector[0, 3, down!()], f.ts.ctx());
+    assert_eq!(game.missed[0], 0);
+    next_turn(&mut game, &f.alice, &f.clock, f.ts.ctx());
+
+    // ending her own turn late counts as being there too
+    f.ts.next_tx(BOB);
+    next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());
+    now = now + TURN_LIMIT_MS + 1;
+    f.clock.set_for_testing(now);
+    f.ts.next_tx(ALICE);
+    next_turn(&mut game, &f.alice, &f.clock, f.ts.ctx());
+    assert_eq!(game.missed[0], 0);
+
+    f.ts.next_tx(BOB);
+    move_unit(&mut game, &f.bob, &f.clock, vector[6, 5, up!()], f.ts.ctx());
+
+    ts::return_shared(game);
+    fixture.finish();
+}
+
+/// A game going nowhere can't hold anyone hostage: a draw at the turn limit,
+/// without blame, and everyone goes home.
+#[test]
+fun test_stalemate_ends_in_a_draw() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut game = f.start();
+    f.deploy(&mut game);
+
+    while (!game.is_over()) {
+        f.ts.next_tx(if (game.active_side() == 0) ALICE else BOB);
+        let acc = if (game.active_side() == 0) &f.alice else &f.bob;
+        next_turn(&mut game, acc, &f.clock, f.ts.ctx());
+    };
+
+    assert_eq!(game.turn(), MAX_TURNS);
+    assert!(game.winner().is_none());
+
+    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    assert!(f.alice.is_idle() && f.bob.is_idle());
+    assert_eq!(f.alice.suspended_until(), 0);
+    assert_eq!(f.bob.suspended_until(), 0);
+    assert_eq!(f.alice.num_recruits(), 1);
+    assert_eq!(f.bob.num_recruits(), 1);
+
+    fixture.finish();
+}
+
+/// Walking away from a match takes the other player out of the queue for nothing.
+#[test]
+fun test_cancel_held_match_is_punished() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup();
+    let f = &mut fixture;
+
+    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
+    f.ts.next_tx(BOB);
+    find_game(&mut f.mm, &mut f.bob, &f.rng, &f.clock, f.ts.ctx());
+
+    cancel_search(&mut f.mm, &mut f.bob, &f.clock, f.ts.ctx());
+    assert!(f.bob.is_idle());
+    assert_eq!(f.bob.suspended_until(), SUSPENSION_MS);
+
+    // Alice is not stuck: she leaves the empty search, for free, and is back
+    f.ts.next_tx(ALICE);
+    cancel_search(&mut f.mm, &mut f.alice, &f.clock, f.ts.ctx());
+    assert_eq!(f.alice.suspended_until(), 0);
+    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
+    assert!(f.mm.is_queued(ALICE));
+
+    fixture.finish();
+}
+
+#[test, expected_failure(abort_code = ESuspended)]
+fun test_search_after_walking_away_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+
+    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
+    f.ts.next_tx(BOB);
+    find_game(&mut f.mm, &mut f.bob, &f.rng, &f.clock, f.ts.ctx());
+    cancel_search(&mut f.mm, &mut f.bob, &f.clock, f.ts.ctx());
+    find_game(&mut f.mm, &mut f.bob, &f.rng, &f.clock, f.ts.ctx());
+
+    abort
+}
+
+/// The opponent left first: the match is let go of, without blame.
+#[test]
+fun test_release_match_after_opponent_left() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup();
+    let f = &mut fixture;
+
+    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
+    f.ts.next_tx(BOB);
+    find_game(&mut f.mm, &mut f.bob, &f.rng, &f.clock, f.ts.ctx());
+
+    f.ts.next_tx(ALICE);
+    cancel_search(&mut f.mm, &mut f.alice, &f.clock, f.ts.ctx());
+
+    f.ts.next_tx(BOB);
+    release_match(&mut f.bob, &f.alice, &f.clock, f.ts.ctx());
+    assert!(f.bob.is_idle());
+    assert_eq!(f.bob.suspended_until(), 0);
+
+    fixture.finish();
+}
+
+/// The opponent's search ran out: no game on a player long gone, and no blame.
+#[test]
+fun test_release_match_after_search_ran_out() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+
+    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
+    f.ts.next_tx(BOB);
+    find_game(&mut f.mm, &mut f.bob, &f.rng, &f.clock, f.ts.ctx());
+
+    f.clock.set_for_testing(SEARCH_TIMEOUT_MS + 1);
+    release_match(&mut f.bob, &f.alice, &f.clock, f.ts.ctx());
+    assert!(f.bob.is_idle());
+
+    fixture.finish();
+}
+
+#[test, expected_failure(abort_code = EOpponentWaiting)]
+fun test_release_match_with_opponent_waiting_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+
+    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
+    f.ts.next_tx(BOB);
+    find_game(&mut f.mm, &mut f.bob, &f.rng, &f.clock, f.ts.ctx());
+    release_match(&mut f.bob, &f.alice, &f.clock, f.ts.ctx());
+
+    abort
+}
+
+#[test, expected_failure(abort_code = account::ENotOwner)]
+fun test_release_foreign_match_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+
+    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
+    f.ts.next_tx(BOB);
+    find_game(&mut f.mm, &mut f.bob, &f.rng, &f.clock, f.ts.ctx());
+
+    f.ts.next_tx(ALICE);
+    release_match(&mut f.bob, &f.alice, &f.clock, f.ts.ctx());
+
+    abort
+}
+
+#[test, expected_failure(abort_code = account::ENotOpponent)]
+fun test_start_game_after_search_ran_out_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+
+    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
+    f.ts.next_tx(BOB);
+    find_game(&mut f.mm, &mut f.bob, &f.rng, &f.clock, f.ts.ctx());
+
+    f.clock.set_for_testing(SEARCH_TIMEOUT_MS + 1);
+    start_game(&mut f.bob, &mut f.alice, &f.preset, &f.clock, f.ts.ctx());
+
+    abort
+}
+
+/// Nobody gets matched against a player with nobody to send.
+#[test, expected_failure(abort_code = ENoSquad)]
+fun test_search_without_recruits_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+
+    f.ts.next_tx(CAROL);
+    f.registry.new_account(f.ts.ctx());
+    f.ts.next_tx(CAROL);
+    let mut carol = f.ts.take_shared_by_id<Account>(f.registry.account_of(CAROL));
+    find_game(&mut f.mm, &mut carol, &f.rng, &f.clock, f.ts.ctx());
+
+    abort
+}
+
+#[test, expected_failure(abort_code = EGameOver)]
+fun test_next_turn_after_game_over_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut game = f.start();
+
+    f.clock.set_for_testing(DEPLOY_LIMIT_MS + 1);
+    next_turn(&mut game, &f.alice, &f.clock, f.ts.ctx());
+    next_turn(&mut game, &f.alice, &f.clock, f.ts.ctx());
+
+    abort
+}
+
+/// Abandoning ends the game for both: the recruits go home, the other side wins,
+/// and only the one who abandoned is suspended, for `SUSPENSION_MS` exactly.
+#[test]
+fun test_abandon() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut game = f.start();
+    f.deploy(&mut game);
+
+    f.clock.set_for_testing(1000);
+    abandon_game(&mut game, &f.alice, f.ts.ctx());
+    assert_eq!(game.abandoned_by, option::some(object::id(&f.alice)));
+    assert!(game.is_over());
+
+    assert_eq!(game.winner(), option::some(object::id(&f.bob)));
+
+    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    assert!(f.alice.is_idle() && f.bob.is_idle());
+    assert_eq!(f.alice.suspended_until(), 1000 + SUSPENSION_MS);
+    assert_eq!(f.alice.num_recruits(), 1);
+    assert_eq!(f.bob.num_recruits(), 1);
+    assert_eq!(f.bob.suspended_until(), 0);
+
+    // the suspension is over at the hour
+    f.clock.set_for_testing(1000 + SUSPENSION_MS);
+    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
+    assert!(f.alice.search_order().is_some());
+
+    fixture.finish();
+}
+
+/// A side with more than one recruit is only out when the last one falls, and
+/// the winner goes home with whoever is left.
+#[test]
+fun test_every_recruit_must_fall() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup_on_demo_2();
+    let f = &mut fixture;
+    let mut game = f.start();
+
+    let second = hire(&mut f.alice, f.ts.ctx());
+    let squad = vector[f.alice_recruit, second];
+    deploy_squad(&mut game, &mut f.alice, &f.clock, squad, f.ts.ctx());
+
+    f.ts.next_tx(BOB);
+    let (third, fourth) = (f.bob_recruit, hire(&mut f.bob, f.ts.ctx()));
+    deploy_squad(&mut game, &mut f.bob, &f.clock, vector[third, fourth], f.ts.ctx());
+    assert!(!game.is_over());
+
+    // Bob loses one: still in it
+    game.bury_fallen(f.bob_recruit, &vector[history::new_kia(third, 0, 0)], f.ts.ctx());
+    assert_eq!(game.squads[1], vector[fourth]);
+    assert_eq!(game.fallen[1].length(), 1);
+    assert!(!game.is_over());
+
+    // and the other: out
+    game.bury_fallen(f.bob_recruit, &vector[history::new_kia(fourth, 0, 0)], f.ts.ctx());
+    assert!(game.is_over());
+    assert_eq!(game.winner(), option::some(object::id(&f.alice)));
+
+    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    assert_eq!(f.alice.num_recruits(), 2);
+    assert_eq!(f.bob.num_recruits(), 0);
+    assert_eq!(f.bob.num_dog_tags(), 2);
+    assert_eq!(f.alice.num_dog_tags(), 0);
+
+    fixture.finish();
+}
+
+/// Both sides gone at once is a draw.
+#[test]
+fun test_draw() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut game = f.start();
+    f.deploy(&mut game);
+
+    let (a, b) = (game.squads[0][0], game.squads[1][0]);
+    game.bury_fallen(
+        f.bob_recruit,
+        &vector[history::new_kia(a, 0, 0), history::new_kia(b, 0, 0)],
+        f.ts.ctx(),
     );
+    assert!(game.is_over());
+    assert!(game.winner().is_none());
+
+    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    assert!(f.alice.is_idle() && f.bob.is_idle());
+
+    fixture.finish();
+}
+
+/// Every finished game goes on both scores, whatever ended it.
+#[test]
+fun test_scores() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup();
+    let f = &mut fixture;
+
+    // Alice abandons: a win for Bob
+    let mut game = f.start();
+    abandon_game(&mut game, &f.alice, f.ts.ctx());
+    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    assert_eq!(f.alice.games_played(), 1);
+    let (wins, losses, draws) = f.alice.score();
+    assert_eq!(vector[wins, losses, draws], vector[0, 1, 0]);
+    let (wins, losses, draws) = f.bob.score();
+    assert_eq!(vector[wins, losses, draws], vector[1, 0, 0]);
+
+    // nobody shows: that isn't a game, past Alice's suspension
+    let rating = f.alice.rating().rating();
+    f.clock.set_for_testing(SUSPENSION_MS);
+    let mut game = f.start();
+    f.clock.set_for_testing(SUSPENSION_MS + DEPLOY_LIMIT_MS + 1);
+    next_turn(&mut game, &f.alice, &f.clock, f.ts.ctx());
+    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    assert_eq!(f.alice.games_played(), 1);
+    assert_eq!(f.bob.games_played(), 1);
+    assert_eq!(f.alice.rating().rating(), rating);
+
+    fixture.finish();
+}
+
+/// Bob's recruit falls at the hands of Alice's, on the tile it stands on.
+#[test_only]
+fun alice_kills_bob(f: &mut Fixture, game: &mut Game) {
+    let records = vector[history::new_kia(f.bob_recruit, 6, 5)];
+    game.bury_fallen(f.alice_recruit, &records, f.ts.ctx());
+}
+
+/// A fight to the end: the winner is paid in full, the loser for showing up, each
+/// kill on top, and the survivor's experience makes them a Squaddie.
+#[test]
+fun test_a_finished_fight_pays() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut game = f.start();
+    f.deploy(&mut game);
+    let start = f.alice.credits();
+    let (rating_alice, rating_bob) = (f.alice.rating().rating(), f.bob.rating().rating());
+
+    f.alice_kills_bob(&mut game);
+    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+
+    assert_eq!(f.alice.credits(), start + WIN_CREDITS + KILL_CREDITS);
+    assert_eq!(f.bob.credits(), start + LOSS_CREDITS);
+
+    let survivor = f.alice.recruit_for_testing(f.alice_recruit);
+    assert_eq!(survivor.xp(), SURVIVAL_XP + WIN_XP + KILL_XP);
+    assert!(survivor.rank().is_squaddie());
+
+    assert!(f.alice.rating().rating() > rating_alice);
+    assert!(f.bob.rating().rating() < rating_bob);
+    fixture.finish();
+}
+
+/// Both sides gone at once: a draw, paid as one, with no winner's experience and
+/// nobody left to earn any.
+#[test]
+fun test_a_draw_pays() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut game = f.start();
+    f.deploy(&mut game);
+    let start = f.alice.credits();
+
+    f.alice_kills_bob(&mut game);
+    let records = vector[history::new_kia(f.alice_recruit, 0, 3)];
+    game.bury_fallen(f.alice_recruit, &records, f.ts.ctx()); // no credit for your own
+    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+
+    assert_eq!(f.alice.credits(), start + DRAW_CREDITS + KILL_CREDITS);
+    assert_eq!(f.bob.credits(), start + DRAW_CREDITS);
+    fixture.finish();
+}
+
+/// Walking out costs rating and earns nothing. The survivors still go home. The one
+/// left behind is paid a little, once the game has got somewhere.
+#[test]
+fun test_a_walkout_costs_rating_and_pays_little() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut game = f.start();
+    f.deploy(&mut game);
+    let start = f.alice.credits();
+    let rating = f.alice.rating().rating();
+
+    next_turn(&mut game, &f.alice, &f.clock, f.ts.ctx());
+    f.ts.next_tx(BOB);
+    next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());
+    f.ts.next_tx(ALICE);
+    abandon_game(&mut game, &f.alice, f.ts.ctx());
+    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+
+    assert_eq!(f.alice.credits(), start);
+    assert!(f.alice.rating().rating() < rating);
+    assert_eq!(f.alice.recruit_for_testing(f.alice_recruit).xp(), 0);
+
+    assert_eq!(f.bob.credits(), start + WALKOVER_CREDITS);
+    assert_eq!(f.bob.recruit_for_testing(f.bob_recruit).xp(), SURVIVAL_XP);
+    fixture.finish();
+}
+
+/// Two accounts have nothing to farm by walking out on each other right away.
+#[test]
+fun test_an_early_walkout_pays_nobody() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut game = f.start();
+    f.deploy(&mut game);
+    let start = f.alice.credits();
+
+    abandon_game(&mut game, &f.alice, f.ts.ctx());
+    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+
+    assert_eq!(f.alice.credits(), start);
+    assert_eq!(f.bob.credits(), start);
+    assert_eq!(f.bob.recruit_for_testing(f.bob_recruit).xp(), 0);
+    fixture.finish();
+}
+
+/// Not deploying pays nobody either, and costs the one who didn't their rating.
+#[test]
+fun test_a_no_show_pays_nobody() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut game = f.start();
+    deploy_squad(&mut game, &mut f.alice, &f.clock, vector[f.alice_recruit], f.ts.ctx());
+    let start = f.bob.credits();
+    let rating = f.bob.rating().rating();
+
+    f.clock.set_for_testing(DEPLOY_LIMIT_MS + 1);
+    next_turn(&mut game, &f.alice, &f.clock, f.ts.ctx());
+    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+
+    assert_eq!(f.alice.credits(), start);
+    assert_eq!(f.bob.credits(), start);
+    assert!(f.bob.rating().rating() < rating);
+    fixture.finish();
+}
+
+/// The weapon a recruit stands to leave behind.
+#[test_only]
+fun weapon_of(acc: &Account, recruit: ID): ID {
+    object::id(acc.recruit_for_testing(recruit).weapon().borrow())
+}
+
+/// A game on Demo 2 with Alice's one recruit at (7, 6) against two of Bob's, so the
+/// fight goes on when one of his falls, on Alice's turn.
+#[test_only]
+fun fight_two_of_bob(f: &mut Fixture): Game {
+    f.ts.next_tx(BOB);
+    let second = hire(&mut f.bob, f.ts.ctx());
+    let mut game = f.start();
+
+    deploy_squad(&mut game, &mut f.alice, &f.clock, vector[f.alice_recruit], f.ts.ctx());
+    f.ts.next_tx(BOB);
+    let squad = vector[f.bob_recruit, second];
+    deploy_squad(&mut game, &mut f.bob, &f.clock, squad, f.ts.ctx());
+    f.ts.next_tx(ALICE);
+    game
+}
+
+/// Bob's first recruit falls on the tile Alice's unit stands on.
+#[test_only]
+fun bob_falls_on_alice(f: &mut Fixture, game: &mut Game) {
+    let records = vector[history::new_kia(f.bob_recruit, 7, 6)];
+    game.bury_fallen(f.alice_recruit, &records, f.ts.ctx());
+}
+
+/// A fallen recruit's weapon stays where they fell: a unit standing there can take
+/// it up, loaded, for an action, and carries it home, whatever their rank.
+#[test]
+fun test_pick_up_a_weapon_from_the_fallen() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup_on_demo_2();
+    let f = &mut fixture;
+    let weapon = weapon_of(&f.bob, f.bob_recruit);
+    // Alice's recruit goes on the standard issue rifle
+    f.alice.unequip_weapon(f.alice_recruit, f.ts.ctx());
+    let mut game = f.fight_two_of_bob();
+
+    f.bob_falls_on_alice(&mut game);
+    assert_eq!(game.dropped.length(), 1);
+
+    let crit = game.map.unit(7, 6).borrow().stats().crit_chance();
+    let ap = game.map.unit(7, 6).borrow().ap();
+    pick_up_weapon(&mut game, &f.alice, &f.clock, 7, 6, f.ts.ctx());
+
+    let unit = game.map.unit(7, 6).borrow();
+    assert!(unit.stats().crit_chance() > crit);
+    assert_eq!(unit.ammo(), unit.stats().ammo() as u16);
+    assert_eq!(unit.ap(), ap - 1);
+    // the standard issue rifle isn't a thing to leave behind
+    assert_eq!(game.dropped.length(), 0);
+
+    abandon_game(&mut game, &f.alice, f.ts.ctx());
+    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    let home = f.alice.recruit_for_testing(f.alice_recruit);
+    assert!(home.rank().is_rookie());
+    assert_eq!(weapon_of(&f.alice, f.alice_recruit), weapon);
+    fixture.finish();
+}
+
+/// Taking a weapon up leaves your own in its place, for anyone else to take, and
+/// what's still on the ground when the game ends goes with it.
+#[test]
+fun test_swapping_leaves_your_own() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup_on_demo_2();
+    let f = &mut fixture;
+    let own = weapon_of(&f.alice, f.alice_recruit);
+    let theirs = weapon_of(&f.bob, f.bob_recruit);
+    let mut game = f.fight_two_of_bob();
+
+    f.bob_falls_on_alice(&mut game);
+    pick_up_weapon(&mut game, &f.alice, &f.clock, 7, 6, f.ts.ctx());
+    assert_eq!(game.dropped.length(), 1);
+    assert_eq!(object::id(&game.dropped[0].weapon), own);
+
+    abandon_game(&mut game, &f.alice, f.ts.ctx());
+    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    assert_eq!(weapon_of(&f.alice, f.alice_recruit), theirs);
+    fixture.finish();
+}
+
+/// A recruit on the standard issue rifle leaves nothing behind to take.
+#[test, expected_failure(abort_code = ENoWeaponHere)]
+fun test_pick_up_with_nothing_there_fail() {
+    let mut fixture = setup_on_demo_2();
+    let f = &mut fixture;
+    f.ts.next_tx(BOB);
+    f.bob.unequip_weapon(f.bob_recruit, f.ts.ctx());
+    let mut game = f.fight_two_of_bob();
+
+    f.bob_falls_on_alice(&mut game);
+    pick_up_weapon(&mut game, &f.alice, &f.clock, 7, 6, f.ts.ctx());
 
     abort
 }
 
-#[test, expected_failure(abort_code = EAccountExists)]
-fun test_duplicate_account_fail() {
-    let user = @0xA11CE;
-    let mut ts = ts::begin(user);
-    init(ts.ctx());
+/// The weapon is on another tile.
+#[test, expected_failure(abort_code = ENoWeaponHere)]
+fun test_pick_up_from_another_tile_fail() {
+    let mut fixture = setup_on_demo_2();
+    let f = &mut fixture;
+    let mut game = f.fight_two_of_bob();
 
-    ts.next_tx(user);
-    let mut registry = ts.take_shared<Registry>();
-    new_account(&mut registry, ts.ctx());
-    new_account(&mut registry, ts.ctx());
+    let records = vector[history::new_kia(f.bob_recruit, 1, 2)];
+    game.bury_fallen(f.alice_recruit, &records, f.ts.ctx());
+    pick_up_weapon(&mut game, &f.alice, &f.clock, 7, 6, f.ts.ctx());
 
     abort
 }
 
-#[test, expected_failure(abort_code = ENotOwner)]
-fun test_not_owner_fail() {
-    let (user, thief) = (@0xA11CE, @0xB0B);
-    let mut ts = ts::begin(user);
-    init(ts.ctx());
+/// Only the side whose turn it is takes anything up.
+#[test, expected_failure(abort_code = ENotYourTurn)]
+fun test_pick_up_out_of_turn_fail() {
+    let mut fixture = setup_on_demo_2();
+    let f = &mut fixture;
+    let mut game = f.fight_two_of_bob();
 
-    ts.next_tx(user);
-    let mut registry = ts.take_shared<Registry>();
-    new_account(&mut registry, ts.ctx());
+    f.bob_falls_on_alice(&mut game);
+    f.ts.next_tx(BOB);
+    pick_up_weapon(&mut game, &f.bob, &f.clock, 7, 6, f.ts.ctx());
 
-    // another party attempts to use the account
-    ts.next_tx(thief);
-    let mut acc = ts.take_shared<Account>();
-    acc.add_upgrade(items::scope(1), ts.ctx());
+    abort
+}
+
+#[test, expected_failure(abort_code = ESuspended)]
+fun test_search_while_suspended_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut game = f.start();
+
+    abandon_game(&mut game, &f.alice, f.ts.ctx());
+    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    f.clock.set_for_testing(SUSPENSION_MS - 1);
+    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
+
+    abort
+}
+
+#[test, expected_failure(abort_code = EGameOver)]
+fun test_act_after_abandon_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut game = f.start();
+    f.deploy(&mut game);
+
+    abandon_game(&mut game, &f.alice, f.ts.ctx());
+    f.ts.next_tx(BOB);
+    next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());
+
+    abort
+}
+
+#[test, expected_failure(abort_code = EGameOver)]
+fun test_abandon_twice_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut game = f.start();
+
+    abandon_game(&mut game, &f.alice, f.ts.ctx());
+    f.ts.next_tx(BOB);
+    abandon_game(&mut game, &f.bob, f.ts.ctx());
+
+    abort
+}
+
+#[test, expected_failure(abort_code = EGameNotOver)]
+fun test_complete_running_game_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut game = f.start();
+    f.deploy(&mut game);
+
+    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+
+    abort
+}
+
+#[test, expected_failure(abort_code = ENotPlayer)]
+fun test_complete_with_swapped_accounts_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut game = f.start();
+
+    abandon_game(&mut game, &f.alice, f.ts.ctx());
+    complete_game(game, &mut f.bob, &mut f.alice, &f.clock, f.ts.ctx());
 
     abort
 }

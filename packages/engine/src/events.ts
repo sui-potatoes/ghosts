@@ -29,6 +29,8 @@ export type GameEvent =
       environment?: PropDamage[];
     }
   | { type: "reload"; unit: string }
+  /** A unit took up a weapon lying where it stands; `weapon` is its name. */
+  | { type: "pick-up"; unit: string; weapon: string }
   | {
       type: "grenade";
       unit: string;
@@ -51,7 +53,7 @@ export type Command =
   | { type: "fire"; unit: string; target: string }
   | { type: "grenade"; unit: string; at: Cell }
   | { type: "switch-weapon"; unit: string; weapon: Weapon }
-  | { type: "reload" | "hunker" | "overwatch" | "secure"; unit: string };
+  | { type: "reload" | "pick-up" | "hunker" | "overwatch" | "secure"; unit: string };
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
@@ -69,6 +71,8 @@ export function describe(event: GameEvent, name: (id: string) => string): string
     }
     case "reload":
       return `${name(event.unit)} reloaded. −1 AP.`;
+    case "pick-up":
+      return `${name(event.unit)} took up a ${event.weapon}. −1 AP.`;
     case "grenade": {
       const broken = event.environment?.filter((p) => p.destroyed).length ?? 0;
       return `${name(event.unit)} deployed fragmentation grenade. Blast radius: 2.${broken ? ` ${broken} prop${broken === 1 ? "" : "s"} destroyed.` : ""}`;
