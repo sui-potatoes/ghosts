@@ -22,7 +22,7 @@ The TypeScript models in `packages/squad/src/studio/long-guns.ts` and `weapon-at
 - The lower receiver, full-width centered pistol grip and trigger bow are a continuous assembly. `weapon-mount.json` stores a `rifleTranslation` fit for each body rig; the pose baker moves the wrist to that grip while preserving the rifle’s body-relative placement. Do not shrink or detach weapon geometry to clear a hand.
 - Arm roll is distributed through the upper arm and forearm by `scripts/equipment-fit/arm-twist.ts`, preserving the hand socket and joint positions without collapsing the wrist skin. Trigger fingers use separate relaxed and firing arcs in `trigger-grip.ts`; the shared pistol grip has thumb-web relief.
 - Support grips are baked by `scripts/equipment-fit/support-grip.ts`: the palm cups the fore-end and individual fingers clear its sidewalls. Rebuild with `pnpm --dir app build:equipment-poses` after exporting weapon changes. No runtime IK or bone scaling is used.
-- Plasma's side rail is farther from the bore to clear its ceramic shroud; it uses exactly the same laser asset.
+- Plasma's side rail is farther from the bore to clear its ceramic shroud; it uses exactly the same laser asset. Three lower transverse saddles join the coil shrouds to the fore-end spine, and two underside yokes join the muzzle guards to the barrel collars. Keep the rear saddle above the support-thumb path when editing these mounts.
 - A primary weapon swap transfers the recruit's installed fittings. Returning the primary weapon releases them to shared inventory. Legacy saves default to empty attachment slots.
 
 ## Materials and future textures

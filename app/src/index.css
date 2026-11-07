@@ -391,6 +391,189 @@
         display: block;
     }
 
+    /* Loading: a dark grey ring at the window's centre, after a beat. */
+    .loading-spinner {
+        position: fixed;
+        inset: 0;
+        z-index: 20;
+        display: grid;
+        place-items: center;
+        pointer-events: none;
+        animation: loading-in 0.3s ease 0.25s both;
+    }
+
+    .loading-spinner > span {
+        width: 28px;
+        height: 28px;
+        border: 1.5px solid color-mix(in srgb, var(--border-color) 60%, transparent);
+        border-top-color: var(--disabled-color);
+        border-radius: 50%;
+        animation: save-spin 0.9s linear infinite;
+    }
+
+    @keyframes loading-in {
+        from {
+            opacity: 0;
+        }
+    }
+
+    /* Saving: a corner spinner, like a game writing its save. It scales with
+       the window (about 6% of its short side) so it reads on a laptop and a TV. */
+    .save-indicator {
+        --save-size: clamp(40px, 6vmin, 88px);
+        position: fixed;
+        right: calc(var(--save-size) * 0.7);
+        bottom: calc(var(--save-size) * 0.7);
+        z-index: 60;
+        width: var(--save-size);
+        height: var(--save-size);
+        opacity: 0;
+        transform: scale(0.85);
+        transition:
+            opacity 0.25s ease,
+            transform 0.25s ease;
+        pointer-events: none;
+    }
+
+    .save-indicator.is-on {
+        opacity: 1;
+        transform: none;
+    }
+
+    .save-indicator.above-pad {
+        bottom: calc(var(--save-size) * 0.7 + 32px);
+    }
+
+    .save-indicator svg {
+        width: 100%;
+        height: 100%;
+        overflow: visible;
+    }
+
+    .save-indicator circle {
+        fill: none;
+        stroke-width: 2;
+    }
+
+    .save-indicator-track {
+        stroke: var(--border-color);
+    }
+
+    .save-indicator-arc {
+        stroke: var(--accent-color);
+        stroke-linecap: round;
+        stroke-dasharray: 20 56;
+        transform-origin: center;
+        filter: drop-shadow(0 0 4px var(--accent-color));
+        animation: save-spin 0.9s linear infinite;
+    }
+
+    @keyframes save-spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .save-indicator-arc {
+            animation-duration: 2.4s;
+        }
+    }
+
+    /* The search for a match, following the player across the menu screens. */
+    .match-status {
+        position: fixed;
+        left: 50%;
+        bottom: 20px;
+        z-index: 60;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 12px;
+        width: max-content;
+        max-width: calc(100vw - 32px);
+        padding: 6px 6px 6px 14px;
+        /* A button takes its font from here: `.btn` loses to the global reset. */
+        font: 11px var(--font-mono);
+        transform: translateX(-50%);
+        border: 1px solid var(--border-color);
+        background: var(--surface-color);
+    }
+
+    .match-status.above-pad {
+        bottom: 52px;
+    }
+
+    /* The title screen keeps its footer along the bottom edge. */
+    .match-status.on-menu {
+        top: 16px;
+        right: 16px;
+        bottom: auto;
+        left: auto;
+        transform: none;
+    }
+
+    .match-status svg {
+        flex: none;
+        width: 14px;
+        height: 14px;
+    }
+
+    .match-status circle {
+        fill: none;
+        stroke-width: 3;
+    }
+
+    .match-status .btn {
+        padding: 4px 10px;
+    }
+
+    /* A match's own screens: `.btn` takes its font from here, see `.match-status`. */
+    .match-panel {
+        font: 11px var(--font-mono);
+    }
+
+    /* What a match paid, on its result screen. */
+    .match-report {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 12px 0;
+        border-block: 1px solid var(--border-color);
+    }
+
+    .match-report > div {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+    }
+
+    .match-report dd {
+        font-variant-numeric: tabular-nums;
+        text-align: right;
+    }
+
+    /* Whose turn it is, over the field. */
+    .match-clock {
+        position: fixed;
+        top: 12px;
+        left: 50%;
+        z-index: 150;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-height: 34px;
+        padding: 6px 14px;
+        font: 11px var(--font-mono);
+        transform: translateX(-50%);
+        border: 1px solid var(--border-color);
+        background: var(--surface-color);
+    }
+
+    .match-clock .btn {
+        padding: 4px 10px;
+    }
+
     /* Status dot next to the recovery line: amber pulse while unset. */
     .dot {
         display: inline-block;

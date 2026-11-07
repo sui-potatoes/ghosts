@@ -6,6 +6,9 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { frontSurface } from "./brow-shape.js";
 
 // Appearance-time fit in native metres. Two batches; no textures, transmission or update loop.
+/** Lens opacity for a tint in [0, 1]: never fully clear, never fully opaque. */
+export const lensOpacity = (tint) => 0.025 + tint * 0.9;
+
 export function createEyewear(state, skin, eyes) {
     if (!state.glasses || state.glasses === "none") return [];
     const surface = frontSurface(skin.attributes.position.array, skin.index.array),
@@ -50,30 +53,36 @@ export function createEyewear(state, skin, eyes) {
     // Sample each side of the edited head, including the brow-to-ear transition.
     // A single width measured near the ear lets the curved arms cut across the temples.
     const sideSurfaces = [-1, 1].map((side) => {
-        const p = skin.attributes.position, projected = new Float32Array(p.count * 3);
+        const p = skin.attributes.position,
+            projected = new Float32Array(p.count * 3);
         for (let i = 0; i < p.count; i++) {
             projected[i * 3] = p.getZ(i);
             projected[i * 3 + 1] = p.getY(i);
             projected[i * 3 + 2] = side * p.getX(i);
         }
-        const indices = [], source = skin.index.array;
+        const indices = [],
+            source = skin.index.array;
         for (let i = 0; i < source.length; i += 3) {
             const tri = [source[i], source[i + 1], source[i + 2]];
-            if (tri.some((v) => Math.abs(p.getY(v) - eyeLine) < .04)) indices.push(...tri);
+            if (tri.some((v) => Math.abs(p.getY(v) - eyeLine) < 0.04)) indices.push(...tri);
         }
-        return frontSurface(projected, indices, .004);
+        return frontSurface(projected, indices, 0.004);
     });
     function arm(start, side) {
-        const radius = tactical ? .00125 : .00085;
+        const radius = tactical ? 0.00125 : 0.00085;
         const surfaceAt = sideSurfaces[side === -1 ? 0 : 1];
-        const temple = surfaceAt(.08, earY) ?? separation / 2 + .029;
-        const curve = new T.CatmullRomCurve3([
-            start,
-            new T.Vector3(side * (Math.abs(start.x) + .004), start.y, start.z - .003),
-            new T.Vector3(side * (temple + .002), earY + .003, .08),
-            new T.Vector3(side * (temple + .001), earY + .001, .037),
-            new T.Vector3(side * (temple - .002), earY - .008, .018),
-        ], false, "centripetal");
+        const temple = surfaceAt(0.08, earY) ?? separation / 2 + 0.029;
+        const curve = new T.CatmullRomCurve3(
+            [
+                start,
+                new T.Vector3(side * (Math.abs(start.x) + 0.004), start.y, start.z - 0.003),
+                new T.Vector3(side * (temple + 0.002), earY + 0.003, 0.08),
+                new T.Vector3(side * (temple + 0.001), earY + 0.001, 0.037),
+                new T.Vector3(side * (temple - 0.002), earY - 0.008, 0.018),
+            ],
+            false,
+            "centripetal",
+        );
         const points = curve.getPoints(96);
         for (const point of points) {
             let width = Math.abs(point.x);
@@ -81,13 +90,14 @@ export function createEyewear(state, skin, eyes) {
             for (const dy of [-radius * 2, 0, radius * 2])
                 for (const dz of [-radius * 2, 0, radius * 2]) {
                     const skinX = surfaceAt(point.z + dz, point.y + dy);
-                    if (skinX !== null) width = Math.max(width, skinX + radius + .001);
+                    if (skinX !== null) width = Math.max(width, skinX + radius + 0.001);
                 }
             point.x = side * width;
         }
         // Linear segments preserve the clearance envelope; another spline can overshoot inward.
         const fitted = new T.CurvePath();
-        for (let i = 1; i < points.length; i++) fitted.add(new T.LineCurve3(points[i - 1], points[i]));
+        for (let i = 1; i < points.length; i++)
+            fitted.add(new T.LineCurve3(points[i - 1], points[i]));
         frame.push(new T.TubeGeometry(fitted, 144, radius, 5, false));
     }
     const lensMesh = (points, wrapWidth = 0) => {
@@ -217,7 +227,7 @@ export function createEyewear(state, skin, eyes) {
                 roughness: 0.13,
                 metalness: 0,
                 transparent: true,
-                opacity: 0.025 + state.lensTint * 0.9,
+                opacity: lensOpacity(state.lensTint),
                 depthWrite: false,
                 side: T.DoubleSide,
             }),

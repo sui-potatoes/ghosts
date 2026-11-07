@@ -7,6 +7,7 @@ module ghosts::items;
 use bit_field::bit_field as bf;
 use ghosts::{
     armor::{Self, Armor},
+    rank,
     stats,
     weapon::{Self, Weapon},
     weapon_upgrade::{Self as upgrade, WeaponUpgrade}
@@ -22,7 +23,7 @@ const EXPANDED_CLIP: u8 = 3;
 // === Armor ===
 
 /// Creates a new `Armor` with the given tier.
-public fun armor(tier: u8, ctx: &mut TxContext): Armor {
+public(package) fun armor(tier: u8, ctx: &mut TxContext): Armor {
     let (name, stats): (String, _) = match (tier) {
         // +1 ARM, +10% DODGE
         1 => ("Light Armor", vector[0, 0, 0, 1, 10]),
@@ -33,13 +34,28 @@ public fun armor(tier: u8, ctx: &mut TxContext): Armor {
         _ => abort,
     };
 
-    armor::new(name, stats::new_unchecked(bf::pack_u8!(stats)), ctx)
+    let armor = armor::new(name, stats::new_unchecked(bf::pack_u8!(stats)), ctx);
+    match (tier) {
+        2 => armor.for_rank(rank::squaddie()),
+        3 => armor.for_rank(rank::sergeant()),
+        _ => armor,
+    }
+}
+
+/// What a set of armor costs at the given tier.
+public(package) fun armor_price(tier: u8): u64 {
+    match (tier) {
+        1 => 100,
+        2 => 250,
+        3 => 500,
+        _ => abort,
+    }
 }
 
 // === Weapons ===
 
 /// Creates a new rifle with the given tier.
-public fun rifle(tier: u8, ctx: &mut TxContext): Weapon {
+public(package) fun rifle(tier: u8, ctx: &mut TxContext): Weapon {
     let (name, stats): (String, u128) = match (tier) {
         // 4 DMG, 2 SPREAD, +10% CRIT, 0 AREA, 4 RANGE, 3 AMMO
         1 => ("Standard Rifle", 0x03_04_00_00_01_0A_0A_02_04 << (6 * 8)),
@@ -49,13 +65,28 @@ public fun rifle(tier: u8, ctx: &mut TxContext): Weapon {
         3 => ("Plasma Rifle", 0x03_05_00_00_01_1E_1E_01_06 << (6 * 8)),
         _ => abort,
     };
-    weapon::new(name, stats::new_unchecked(stats), ctx)
+    let rifle = weapon::new(name, stats::new_unchecked(stats), ctx);
+    match (tier) {
+        2 => rifle.for_rank(rank::corporal()),
+        3 => rifle.for_rank(rank::lieutenant()),
+        _ => rifle,
+    }
+}
+
+/// What a rifle costs at the given tier.
+public(package) fun rifle_price(tier: u8): u64 {
+    match (tier) {
+        1 => 100,
+        2 => 300,
+        3 => 800,
+        _ => abort,
+    }
 }
 
 // === Weapon Upgrades ===
 
 /// Adds `5-15%` to the `aim` stat of the `Weapon` depending on the tier.
-public fun scope(tier: u8): WeaponUpgrade {
+public(package) fun scope(tier: u8): WeaponUpgrade {
     let (name, stats): (String, u128) = match (tier) {
         // +5 AIM
         1 => ("Basic Scope", 0x05 << (1 * 8)),
@@ -70,7 +101,7 @@ public fun scope(tier: u8): WeaponUpgrade {
 }
 
 /// Adds `5-15%` to the `crit_chance` stat of the `Weapon` depending on the tier.
-public fun laser_sight(tier: u8): WeaponUpgrade {
+public(package) fun laser_sight(tier: u8): WeaponUpgrade {
     let (name, stats): (String, u128) = match (tier) {
         // +5 CRIT
         1 => ("Basic Laser Sight", 0x05 << (9 * 8)),
@@ -85,7 +116,7 @@ public fun laser_sight(tier: u8): WeaponUpgrade {
 }
 
 /// Adds 1-3 to `range` stat of the `Weapon` depending on the tier.
-public fun stock(tier: u8): WeaponUpgrade {
+public(package) fun stock(tier: u8): WeaponUpgrade {
     let (name, stats): (String, u128) = match (tier) {
         // +1 RANGE
         1 => ("Basic Stock", 0x01 << (13 * 8)),
@@ -100,7 +131,7 @@ public fun stock(tier: u8): WeaponUpgrade {
 }
 
 /// Expanded clip increases the `ammo` stat by 1-3 depending on the tier.
-public fun expanded_clip(tier: u8): WeaponUpgrade {
+public(package) fun expanded_clip(tier: u8): WeaponUpgrade {
     let (name, stats): (String, u128) = match (tier) {
         // +1 AMMO
         1 => ("Basic Expanded Clip", 0x01 << (14 * 8)),
@@ -112,6 +143,27 @@ public fun expanded_clip(tier: u8): WeaponUpgrade {
     };
 
     upgrade::new(name, EXPANDED_CLIP, tier, stats::new_unchecked(stats))
+}
+
+/// A weapon upgrade of the given kind and tier.
+public(package) fun upgrade(kind: u8, tier: u8): WeaponUpgrade {
+    match (kind) {
+        SCOPE => scope(tier),
+        LASER_SIGHT => laser_sight(tier),
+        STOCK => stock(tier),
+        EXPANDED_CLIP => expanded_clip(tier),
+        _ => abort,
+    }
+}
+
+/// What a weapon upgrade costs at the given tier.
+public(package) fun upgrade_price(tier: u8): u64 {
+    match (tier) {
+        1 => 75,
+        2 => 150,
+        3 => 300,
+        _ => abort,
+    }
 }
 
 #[test]

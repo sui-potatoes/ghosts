@@ -29,6 +29,7 @@ export interface Gear {
     id: string;
     name: string;
     upgrades?: GearUpgrade[];
+    requiredRank?: { $kind: string };
 }
 /** A weapon or armor with where it is: the armory, or a recruit. */
 export interface Held<T extends Gear> {

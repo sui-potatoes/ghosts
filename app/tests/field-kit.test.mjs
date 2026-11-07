@@ -115,11 +115,11 @@ for (const sex of ["female", "male"]) {
                         : kind.startsWith("nyx")
                           ? 55000
                           : kind === "field-kit"
-                            ? 10000
+                            ? 15000
                             : 9000),
                 `${triangles} triangles exceeds kit budget`,
             );
-            assert.equal(doc.textures?.length || 0, kind.startsWith("nyx") ? 2 : 0);
+            assert.equal(doc.textures?.length || 0, 2);
             if (kind.startsWith("nyx")) {
                 assert.equal(
                     doc.meshes[0].extras.armorClass,

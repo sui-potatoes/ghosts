@@ -1,8 +1,16 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
+import { useEffect, useState } from "react";
+
+import { uiTick } from "../../../audio";
 import type { ChainRecruit } from "../../../chain";
 import { RecruitCard } from "./RecruitCard";
+
+/** The beat between two cards turning over. */
+const REVEAL_GAP_MS = 650;
+/** How long a hired card waits for its portrait before it turns over anyway. */
+const PORTRAIT_WAIT_MS = 3500;
 
 interface Props {
     slots: (ChainRecruit | null)[];
@@ -15,59 +23,75 @@ interface Props {
 }
 
 /**
- * Recruitment: the squad as a row of cards, face down until hired. One press
- * hires every vacancy; the cards turn over as the recruits arrive, portraits
- * filling in as the studio draws them. Any revealed card leads into
+ * Recruitment: the squad as a row of large cards, face down until hired. One
+ * press hires every vacancy. Hired cards turn over one at a time, left to
+ * right, each once its portrait is drawn (or after a short wait), so every
+ * card lands with its face already on it. Any revealed card leads into
  * headquarters with that recruit selected.
  */
 export function HireDeck({ slots, portraits, pending, error, onHire, onEnter }: Props) {
-    const vacant = slots.filter((s) => !s).length;
-    const first = slots.find((s): s is ChainRecruit => !!s);
+    // Cards hired before the deck mounted are already face up — unless a hire
+    // is still settling, in which case they turn over like any fresh hire.
+    const [revealed, setRevealed] = useState(() => (pending ? 0 : slots.filter(Boolean).length));
+    const nextId = slots[revealed]?.objectId;
+    const nextReady = !!nextId && !!portraits[nextId];
+    useEffect(() => {
+        if (!nextId) return;
+        const timer = window.setTimeout(
+            () => {
+                setRevealed((r) => r + 1);
+                uiTick();
+            },
+            nextReady ? REVEAL_GAP_MS : PORTRAIT_WAIT_MS,
+        );
+        return () => window.clearTimeout(timer);
+    }, [nextId, nextReady]);
+
+    const shown = slots.map((s, i) => (i < revealed ? s : null));
+    const vacant = shown.filter((s) => !s).length;
+    const arriving = slots.some((s, i) => s && i >= revealed);
+    const first = shown.find((s): s is ChainRecruit => !!s);
     return (
         <section className="hq-deck" aria-label="Recruitment">
             <header className="hq-deck-heading">
                 <span className="sq-eyebrow">RECRUITMENT</span>
                 <h2>{vacant ? "Your squad is waiting" : "Squad assembled"}</h2>
-                <p>
-                    {vacant
-                        ? "Four operatives, free of charge. Names, faces and voices are drawn on chain the moment you sign."
-                        : "Pick an operative to fit their gear, adjust their look or change their voice."}
-                </p>
             </header>
             <div className="hq-deck-cards">
-                {slots.map((recruit, i) => (
+                {shown.map((recruit, i) => (
                     <RecruitCard
                         key={i}
                         index={i}
                         variant="deck"
                         recruit={recruit}
                         portrait={recruit ? portraits[recruit.objectId] : undefined}
-                        pending={pending}
-                        disabled={pending}
+                        pending={pending || arriving}
+                        disabled={pending || arriving}
                         onClick={() => (recruit ? onEnter(recruit.objectId) : onHire())}
                     />
                 ))}
             </div>
-            {error && (
-                <p role="alert" className="sq-error">
-                    {error}
-                </p>
-            )}
             <div className="hq-deck-actions">
                 {vacant ? (
-                    <button className="btn sq-primary" disabled={pending} onClick={onHire}>
-                        {pending ? "Hiring…" : `Hire squad · ${vacant}`}
-                        <span>↗</span>
+                    <button
+                        className="btn sq-primary"
+                        disabled={pending || arriving}
+                        onClick={onHire}
+                    >
+                        Hire squad <span>↗</span>
                     </button>
                 ) : (
                     <button
                         className="btn sq-primary"
-                        disabled={pending || !first}
+                        disabled={!first}
                         onClick={() => first && onEnter(first.objectId)}
                     >
                         Enter headquarters <span>↗</span>
                     </button>
                 )}
+                <p role="alert" className="hq-deck-error">
+                    {error}
+                </p>
             </div>
         </section>
     );

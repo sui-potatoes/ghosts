@@ -172,7 +172,7 @@ export function AccountPanel() {
                     {formatSui(mist)} <span className="set-note">SUI</span>
                 </>
             ),
-            description: "SUI held by the address. Pays fees once the squad moves on chain.",
+            description: "SUI held by the address. Pays the network fee when your squad saves.",
         },
         {
             kind: "static",
@@ -217,7 +217,7 @@ export function AccountPanel() {
                 </span>
             ),
             description:
-                "A second authorizer that can take over after a delay; without it, losing the passkey or provider means losing the squad. Setup arrives with the on-chain account.",
+                "A second authorizer that can take over after a delay; without it, losing the passkey or provider means losing the squad. Setup arrives in a later update.",
         },
         {
             kind: "action",
@@ -247,8 +247,8 @@ export function AccountPanel() {
             >
                 {termination && (
                     <>
-                        <span className="font-mono text-warn">{termination.label}</span> is removed
-                        from the on-chain alias set and can no longer sign for this account
+                        <span className="font-mono text-warn">{termination.label}</span> loses
+                        access and can no longer sign for this account
                         {termination.local ? "; the key stored in this browser is wiped" : ""}. One
                         passkey signature confirms the removal.
                     </>
@@ -265,9 +265,8 @@ export function AccountPanel() {
                 }}
                 onClose={() => setSigningOut(false)}
             >
-                Disconnects this wallet from the device. This browser's session key is removed from
-                the on-chain alias set and wiped; signing in again authorizes the device anew. Local
-                preferences stay.
+                Disconnects this wallet from the device. This browser's session key loses access and
+                is wiped; signing in again authorizes the device anew. Local preferences stay.
             </ConfirmDialog>
         </>
     );

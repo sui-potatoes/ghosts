@@ -1,7 +1,7 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
-import { refresh, showBriefing } from "./actions";
+import { refresh, showBriefing, watchOpponent } from "./actions";
 import { audio } from "./audio";
 import { bindControls } from "./controls";
 import { bindPadCombat } from "./pad-combat";
@@ -102,7 +102,9 @@ export function boot(options: BootOptions): () => void {
       }
       s.state = "ready";
       // The briefing first: an encounter that is already over opens its debrief once it closes.
-      showBriefing("deploy");
+      if (s.game.scenario.versus) {
+        if (s.game.phase === "enemy") void watchOpponent();
+      } else showBriefing("deploy");
       refresh();
     } catch (error) {
       if (disposed) return;

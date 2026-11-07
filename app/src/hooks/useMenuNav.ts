@@ -11,8 +11,10 @@ import { dialogAbove } from "../settings/SettingList";
  * A focus-walked button menu on the input bus: entering the menu selects the
  * top entry, Up/Down move the focus through the registered items (skipping
  * the disabled), Confirm presses the focused one — whichever input produced
- * the action. A press with nothing focused recovers the top entry. Assign
- * the returned ref array to the buttons in order.
+ * the action. A press with nothing focused recovers the top entry. The
+ * pointer moves the same selection: hovering an entry focuses it, so there is
+ * only ever one highlighted row. Assign the returned ref array to the buttons
+ * in order.
  */
 export function useMenuNav(active: boolean) {
     const items = useRef<(HTMLButtonElement | null)[]>([]);
@@ -23,7 +25,15 @@ export function useMenuNav(active: boolean) {
         // always has a target and the first Down lands on the second row.
         const first = items.current.find((el) => el && !el.disabled);
         if (first && !dialogAbove(first)) first.focus();
-        return onAction((action) => {
+        const hover = (e: PointerEvent) => {
+            if (e.pointerType === "touch") return;
+            const el = (e.target as Element | null)?.closest("button");
+            if (!el || el.disabled || el === document.activeElement) return;
+            if (!items.current.includes(el as HTMLButtonElement) || dialogAbove(el)) return;
+            el.focus({ preventScroll: true });
+        };
+        document.addEventListener("pointerover", hover);
+        const stop = onAction((action) => {
             if (action !== "up" && action !== "down" && action !== "confirm") return false;
             const els = items.current.filter((el): el is HTMLButtonElement => !!el && !el.disabled);
             if (!els.length) return false;
@@ -42,6 +52,10 @@ export function useMenuNav(active: boolean) {
             uiTick(next);
             return true;
         });
+        return () => {
+            document.removeEventListener("pointerover", hover);
+            stop();
+        };
     }, [active]);
 
     return items;

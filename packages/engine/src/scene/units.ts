@@ -226,7 +226,8 @@ export class Units {
     if (!r.dead) this.rest(u);
   }
 
-  async fire(a: Unit, b: Unit, hit: boolean, framing: ShotFraming) {
+  /** `hit` may still be on its way: the shots go out now, the target reacts when it is known. */
+  async fire(a: Unit, b: Unit, hit: boolean | Promise<boolean>, framing: ShotFraming) {
     const { animator, effects } = this.o;
     const r = this.rigs.get(a.id)!;
     r.busy = true;
@@ -246,7 +247,9 @@ export class Units {
     const shotMotion = aimClip(a.weapon, covered);
     const shotDuration = play(r, shotMotion, true, 1, 0.08);
     this.o.host.dataset.motion = shotMotion;
-    const reaction = hit ? this.reaction(b, a.weapon === "sniper") : Promise.resolve();
+    const reaction = Promise.resolve(hit).then((landed) =>
+      landed ? this.reaction(b, a.weapon === "sniper") : undefined,
+    );
     const shots = a.weapon === "rifle" ? 3 : 1;
     for (let i = 0; i < shots; i++) {
       const weapon = a.weapon === "sniper" ? r.sniper : r.rifle;
@@ -272,7 +275,8 @@ export class Units {
     return this.busyWith(u, (r) => this.clip(r, reloadMotion(u.weapon, this.game.cover(u) > 0), 1.35));
   }
 
-  grenade(u: Unit, p: Cell, onImpact?: () => void) {
+  /** Whoever the blast hurt reacts once `settled`, as the casualties may still be on their way. */
+  grenade(u: Unit, p: Cell, onImpact?: () => void, settled?: Promise<unknown>) {
     const { animator, effects } = this.o;
     return this.busyWith(u, async (r) => {
       const target = this.vec(p, 0.2);
@@ -283,6 +287,7 @@ export class Units {
       await effects.lob(r.hand.getWorldPosition(new T.Vector3()), target, metal);
       onImpact?.();
       await effects.explosion(target);
+      await settled;
       await Promise.all(
         this.game.units
           .filter(

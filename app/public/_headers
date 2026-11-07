@@ -19,6 +19,13 @@
 /index.html
   Cache-Control: no-cache
 
+# The service worker and its asset list: always revalidate, so a deploy's new
+# files are known on the next visit and fetched into the worker's cache.
+/sw.js
+  Cache-Control: no-cache
+/asset-manifest.json
+  Cache-Control: no-cache
+
 /*
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin

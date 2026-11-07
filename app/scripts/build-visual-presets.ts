@@ -6,7 +6,7 @@
  * from `@ghosts/squad` topped up with seeded random identities to sixteen per
  * sex (`PRESETS_PER_GENDER`), each with its own seeded proportions, encoded
  * with the appearance codec and written between the `presets:begin` /
- * `presets:end` markers of `ghosts::ghosts::visual_presets`.
+ * `presets:end` markers of `ghosts::account::visual_presets`.
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
@@ -24,7 +24,7 @@ import { schema } from "../../packages/squad/src/appearance/schema.ts";
 import type { Appearance, Sex } from "../../packages/squad/src/types.ts";
 
 const TARGET = fileURLToPath(
-    new URL("../../move/packages/ghosts/sources/ghosts.move", import.meta.url),
+    new URL("../../move/packages/ghosts/sources/account.move", import.meta.url),
 );
 const PER_SEX = 16;
 

@@ -12,6 +12,7 @@ import { CharacterAssets, type Character, type CharacterLook } from "./character
 import { EquipmentAssets } from "./equipment-assets";
 import { ATTACHMENTS, EQUIPMENT, itemById } from "../catalog";
 import type { Appearance, Recruit } from "../types";
+import { breather } from "./breather";
 export type Focus = "body" | "face";
 export interface RecruitStudio {
     apply(recruit: Recruit, appearance?: Appearance, look?: CharacterLook): Promise<void>;
@@ -108,6 +109,8 @@ export function createRecruitStudio(
     const assets = new CharacterAssets(),
         equipment = new EquipmentAssets();
     let displayedKey = "";
+    /** The built character's recruit, gear and look: what a restyle may keep. */
+    let displayedBase = "";
     let displayedAttachments = "";
     let player: MotionPlayer | undefined;
     let carry: WeaponCarry | undefined;
@@ -181,35 +184,97 @@ export function createRecruitStudio(
     resize();
     document.addEventListener("visibilitychange", schedule);
     // Thumbnail passes use the same renderer and immediately restore the live viewport.
-    function capture(object: T.Object3D, eye?: T.Vector3) {
+    // They render at SUPERSAMPLE× and scale down on a 2D canvas, which smooths
+    // hair and silhouette edges far better than the renderer's own MSAA.
+    const SUPERSAMPLE = 2;
+    /** Textures this renderer already holds on the GPU. */
+    const uploaded = new WeakSet<T.Texture>();
+    /**
+     * Get an object ready to draw before its first frame: shaders compile in
+     * parallel (the driver's own threads when it can) and each new texture
+     * uploads in its own step, instead of all of it freezing that frame.
+     */
+    async function prepare(object: T.Object3D, view: T.Camera, target: T.Scene) {
+        // Background compiles can take far longer in wall time than compiling
+        // on the spot; past a short wait the first frame finishes whatever is left.
+        await Promise.race([
+            renderer.compileAsync(object, view, target),
+            new Promise((resolve) => setTimeout(resolve, 150)),
+        ]);
+        const textures = new Set<T.Texture>();
+        object.traverse((o) => {
+            if (!(o instanceof T.Mesh)) return;
+            for (const m of Array.isArray(o.material) ? o.material : [o.material])
+                for (const value of Object.values(m))
+                    if (value instanceof T.Texture && !uploaded.has(value)) textures.add(value);
+        });
+        for (const texture of textures) {
+            if (disposed) return;
+            renderer.initTexture(texture);
+            uploaded.add(texture);
+            await breather();
+        }
+    }
+    /** Encode off the main thread where the browser can (`toDataURL` blocks). */
+    function encode(canvas: HTMLCanvasElement): Promise<string> {
+        return new Promise((resolve) =>
+            canvas.toBlob(
+                (blob) => {
+                    if (!blob) return resolve(canvas.toDataURL("image/webp", 0.9));
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result as string);
+                    reader.onerror = () => resolve("");
+                    reader.readAsDataURL(blob);
+                },
+                "image/webp",
+                0.9,
+            ),
+        );
+    }
+    async function capture(object: T.Object3D, eye?: T.Vector3): Promise<string> {
         const preview = new T.Scene();
         preview.background = palette.surface.clone();
+        // The stage's fog starts well past any capture's subject; sharing it
+        // lets captures reuse the stage's compiled shaders.
+        preview.fog = scene.fog;
         for (const light of [ambient, key, fill, rim]) preview.add(light.clone());
         preview.add(object);
+        // Portraits are head and shoulders at 4:5, large enough for the hire deck's cards.
         const portrait = Boolean(eye),
-            width = portrait ? 160 : 320,
-            height = portrait ? 192 : 160;
-        const cam = new T.PerspectiveCamera(portrait ? 31 : 35, width / height, 0.01, 20);
-        const bounds = new T.Box3().setFromObject(object),
+            width = portrait ? 480 : 320,
+            height = portrait ? 600 : 160;
+        const cam = new T.PerspectiveCamera(portrait ? 30 : 35, width / height, 0.01, 20);
+        // Portraits frame the eye; a character's bounds would skin every vertex.
+        const bounds = portrait ? null : new T.Box3().setFromObject(object),
             center =
-                eye?.clone().add(new T.Vector3(0, -0.035, 0)) ?? bounds.getCenter(new T.Vector3()),
-            size = bounds.getSize(new T.Vector3());
-        const distance = portrait ? 0.62 : Math.max(size.x / (width / height), size.y) * 1.7 + 0.2;
+                eye?.clone().add(new T.Vector3(0, -0.06, 0)) ?? bounds!.getCenter(new T.Vector3()),
+            size = bounds?.getSize(new T.Vector3());
+        const distance = size ? Math.max(size.x / (width / height), size.y) * 1.7 + 0.2 : 0.82;
         cam.position
             .copy(center)
-            .add(new T.Vector3(portrait ? 0 : 0.12, portrait ? 0 : 0.08, distance));
+            .add(new T.Vector3(portrait ? 0.06 : 0.12, portrait ? 0.02 : 0.08, distance));
         cam.lookAt(center);
+        await prepare(object, cam, preview);
+        if (disposed) {
+            object.removeFromParent();
+            return "";
+        }
         const viewportSize = renderer.getSize(new T.Vector2());
         const pixelRatio = renderer.getPixelRatio();
-        renderer.setPixelRatio(1);
+        renderer.setPixelRatio(SUPERSAMPLE);
         renderer.setSize(width, height, false);
         renderer.render(preview, cam);
-        const result = renderer.domElement.toDataURL("image/webp", 0.86);
+        const out = document.createElement("canvas");
+        out.width = width;
+        out.height = height;
+        const context = out.getContext("2d")!;
+        context.imageSmoothingQuality = "high";
+        context.drawImage(renderer.domElement, 0, 0, width, height);
         object.removeFromParent();
         renderer.setPixelRatio(pixelRatio);
         renderer.setSize(viewportSize.x, viewportSize.y, false);
         draw();
-        return result;
+        return encode(out);
     }
     function attachGun(person: Character, gun?: T.Group) {
         weapon?.removeFromParent();
@@ -231,6 +296,7 @@ export function createRecruitStudio(
         const gun = item
             ? await equipment.get(item.model, pistol ? {} : currentRecruit.attachments)
             : undefined;
+        if (gun) await prepare(gun, camera, scene);
         if (disposed || ticket !== motionEpoch || person !== current) return;
         attachGun(person, gun);
     }
@@ -238,7 +304,16 @@ export function createRecruitStudio(
         async apply(recruit, appearance = recruit.appearance, look = "operative") {
             const ticket = ++epoch;
             const key = JSON.stringify([recruit.id, appearance, recruit.equipment, look]);
+            const base = JSON.stringify([recruit.id, recruit.equipment, look]);
             const attachmentKey = JSON.stringify(recruit.attachments ?? {});
+            // Colour and tint edits restyle the built character instead of building anew.
+            if (
+                current &&
+                displayedKey !== key &&
+                displayedBase === base &&
+                current.restyle(appearance)
+            )
+                displayedKey = key;
             if (current && displayedKey === key) {
                 const person = current;
                 currentRecruit = recruit;
@@ -249,6 +324,7 @@ export function createRecruitStudio(
                     const gun = item
                         ? await equipment.get(item.model, recruit.attachments)
                         : undefined;
+                    if (gun) await prepare(gun, camera, scene);
                     if (disposed || ticket !== epoch || person !== current) return;
                     attachGun(person, gun);
                     displayedAttachments = attachmentKey;
@@ -273,6 +349,13 @@ export function createRecruitStudio(
                 next.dispose();
                 return;
             }
+            next.setArmorColors(recruit.armorColors);
+            await prepare(next.root, camera, scene);
+            if (gun) await prepare(gun, camera, scene);
+            if (disposed || ticket !== epoch) {
+                next.dispose();
+                return;
+            }
             motionEpoch++;
             player?.dispose();
             currentRecruit = recruit;
@@ -283,8 +366,8 @@ export function createRecruitStudio(
             current?.dispose();
             current = next;
             displayedKey = key;
+            displayedBase = base;
             displayedAttachments = attachmentKey;
-            next.setArmorColors(recruit.armorColors);
             scene.add(next.root);
             weapon?.removeFromParent();
             weapon = gun;
@@ -355,7 +438,7 @@ export function createRecruitStudio(
                 person.dispose();
                 return "";
             }
-            const result = capture(person.root, person.eye);
+            const result = await capture(person.root, person.eye);
             person.dispose();
             return result;
         },
@@ -364,7 +447,8 @@ export function createRecruitStudio(
             for (const item of EQUIPMENT) {
                 const object = await equipment.get(item.model);
                 if (disposed) return result;
-                result[item.id] = capture(object);
+                result[item.id] = await capture(object);
+                await breather();
             }
             for (const item of ATTACHMENTS) {
                 const object = await equipment.attachment(item.id);
@@ -376,7 +460,8 @@ export function createRecruitStudio(
                         new T.Vector3(0, -1, 0),
                     ),
                 );
-                result[item.id] = capture(object);
+                result[item.id] = await capture(object);
+                await breather();
             }
             return result;
         },

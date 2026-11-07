@@ -42,6 +42,12 @@ export interface Contract {
 
 export interface Scenario {
   id: string;
+  /**
+   * Against another player, with a driver deciding everything: no briefing,
+   * objective, debrief or AI, the host shows how it ends, and the encounter
+   * opens on whatever phase the driver sets.
+   */
+  versus?: boolean;
   map: MapPlan;
   units: UnitSpec[];
   relay: Cell;

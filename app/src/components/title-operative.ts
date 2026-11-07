@@ -6,6 +6,7 @@ import { initialSquad } from "@ghosts/squad/model";
 import { CharacterAssets, type Character } from "@ghosts/squad/studio/character-assets";
 import { EquipmentAssets } from "@ghosts/squad/studio/equipment-assets";
 import { mountHandEquipment } from "@ghosts/squad/studio/held-equipment";
+import { queueBuild } from "./title-build-queue";
 import { loadTitleRifleIdle } from "./title-motion";
 
 /** VEX's standard appearance, Nyx armor, and the shared MX4 rifle/hand socket.
@@ -55,7 +56,7 @@ export function createTitleOperative(parent: THREE.Group, changed: () => void) {
     const ready = (async () => {
         // Character creation and the patrol clip have independent asset loads.
         const result = await Promise.allSettled([
-            assets.create(preset.appearance, "nyx-mid", "rest"),
+            queueBuild(() => assets.create(preset.appearance, "nyx-mid", "rest")),
             equipment.get("rifle"),
             loadTitleRifleIdle(preset.appearance.sex),
         ]);

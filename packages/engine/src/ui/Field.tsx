@@ -121,6 +121,8 @@ const WHEEL_ICONS: Record<WheelId, IconName> = {
 /** Whether the order would land right now, and the hub's one-line reading of it. */
 function wheelStatus(game: Encounter, u: Unit | undefined, id: WheelId): { locked: boolean; note: string } {
   if (id === "end-turn") return { locked: false, note: "PASS INITIATIVE" };
+  if (game.scenario.versus && (id === "overwatch" || id === "hunker" || id === "secure"))
+    return { locked: true, note: "UNAVAILABLE" };
   if (!u) return { locked: true, note: "NO OPERATOR" };
   if (!game.canAct(u)) return { locked: true, note: "NO AP" };
   switch (id) {
@@ -577,11 +579,13 @@ function FieldObjectives() {
   return (
     <div id="field-objectives">
       <small>THE CONTRACT</small>
-      <p>
-        <i className={game.secured ? "done" : ""} />
-        {objectives.secure.order}
-        {game.secured ? " / SECURED" : ""}
-      </p>
+      {!game.scenario.versus && (
+        <p>
+          <i className={game.secured ? "done" : ""} />
+          {objectives.secure.order}
+          {game.secured ? " / SECURED" : ""}
+        </p>
+      )}
       <p>
         <i className={!game.enemies.length ? "done" : ""} />
         {objectives.eliminate.order}{" "}

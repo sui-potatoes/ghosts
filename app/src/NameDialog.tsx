@@ -117,7 +117,7 @@ export function NameDialog({ open, onClose }: Props) {
                         className="btn"
                         disabled={!!problem || unchanged || pending}
                     >
-                        {pending ? "Signing…" : "Save"}
+                        Save
                     </button>
                 </div>
             </form>

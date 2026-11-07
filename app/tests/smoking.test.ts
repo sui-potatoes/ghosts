@@ -22,12 +22,38 @@ import { skinMeshes } from "./gear-collision.ts";
 const sourceBytes = readFileSync("scripts/smoking/source.bin");
 const source = JSON.parse(gunzipSync(sourceBytes).toString());
 for (const sex of ["female", "male"]) {
-    test(`${sex}: Mixamo capture retains source body motion, grounds soles, closes its loop and fits cigarette transfers`, () => {
+    test(`${sex}: smoking keeps a neutral torso, grounds soles, closes its loop and fits cigarette transfers`, () => {
         const file = readFileSync(`public/squad/body/${sex}/skin.glb`);
         const root = motionSkeleton(
             file.buffer.slice(file.byteOffset, file.byteOffset + file.length),
         );
         const body = skinMeshes(`public/squad/body/${sex}/skin.glb`, root)[0];
+        const torso = ["Hips", "Spine", "Spine1", "Spine2"].map((suffix) => {
+            const bone = root.getObjectByName(`mixamorig${suffix}`)!;
+            return { bone, rest: bone.quaternion.clone() };
+        });
+        const freeHand = root.getObjectByName("mixamorigLeftHand")!;
+        const freeHandRest = freeHand.matrixWorld.clone().invert();
+        const handPoints: { index: number; local: T.Vector3 }[] = [];
+        const { position, skinIndex, skinWeight } = body.geometry.attributes;
+        for (let i = 0; i < position.count; i++) {
+            let handWeight = 0;
+            for (let k = 0; k < 4; k++)
+                if (
+                    body.skeleton.bones[skinIndex.getComponent(i, k)].name.startsWith(
+                        "mixamorigLeftHand",
+                    )
+                )
+                    handWeight += skinWeight.getComponent(i, k);
+            if (handWeight > 0.99999)
+                handPoints.push({
+                    index: i,
+                    local: new T.Vector3()
+                        .fromBufferAttribute(position, i)
+                        .applyMatrix4(freeHandRest),
+                });
+        }
+        assert.ok(handPoints.length > 100, "inspect the actual palm and finger mesh");
         const raw = JSON.parse(
             gunzipSync(readFileSync(`public/squad/motions/${sex}-smoking.bin`)).toString(),
         );
@@ -91,7 +117,11 @@ for (const sex of ["female", "male"]) {
             // A wrist-only twist rotates the finger bend directions and visibly
             // tears the grip. Every digit must keep its captured segment direction.
             root.traverse((bone) => {
-                if (!/mixamorig(?:Right|Left)Hand/.test(bone.name)) return;
+                if (!/mixamorigRight(?:Hand|Arm$|ForeArm$)/.test(bone.name)) return;
+                // The smoking arm is fitted to the mouth; its segment directions
+                // intentionally differ from the source during contact.
+                if (/mixamorigRight(?:Arm|ForeArm)$/.test(bone.name) && f / source.fps < 0.9)
+                    return;
                 const captured =
                     source.frames[f + Math.round(SMOKING_SOURCE_START * source.fps)].rotations[
                         bone.name
@@ -108,9 +138,8 @@ for (const sex of ["female", "male"]) {
                     `${bone.name} bend direction @ ${action.time}`,
                 );
             });
-            // This prevents accidentally substituting an authored idle or flattening
-            // the capture's body language. Contact fitting touches the right arm and planted legs.
-            for (const suffix of ["Spine2", "Head", "LeftArm"]) {
+            // Preserve the captured gesture around the neutral native torso.
+            for (const suffix of ["Head"]) {
                 const name = `mixamorig${suffix}`;
                 const q = root.getObjectByName(name)!.getWorldQuaternion(new T.Quaternion());
                 assert.ok(
@@ -130,6 +159,24 @@ for (const sex of ["female", "male"]) {
             action.time = f / source.fps;
             mixer.update(0);
             root.updateMatrixWorld(true);
+            for (const { bone, rest } of torso) {
+                assert.ok(
+                    bone.quaternion.clone().normalize().angleTo(rest.clone().normalize()) < 0.00001,
+                    `${bone.name} bends the torso @ ${action.time}`,
+                );
+            }
+            // The free hand must retain the original palm/finger shape, including
+            // the return blend; bone lengths alone cannot catch a twisted palm.
+            const handFrame = freeHand.matrixWorld.clone().invert();
+            for (const { index, local } of handPoints) {
+                const point = body
+                    .applyBoneTransform(index, new T.Vector3().fromBufferAttribute(position, index))
+                    .applyMatrix4(handFrame);
+                assert.ok(
+                    point.distanceTo(local) < 0.00001,
+                    `left palm/fingers deform @ ${action.time}`,
+                );
+            }
             for (const foot of feet) {
                 const position = foot.bone.getWorldPosition(new T.Vector3());
                 if (f === 0) foot.first.copy(position);

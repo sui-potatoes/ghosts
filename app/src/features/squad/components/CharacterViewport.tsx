@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Appearance, Recruit } from "@ghosts/squad/types";
 import type { Focus, RecruitStudio } from "@ghosts/squad/studio/recruit-studio";
 import type { CharacterLook } from "@ghosts/squad/studio/character-assets";
+import { loadPortrait, savePortrait } from "../imageStore";
 
 interface Props {
     recruit: Recruit;
@@ -15,7 +16,8 @@ interface Props {
     focus: Focus;
     onFocus(value: Focus): void;
     onPortrait(id: string, url: string): void;
-    onEquipment(images: Record<string, string>): void;
+    /** Gear thumbnails from this stage's renderer; omit when they come from elsewhere. */
+    onEquipment?(images: Record<string, string>): void;
     /** The line above the callsign; defaults to the role. */
     eyebrow?: string;
 }
@@ -38,8 +40,9 @@ export function CharacterViewport(props: Props) {
                 const view = createRecruitStudio(host.current, setMotion);
                 studio.current = view;
                 setReady(true);
+                if (!latest.current.onEquipment) return;
                 const images = await view.equipmentImages();
-                if (!cancelled) latest.current.onEquipment(images);
+                if (!cancelled) latest.current.onEquipment?.(images);
             })
             .catch((e) => {
                 if (!cancelled)
@@ -79,11 +82,31 @@ export function CharacterViewport(props: Props) {
     }, [props.focus]);
     // Portraits for every recruit whose saved identity has not been drawn yet:
     // the roster at start, hires that arrive later, and looks saved since.
+    // Looks drawn on an earlier visit come straight from the browser's store,
+    // before the studio is even up; only the rest are built and drawn.
     const drawn = useRef(new Map<string, string>());
+    const stored = useRef<Promise<void>>(Promise.resolve());
+    useEffect(() => {
+        let cancelled = false;
+        stored.current = Promise.all(
+            props.recruits.map(async (recruit) => {
+                const stamp = JSON.stringify(recruit.appearance);
+                if (drawn.current.get(recruit.id) === stamp) return;
+                const url = await loadPortrait(stamp);
+                if (cancelled || !url) return;
+                drawn.current.set(recruit.id, stamp);
+                latest.current.onPortrait(recruit.id, url);
+            }),
+        ).then(() => {});
+        return () => {
+            cancelled = true;
+        };
+    }, [props.recruits]);
     useEffect(() => {
         if (!ready) return;
         let cancelled = false;
         const timer = window.setTimeout(async () => {
+            await stored.current;
             for (const recruit of props.recruits) {
                 const stamp = JSON.stringify(recruit.appearance);
                 if (cancelled) return;
@@ -93,6 +116,7 @@ export function CharacterViewport(props: Props) {
                 if (url) {
                     drawn.current.set(recruit.id, stamp);
                     latest.current.onPortrait(recruit.id, url);
+                    void savePortrait(stamp, url);
                 }
             }
         }, 300);

@@ -12,7 +12,7 @@ import { motionSkeleton, armTo } from "@ghosts/squad/motion/clearance";
 import { nativeClip } from "@ghosts/squad/motion/clips";
 import { equipmentPose, type EquipmentPoses } from "@ghosts/squad/motion/equipment-poses";
 import { captureArmRest, distributeArmTwist } from "./arm-twist.ts";
-import { triggerGrip } from "./trigger-grip.ts";
+import { triggerGrip, captureTriggerHand } from "./trigger-grip.ts";
 import { supportGrip } from "./support-grip.ts";
 import { relaxAimPosture } from "./aim-posture.ts";
 import { mountHandEquipment } from "@ghosts/squad/studio/held-equipment";
@@ -45,7 +45,14 @@ const holds = new Set([
     "crouch_hit",
 ]);
 const low = new Set(["idle", "rifle_idle", "idle_weight_shift", "take_damage", "heavy_hit"]);
-const aiming = new Set(["shooting", "crouch_shooting", "rifle_burst", "sniper_shot", "cover_peek", "overwatch_ready"]);
+const aiming = new Set([
+    "shooting",
+    "crouch_shooting",
+    "rifle_burst",
+    "sniper_shot",
+    "cover_peek",
+    "overwatch_ready",
+]);
 const arm = (name: string) => /mixamorig(?:Right|Left)(?:Shoulder|Arm|ForeArm|Hand)/.test(name);
 export function changedTracks(source: T.AnimationClip, result: T.AnimationClip) {
     return result.tracks
@@ -72,6 +79,7 @@ for (const { sex, model } of configurations) {
     const file = fs.readFileSync(`public/squad/body/${sex}/skin.glb`),
         root = motionSkeleton(file.buffer.slice(file.byteOffset, file.byteOffset + file.length));
     const armRest = captureArmRest(root);
+    captureTriggerHand(root);
     const weapon = new T.Group();
     weapon.userData.center = [0, 0, 0];
     weapon.userData.model = "rifle";
@@ -120,13 +128,29 @@ for (const { sex, model } of configurations) {
                 else if (property === "position") node.position.fromArray(v);
                 else if (property === "scale") node.scale.fromArray(v);
             }
-            seatTriggerHand();
             if (clip.name === "death" && sex === "female") {
                 bone("mixamorigRightHand").quaternion.fromArray(
                     references[sex].ready.rotations.mixamorigRightHand.local,
                 );
                 root.updateMatrixWorld(true);
+                if (model === "sniper") {
+                    // Let the long muzzle fall outside the left boot as the body settles.
+                    const settle = T.MathUtils.smoothstep(time / clip.duration, 0.45, 0.7);
+                    const hand = bone("mixamorigRightHand");
+                    const turn = new T.Quaternion().setFromAxisAngle(
+                        new T.Vector3(0, 1, 0),
+                        0.2 * settle,
+                    );
+                    hand.quaternion.copy(
+                        hand
+                            .parent!.getWorldQuaternion(new T.Quaternion())
+                            .invert()
+                            .multiply(turn.multiply(hand.getWorldQuaternion(new T.Quaternion()))),
+                    );
+                    root.updateMatrixWorld(true);
+                }
             }
+            seatTriggerHand();
             if (reloading) {
                 nodes
                     .filter((n) => /mixamorigRightHand.+/.test(n.name))

@@ -29,7 +29,7 @@
 /// the cost of a call is bounded by `Config`, not by the number of players.
 module matchmaker::matchmaker;
 
-use sui::{clock::Clock, dynamic_field as df, event, random::RandomGenerator, table::{Self, Table}};
+use sui::{clock::Clock, dynamic_field as df, random::RandomGenerator, table::{Self, Table}};
 
 /// Sender already has a live ticket in the queue.
 const EAlreadyQueued: u64 = 0;
@@ -87,12 +87,6 @@ public struct Ticket has copy, drop, store {
 /// the one of their order.
 public struct Match has copy, drop, store {
     id: ID,
-    players: vector<address>,
-}
-
-/// Two players were paired.
-public struct MatchFound has copy, drop {
-    match_id: ID,
     players: vector<address>,
 }
 
@@ -167,10 +161,10 @@ public fun default_config(): Config {
 public fun find_game<T>(
     _: internal::Permit<T>,
     mm: &mut Matchmaker<T>,
-    rating: u64,
-    window: u64,
     rng: &mut RandomGenerator,
     clock: &Clock,
+    rating: u64,
+    window: u64,
     ctx: &mut TxContext,
 ): (ID, Option<Match>) {
     let player = ctx.sender();
@@ -231,18 +225,19 @@ public fun find_game<T>(
         mm.take_at((center + ring) as u8, above[pick - below.length()])
     };
 
-    let players = vector[opponent.player, player];
-
-    event::emit(MatchFound { match_id: opponent.id, players });
-    (id, option::some(Match { id: opponent.id, players }))
+    (id, option::some(Match { id: opponent.id, players: vector[opponent.player, player] }))
 }
 
 /// Leave the queue. Aborts if the sender is not queued.
 public fun cancel_game<T>(mm: &mut Matchmaker<T>, ctx: &mut TxContext) {
-    let player = ctx.sender();
-    assert!(mm.players.contains(player), ENotQueued);
-    let bucket = mm.players[player];
-    mm.take(bucket, player);
+    mm.leave(ctx.sender());
+}
+
+/// Remove a player's ticket whoever the sender is. The `Permit` leaves the
+/// decision to the module defining `T`, for example to clear a search that
+/// timed out. Aborts if the player is not queued.
+public fun remove_ticket<T>(_: internal::Permit<T>, mm: &mut Matchmaker<T>, player: address) {
+    mm.leave(player);
 }
 
 // === Reads ===
@@ -259,7 +254,7 @@ public fun queue_length<T>(mm: &Matchmaker<T>): u64 { mm.size }
 /// Current matchmaking parameters.
 public fun config<T>(mm: &Matchmaker<T>): Config { mm.config }
 
-/// ID of the waiting player's order, also carried by the `MatchFound` event.
+/// ID of the waiting player's order.
 public fun match_id(m: &Match): ID { m.id }
 
 /// The two paired players, the one who waited first.
@@ -270,6 +265,13 @@ public fun players(m: &Match): vector<address> { m.players }
 public fun occupied<T>(mm: &Matchmaker<T>): u256 { mm.occupied }
 
 // === Internal ===
+
+/// Take a player's ticket out of the queue; aborts if they have none.
+fun leave<T>(mm: &mut Matchmaker<T>, player: address) {
+    assert!(mm.players.contains(player), ENotQueued);
+    let bucket = mm.players[player];
+    mm.take(bucket, player);
+}
 
 /// Bucket a rating falls into; everything above the range shares the top one.
 fun bucket_of(config: &Config, rating: u64): u8 {

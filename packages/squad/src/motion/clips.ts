@@ -45,7 +45,7 @@ export function loadMotions(sex: Sex, model = "rifle") {
       const [response, poses, smokingResponse] = await Promise.all([
         fetch(`${base}motions/${sex}.bin`),
         loadEquipmentPoses(sex, model),
-        fetch(`${base}motions/${sex}-smoking.bin`),
+        fetch(`${base}motions/${sex}-smoking.bin?v=3`),
       ]);
       if (!response.ok) throw Error("Motion library could not load.");
       const blob = await response.blob();

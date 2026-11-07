@@ -424,7 +424,7 @@ function precisionReceiver(g: WeaponGeometry, m: WeaponFinish) {
 }
 
 function plasmaReceiver(g: WeaponGeometry, m: WeaponFinish) {
-  // Ceramic split shell, copper induction spine, twin side capacitors and a floating muzzle cage.
+  // Ceramic split shell, copper induction spine and a supported accelerator cage.
   g.profile(
     [
       [-0.19, 0.016],
@@ -524,6 +524,22 @@ function plasmaReceiver(g: WeaponGeometry, m: WeaponFinish) {
     for (const x of [0.175, 0.327]) g.screw(x, 0.028, side * 0.05, m);
     g.box([0.25, 0.023, side * 0.049], [0.14, 0.003, 0.003], m.accent);
   }
+  // Lower chassis spine and three transverse saddles close the load path from
+  // the ceramic panels to the fore-end and front accelerator collar. Keep the
+  // spaces between saddles open so the induction coils remain exposed.
+  g.profile(
+    [[0.158, 0.009], [0.334, 0.009], [0.344, 0.017],
+     [0.344, 0.029], [0.164, 0.029], [0.158, 0.023]],
+    0.028, m.metal, 0, 0.001,
+  );
+  for (const x of [0.196, 0.245, 0.323]) {
+    g.profile(
+      [[x - 0.008, 0.026], [x - 0.005, 0.023], [x + 0.005, 0.023],
+       [x + 0.008, 0.026], [x + 0.008, 0.034], [x - 0.008, 0.034]],
+      0.096, m.metal, 0, 0.0008,
+    );
+    for (const side of [-1, 1]) g.screw(x, 0.032, side * 0.049, m, 0.0016);
+  }
   g.cylinder([0.224, BORE_HEIGHT, 0], 0.014, 0.32, m.steel, "x", 0.014, 32);
   g.box([0.17, 0.006, 0], [0.213, 0.017, 0.044], m.rubber);
   for (let i = 0; i < 10; i++)
@@ -536,11 +552,30 @@ function plasmaReceiver(g: WeaponGeometry, m: WeaponFinish) {
   }
   for (const side of [-1, 1])
     g.box([0.367, BORE_HEIGHT, side * 0.029], [0.072, 0.017, 0.008], m.shell);
+  // Underside yokes tie both muzzle guards into the two barrel collars, rather
+  // than leaving the ceramic bars suspended beside the final coil rings.
+  for (const x of [0.337, 0.394]) {
+    g.box([x, BORE_HEIGHT - 0.023, 0], [0.012, 0.008, 0.066], m.metal);
+    for (const side of [-1, 1]) {
+      g.box([x, BORE_HEIGHT - 0.013, side * 0.029], [0.012, 0.018, 0.008], m.metal);
+      g.screw(x, BORE_HEIGHT, side * 0.034, m, 0.0018);
+    }
+  }
   g.cylinder([0.397, BORE_HEIGHT, 0], 0.024, 0.016, m.metal, "x", 0.022, 12);
   g.cylinder([0.405, BORE_HEIGHT, 0], 0.014, 0.001, m.rubber, "x", 0.014, 32);
   g.ring([0.405, BORE_HEIGHT, 0], 0.017, 0.003, m.steel);
-  g.rail(-0.172, 0.064, 0.083, m);
-  g.rail(0.095, 0.322, 0.083, m);
+  // A continuous receiver spine carries the rail across the exposed accelerator.
+  // The transverse saddles tie it into both ceramic side panels.
+  g.profile(
+    [[0.048, 0.058], [0.048, 0.081], [0.175, 0.081],
+     [0.175, 0.068], [0.16, 0.059], [0.091, 0.059], [0.082, 0.05]],
+    0.032, m.metal, 0, 0.0015,
+  );
+  for (const x of [0.172, 0.243, 0.319]) {
+    g.box([x, 0.075, 0], [0.014, 0.012, 0.096], m.metal);
+    for (const side of [-1, 1]) g.screw(x, 0.075, side * 0.05, m, 0.002);
+  }
+  g.rail(-0.172, 0.322, 0.083, m);
   ironSights(g, m, -0.151, 0.305);
 }
 

@@ -11,7 +11,7 @@ import {
 import { fitOf, type Gear, type Held } from "../armory";
 import { armorModel, weaponModel } from "../mapping";
 
-export type Category = "weapons" | "armor" | "upgrades";
+export type Category = "weapons" | "armor" | "mods";
 export type Selection =
     | { kind: "weapon" | "armor"; id: string }
     | { kind: "upgrade"; attachment: string }
@@ -41,14 +41,14 @@ export function ArmoryInventory(props: Props) {
     const counts: Record<Category, number> = {
         weapons: props.weapons.length,
         armor: props.armors.length,
-        upgrades: Object.values(props.stock).reduce((n, c) => n + c, 0),
+        mods: Object.values(props.stock).reduce((n, c) => n + c, 0),
     };
     const isSelected = (s: Selection) => JSON.stringify(s) === JSON.stringify(selection);
 
     return (
         <aside className="squad-roster hq-inventory" aria-label="Armory inventory">
             <nav className="hq-inventory-tabs" aria-label="Inventory categories">
-                {(["weapons", "armor", "upgrades"] as const).map((c) => (
+                {(["weapons", "armor", "mods"] as const).map((c) => (
                     <button
                         key={c}
                         aria-pressed={category === c}
@@ -79,7 +79,7 @@ export function ArmoryInventory(props: Props) {
                                 drafted={props.drafted.has(item.id)}
                                 onClick={() => props.onSelect(s)}
                             >
-                                <span className="hq-fit-pips" aria-label="Fittings">
+                                <span className="hq-fit-pips" aria-label="Mods">
                                     {ATTACHMENT_SLOTS.map((slot) => (
                                         <i
                                             key={slot}
@@ -112,7 +112,7 @@ export function ArmoryInventory(props: Props) {
                             />
                         );
                     })}
-                {category === "upgrades" &&
+                {category === "mods" &&
                     upgrades.map((a) => {
                         const s = { kind: "upgrade", attachment: a.id } as const;
                         return (
@@ -126,13 +126,13 @@ export function ArmoryInventory(props: Props) {
                             />
                         );
                     })}
-                {counts[category] === 0 && !(category === "upgrades" && upgrades.length) && (
+                {counts[category] === 0 && !(category === "mods" && upgrades.length) && (
                     <p className="sq-footnote">
                         {category === "weapons"
                             ? "No rifles on file. Recruits without one carry the standard issue, which is not an armory item."
                             : category === "armor"
                               ? "No armor on file."
-                              : "No upgrades in stock."}
+                              : "No mods in stock."}
                     </p>
                 )}
             </div>
@@ -141,7 +141,7 @@ export function ArmoryInventory(props: Props) {
                 onClick={() => props.onSelect({ kind: "requisition" })}
             >
                 <span>＋ Requisition</span>
-                <small>Testnet · free</small>
+                <small>Free</small>
             </button>
         </aside>
     );
@@ -167,7 +167,7 @@ function Row(props: {
                 <strong>{props.name}</strong>
                 <small>
                     {props.status}
-                    {props.drafted && <i aria-label="Unsaved fittings" />}
+                    {props.drafted && <i aria-label="Unsaved mods" />}
                 </small>
                 {props.children}
             </span>

@@ -555,7 +555,16 @@ export function createTitleCity(
             if (disposed) return;
             animate(0);
             renderer.shadowMap.needsUpdate = true;
+            // Compile both variants ahead of the first frame: the screen's and
+            // the wet road's reflection, which renders into a target (no tone
+            // mapping, linear output) and so needs its own program for every
+            // material. Left to the first render, that cost ~0.6 s of frozen menu.
+            const reflection = road.getRenderTarget();
             shaderWarmup = renderer.compileAsync(scene, camera);
+            renderer.setRenderTarget(reflection);
+            const reflectionWarmup = renderer.compileAsync(scene, camera);
+            renderer.setRenderTarget(null);
+            shaderWarmup = Promise.all([shaderWarmup, reflectionWarmup]).then(() => scene);
             await shaderWarmup;
             if (disposed) return;
             initialized = true;

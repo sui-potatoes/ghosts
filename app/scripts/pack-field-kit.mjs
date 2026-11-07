@@ -11,6 +11,7 @@ const { NodeIO } = require("@gltf-transform/core"),
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const raw = process.env.GEAR_BUILD_DIR || "/tmp/ghosts-field-kit";
 import * as T from "three";
+import { armorFitGroups } from "./armor-fit-groups.mjs";
 import { readFile, writeFile } from "node:fs/promises";
 const io = new NodeIO().registerExtensions(ALL_EXTENSIONS),
     reports = [];
@@ -24,6 +25,7 @@ for (const sex of ["male", "female"])
             jointNames = nativeSkin.listJoints().map((n) => n.getName()),
             groups = new Map(),
             buffer = doc.getRoot().listBuffers()[0];
+        const fit = armorFitGroups(armor.getRoot().listNodes(), kind);
         for (const node of armor.getRoot().listNodes())
             if (node.getMesh()) {
                 const world = new T.Matrix4().fromArray(node.getWorldMatrix()),
@@ -50,6 +52,7 @@ for (const sex of ["male", "female"])
                             joints: [],
                             weights: [],
                             uv: [],
+                            fit: [],
                             indices: [],
                         });
                     const g = groups.get(name);
@@ -72,6 +75,7 @@ for (const sex of ["male", "female"])
                         j = p.getAttribute("JOINTS_0"),
                         w = p.getAttribute("WEIGHTS_0");
                     for (let i = 0; i < pos.getCount(); i++) {
+                        g.fit.push(fit.parts.get(node) || 0);
                         g.position.push(
                             ...new T.Vector3()
                                 .fromArray(pos.getElement(i, []))
@@ -108,8 +112,9 @@ for (const sex of ["male", "female"])
         for (const g of groups.values()) {
             const attr = (type, array) =>
                     doc.createAccessor().setType(type).setArray(array).setBuffer(buffer),
-                p = doc.createPrimitive().setMaterial(g.mat);
+                p = doc.createPrimitive().setMaterial(g.mat).setExtras({ rigidFit: fit.anchors });
             p.setAttribute("POSITION", attr("VEC3", new Float32Array(g.position)))
+                .setAttribute("_RIGID_FIT", attr("SCALAR", new Uint16Array(g.fit)))
                 .setAttribute("NORMAL", attr("VEC3", new Float32Array(g.normal)))
                 .setAttribute("TEXCOORD_0", attr("VEC2", new Float32Array(g.uv)))
                 .setAttribute("JOINTS_0", attr("VEC4", new Uint16Array(g.joints)))

@@ -17,20 +17,23 @@ export interface DeploymentLook {
 }
 const showcase = ["nyx-mid", "nyx", "nyx-heavy", "nyx"];
 /**
- * The look of every unit: allies from the host's saved recruits (by squad
- * order), hostiles and missing recruits from the default roster. Without a
- * saved squad the showcase armor tiers are worn. The recruits are only read.
+ * The look of every unit: allies from the host's saved recruits (the one with
+ * their id, else by squad order, however the hostiles are mixed in among them),
+ * hostiles and missing recruits from the default roster. Without a saved squad
+ * the showcase armor tiers are worn. The recruits are only read.
  */
 export function deploymentLooks(recruits: readonly Recruit[] | null, units: Unit[]): Map<string, DeploymentLook> {
   const saved = !!recruits?.length;
   const defaults = initialSquad().recruits;
   const roster = saved ? recruits! : defaults;
+  let allies = 0;
   return new Map(units.map((unit, i) => {
-    const recruit = unit.enemy ? defaults[i % defaults.length] : roster[i] ?? defaults[i % defaults.length];
+    const own = unit.enemy ? undefined : roster.find((r) => r.id === unit.id) ?? roster[allies];
+    if (!unit.enemy) allies++;
+    const recruit = own ?? defaults[i % defaults.length];
     return [unit.id, {
       appearance: recruit.appearance,
-      armorId: !unit.enemy && saved && roster[i]
-        ? recruit.equipment.armor : showcase[i % showcase.length],
+      armorId: saved && own ? recruit.equipment.armor : showcase[i % showcase.length],
       armorColors: unit.enemy
         ? { ...DEFAULT_ARMOR_COLORS, primary: "#454144", accent: "#c98177" }
         : recruit.armorColors,

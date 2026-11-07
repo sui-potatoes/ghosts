@@ -51,11 +51,6 @@ public struct Unit has copy, store {
     last_turn: u16,
 }
 
-/// Get the attack parameters of the `Unit`: damage and aim.
-public fun attack_params(unit: &Unit): (u16, u16) {
-    (unit.stats.damage() as u16, unit.stats.aim() as u16)
-}
-
 /// Reset the AP of the `Unit` to the default value if the turn is over.
 public fun try_reset_ap(unit: &mut Unit, turn: u16) {
     if (unit.last_turn < turn) unit.ap.reset();
@@ -68,6 +63,17 @@ public fun perform_move(unit: &mut Unit, distance: u8) {
     assert!(unit.ap.value() > 0, ENoAP);
 
     unit.ap.decrease(1);
+}
+
+/// Take up the weapon the `Recruit` now carries: its stats replace the old one's,
+/// and it comes with a full magazine. It costs 1 AP.
+public fun perform_pick_up(unit: &mut Unit, recruit: &Recruit) {
+    assert!(unit.ap.value() > 0, ENoAP);
+    unit.ap.decrease(1);
+
+    let Unit { stats, ammo, .. } = from_recruit(recruit);
+    unit.stats = stats;
+    unit.ammo = ammo;
 }
 
 /// Reload `Unit`'s weapon. It costs 1 AP.

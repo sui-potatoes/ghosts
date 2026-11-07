@@ -70,16 +70,35 @@ is what the screens and the future encounter driver import.
   testnet requisition. `useGhostsAction` signs, executes and waits for each
   step, then refreshes every ghosts read. Ids live in `GHOSTS`
   (`src/constants.ts`); `ghostsEnabled` gates every consumer.
-
-## When the rest of the ghosts Move package lands
-
-- Event schemas in `bcs.ts`, plus the mapping from decoded objects and
-  transaction events to `@ghosts/engine` types.
-- `driver.ts` — an `EncounterDriver` (`@ghosts/engine`): `resolve(command)`
-  builds the Move call for an order, simulates it (`client.core.simulateTransaction`)
-  to surface a refusal before signing, executes it through
-  `useTransactionExecutor`, decodes the resulting events into `GameEvent`s and
-  `ingest`s them into the rules. The engine plays whatever comes back; it
-  never rolls dice for a chain-driven encounter. Passed to
-  `<Encounter driver={...}>`.
-- Package ids and shared-object ids join `src/constants.ts` per network.
+- `matchmaking.ts` — Find Match over `ghosts::find_game`, `start_game`,
+  `release_match` and `cancel_search`. All state is `Account.search` (`Idle`,
+  `Searching`, `Matched`, `Playing`); there are no events to follow.
+  `useMatchSearch` reads it and sends the player's transactions;
+  `useMatchmakingDriver` (called once, by the shell's `MatchStatus`) polls the
+  `Account` while it waits, follows up on a pairing, which is the job of the
+  player who found the opponent, and opens `/match`. The follow-up starts the
+  game, or lets the match go for free once the opponent is gone; one that failed
+  shows on the chip with a retry. `cancel_search` on a match held suspends the
+  player, so nothing here sends it for that.
+- `game.ts` — a game on chain: reading it, and the transactions for every action
+  a player can take, each authorized by their `Account`. A finished game is
+  deleted by `complete_game`, so its last read is all there is to show the result.
+- `fast-lane.ts` — how game orders go out, through `sendOrder`: every input
+  resolved up front (`GameRefs`, the gas coin tracked from each order's effects,
+  a fixed budget), so an order is one network call, and the new `Game` comes back
+  in the response, so nothing is waited for or read afterwards. About 0.7s against
+  1.6s the ordinary way. Everything else sends the ordinary way, in the same line.
+- `match-rules.ts` — the same questions the contract answers (whose turn, is it
+  over, the odds of a shot, the cover, the line of sight, where a unit can stand,
+  what a finished game pays),
+  and `Game.history` read as engine events. Pure, tested on its own. The driver
+  hands these to the engine as `Encounter.authority`, so the odds on screen and the
+  paths on offer are the contract's. The line and cover functions were compared
+  with the contract on every tile pair of Black Rain; a new map deserves the same.
+- `driver.ts` — the `EncounterDriver` of a match. What the rules can work out
+  plays at once and settles behind the scene: moves, reloads, ending a turn. Shots
+  and grenades go out at once too, and the scene starts on them; only what the dice
+  decide waits for the answer. If the chain refuses something already played, the
+  queue behind it is dropped and the field walks back to what is true. The
+  opponent's turn is `Game.history`, polled. Imported by `screens/Match.tsx` only,
+  as it brings the engine.

@@ -54,8 +54,8 @@ def add_markings(asset_id, collection, parent, material):
                   ('CAL. 6.8   /   004-271', -0.16, 0.019, 0.028, 0.0024), ('M-LOK / 05', 0.09, 0.068, 0.027, 0.0027)],
         'sniper': [('VANTAGE / 09', -0.155, 0.027, 0.026, 0.004), ('PRECISION SYSTEMS', -0.159, 0.01, 0.028, 0.0027),
                    ('7.62 / MATCH', 0.105, 0.016, 0.029, 0.003)],
-        'plasma': [('ION / P-06', -0.149, 0.06, 0.037, 0.004), ('HIGH VOLTAGE', 0.105, 0.074, 0.05, 0.003),
-                   ('CAUTION / HOT', 0.24, 0.027, 0.05, 0.0025)],
+        'plasma': [('ION / P-06', -0.149, 0.06, 0.03615, 0.004), ('HIGH VOLTAGE', 0.188, 0.073, 0.05015, 0.003),
+                   ('CAUTION / HOT', 0.24, 0.027, 0.05015, 0.0025)],
     }.get(asset_id, [])
     label_objects = []
     for text, x, y, z, size in labels:

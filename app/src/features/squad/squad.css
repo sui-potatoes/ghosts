@@ -4,6 +4,7 @@
     --squad-studio-background: #111111;
     --squad-studio-platform: #191919;
     --squad-studio-line: #262626;
+    --squad-header-height: 72px;
     min-height: 100svh;
     padding: 0 32px;
     color: var(--text-color);
@@ -27,7 +28,7 @@
     cursor: not-allowed;
 }
 .squad-header {
-    min-height: 116px;
+    min-height: var(--squad-header-height);
     display: flex;
     align-items: center;
     gap: 48px;
@@ -38,9 +39,9 @@
 }
 .squad-title {
     font-family: var(--font-mono);
-    font-size: 30px;
+    font-size: 18px;
     font-weight: 300;
-    letter-spacing: 0.28em;
+    letter-spacing: 0.24em;
     text-transform: uppercase;
     margin: 0;
 }
@@ -58,7 +59,7 @@
 .squad-workspace {
     display: grid;
     grid-template-columns: 220px minmax(280px, 1fr) 360px;
-    height: calc(100svh - 116px);
+    height: calc(100svh - var(--squad-header-height));
     min-height: 560px;
     max-height: 1100px;
 }
@@ -928,7 +929,7 @@
         padding: 24px 0;
     }
     .squad-title {
-        font-size: 24px;
+        font-size: 16px;
     }
     .squad-save {
         max-width: 100%;

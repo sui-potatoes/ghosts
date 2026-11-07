@@ -155,7 +155,7 @@ export function useSubmitNameChange(): {
                 console.warn(`Changing the name to "${name}" on chain failed:`, e);
                 const message = e instanceof Error ? e.message : String(e);
                 throw new Error(
-                    refusal(message) ?? "The chain refused the change; the name is as it was.",
+                    refusal(message) ?? "The change didn't go through; the name is as it was.",
                 );
             } finally {
                 setPending(false);

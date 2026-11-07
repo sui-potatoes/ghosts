@@ -217,7 +217,9 @@ fun perform_attack_distance_modifiers() {
     assert_eq!(hit_chance, 35);
     unit.try_reset_ap(7);
 
-    recruit.kill(ctx).throw_away();
+    let (tag, weapon) = recruit.kill(ctx);
+    tag.throw_away();
+    weapon.destroy!(|w| w.destroy());
     unit.destroy();
 }
 
@@ -244,7 +246,9 @@ fun shoot_and_reload() {
     unit.perform_attack(&mut rng, 1, 0);
     assert_eq!(unit.ammo(), 0);
 
-    recruit.kill(ctx).throw_away();
+    let (tag, weapon) = recruit.kill(ctx);
+    tag.throw_away();
+    weapon.destroy!(|w| w.destroy());
     unit.destroy();
 }
 

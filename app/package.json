@@ -11,12 +11,14 @@
         "preview": "vite preview",
         "test:motion": "node --experimental-strip-types --test tests/motion.test.ts tests/smoking.test.ts tests/clearance.test.ts tests/armor-deformation.test.ts tests/office-worker.test.ts tests/body-shape.test.ts",
         "test:equipment": "node --experimental-strip-types --test tests/sidearm.test.ts tests/long-guns.test.ts tests/support-grip.test.ts tests/equipment-poses.test.ts tests/gear-collision.test.ts",
-        "test": "pnpm test:motion && pnpm test:equipment && pnpm test:title-motion",
+        "test": "pnpm test:motion && pnpm test:equipment && pnpm test:title-motion && pnpm test:match",
+        "test:match": "node --experimental-strip-types --test tests/match-rules.test.ts",
         "test:title-motion": "node --test tests/title-motion.test.mjs",
         "build:title-motion": "node scripts/build-title-motion.mjs",
         "build:smoking": "node --experimental-strip-types scripts/build-smoking.ts",
         "build:equipment-poses": "node --experimental-strip-types scripts/equipment-fit/build.ts",
         "build:visual-presets": "node --experimental-strip-types scripts/build-visual-presets.ts",
+        "build:map-preset": "node --experimental-strip-types scripts/build-map-preset.ts",
         "test:pose-audit": "node --experimental-strip-types scripts/equipment-fit/audit-all.ts"
     },
     "dependencies": {
