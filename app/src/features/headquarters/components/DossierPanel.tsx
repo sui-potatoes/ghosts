@@ -1,9 +1,9 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-import { previewVoice } from "../../../audio";
+import { previewVoice, stopPreview } from "../../../audio";
 import { nextRankXp } from "../../../chain/match-rules";
 import { VOICES, type ChainRecruit } from "../../../chain";
 import { ConfirmDialog } from "../../../components/ConfirmDialog";
@@ -29,6 +29,9 @@ export function DossierPanel({
     onDismiss(): void;
 }) {
     const [confirming, setConfirming] = useState(false);
+    // An audition belongs to the recruit it was picked for: selecting another
+    // one, or leaving the dossier, cuts it off mid-line.
+    useEffect(() => () => stopPreview(), [recruit.objectId]);
     const mods = recruit.weapon?.upgrades.length ?? 0;
     const gear = [
         recruit.weapon &&

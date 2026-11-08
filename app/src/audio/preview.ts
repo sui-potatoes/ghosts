@@ -56,6 +56,12 @@ export function previewVoice(id: number) {
     if (takes) play(takes, channelLevel("voice"));
 }
 
+/** Cut off the preview playing now, e.g. an audition whose recruit is no longer shown. */
+export function stopPreview() {
+    current?.pause();
+    current = null;
+}
+
 /** A weapon sound at the effects level just set. */
 export function previewEffect() {
     play(EFFECT_TAKES, channelLevel("sfx"));

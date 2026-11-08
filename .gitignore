@@ -16,3 +16,4 @@ __pycache__/
 
 # TypeScript incremental build state
 *.tsbuildinfo
+.1lab
