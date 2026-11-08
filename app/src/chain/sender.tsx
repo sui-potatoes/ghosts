@@ -18,8 +18,10 @@ import {
 } from "@mysten/dapp-kit-react";
 import type { Signer } from "@mysten/sui/cryptography";
 import type { Transaction } from "@mysten/sui/transactions";
+import { SUI_CLOCK_OBJECT_ID } from "@mysten/sui/utils";
 import { useEffect } from "react";
 
+import { GHOSTS } from "../constants";
 import { activeSessionSigner, authorizeDevice, expireSessionKey } from "./alias";
 import type { ExecutedTransaction } from "./executor";
 import { FastLane, type ExecutedOrder, type Order } from "./fast-lane";
@@ -34,14 +36,24 @@ export interface SendOptions {
 type Send = (tx: Transaction, opts?: SendOptions) => Promise<ExecutedTransaction>;
 
 let send: Send | null = null;
-let sendOrderNow: ((order: Order) => Promise<ExecutedOrder>) | null = null;
+let sendOrderNow: ((order: Order | Transaction) => Promise<ExecutedOrder>) | null = null;
 let fastLane: FastLane | null = null;
 
+/** What the game's writes take that never changes how it is passed: looked up before the first. */
+const STANDING_OBJECTS = [
+    GHOSTS.registry,
+    GHOSTS.matchmaker,
+    GHOSTS.preset,
+    SUI_CLOCK_OBJECT_ID,
+    "0x8",
+].filter(Boolean);
+
 /**
- * Queue a game order on the fast lane, in line with every other send. Null when
- * no sender is mounted; rejects when the chain refuses it or `order` throws.
+ * Queue a game order, or any game write, on the fast lane, in line with every
+ * other send; what it wrote comes back with it. Null when no sender is mounted;
+ * rejects when the chain refuses it or `order` throws.
  */
-export function sendOrder(order: Order): Promise<ExecutedOrder> | null {
+export function sendOrder(order: Order | Transaction): Promise<ExecutedOrder> | null {
     return sendOrderNow ? sendOrderNow(order) : null;
 }
 
@@ -86,6 +98,7 @@ export function TransactionSender() {
         let tail: Promise<unknown> = Promise.resolve();
         const wallet = () => new CurrentAccountSigner(dAppKit as unknown as DAppKit);
         const fast = new FastLane(client, owner);
+        fast.prepare(STANDING_OBJECTS, GHOSTS.package ? [GHOSTS.package] : []);
         const execute = async (tx: Transaction, signer: Signer) => {
             tx.setSenderIfNotSet(owner);
             // This may spend the coin the fast lane is tracking.
@@ -110,7 +123,7 @@ export function TransactionSender() {
                 // session key. A declined ceremony aborts the transaction too —
                 // it would otherwise just be prompted for again.
                 session = await authorizeDevice(client, owner, async (authTx) => {
-                    await execute(authTx, wallet());
+                    await fast.execute(authTx, wallet());
                 });
             }
             return session ?? wallet();

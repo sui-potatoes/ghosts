@@ -141,7 +141,7 @@ export function ArmoryInventory(props: Props) {
                 onClick={() => props.onSelect({ kind: "requisition" })}
             >
                 <span>＋ Requisition</span>
-                <small>Free</small>
+                <small>Catalog</small>
             </button>
         </aside>
     );

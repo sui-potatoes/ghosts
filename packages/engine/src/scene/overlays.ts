@@ -301,9 +301,16 @@ export class Overlays {
     this.droppedKey = signature;
     clearGroup(this.dropped);
     for (const cell of cells) {
+      // Wider than the body lying on the tile and the selection ring of whoever stands on it.
       const mark = new T.Mesh(
-        new T.RingGeometry(CELL * 0.2, CELL * 0.28, 6),
-        new T.MeshBasicMaterial({ color: 0xe9c58a, transparent: true, opacity: 0.85, side: T.DoubleSide }),
+        new T.RingGeometry(CELL * 0.44, CELL * 0.49, 6),
+        new T.MeshBasicMaterial({
+          color: 0xe9c58a,
+          transparent: true,
+          opacity: 0.85,
+          side: T.DoubleSide,
+          fog: false,
+        }),
       );
       mark.rotation.x = -Math.PI / 2;
       mark.position.copy(this.space.vec(cell, 0.08));
