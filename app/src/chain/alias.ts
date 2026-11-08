@@ -194,11 +194,16 @@ export async function authorizeDevice(
     let state = await aliasesState(client, owner);
     if (!state) {
         await sign(enableTx());
-        state = await aliasesState(client, owner);
+        // The node that answers may be a moment behind the one that ran it.
+        for (let attempt = 0; !state && attempt < 8; attempt++) {
+            if (attempt) await new Promise((resolve) => setTimeout(resolve, 400));
+            state = await aliasesState(client, owner);
+        }
         if (!state) throw new Error("alias set missing after enable");
     }
     if (!state.members.includes(address)) await sign(addTx(state.ref, address));
-    forgetSessionStatus();
+    // Just written: nothing to ask the chain for the next half minute.
+    membership = { stamp: `${owner}:${address}`, until: Date.now() + 30_000, ok: true };
     return new SessionSigner(key);
 }
 

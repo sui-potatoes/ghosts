@@ -213,8 +213,11 @@ for (const { sex, model } of configurations) {
                     (arm(t.name) || (!ready && /mixamorig(?:Spine2|Neck|Head)\./.test(t.name))),
             )
             .map((t) => bone(t.name.split(".")[0]));
+        // The lower spine shares the chest's aimed turn, keeping its own source curve.
+        const spine = ready ? [] : ["mixamorigSpine", "mixamorigSpine1"].map(bone);
+        const tracked = [...changed, ...spine];
         const times: number[] = [],
-            values = changed.map(() => [] as number[]),
+            values = tracked.map(() => [] as number[]),
             frames = Math.ceil(source.duration * 30);
         const samplers = source.tracks.map((t) => ({
             node: bone(t.name.split(".")[0]),
@@ -243,16 +246,32 @@ for (const { sex, model } of configurations) {
             );
             root.updateMatrixWorld(true);
             if (!ready) {
+                // The chest holds the aimed reference relative to the heading. A crouch leans
+                // the lower spine forward, and turning all of that back at the chest alone
+                // shears the armor across the upper back, so the lower spine takes an equal
+                // share of the turn first and the chest only the rest.
                 const chest = bone("mixamorigSpine2");
+                const target = turn.multiply(
+                    new T.Quaternion().fromArray(ref.rotations[chest.name].world),
+                );
+                const turnBack = target
+                    .clone()
+                    .multiply(chest.getWorldQuaternion(new T.Quaternion()).invert());
+                const share = new T.Quaternion().slerp(turnBack, 1 / (spine.length + 1));
+                for (const b of spine) {
+                    const rotation = share
+                        .clone()
+                        .multiply(b.getWorldQuaternion(new T.Quaternion()));
+                    b.quaternion.copy(
+                        b
+                            .parent!.getWorldQuaternion(new T.Quaternion())
+                            .invert()
+                            .multiply(rotation),
+                    );
+                    b.updateMatrixWorld(true);
+                }
                 chest.quaternion.copy(
-                    chest
-                        .parent!.getWorldQuaternion(new T.Quaternion())
-                        .invert()
-                        .multiply(
-                            turn.multiply(
-                                new T.Quaternion().fromArray(ref.rotations[chest.name].world),
-                            ),
-                        ),
+                    chest.parent!.getWorldQuaternion(new T.Quaternion()).invert().multiply(target),
                 );
                 chest.updateMatrixWorld(true);
             }
@@ -284,11 +303,11 @@ for (const { sex, model } of configurations) {
             distributeArmTwist(root, "Left", armRest);
             distributeArmTwist(root, "Right", armRest);
             times.push(time);
-            changed.forEach((b, i) => b.quaternion.toArray(values[i], values[i].length));
+            tracked.forEach((b, i) => b.quaternion.toArray(values[i], values[i].length));
         }
         result.clips[source.name] = {
             duration: source.duration,
-            tracks: changed.map((b, i) =>
+            tracks: tracked.map((b, i) =>
                 T.KeyframeTrack.toJSON(
                     new T.QuaternionKeyframeTrack(
                         b.name + ".quaternion",

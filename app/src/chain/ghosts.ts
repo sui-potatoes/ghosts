@@ -6,7 +6,7 @@
  * (account directory plus the hire presets) and the player's `Account` with
  * its recruits, armory and upgrades. Reads decode BCS like everything else in
  * this folder; writes are small transactions run through `useGhostsAction`,
- * which waits for the chain and refreshes every ghosts read before it
+ * which reads what each one wrote straight into those reads before it
  * settles. Ids come from `GHOSTS` in `src/constants.ts`; `ghostsEnabled`
  * answers whether they are set.
  */
@@ -16,16 +16,17 @@ import type { BcsType } from "@mysten/sui/bcs";
 import { bcs } from "@mysten/sui/bcs";
 import { Transaction } from "@mysten/sui/transactions";
 import { deriveDynamicFieldID } from "@mysten/sui/utils";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import type { VisualAreas } from "@ghosts/squad/appearance/codec";
 import { GHOSTS } from "../constants";
 import { Account, AccountRecord, Armor, Recruit, Registry, Weapon } from "./bcs";
+import type { ExecutedOrder } from "./fast-lane";
 import { RANKS } from "./match-rules";
-import { useBcsObject } from "./objects";
+import { absorbWrites, current, useBcsObject } from "./objects";
 import { trackSaving } from "./saving";
-import { sendTransaction } from "./sender";
+import { sendOrder } from "./sender";
 
 type Client = ReturnType<typeof useCurrentClient>;
 
@@ -97,22 +98,74 @@ export function useRegistry() {
 }
 
 /** The `Account` id `owner` holds, read from `Registry.accounts`; null when none. */
-export async function fetchAccountId(client: Client, owner: string): Promise<string | null> {
-    const { object } = await client.core.getObject({
-        objectId: GHOSTS.registry,
-        include: { content: true },
-    });
-    const table = Registry.parse(object.content).accounts.id;
-    const fieldId = deriveDynamicFieldID(table, "address", bcs.Address.serialize(owner).toBytes());
-    try {
-        const { object: field } = await client.core.getObject({
-            objectId: fieldId,
-            include: { content: true },
-        });
-        return AccountRecord.parse(field.content).value;
-    } catch {
-        return null; // no account for this address yet
+/** The registry's table of accounts; it never moves. */
+let accountTable: Promise<string> | null = null;
+/** Accounts found by address: one never changes once opened. */
+const accountIds = new Map<string, string>();
+
+/** Where the registry files the `Account` of `owner`. */
+async function accountFieldId(client: Client, owner: string): Promise<string> {
+    accountTable ??= client.core
+        .getObject({ objectId: GHOSTS.registry, include: { content: true } })
+        .then(({ object }) => Registry.parse(object.content).accounts.id);
+    accountTable.catch(() => (accountTable = null));
+    return deriveDynamicFieldID(
+        await accountTable,
+        "address",
+        bcs.Address.serialize(owner).toBytes(),
+    );
+}
+
+/**
+ * The `Account` id of `owner`, or null without one. `opened`: one was just
+ * opened, so a node a moment behind is asked again before taking no for an answer.
+ */
+export async function fetchAccountId(
+    client: Client,
+    owner: string,
+    opened = false,
+): Promise<string | null> {
+    const fieldId = accountIds.has(owner) ? "" : await accountFieldId(client, owner);
+    for (let attempt = 0; ; attempt++) {
+        const known = accountIds.get(owner);
+        if (known) return known;
+        try {
+            const { object: field } = await client.core.getObject({
+                objectId: fieldId,
+                include: { content: true },
+            });
+            const id = AccountRecord.parse(field.content).value;
+            accountIds.set(owner, id);
+            return id;
+        } catch {
+            // no account for this address yet
+            if (!opened || attempt >= 6) return null;
+            await new Promise((resolve) => setTimeout(resolve, 500));
+        }
     }
+}
+
+/**
+ * A write that opened the player's `Account`: file its id and the account
+ * itself from the response, so the steps after it and the screens have both
+ * without a read.
+ */
+async function noteOpenedAccount(
+    client: Client,
+    queryClient: QueryClient,
+    owner: string,
+    { written }: ExecutedOrder,
+) {
+    if (accountIds.has(owner)) return;
+    const fieldId = await accountFieldId(client, owner).catch(() => "");
+    const record = written.find((object) => object.objectId === fieldId)?.contents;
+    if (!record) return;
+    const id = AccountRecord.parse(record).value;
+    accountIds.set(owner, id);
+    queryClient.setQueryData(["ghosts", "account-id", owner], id);
+    const account = written.find((object) => object.objectId === id);
+    if (account?.contents && current(id, account.version))
+        queryClient.setQueryData(["object", id], Account.parse(account.contents));
 }
 
 /** The connected player's `Account` id; `data` is null once the registry says there is none. */
@@ -131,40 +184,53 @@ export function useGhostsAccount(id?: string | null, refetchInterval?: number) {
     return useBcsObject({ id, schema: Account, refetchInterval });
 }
 
+/** An entry of an `ObjectTable`: the object, and the dynamic field holding it. */
+type Entry<T> = T & { objectId: string; fieldId?: string };
+
 /**
  * Every object stored in an `ObjectTable`, decoded. `size` is the table's
- * length as its parent reports it: listing lags the parent by a moment after
- * a write, so a short listing is retried until it catches up.
+ * length as its parent reports it: a node a moment behind lists fewer entries,
+ * or an entry as it was before a write, so either is read again until it
+ * catches up.
  */
 async function listTable<T, Input>(
     client: Client,
     tableId: string,
     size: number,
     schema: BcsType<T, Input>,
-): Promise<(T & { objectId: string })[]> {
-    let ids: string[] = [];
+): Promise<Entry<T>[]> {
+    let entries: Entry<T>[] = [];
     for (let attempt = 0; attempt < 6; attempt++) {
-        ids = [];
+        const fields: { objectId: string; fieldId: string }[] = [];
         let cursor: string | undefined;
         do {
             const page = await client.core.listDynamicFields({ parentId: tableId, cursor });
             for (const field of page.dynamicFields)
-                if (field.$kind === "DynamicObject") ids.push(field.childId);
+                if (field.$kind === "DynamicObject")
+                    fields.push({ objectId: field.childId, fieldId: field.fieldId });
             cursor = page.hasNextPage ? (page.cursor ?? undefined) : undefined;
         } while (cursor);
-        if (ids.length >= size) break;
+        let behind = fields.length < size;
+        if (!behind) {
+            entries = await Promise.all(
+                fields.map(async ({ objectId, fieldId }) => {
+                    const { object } = await client.core.getObject({
+                        objectId,
+                        include: { content: true },
+                    });
+                    if (!current(objectId, object.version)) behind = true;
+                    return { ...schema.parse(object.content), objectId, fieldId };
+                }),
+            );
+        }
+        if (!behind || attempt === 5) break;
         await new Promise((r) => setTimeout(r, 500));
     }
-    return Promise.all(
-        ids.map(async (objectId) => {
-            const { object } = await client.core.getObject({
-                objectId,
-                include: { content: true },
-            });
-            return { ...schema.parse(object.content), objectId };
-        }),
-    );
+    return entries;
 }
+
+/** How each table's entries decode, so a write can be read straight into it. */
+const tables = new Map<string, { name: string; schema: BcsType<unknown> }>();
 
 export function useTable<T, Input>(
     name: string,
@@ -172,12 +238,74 @@ export function useTable<T, Input>(
     schema: BcsType<T, Input>,
 ) {
     const client = useCurrentClient();
+    if (table) tables.set(table.id, { name, schema: schema as BcsType<unknown> });
     return useQuery({
         queryKey: ["ghosts", name, table?.id, table?.size],
         enabled: !!table,
         placeholderData: (previous) => previous,
         queryFn: () => listTable(client, table!.id, Number(table!.size), schema),
     });
+}
+
+/**
+ * Bring every table read in line with what a write left: entries it changed are
+ * decoded from the response, entries it took out are dropped, and entries it put
+ * in are found by the dynamic field it made for them. The result is filed under
+ * the table's new size, which is what the screens ask for next; a table the
+ * response cannot account for is read again.
+ */
+function absorbTables(queryClient: QueryClient, { written, removed }: ExecutedOrder) {
+    const byId = new Map(written.map((object) => [object.objectId, object]));
+    const gone = new Set(removed);
+    for (const [tableId, { name, schema }] of tables) {
+        const queries = queryClient
+            .getQueryCache()
+            .findAll({ queryKey: ["ghosts", name, tableId] })
+            .filter((query) => query.state.data !== undefined);
+        if (!queries.length) continue;
+        const latest = queries.reduce((a, b) =>
+            b.state.dataUpdatedAt > a.state.dataUpdatedAt ? b : a,
+        );
+        const before = latest.state.data as Entry<unknown>[];
+        let touched = false;
+        let unaccounted = false;
+        const after: Entry<unknown>[] = [];
+        for (const entry of before) {
+            const object = byId.get(entry.objectId);
+            const { fieldId } = entry;
+            if (gone.has(entry.objectId) || (fieldId && gone.has(fieldId))) touched = true;
+            else if (!object) after.push(entry);
+            else if (!fieldId || !object.contents) {
+                after.push(entry);
+                unaccounted = true;
+            } else if (object.parent !== fieldId) touched = true;
+            else {
+                touched = true;
+                after.push({
+                    ...(schema.parse(object.contents) as object),
+                    objectId: entry.objectId,
+                    fieldId,
+                });
+            }
+        }
+        const held = new Set(after.map((entry) => entry.objectId));
+        for (const object of written) {
+            const field = object.parent ? byId.get(object.parent) : undefined;
+            if (field?.parent !== tableId || held.has(object.objectId)) continue;
+            touched = true;
+            if (!object.contents) unaccounted = true;
+            else
+                after.push({
+                    ...(schema.parse(object.contents) as object),
+                    objectId: object.objectId,
+                    fieldId: field.objectId,
+                });
+        }
+        if (unaccounted)
+            void queryClient.invalidateQueries({ queryKey: ["ghosts", name, tableId] });
+        else if (touched)
+            queryClient.setQueryData(["ghosts", name, tableId, String(after.length)], after);
+    }
 }
 
 /** The recruits stored in an `Account`. */
@@ -212,27 +340,34 @@ export function SquadPreload() {
 export type Step = () => Transaction | Promise<Transaction>;
 
 /**
- * Runs transactions one after the other — each signed, executed and waited
- * for — then refreshes every ghosts read, so the screen shows the outcome
- * when `busy` clears. The whole run counts as saving for the corner spinner.
+ * Runs transactions one after the other, each signed and executed in one call,
+ * and reads what each wrote straight into the screens' reads, so the screen
+ * shows the outcome when `busy` clears. The whole run counts as saving for the
+ * corner spinner.
  */
 export function useGhostsAction() {
     const client = useCurrentClient();
+    const owner = useCurrentAccount()?.address;
     const queryClient = useQueryClient();
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState("");
 
     async function steps(list: Step[]) {
+        let digest = "";
         for (const build of list) {
-            const sent = sendTransaction(await build());
+            const sent = sendOrder(await build());
             if (!sent) throw new Error("Sign in to continue.");
-            const { digest } = await sent;
-            await client.core.waitForTransaction({ digest });
+            const executed = await sent;
+            digest = executed.digest;
+            absorbWrites(queryClient, executed.written);
+            absorbTables(queryClient, executed);
+            if (owner) await noteOpenedAccount(client, queryClient, owner, executed);
         }
-        await Promise.all([
-            queryClient.invalidateQueries({ queryKey: ["ghosts"] }),
-            queryClient.invalidateQueries({ queryKey: ["object"] }),
-        ]);
+        // An `Account` the response did not account for: wait for it and look again.
+        if (owner && digest && !queryClient.getQueryData(["ghosts", "account-id", owner])) {
+            await client.core.waitForTransaction({ digest });
+            await queryClient.invalidateQueries({ queryKey: ["ghosts", "account-id", owner] });
+        }
     }
 
     async function run(list: Step[]): Promise<boolean> {

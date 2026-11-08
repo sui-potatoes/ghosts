@@ -15,7 +15,9 @@ is what the screens and the future encounter driver import.
   straight from BCS content with a schema, returned with their
   `objectId`/`version`/`digest` so the next transaction can reference them.
   `useBcsObject` reads the alias set today; `useOwnedBcsObjects` waits for
-  the Move package's owned objects.
+  the Move package's owned objects. It notes the newest version of each object
+  seen: a read from a node a moment behind keeps what is on screen, and
+  `absorbWrites` puts what a write left into the reads without one.
 - `sender.tsx` — the one sign-and-send path: `<TransactionSender />` (mounted
   once in the shell) serves `sendTransaction(tx)`, callable from anywhere
   without React context; it returns `null` while signed out
@@ -62,13 +64,17 @@ is what the screens and the future encounter driver import.
   `Registry` and the player's `Account` id (a derived dynamic-field read of
   `Registry.accounts`), the account's recruits and armory (dynamic object
   fields of its `ObjectTable`s, re-listed until they match the table's
-  length), and the transactions — account, hire, `edit_recruit` with the
+  length and no entry is older than one already seen), and the transactions — account, hire, `edit_recruit` with the
   appearance codec's five areas, unequip, `issueTx` (hand gear from carrier
   to recruit in one PTB), `fittingsTx` (bring a rifle to a whole draft of
   fittings in one PTB — unequip, strip, fit from stock, mint the missing,
   re-equip; indices tracked against a local copy of the upgrade vector),
-  testnet requisition. `useGhostsAction` signs, executes and waits for each
-  step, then refreshes every ghosts read. Ids live in `GHOSTS`
+  testnet requisition. `useGhostsAction` sends each step on the fast lane and
+  reads what it wrote straight into the reads on screen: the objects
+  `useBcsObject` holds, and the tables' entries, changed, dropped, or found by
+  the dynamic field made for them. Only a step with another after it is waited
+  for, as that one may read the chain. About 0.7s a write against 3.6–4.5s
+  when every read was refreshed afterwards. Ids live in `GHOSTS`
   (`src/constants.ts`); `ghostsEnabled` gates every consumer.
 - `matchmaking.ts` — Find Match over `ghosts::find_game`, `start_game`,
   `release_match` and `cancel_search`. All state is `Account.search` (`Idle`,
@@ -83,11 +89,15 @@ is what the screens and the future encounter driver import.
 - `game.ts` — a game on chain: reading it, and the transactions for every action
   a player can take, each authorized by their `Account`. A finished game is
   deleted by `complete_game`, so its last read is all there is to show the result.
-- `fast-lane.ts` — how game orders go out, through `sendOrder`: every input
-  resolved up front (`GameRefs`, the gas coin tracked from each order's effects,
-  a fixed budget), so an order is one network call, and the new `Game` comes back
-  in the response, so nothing is waited for or read afterwards. About 0.7s against
-  1.6s the ordinary way. Everything else sends the ordinary way, in the same line.
+- `fast-lane.ts` — how the game's writes go out, through `sendOrder`: every
+  input resolved up front (the gas coin tracked from each order's effects, a
+  fixed budget; `GameRefs` for orders, and for any other transaction shared and
+  frozen objects and Move signatures looked up once a session, as they never
+  change), so a write is one network call, and what it wrote comes back in the
+  response, so nothing is waited for or read afterwards. About 0.7s against
+  1.6s the ordinary way. A write the chain refuses is charged its gas, as
+  nothing simulates it first. Session management and names send the ordinary
+  way (`sendTransaction`), in the same line.
 - `match-rules.ts` — the same questions the contract answers (whose turn, is it
   over, the odds of a shot, the cover, the line of sight, where a unit can stand,
   what a finished game pays),

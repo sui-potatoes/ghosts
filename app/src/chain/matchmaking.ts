@@ -31,8 +31,8 @@ import { useSaving } from "./saving";
 
 type Client = ReturnType<typeof useCurrentClient>;
 
-/** How often a waiting player re-reads their `Account`. */
-const POLL_MS = 3_000;
+/** How often a waiting player re-reads their `Account`: a match found is a second away at most. */
+const POLL_MS = 1_000;
 
 /** `SEARCH_TIMEOUT_MS` in `ghosts::ghosts`: past it, anyone can cancel a search. */
 export const SEARCH_TIMEOUT_MS = 120_000;
@@ -124,7 +124,7 @@ export function useMatchSearch() {
         if (known && Number(recruits) >= FREE_RECRUITS) return send(findGameTx);
 
         const idOf = async () => {
-            const id = known ?? (await fetchAccountId(client, owner));
+            const id = known ?? (await fetchAccountId(client, owner, true));
             if (!id) throw new Error("No account on file for this address.");
             return id;
         };

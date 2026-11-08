@@ -266,7 +266,7 @@ export default function Headquarters() {
         const steps: Step[] = [];
         if (!accountId.data) steps.push(createAccountTx);
         steps.push(async () => {
-            const id = accountId.data ?? (await fetchAccountId(action.client, owner));
+            const id = accountId.data ?? (await fetchAccountId(action.client, owner, true));
             if (!id) throw new Error("No account on file for this address.");
             return hireRecruitsTx(id);
         });

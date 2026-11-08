@@ -13,6 +13,7 @@ import {
     useChainRecruits,
     useGhostsAccount,
     useGhostsAction,
+    type ChainAccount,
     type ChainRecruit,
 } from "../chain";
 import type { ChainGame } from "../chain/bcs";
@@ -357,7 +358,22 @@ function Field({
     );
 }
 
-const HEADLINES: Record<Outcome | "ended", [title: string, detail: string]> = {
+/**
+ * How a game wrapped up before this screen saw it end, as the `Account` scores it:
+ * an opponent who walks out wraps the game up in the same transaction.
+ */
+type Settled = "settled-win" | "settled-loss" | "settled-draw";
+type Score = ChainAccount["score"];
+
+/** Which result the `Account` gained since the game started; null while it has none. */
+function settledOutcome(before: Score, after: Score): Settled | null {
+    if (Number(after.wins) > Number(before.wins)) return "settled-win";
+    if (Number(after.losses) > Number(before.losses)) return "settled-loss";
+    if (Number(after.draws) > Number(before.draws)) return "settled-draw";
+    return null;
+}
+
+const HEADLINES: Record<Outcome | Settled | "ended", [title: string, detail: string]> = {
     victory: ["Victory", "The other side is down. Your survivors are coming home."],
     defeat: ["Defeat", "Your squad is gone. Their dog tags go on the wall."],
     draw: ["Draw", "Nobody walked away from this one."],
@@ -371,10 +387,14 @@ const HEADLINES: Record<Outcome | "ended", [title: string, detail: string]> = {
     "opponent-forfeited": ["Victory", "Your opponent stopped playing. Your squad is coming home."],
     "no-show": ["No squad deployed", "You can't search for a match for a minute."],
     "opponent-no-show": ["Victory", "Your opponent never deployed. Your squad is coming home."],
+    "settled-win": ["Victory", "Your opponent is out of the match. Your squad is coming home."],
+    "settled-loss": ["Defeat", "The match went to your opponent. Whoever survived is home."],
+    "settled-draw": ["Draw", "Nobody won this one. Your survivors are coming home."],
     ended: ["Match over", "The match is finished, and whoever survived is home."],
 };
 
-const WINS: (Outcome | "ended")[] = [
+const WINS: (Outcome | Settled | "ended")[] = [
+    "settled-win",
     "victory",
     "opponent-abandoned",
     "opponent-forfeited",
@@ -394,7 +414,7 @@ function Result({
     action,
     report,
 }: {
-    outcome: Outcome | "ended";
+    outcome: Outcome | Settled | "ended";
     gone: boolean;
     gameId: string;
     players: string[];
@@ -496,10 +516,14 @@ export default function Match() {
     const [confirming, setConfirming] = useState(false);
     const [abandoned, setAbandoned] = useState(false);
     const [played, setPlayed] = useState(false);
-    // The rating going in, for what the game did to it once it is wrapped up.
-    const ratingAtStart = useRef<number | null>(null);
-    if (playing && account.data && ratingAtStart.current === null)
-        ratingAtStart.current = Number(account.data.rating.rating);
+    // The `Account` going in, for what the game did to it once it is wrapped up.
+    const atStart = useRef<{ rating: number; credits: number; score: Score } | null>(null);
+    if (playing && account.data && atStart.current === null)
+        atStart.current = {
+            rating: Number(account.data.rating.rating),
+            credits: Number(account.data.credits),
+            score: account.data.score,
+        };
     const ended = !!game.data && (isOver(game.data) || gone);
     useEffect(() => {
         if (!ended) return;
@@ -517,7 +541,16 @@ export default function Match() {
 
     const over = isOver(game.data);
     const finished = over || gone;
-    const outcome = abandoned ? "abandoned" : over ? outcomeFor(game.data, side) : "ended";
+    // Wrapped up and deleted before the last read saw it end: the `Account` says how.
+    const settled =
+        gone && !over && atStart.current && account.data
+            ? settledOutcome(atStart.current.score, account.data.score)
+            : null;
+    const outcome = abandoned
+        ? "abandoned"
+        : over
+          ? outcomeFor(game.data, side)
+          : (settled ?? "ended");
     const fieldReady = (inGame.data?.length ?? 0) >= unitsOnMap(game.data).length;
     const abandon = () => setConfirming(true);
     const showResult = finished && (played || abandoned || game.data.deploying || !fieldReady);
@@ -525,13 +558,15 @@ export default function Match() {
 
     const earned = earningsFor(game.data, side);
     const ratingNow = Number(account.data?.rating.rating ?? 0);
+    const start = atStart.current;
+    const rating =
+        gone && start && ratingNow !== start.rating
+            ? ([start.rating, ratingNow] as [number, number])
+            : null;
     const report = over
         ? {
               credits: earned.credits,
-              rating:
-                  gone && ratingAtStart.current !== null && ratingNow !== ratingAtStart.current
-                      ? ([ratingAtStart.current, ratingNow] as [number, number])
-                      : null,
+              rating,
               squad: (inGame.data ?? [])
                   .filter((r) => mine.includes(r.objectId))
                   .map((r) => {
@@ -545,7 +580,30 @@ export default function Match() {
                   }),
               fallen: game.data.fallen[side].map((tag) => tag.metadata.name),
           }
-        : undefined;
+        : settled && start
+          ? {
+                // What the wrap-up paid, and what the squad came home with.
+                credits: Number(account.data?.credits ?? 0) - start.credits,
+                rating,
+                squad: (inGame.data ?? [])
+                    .filter((r) => mine.includes(r.objectId))
+                    .flatMap((r) => {
+                        const home = recruits.data?.find((h) => h.objectId === r.objectId);
+                        if (!home) return [];
+                        return [
+                            {
+                                name: r.metadata.name,
+                                xp: home.xp - r.xp,
+                                promotion:
+                                    home.rank.$kind === r.rank.$kind
+                                        ? null
+                                        : `Promoted to ${home.rank.$kind}`,
+                            },
+                        ];
+                    }),
+                fallen: game.data.fallen[side].map((tag) => tag.metadata.name),
+            }
+          : undefined;
 
     return (
         <>
