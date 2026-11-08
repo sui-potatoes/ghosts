@@ -40,12 +40,12 @@ export const MAX_RECRUITS = 8;
 /** What a recruit costs past the free squad. */
 export const HIRE_PRICE = 50;
 
-/** Voice configurations: four on chain, the interface ships the first two. */
+/** Voice configurations: the four on chain, all recorded. */
 export const VOICES = [
     { id: 0, label: "Male · 01", available: true },
     { id: 1, label: "Female · 01", available: true },
-    { id: 2, label: "Male · 02", available: false },
-    { id: 3, label: "Female · 02", available: false },
+    { id: 2, label: "Male · 02", available: true },
+    { id: 3, label: "Female · 02", available: true },
 ] as const;
 
 /** A weapon upgrade's mint function in `ghosts::items`, by catalog family. */

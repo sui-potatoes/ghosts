@@ -4,7 +4,8 @@
 /**
  * Operative voice lines. Recordings live in `public/sounds` as
  * `<phrase>-<sex>-<NN>.mp3`; a voice is a sex plus a two-digit index, so a
- * character can later be given a different voice of the same sex. The player
+ * character can later be given a different voice of the same sex. Which
+ * ElevenLabs voice and text made each file: `app/public/sounds/README.md`. The player
  * asks for its level on every line; `audio.ts` answers from the shell settings.
  */
 
@@ -44,6 +45,8 @@ export const PHRASES: Record<VoiceEvent, string[]> = {
 export const RECORDED: Voice[] = [
   { sex: "male", index: 1 },
   { sex: "female", index: 1 },
+  { sex: "male", index: 2 },
+  { sex: "female", index: 2 },
 ];
 
 export const DEFAULT_VOICE_INDEX = 1;

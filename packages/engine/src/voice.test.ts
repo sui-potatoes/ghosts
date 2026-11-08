@@ -19,7 +19,8 @@ test("line files are named phrase, sex and two-digit voice index", () => {
   assert.equal(lineUrl("frag-out", { sex: "female", index: 12 }), "/sounds/frag-out-female-12.mp3");
   assert.ok(isRecorded({ sex: "male", index: 1 }));
   assert.ok(isRecorded({ sex: "female", index: 1 }));
-  assert.ok(!isRecorded({ sex: "male", index: 2 }));
+  assert.ok(isRecorded({ sex: "female", index: 2 }));
+  assert.ok(!isRecorded({ sex: "male", index: 3 }));
 });
 
 test("voice loading cannot revive an interrupted line; pause and disposal control the radio channel", async (t) => {
