@@ -3,9 +3,13 @@
 Generic rating-based matchmaking for two-player games on Sui. A game package creates a
 `Matchmaker<T>` for a type `T` it defines, shares it, and calls two functions:
 
-- `find_game` - pair the sender with a compatible waiting player drawn at random, or queue
-  them under a fresh order ID.
-- `cancel_game` - leave the queue.
+- `find_game` - pair a player with a compatible waiting player drawn at random, or queue them
+  under a fresh order ID.
+- `remove_ticket` - take a player out of the queue.
+
+Players are identified by an ID the game vouches for, typically the ID of their account object,
+never by the transaction sender. The game proves who a player is before calling in; both
+functions take its `internal::Permit<T>`.
 
 The matchmaker knows nothing about how ratings are computed or stored. The caller passes the
 player's rating and a window, the tolerance in rating points this player accepts right now. Two
@@ -38,10 +42,11 @@ use sui::{clock::Clock, random::Random, table::Table};
 /// Identifies this game's queue; only this module can create `internal::Permit<RANKED>`.
 public struct RANKED()
 
-/// Ratings live in the game package, not in the matchmaker.
-public struct Ladder has key {
+/// A player's account: the game decides who may use it, the matchmaker sees only its ID.
+public struct Player has key {
     id: UID,
-    ratings: Table<address, Rating>,
+    owner: address,
+    rating: Rating,
 }
 
 fun init(ctx: &mut TxContext) {
@@ -51,49 +56,52 @@ fun init(ctx: &mut TxContext) {
 /// Queue up, or start a game right away if a compatible opponent is waiting. Not public, so the
 /// random draw cannot be inspected and reverted by the caller.
 entry fun find(
-    ladder: &Ladder,
+    player: &Player,
     mm: &mut Matchmaker<RANKED>,
     rng: &Random,
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    let rating = ladder.ratings[ctx.sender()];
-    let window = rating.current_deviation(clock.timestamp_ms());
+    assert!(player.owner == ctx.sender());
+    let window = player.rating.current_deviation(clock.timestamp_ms());
     let mut rng = rng.new_generator(ctx);
     let permit = internal::permit<RANKED>();
+    let id = object::id(player);
 
-    let (_order, found) = matchmaker::find_game(permit, mm, &mut rng, clock, rating.rating(), window, ctx);
+    let (_order, found) = matchmaker::find_game(
+        permit, mm, id, &mut rng, clock, player.rating.rating(), window, ctx,
+    );
     found.do!(|m| {
-        // m.players() is [waiting player, sender]; create the game here
+        // m.players() is [waiting player, this player]; create the game here
     });
 }
 
 /// Bail out of the queue.
-public fun cancel(mm: &mut Matchmaker<RANKED>, ctx: &mut TxContext) {
-    mm.cancel_game(ctx)
+public fun cancel(player: &Player, mm: &mut Matchmaker<RANKED>, ctx: &mut TxContext) {
+    assert!(player.owner == ctx.sender());
+    matchmaker::remove_ticket(internal::permit<RANKED>(), mm, object::id(player))
 }
 ```
 
-`find_game` returns the sender's order ID either way, and a `Match` carries the ID of the waiting
+`find_game` returns the player's order ID either way, and a `Match` carries the ID of the waiting
 player's order. The matchmaker emits no events: the game package records the outcome wherever its
-players can read it.
+players can read it, for example by sending the waiting player an object to receive.
 
 ## API
 
 - `new<T>(permit, config, ctx)` / `share(mm)` - create and share a matchmaker.
-- `find_game<T>(permit, &mut mm, &mut rng, &clock, rating, window, ctx): (ID, Option<Match>)` -
-  queue or pair; returns the sender's order ID. Aborts with `EAlreadyQueued` if the sender has a
-  live ticket; an expired one is replaced.
-- `cancel_game(&mut mm, ctx)` - leave the queue. Aborts with `ENotQueued` if not waiting.
-- `remove_ticket<T>(permit, &mut mm, player)` - remove another player's ticket; the module defining
-  `T` decides when. Aborts with `ENotQueued` if they are not waiting.
+- `find_game<T>(permit, &mut mm, player, &mut rng, &clock, rating, window, ctx): (ID, Option<Match>)` -
+  queue or pair `player`; returns their order ID. Aborts with `EAlreadyQueued` if the player
+  has a live ticket; an expired one is replaced.
+- `remove_ticket<T>(permit, &mut mm, player)` - take a player's ticket out; the module defining
+  `T` decides who may and when. Aborts with `ENotQueued` if they are not waiting.
 - `set_config<T>(permit, &mut mm, config)` - replace the parameters; only while the queue is
   empty.
 - `new_config(bucket_size, bucket_capacity, window_step, window_step_ms, max_window, ticket_ttl_ms)`
   / `default_config()`.
 - `is_queued(&mm, player)`, `queue_length(&mm)`, `config(&mm)` - reads.
-- `Match`: `match_id()` - the waiting player's order ID, `players()` - the first player is the
-  one who waited.
+- `Match`: `match_id()` - the waiting player's order ID, `players()` - the IDs of the two
+  players, the first the one who waited.
 
 ## Matching rules
 
@@ -112,7 +120,7 @@ players can read it.
 Tickets live in dynamic fields keyed by rating bucket (`rating / bucket_size`, capped at 255),
 each a vector of at most `bucket_capacity` tickets; a full bucket evicts its oldest ticket. A
 `u256` bitmap in the shared object records which buckets are non-empty, and a `Table` maps each
-waiting player to their bucket. The shared object itself never grows.
+waiting player's ID to their bucket. The shared object itself never grows.
 
 | Case                    | Dynamic field operations                                    | Vector work                |
 | ----------------------- | ----------------------------------------------------------- | -------------------------- |

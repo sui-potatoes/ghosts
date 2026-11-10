@@ -56,21 +56,19 @@ export default function MainMenu() {
                 tag: `suspended ${Math.ceil((suspendedUntilMs - now) / 60_000)}m`,
                 disabled: true,
             }
-          : match.matched
-            ? { id: "match", label: "Match Found", tag: "starting" }
-            : match.searching
-              ? {
-                    id: "match",
-                    label: "Cancel Search",
-                    tag: <SearchClock sinceMs={Number(match.searching.sinceMs)} />,
-                    onClick: match.cancel,
-                }
-              : {
-                    id: "match",
-                    label: "Find Match",
-                    tag: match.hiring ? "hiring squad" : undefined,
-                    onClick: account ? match.find : requestSignIn,
-                };
+          : match.searching
+            ? {
+                  id: "match",
+                  label: "Cancel Search",
+                  tag: <SearchClock sinceMs={Number(match.searching.sinceMs)} />,
+                  onClick: match.cancel,
+              }
+            : {
+                  id: "match",
+                  label: "Find Match",
+                  tag: match.hiring ? "hiring squad" : undefined,
+                  onClick: account ? match.find : requestSignIn,
+              };
 
     // The local playtest is available with or without a connected account.
     const entries: Entry[] = [

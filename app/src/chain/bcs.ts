@@ -108,9 +108,11 @@ export const Rating = bcs.struct("Rating", {
 export const Search = bcs.enum("Search", {
     Idle: null,
     Searching: bcs.struct("Searching", { order: bcs.Address, sinceMs: bcs.u64() }),
-    Matched: bcs.struct("Matched", { matchId: bcs.Address, opponent: bcs.Address }),
     Playing: bcs.Address,
 });
+
+/** `ghosts::ghosts::Seat`: a place in `game`, sent to the `Account` a match found waiting. */
+export const Seat = bcs.struct("Seat", { id: bcs.Address, game: bcs.Address });
 
 /** `ghosts::account::Score`: how a player's games ended. */
 export const Score = bcs.struct("Score", {

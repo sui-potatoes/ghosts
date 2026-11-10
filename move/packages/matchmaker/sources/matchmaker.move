@@ -4,11 +4,13 @@
 /// Generic rating-based matchmaking for two-player games.
 ///
 /// A game package creates a `Matchmaker<T>` for a type `T` it defines, proving
-/// ownership with `internal::Permit<T>`, and shares it. Players enter the queue
-/// through `find_game`, which either pairs the caller with a compatible waiting
-/// player and returns a `Match`, or leaves a `Ticket` in the queue. Either way
-/// the call gets an order ID, and a `Match` carries the ID of the waiting
-/// player's order. A waiting player bails out with `cancel_game`.
+/// ownership with `internal::Permit<T>`, and shares it. Players are identified by
+/// an ID the game vouches for, such as the ID of their account object, never by
+/// the sender. They enter the queue through `find_game`, which either pairs them
+/// with a compatible waiting player and returns a `Match`, or leaves a `Ticket`
+/// in the queue. Either way the call gets an order ID, and a `Match` carries the
+/// ID of the waiting player's order. The game takes a ticket out with
+/// `remove_ticket`.
 ///
 /// The opponent is drawn at random among the compatible tickets of the nearest
 /// buckets, so a player cannot steer who they are paired with by timing their
@@ -31,9 +33,9 @@ module matchmaker::matchmaker;
 
 use sui::{clock::Clock, dynamic_field as df, random::RandomGenerator, table::{Self, Table}};
 
-/// Sender already has a live ticket in the queue.
+/// The player already has a live ticket in the queue.
 const EAlreadyQueued: u64 = 0;
-/// Sender has no ticket in the queue.
+/// The player has no ticket in the queue.
 const ENotQueued: u64 = 1;
 /// Config has a zero size, capacity or interval.
 const EInvalidConfig: u64 = 2;
@@ -50,7 +52,7 @@ public struct Matchmaker<phantom T> has key {
     /// Bit `i` is set while bucket `i` holds tickets.
     occupied: u256,
     /// Waiting player to the bucket holding their ticket.
-    players: Table<address, u8>,
+    players: Table<ID, u8>,
     /// Number of waiting tickets.
     size: u64,
 }
@@ -77,7 +79,7 @@ public struct Bucket(u8) has copy, drop, store;
 public struct Ticket has copy, drop, store {
     /// Order ID returned by `find_game`.
     id: ID,
-    player: address,
+    player: ID,
     rating: u64,
     window: u64,
     since_ms: u64,
@@ -87,7 +89,7 @@ public struct Ticket has copy, drop, store {
 /// the one of their order.
 public struct Match has copy, drop, store {
     id: ID,
-    players: vector<address>,
+    players: vector<ID>,
 }
 
 // === Setup ===
@@ -145,29 +147,29 @@ public fun default_config(): Config {
 
 // === Matchmaking ===
 
-/// Look for an opponent. Returns the sender's order ID, and a `Match` when a
-/// compatible player is already waiting; otherwise the sender is queued under
-/// that order ID.
+/// Look for an opponent for `player`. Returns their order ID, and a `Match` when
+/// a compatible player is already waiting; otherwise `player` is queued under
+/// that order ID. The `Permit` makes the game answer for who `player` is.
 ///
-/// `rating` is the caller's current rating and `window` the number of rating
+/// `rating` is the player's current rating and `window` the number of rating
 /// points they are willing to deviate right now (before growth from waiting).
 /// Non-empty buckets are visited nearest first and the search stops at the
 /// first ring holding compatible tickets. The opponent is drawn from them at
 /// random: one of the closest within bucket granularity, but not one the
 /// caller can pick.
 ///
-/// Aborts if the sender already has a live ticket; an expired one is replaced.
+/// Aborts if the player already has a live ticket; an expired one is replaced.
 #[allow(lint(public_random))]
 public fun find_game<T>(
     _: internal::Permit<T>,
     mm: &mut Matchmaker<T>,
+    player: ID,
     rng: &mut RandomGenerator,
     clock: &Clock,
     rating: u64,
     window: u64,
     ctx: &mut TxContext,
 ): (ID, Option<Match>) {
-    let player = ctx.sender();
     let now = clock.timestamp_ms();
 
     if (mm.players.contains(player)) {
@@ -228,15 +230,10 @@ public fun find_game<T>(
     (id, option::some(Match { id: opponent.id, players: vector[opponent.player, player] }))
 }
 
-/// Leave the queue. Aborts if the sender is not queued.
-public fun cancel_game<T>(mm: &mut Matchmaker<T>, ctx: &mut TxContext) {
-    mm.leave(ctx.sender());
-}
-
-/// Remove a player's ticket whoever the sender is. The `Permit` leaves the
-/// decision to the module defining `T`, for example to clear a search that
+/// Take a player's ticket out of the queue. The `Permit` leaves who may to the
+/// module defining `T`: the player leaving, or anyone clearing a search that
 /// timed out. Aborts if the player is not queued.
-public fun remove_ticket<T>(_: internal::Permit<T>, mm: &mut Matchmaker<T>, player: address) {
+public fun remove_ticket<T>(_: internal::Permit<T>, mm: &mut Matchmaker<T>, player: ID) {
     mm.leave(player);
 }
 
@@ -244,7 +241,7 @@ public fun remove_ticket<T>(_: internal::Permit<T>, mm: &mut Matchmaker<T>, play
 
 /// Whether a player has a ticket in the queue. Expired tickets count until
 /// their bucket is next visited.
-public fun is_queued<T>(mm: &Matchmaker<T>, player: address): bool {
+public fun is_queued<T>(mm: &Matchmaker<T>, player: ID): bool {
     mm.players.contains(player)
 }
 
@@ -258,7 +255,7 @@ public fun config<T>(mm: &Matchmaker<T>): Config { mm.config }
 public fun match_id(m: &Match): ID { m.id }
 
 /// The two paired players, the one who waited first.
-public fun players(m: &Match): vector<address> { m.players }
+public fun players(m: &Match): vector<ID> { m.players }
 
 #[test_only]
 /// Bitmap of non-empty buckets.
@@ -267,7 +264,7 @@ public fun occupied<T>(mm: &Matchmaker<T>): u256 { mm.occupied }
 // === Internal ===
 
 /// Take a player's ticket out of the queue; aborts if they have none.
-fun leave<T>(mm: &mut Matchmaker<T>, player: address) {
+fun leave<T>(mm: &mut Matchmaker<T>, player: ID) {
     assert!(mm.players.contains(player), ENotQueued);
     let bucket = mm.players[player];
     mm.take(bucket, player);
@@ -353,7 +350,7 @@ fun insert<T>(mm: &mut Matchmaker<T>, ticket: Ticket) {
 
 /// Remove a player's ticket from a bucket. Removes the bucket if it ends up
 /// empty.
-fun take<T>(mm: &mut Matchmaker<T>, bucket: u8, player: address): Ticket {
+fun take<T>(mm: &mut Matchmaker<T>, bucket: u8, player: ID): Ticket {
     let tickets: &mut vector<Ticket> = df::borrow_mut(&mut mm.id, Bucket(bucket));
     let index = tickets.find_index!(|t| t.player == player).destroy_some();
     let ticket = tickets.remove(index);

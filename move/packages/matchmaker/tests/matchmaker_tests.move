@@ -27,7 +27,8 @@ fun ctx_for(sender: address): TxContext {
     tx_context::new_from_hint(sender, sender.to_u256() as u64, 0, 0, 0)
 }
 
-/// `find_game` as `sender` with the test permit and a fixed seed.
+/// `find_game` for the player `sender` stands for, with the test permit and a
+/// fixed seed. The sender only makes the order IDs differ; the player is an ID.
 fun find_game(
     mm: &mut Matchmaker<TEST>,
     clock: &Clock,
@@ -37,7 +38,14 @@ fun find_game(
 ): (ID, Option<matchmaker::Match>) {
     let mut rng = random::new_generator_from_seed_for_testing(b"matchmaker");
     let ctx = &mut ctx_for(sender);
-    matchmaker::find_game(internal::permit<TEST>(), mm, &mut rng, clock, rating, window, ctx)
+    let player = sender.to_id();
+    let permit = internal::permit<TEST>();
+    matchmaker::find_game(permit, mm, player, &mut rng, clock, rating, window, ctx)
+}
+
+/// Take the ticket of the player `sender` stands for out of the queue.
+fun leave(mm: &mut Matchmaker<TEST>, sender: address) {
+    matchmaker::remove_ticket(internal::permit<TEST>(), mm, sender.to_id());
 }
 
 /// `find_game` without the order ID.
@@ -53,19 +61,19 @@ fun find(
 }
 
 #[test]
-fun queue_and_cancel() {
+fun queue_and_leave() {
     let (mut mm, clock) = setup();
 
     let found = find(&mut mm, &clock, ALICE, 1500, 350);
     assert!(found.is_none());
     found.destroy_none();
 
-    assert!(mm.is_queued(ALICE));
+    assert!(mm.is_queued(ALICE.to_id()));
     assert_eq!(mm.queue_length(), 1);
     assert_eq!(mm.occupied(), 1u256 << 15); // bucket 1500 / 100
 
-    mm.cancel_game(&mut ctx_for(ALICE));
-    assert!(!mm.is_queued(ALICE));
+    leave(&mut mm, ALICE);
+    assert!(!mm.is_queued(ALICE.to_id()));
     assert_eq!(mm.queue_length(), 0);
     assert_eq!(mm.occupied(), 0);
 
@@ -80,8 +88,8 @@ fun remove_ticket_of_another_player() {
     find(&mut mm, &clock, ALICE, 1500, 350).destroy_none();
 
     // no sender involved: the permit decides
-    matchmaker::remove_ticket(internal::permit<TEST>(), &mut mm, ALICE);
-    assert!(!mm.is_queued(ALICE));
+    matchmaker::remove_ticket(internal::permit<TEST>(), &mut mm, ALICE.to_id());
+    assert!(!mm.is_queued(ALICE.to_id()));
     assert_eq!(mm.queue_length(), 0);
     assert_eq!(mm.occupied(), 0);
 
@@ -92,14 +100,7 @@ fun remove_ticket_of_another_player() {
 #[test, expected_failure(abort_code = matchmaker::ENotQueued)]
 fun remove_ticket_when_not_queued() {
     let (mut mm, _clock) = setup();
-    matchmaker::remove_ticket(internal::permit<TEST>(), &mut mm, ALICE);
-    abort
-}
-
-#[test, expected_failure(abort_code = matchmaker::ENotQueued)]
-fun cancel_when_not_queued() {
-    let (mut mm, _clock) = setup();
-    mm.cancel_game(&mut ctx_for(ALICE));
+    matchmaker::remove_ticket(internal::permit<TEST>(), &mut mm, ALICE.to_id());
     abort
 }
 
@@ -121,13 +122,13 @@ fun match_two_players() {
     let m = found.destroy_some();
 
     // waiting player comes first, and the match carries their order ID
-    assert_eq!(m.players(), vector[ALICE, BOB]);
+    assert_eq!(m.players(), vector[ALICE.to_id(), BOB.to_id()]);
     assert_eq!(m.match_id(), order);
     assert!(bob_order != order);
     assert_eq!(mm.queue_length(), 0);
     assert_eq!(mm.occupied(), 0);
-    assert!(!mm.is_queued(ALICE));
-    assert!(!mm.is_queued(BOB));
+    assert!(!mm.is_queued(ALICE.to_id()));
+    assert!(!mm.is_queued(BOB.to_id()));
 
     destroy(mm);
     clock.destroy_for_testing();
@@ -141,7 +142,7 @@ fun match_across_buckets() {
     find(&mut mm, &clock, ALICE, 1495, 30).destroy_none();
     assert_eq!(mm.occupied(), 1u256 << 14);
     let m = find(&mut mm, &clock, BOB, 1505, 30);
-    assert_eq!(m.destroy_some().players(), vector[ALICE, BOB]);
+    assert_eq!(m.destroy_some().players(), vector[ALICE.to_id(), BOB.to_id()]);
     assert_eq!(mm.queue_length(), 0);
 
     destroy(mm);
@@ -160,8 +161,8 @@ fun ratings_above_range_share_top_bucket() {
     assert_eq!(mm.queue_length(), 2);
 
     let m = find(&mut mm, &clock, CAROL, 1_000_000, 0);
-    assert_eq!(m.destroy_some().players(), vector[ALICE, CAROL]);
-    assert!(mm.is_queued(BOB));
+    assert_eq!(m.destroy_some().players(), vector[ALICE.to_id(), CAROL.to_id()]);
+    assert!(mm.is_queued(BOB.to_id()));
 
     destroy(mm);
     clock.destroy_for_testing();
@@ -185,15 +186,15 @@ fun window_expands_with_waiting() {
 
     // t = 5m: Alice's window is 550, Bob re-queues fresh with 50
     clock.set_for_testing(5 * MINUTE);
-    mm.cancel_game(&mut ctx_for(BOB));
+    leave(&mut mm, BOB);
     find(&mut mm, &clock, BOB, 2000, 50).destroy_none();
     assert_eq!(mm.queue_length(), 2);
 
     // t = 10m: Alice's window is capped at 1000, 1000 + 50 covers the gap
     clock.set_for_testing(10 * MINUTE);
-    mm.cancel_game(&mut ctx_for(BOB));
+    leave(&mut mm, BOB);
     let m = find(&mut mm, &clock, BOB, 2000, 50);
-    assert_eq!(m.destroy_some().players(), vector[ALICE, BOB]);
+    assert_eq!(m.destroy_some().players(), vector[ALICE.to_id(), BOB.to_id()]);
     assert_eq!(mm.queue_length(), 0);
     assert_eq!(mm.occupied(), 0);
 
@@ -213,9 +214,9 @@ fun nearest_ring_wins() {
     // Carol at 1540 fits both, but only Alice shares her bucket: ring 0 holds a
     // compatible ticket, so the search never reaches Bob in ring 1
     let m = find(&mut mm, &clock, CAROL, 1540, 30);
-    assert_eq!(m.destroy_some().players(), vector[ALICE, CAROL]);
-    assert!(mm.is_queued(BOB));
-    assert!(!mm.is_queued(ALICE));
+    assert_eq!(m.destroy_some().players(), vector[ALICE.to_id(), CAROL.to_id()]);
+    assert!(mm.is_queued(BOB.to_id()));
+    assert!(!mm.is_queued(ALICE.to_id()));
 
     destroy(mm);
     clock.destroy_for_testing();
@@ -237,12 +238,22 @@ fun opponent_is_drawn_at_random() {
         let mut rng = random::new_generator_from_seed_for_testing(seed);
         let ctx = &mut ctx_for(CAROL);
         let permit = internal::permit<TEST>();
-        let (_, m) = matchmaker::find_game(permit, &mut mm, &mut rng, &clock, 1590, 100, ctx);
+        let carol = CAROL.to_id();
+        let (_, m) = matchmaker::find_game(
+            permit,
+            &mut mm,
+            carol,
+            &mut rng,
+            &clock,
+            1590,
+            100,
+            ctx,
+        );
         let waited = m.destroy_some().players()[0];
         if (!drawn.contains(&waited)) drawn.push_back(waited);
 
         // the other one leaves, the queue is empty for the next draw
-        mm.cancel_game(&mut ctx_for(if (waited == ALICE) BOB else ALICE));
+        leave(&mut mm, if (waited == ALICE.to_id()) BOB else ALICE);
         assert_eq!(mm.queue_length(), 0);
     });
 
@@ -266,8 +277,8 @@ fun expired_tickets_are_pruned() {
     // Bob arrives after Alice's ticket expired: no match, Alice is gone
     clock.set_for_testing(2 * MINUTE);
     find(&mut mm, &clock, BOB, 1500, 350).destroy_none();
-    assert!(!mm.is_queued(ALICE));
-    assert!(mm.is_queued(BOB));
+    assert!(!mm.is_queued(ALICE.to_id()));
+    assert!(mm.is_queued(BOB.to_id()));
     assert_eq!(mm.queue_length(), 1);
     assert_eq!(mm.occupied(), 1u256 << 15);
 
@@ -289,12 +300,12 @@ fun expired_own_ticket_is_replaced() {
     // Alice comes back after her ticket expired: re-queued, not aborted
     clock.set_for_testing(2 * MINUTE);
     find(&mut mm, &clock, ALICE, 1500, 350).destroy_none();
-    assert!(mm.is_queued(ALICE));
+    assert!(mm.is_queued(ALICE.to_id()));
     assert_eq!(mm.queue_length(), 1);
 
     // and the fresh ticket is matchable
     let m = find(&mut mm, &clock, BOB, 1500, 350);
-    assert_eq!(m.destroy_some().players(), vector[ALICE, BOB]);
+    assert_eq!(m.destroy_some().players(), vector[ALICE.to_id(), BOB.to_id()]);
 
     destroy(mm);
     clock.destroy_for_testing();
@@ -316,9 +327,9 @@ fun full_bucket_evicts_oldest() {
 
     find(&mut mm, &clock, CAROL, 1502, 0).destroy_none();
     assert_eq!(mm.queue_length(), 2);
-    assert!(!mm.is_queued(ALICE));
-    assert!(mm.is_queued(BOB));
-    assert!(mm.is_queued(CAROL));
+    assert!(!mm.is_queued(ALICE.to_id()));
+    assert!(mm.is_queued(BOB.to_id()));
+    assert!(mm.is_queued(CAROL.to_id()));
 
     destroy(mm);
     clock.destroy_for_testing();
@@ -333,7 +344,7 @@ fun zero_window_requires_exact_rating() {
     assert_eq!(mm.queue_length(), 2);
 
     let m = find(&mut mm, &clock, CAROL, 1500, 0);
-    assert_eq!(m.destroy_some().players(), vector[ALICE, CAROL]);
+    assert_eq!(m.destroy_some().players(), vector[ALICE.to_id(), CAROL.to_id()]);
 
     destroy(mm);
     clock.destroy_for_testing();

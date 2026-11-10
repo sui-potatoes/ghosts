@@ -28,10 +28,10 @@ export const GHOSTS: {
     matchmaker: string;
     preset: string;
 } = {
-    package: "0x4f8185ac8635183a930bb6f0e03066a101da08226bb4d007167def4755019669",
-    registry: "0xcf4f9f6db6633a75bd2a300a3fc446bbc9ff765bc75dbb9b9124a48035b7b9ec",
-    matchmaker: "0xb5cea6ea414f22709ff12a5ec428439edf9a6e38e837844bb073aa29b5817fb2",
-    preset: "0x44fa50392011fe2419a7a7ffa18dee9fc4797ff95697f352c8fe574524220a9e",
+    package: "0x94c1cb19df8160b586a3a9431afa52c1b84c5052ac85ee1d699b2615fbdff76d",
+    registry: "0x2e7ee10f81543b23b2e37647815f3dd34c72e0b3940418d99167f140095df1bf",
+    matchmaker: "0x95849bf329c842bb89de2ef9ee1b4eb8898cfc9af07ab318750eb0fe816fcf77",
+    preset: "0x2fc191b8dce78d15a09e5331fb9fcfaab0a08c82d98d12b55e23aacfa972a42b",
 };
 
 /** Same Google OAuth client as `app/`; both origins are registered on it. */

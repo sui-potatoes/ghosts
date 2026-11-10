@@ -403,6 +403,8 @@ export function friendlyError(e: unknown): string {
         return "Not enough credits.";
     if (/function_name: Some\("equip_\w+"\).*, 8\)/.test(message))
         return "That recruit's rank is too low for this gear.";
+    if (/function_name: Some\("cancel_search"\).*, 25\)/.test(message))
+        return "A match was just found: joining it.";
     return message;
 }
 

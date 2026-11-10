@@ -32,10 +32,6 @@ const ENotOwner: u64 = 1;
 const ERecruitLimitReached: u64 = 2;
 /// Invalid voice configuration passed to the recruit editor.
 const EInvalidVoice: u64 = 3;
-/// Trying to notify an opponent from an `Account` that holds no match.
-const ENotMatched: u64 = 4;
-/// Trying to mark an `Account` that is not waiting on the sender's match.
-const ENotOpponent: u64 = 5;
 /// Trying to hire while the squad is in a game.
 const EInGame: u64 = 6;
 
@@ -95,7 +91,8 @@ public struct Account has key {
     /// Glicko rating the player is matched by in `ghosts::find_game`.
     rating: Rating,
     /// Where the player stands in matchmaking. Anything but `Idle` blocks
-    /// another search until `ghosts::cancel_search` clears it.
+    /// another search: `ghosts::cancel_search` clears a search still in the
+    /// queue, and the end of the game clears playing it.
     search: Search,
     /// The player cannot search for a game before this time, after misbehaving.
     suspended_until_ms: u64,
@@ -113,14 +110,14 @@ public struct Score has copy, drop, store {
     draws: u64,
 }
 
-/// An `Account`'s place in matchmaking; this is all there is to poll.
+/// An `Account`'s place in matchmaking. A search a match found stays `Searching`
+/// until the `ghosts::Seat` sent to the `Account` is accepted, which makes it
+/// `Playing`.
 public enum Search has copy, drop, store {
     /// Not looking for a game.
     Idle,
-    /// An order sits in the queue since `since_ms`.
+    /// An order went into the queue at `since_ms`.
     Searching { order: ID, since_ms: u64 },
-    /// Paired with `opponent` under `match_id`, the waiting player's order.
-    Matched { match_id: ID, opponent: address },
     /// In the game with this ID.
     Playing(ID),
 }
@@ -418,47 +415,13 @@ public(package) fun start_search(acc: &mut Account, order: ID, since_ms: u64) {
     acc.search = Search::Searching { order, since_ms };
 }
 
-/// Record a pairing with `opponent` under the waiting player's order.
-public(package) fun set_matched(acc: &mut Account, match_id: ID, opponent: address) {
-    acc.search = Search::Matched { match_id, opponent };
-}
-
-/// Put both players of a match into `game`: `acc`, holding the match, and
-/// `waiting`, who must still be waiting on it (see `is_waited_on_by`), so a later
-/// search of theirs, or a player long gone, stays untouched.
-public(package) fun start_match(
-    acc: &mut Account,
-    waiting: &mut Account,
-    game: ID,
-    now_ms: u64,
-    timeout_ms: u64,
-) {
-    assert!(acc.is_waited_on_by(waiting, now_ms, timeout_ms), ENotOpponent);
-
+/// Put the player into `game`.
+public(package) fun set_playing(acc: &mut Account, game: ID) {
     acc.search = Search::Playing(game);
-    waiting.search = Search::Playing(game);
 }
 
-/// Whether the player `acc` is matched with is still there: it is their
-/// `Account`, on the same order, and within `timeout_ms` of leaving it.
-public(package) fun is_waited_on_by(
-    acc: &Account,
-    other: &Account,
-    now_ms: u64,
-    timeout_ms: u64,
-): bool {
-    let (match_id, opponent) = match (&acc.search) {
-        Search::Matched { match_id, opponent } => (*match_id, *opponent),
-        _ => abort ENotMatched,
-    };
-
-    other.owner == opponent && match (&other.search) {
-        Search::Searching { order, since_ms } => {
-            *order == match_id && now_ms - *since_ms <= timeout_ms
-        },
-        _ => false,
-    }
-}
+/// The `Account`'s `UID`, for taking what was sent to it.
+public(package) fun uid_mut(acc: &mut Account): &mut UID { &mut acc.id }
 
 /// Back to `Idle`.
 public(package) fun clear_search(acc: &mut Account) {
@@ -527,15 +490,7 @@ public fun owner(acc: &Account): address { acc.owner }
 /// Get the player's Glicko rating.
 public fun rating(acc: &Account): Rating { acc.rating }
 
-/// Whether the player holds a match they have yet to start.
-public fun is_matched(acc: &Account): bool {
-    match (&acc.search) {
-        Search::Matched { .. } => true,
-        _ => false,
-    }
-}
-
-/// Whether the player is neither searching nor holding a match.
+/// Whether the player is neither searching nor in a game.
 public fun is_idle(acc: &Account): bool {
     match (&acc.search) {
         Search::Idle => true,
@@ -547,14 +502,6 @@ public fun is_idle(acc: &Account): bool {
 public fun search_order(acc: &Account): Option<ID> {
     match (&acc.search) {
         Search::Searching { order, .. } => option::some(*order),
-        _ => option::none(),
-    }
-}
-
-/// Get the player's opponent, if they hold a match.
-public fun opponent(acc: &Account): Option<address> {
-    match (&acc.search) {
-        Search::Matched { opponent, .. } => option::some(*opponent),
         _ => option::none(),
     }
 }

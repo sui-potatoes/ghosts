@@ -76,16 +76,23 @@ is what the screens and the future encounter driver import.
   for, as that one may read the chain. About 0.7s a write against 3.6–4.5s
   when every read was refreshed afterwards. Ids live in `GHOSTS`
   (`src/constants.ts`); `ghostsEnabled` gates every consumer.
-- `matchmaking.ts` — Find Match over `ghosts::find_game`, `start_game`,
-  `release_match` and `cancel_search`. All state is `Account.search` (`Idle`,
-  `Searching`, `Matched`, `Playing`); there are no events to follow.
-  `useMatchSearch` reads it and sends the player's transactions;
-  `useMatchmakingDriver` (called once, by the shell's `MatchStatus`) polls the
-  `Account` while it waits, follows up on a pairing, which is the job of the
-  player who found the opponent, and opens `/match`. The follow-up starts the
-  game, or lets the match go for free once the opponent is gone; one that failed
-  shows on the chip with a retry. `cancel_search` on a match held suspends the
-  player, so nothing here sends it for that.
+- `matchmaking.ts` — Find Match over `ghosts::find_game`, `accept_seat` and
+  `cancel_search`. Players are their `Account` IDs throughout; the owner address
+  only authorizes. Whoever finds someone waiting starts the game in the same
+  transaction and is `Playing` it. The player who waited can't be in that
+  transaction (nobody knows their `Account` beforehand), so they are sent a
+  `Seat` to their `Account` ID, from the match until it is accepted: accepting
+  puts them in the game, and nothing in it happens before. Their client accepts
+  as soon as the seat shows up, their one transaction; anyone can accept, so
+  wrapping up a game (`completeGameTx`, `abandonGameTx`) accepts a seat its
+  player never did, which also hands the storage back. The queue never drops a
+  search itself, so a `Searching` `Account` is either queued (it can cancel) or
+  has its seat waiting. State is `Account.search` (`Idle`, `Searching`,
+  `Playing`) and that seat; there are no events to follow. `useCurrentGame`
+  answers which game the player is in, by either; `useMatchSearch` reads it and
+  sends the player's transactions; `useMatchmakingDriver` (called once, by the
+  shell's `MatchStatus`) polls the `Account` and its seat while it waits, accepts
+  the seat, and opens `/match` when a game starts.
 - `game.ts` — a game on chain: reading it, and the transactions for every action
   a player can take, each authorized by their `Account`. A finished game is
   deleted by `complete_game`, so its last read is all there is to show the result.

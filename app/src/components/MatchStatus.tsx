@@ -27,16 +27,21 @@ export function SearchClock({ sinceMs }: { sinceMs: number }) {
     );
 }
 
+/** No match within the search's time: OK leaves the queue. */
+function NoMatch(props: { busy: boolean; onDismiss: () => void }) {
+    return (
+        <>
+            <span className="label">No match found</span>
+            <button className="btn" disabled={props.busy} onClick={props.onDismiss}>
+                OK
+            </button>
+        </>
+    );
+}
+
 function Searching(props: { sinceMs: number; busy: boolean; onCancel: () => void }) {
     if (useElapsed(props.sinceMs) > SEARCH_TIMEOUT_MS)
-        return (
-            <>
-                <span className="label">No match found</span>
-                <button className="btn" disabled={props.busy} onClick={props.onCancel}>
-                    OK
-                </button>
-            </>
-        );
+        return <NoMatch busy={props.busy} onDismiss={props.onCancel} />;
     return (
         <>
             <svg viewBox="0 0 32 32" aria-hidden="true">
@@ -65,13 +70,11 @@ export function MatchStatus() {
     const { pathname } = useLocation();
     const pad = usePadActive();
     const navigate = useNavigate();
-    const { searching, matched, playing, busy, error, cancel } = useMatchSearch();
-    const driver = useMatchmakingDriver();
+    const { searching, playing, busy, error, cancel } = useMatchSearch();
+    useMatchmakingDriver();
 
     if (["/demo", "/editor", "/match"].some((path) => pathname.startsWith(path))) return null;
-    if (!searching && !matched && !playing) return null;
-
-    const message = error || driver.error;
+    if (!searching && !playing) return null;
 
     return (
         <div
@@ -81,15 +84,6 @@ export function MatchStatus() {
         >
             {searching ? (
                 <Searching sinceMs={Number(searching.sinceMs)} busy={busy} onCancel={cancel} />
-            ) : matched ? (
-                <>
-                    <span className="label text-accent">Match found</span>
-                    {driver.error && (
-                        <button className="btn" disabled={driver.busy} onClick={driver.retry}>
-                            Retry
-                        </button>
-                    )}
-                </>
             ) : (
                 <>
                     <span className="label text-accent">Match in progress</span>
@@ -98,7 +92,7 @@ export function MatchStatus() {
                     </button>
                 </>
             )}
-            {message && <span className="label text-warn normal-case">{message}</span>}
+            {error && <span className="label text-warn normal-case">{error}</span>}
         </div>
     );
 }
