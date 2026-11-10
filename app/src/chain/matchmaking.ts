@@ -2,22 +2,26 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Finding a match. The player's `Account` says it all: `search` is `Idle`,
- * `Searching`, `Matched` or `Playing`, and re-reading it is how a waiting player
- * learns what happened. Whoever finds someone waiting is `Matched` by their own
- * transaction and starts the game for both in a follow-up, which the shell's
- * `useMatchmakingDriver` sends. A game then lives at the `/match` screen.
+ * Finding a match. The player's `Account` says where they stand: `search` is
+ * `Idle`, `Searching` or `Playing`. Whoever finds someone waiting starts the game
+ * in the same transaction and is `Playing` it. The player who waited can't be in
+ * that transaction, so they are sent a `Seat` in the game, to their `Account`,
+ * and accepting it puts them in: their one transaction, sent as soon as the seat
+ * shows up. Anyone can accept a seat, so the other player does it on the way to
+ * wrapping up a game the seated player never came to. Re-reading the `Account`
+ * and its seat is how a waiting player learns what happened. A game then lives at
+ * the `/match` screen.
  */
 
 import { useCurrentAccount, useCurrentClient } from "@mysten/dapp-kit-react";
 import { Transaction } from "@mysten/sui/transactions";
-import { SUI_CLOCK_OBJECT_ID } from "@mysten/sui/utils";
+import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { callPlayerBack } from "../audio";
 import { GHOSTS } from "../constants";
-import { Account, Clock } from "./bcs";
+import { Account, Seat } from "./bcs";
 import {
     createAccountTx,
     fetchAccountId,
@@ -31,7 +35,7 @@ import { useSaving } from "./saving";
 
 type Client = ReturnType<typeof useCurrentClient>;
 
-/** How often a waiting player re-reads their `Account`: a match found is a second away at most. */
+/** How often a waiting player re-reads their `Account` and seat: a match found is a second away at most. */
 const POLL_MS = 1_000;
 
 /** `SEARCH_TIMEOUT_MS` in `ghosts::ghosts`: past it, anyone can cancel a search. */
@@ -39,7 +43,13 @@ export const SEARCH_TIMEOUT_MS = 120_000;
 
 const target = (fn: string) => `${GHOSTS.package}::ghosts::${fn}`;
 
-/** Pair with a compatible waiting player, or leave an order in the queue. */
+/** A `Seat` sent to an `Account`, with the reference that receives it. */
+export interface ChainSeat {
+    game: string;
+    ref: { objectId: string; version: string; digest: string };
+}
+
+/** Pair with a compatible waiting player, starting the game, or leave an order in the queue. */
 function findGameTx(accountId: string): Transaction {
     const tx = new Transaction();
     tx.moveCall({
@@ -47,6 +57,7 @@ function findGameTx(accountId: string): Transaction {
         arguments: [
             tx.object(GHOSTS.matchmaker),
             tx.object(accountId),
+            tx.object(GHOSTS.preset),
             tx.object.random(),
             tx.object.clock(),
         ],
@@ -54,7 +65,21 @@ function findGameTx(accountId: string): Transaction {
     return tx;
 }
 
-/** Leave the queue. Only for a search: walking away from a match held costs a suspension. */
+/** Accept the seat a match sent to `accountId`, putting it into the game; anyone can. */
+export function acceptSeat(tx: Transaction, accountId: string, seat: ChainSeat["ref"]) {
+    tx.moveCall({
+        target: target("accept_seat"),
+        arguments: [tx.object(accountId), tx.receivingRef(seat)],
+    });
+}
+
+function acceptSeatTx(accountId: string, seat: ChainSeat["ref"]): Transaction {
+    const tx = new Transaction();
+    acceptSeat(tx, accountId, seat);
+    return tx;
+}
+
+/** Leave the queue. A search a match found is left through its game instead. */
 function cancelSearchTx(accountId: string): Transaction {
     const tx = new Transaction();
     tx.moveCall({
@@ -64,29 +89,72 @@ function cancelSearchTx(accountId: string): Transaction {
     return tx;
 }
 
-/** Start the game this `Account` is matched for, for both players. */
-function startGameTx(accountId: string, opponentId: string): Transaction {
-    const tx = new Transaction();
-    tx.moveCall({
-        target: target("start_game"),
-        arguments: [
-            tx.object(accountId),
-            tx.object(opponentId),
-            tx.object(GHOSTS.preset),
-            tx.object.clock(),
-        ],
+/** The seats sent to an `Account`: one at most. A listing lags a write by a moment. */
+async function fetchSeats(client: Client, accountId: string): Promise<ChainSeat[]> {
+    const { objects } = await client.core.listOwnedObjects({
+        owner: accountId,
+        type: `${GHOSTS.package}::ghosts::Seat`,
+        include: { content: true },
     });
-    return tx;
+    return objects.map(({ objectId, version, digest, content }) => {
+        const { game } = Seat.parse(content);
+        return { game, ref: { objectId, version, digest } };
+    });
 }
 
-/** Let go of a match the opponent is no longer waiting on, without blame. */
-function releaseMatchTx(accountId: string, opponentId: string): Transaction {
-    const tx = new Transaction();
-    tx.moveCall({
-        target: target("release_match"),
-        arguments: [tx.object(accountId), tx.object(opponentId), tx.object.clock()],
+/**
+ * The seats in `gameId` its players have yet to accept, to accept on the way to
+ * wrapping it up: a player who never came to the game is still on their search.
+ */
+export async function fetchPendingSeats(
+    client: Client,
+    gameId: string,
+    players: string[],
+): Promise<{ accountId: string; seat: ChainSeat["ref"] }[]> {
+    const pending = await Promise.all(
+        players.map(async (accountId) => {
+            const { object } = await client.core.getObject({
+                objectId: accountId,
+                include: { content: true },
+            });
+            if (Account.parse(object.content).search.$kind !== "Searching") return [];
+            const seats = await fetchSeats(client, accountId);
+            return seats
+                .filter((seat) => seat.game === gameId)
+                .map((seat) => ({ accountId, seat: seat.ref }));
+        }),
+    );
+    return pending.flat();
+}
+
+/**
+ * The seat sent to the `Account` on its search `order`, re-read while it waits.
+ * Each search reads afresh: a seat listed for the last one, accepted since, is
+ * never taken for a new match.
+ */
+function useSeats(accountId?: string | null, order?: string | null) {
+    const client = useCurrentClient();
+    return useQuery({
+        queryKey: ["ghosts", "seats", accountId, order],
+        enabled: !!accountId && !!order,
+        refetchInterval: POLL_MS,
+        // A poll is someone waiting on the chain, and they may be in another tab.
+        refetchIntervalInBackground: true,
+        queryFn: () => fetchSeats(client, accountId!),
     });
-    return tx;
+}
+
+/**
+ * The player's game: the one they are `Playing`, or the one a seat answering their
+ * search puts them in, with that seat, until it is accepted. Null while in none.
+ */
+export function useCurrentGame(): { gameId: string | null; seat: ChainSeat | null } {
+    const accountId = useAccountId().data;
+    const search = useGhostsAccount(accountId).data?.search;
+    const order = search?.$kind === "Searching" ? search.Searching.order : null;
+    const seat = useSeats(accountId, order).data?.[0] ?? null;
+    if (search?.$kind === "Playing") return { gameId: search.Playing, seat: null };
+    return { gameId: seat?.game ?? null, seat };
 }
 
 /** The player's place in matchmaking, read off their `Account`, and what they can do about it. */
@@ -97,6 +165,7 @@ export function useMatchSearch() {
     const action = useGhostsAction();
     const busy = useSaving();
     const [hiring, setHiring] = useState(false);
+    const { gameId, seat } = useCurrentGame();
     const search = account?.search;
 
     const send = (build: (id: string) => Transaction) => {
@@ -140,9 +209,10 @@ export function useMatchSearch() {
     return {
         /** A squad is being hired on the way into the queue. */
         hiring,
-        searching: search?.$kind === "Searching" ? search.Searching : null,
-        matched: search?.$kind === "Matched" ? search.Matched : null,
-        playing: search?.$kind === "Playing" ? search.Playing : null,
+        /** The search, while it is in the queue. */
+        searching: search?.$kind === "Searching" && !seat ? search.Searching : null,
+        /** The game the player is in, or has a seat in. */
+        playing: gameId,
         suspendedUntilMs: Number(account?.suspendedUntilMs ?? 0),
         busy,
         error: action.error,
@@ -152,68 +222,40 @@ export function useMatchSearch() {
 }
 
 /**
- * Follow up on a match: start the game if the opponent is still waiting on it,
- * or let go of the match if they cancelled or ran out of time, going by the same
- * clock the contract does. A reload picks this up again.
- */
-async function followUp(
-    client: Client,
-    accountId: string,
-    matchId: string,
-    opponent: string,
-): Promise<Transaction> {
-    const opponentId = await fetchAccountId(client, opponent);
-    if (!opponentId) throw new Error("The opponent is gone. Try again.");
-
-    const read = (objectId: string) =>
-        client.core.getObject({ objectId, include: { content: true } });
-    const [theirs, clock] = await Promise.all([read(opponentId), read(SUI_CLOCK_OBJECT_ID)]);
-    const { search } = Account.parse(theirs.object.content);
-    const now = Number(Clock.parse(clock.object.content).timestampMs);
-
-    const waiting =
-        search.$kind === "Searching" &&
-        search.Searching.order === matchId &&
-        now - Number(search.Searching.sinceMs) <= SEARCH_TIMEOUT_MS;
-    return (waiting ? startGameTx : releaseMatchTx)(accountId, opponentId);
-}
-
-/**
- * Call once, inside the router: re-reads the `Account` while it waits, sends the
- * follow-up to a match, and takes the player to the game when one starts. A
- * follow-up that failed waits for `retry`, as it may take a wallet's signature.
+ * Call once, inside the router: re-reads the `Account` and its seat while it
+ * waits, accepts the seat a match sends, and takes the player to the game when
+ * one starts, theirs or one they were found for.
  */
 export function useMatchmakingDriver() {
-    const client = useCurrentClient();
     const navigate = useNavigate();
     const accountId = useAccountId().data;
-    const search = useGhostsAccount(accountId).data?.search;
-    const { run, busy, error } = useGhostsAction();
+    const account = useGhostsAccount(accountId).data;
+    const { gameId, seat } = useCurrentGame();
+    const { run } = useGhostsAction();
 
-    useGhostsAccount(accountId, search?.$kind === "Searching" ? POLL_MS : undefined);
+    useGhostsAccount(accountId, account?.search.$kind === "Searching" ? POLL_MS : undefined);
 
-    const matched = search?.$kind === "Matched" ? search.Matched : null;
-    const send = () => {
-        if (!accountId || !matched) return;
-        void run([() => followUp(client, accountId, matched.matchId, matched.opponent)]);
-    };
-    const followed = useRef<string | null>(null);
+    // The seat is accepted as soon as it shows up: the player's one transaction
+    // of the match, and nothing in the game can happen before it.
+    const accepted = useRef<string | null>(null);
     useEffect(() => {
-        if (!matched || !accountId || followed.current === matched.matchId) return;
-        followed.current = matched.matchId;
-        send();
-    }, [client, accountId, matched]);
+        if (!seat || !accountId || accepted.current === seat.ref.objectId) return;
+        accepted.current = seat.ref.objectId;
+        void run([() => acceptSeatTx(accountId, seat.ref)]).then((done) => {
+            if (!done) accepted.current = null;
+        });
+    }, [seat, accountId]);
 
-    // Into the game as it starts; the clock for picking a squad is running.
-    const kind = search?.$kind;
-    const previous = useRef(kind);
+    // Into the game as it starts; the clock for picking a squad is running. Only
+    // once the `Account` was read without one, so a reload stays where it is.
+    const read = account !== undefined;
+    const previous = useRef<string | null | undefined>(undefined);
     useEffect(() => {
-        if (kind === "Playing" && previous.current && previous.current !== "Playing") {
+        if (!read) return;
+        if (gameId && previous.current === null) {
             navigate("/match");
             callPlayerBack("Match found");
         }
-        previous.current = kind;
-    }, [kind, navigate]);
-
-    return { busy, error: matched ? error : "", retry: send };
+        previous.current = gameId;
+    }, [read, gameId, navigate]);
 }

@@ -43,7 +43,14 @@ export {
     type Requisition,
     type Step,
 } from "./ghosts";
-export { SEARCH_TIMEOUT_MS, useMatchmakingDriver, useMatchSearch } from "./matchmaking";
+export {
+    fetchPendingSeats,
+    SEARCH_TIMEOUT_MS,
+    useCurrentGame,
+    useMatchmakingDriver,
+    useMatchSearch,
+    type ChainSeat,
+} from "./matchmaking";
 export { useAssignedName, useSubmitNameChange } from "./names";
 export { canSendTransactions, sendTransaction, TransactionSender } from "./sender";
 export { trackSaving, useSaving } from "./saving";

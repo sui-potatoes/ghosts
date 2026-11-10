@@ -37,7 +37,8 @@ fun find(
 ): bool {
     let ctx = &mut tx_context::new_from_hint(player(n), n, 0, 0, 0);
     let permit = internal::permit<BENCH>();
-    let (_, found) = matchmaker::find_game(permit, mm, rng, clock, rating, window, ctx);
+    let player = player(n).to_id();
+    let (_, found) = matchmaker::find_game(permit, mm, player, rng, clock, rating, window, ctx);
     found.is_some()
 }
 
@@ -98,14 +99,14 @@ fun bench_prune_expired() {
 }
 
 #[test]
-/// 300 players leave the queue in the order they joined.
+/// 300 tickets are taken out of the queue in the order they joined.
 fun bench_cancel() {
     let (mut mm, clock, mut rng) = setup();
     fill(&mut mm, &mut rng, &clock, 10, 19);
 
     10u64.range_do_eq!(19, |bucket| PER_BUCKET.do!(|i| {
         let n = bucket * 100 + i;
-        mm.cancel_game(&mut tx_context::new_from_hint(player(n), n, 0, 0, 0));
+        matchmaker::remove_ticket(internal::permit<BENCH>(), &mut mm, player(n).to_id());
     }));
     assert_eq!(mm.queue_length(), 0);
 

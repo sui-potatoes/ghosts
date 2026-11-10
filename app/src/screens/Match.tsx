@@ -12,9 +12,12 @@ import {
     useAccountId,
     useChainRecruits,
     useGhostsAccount,
+    fetchPendingSeats,
+    useCurrentGame,
     useGhostsAction,
     type ChainAccount,
     type ChainRecruit,
+    type ChainSeat,
 } from "../chain";
 import type { ChainGame } from "../chain/bcs";
 import { chainDriver, matchScenario } from "../chain/driver";
@@ -102,6 +105,7 @@ function SquadPick({
     accountId,
     recruits,
     deployedSquad,
+    seat,
     action,
     onAbandon,
 }: {
@@ -111,6 +115,8 @@ function SquadPick({
     accountId: string;
     recruits: ChainRecruit[];
     deployedSquad: ChainRecruit[];
+    /** The seat the match sent this player, until it is accepted: no deploying before. */
+    seat: ChainSeat["ref"] | null;
     action: Action;
     onAbandon: () => void;
 }) {
@@ -200,12 +206,12 @@ function SquadPick({
                                     items.current[roster.length] = el;
                                 }}
                                 className="btn squad-pick-deploy"
-                                disabled={!squad.length || action.busy}
+                                disabled={!squad.length || action.busy || !!seat}
                                 onClick={() =>
                                     void action.run([() => deploySquadTx(gameId, accountId, squad)])
                                 }
                             >
-                                Deploy {squad.length} / {size}
+                                {seat ? "Joining…" : `Deploy ${squad.length} / ${size}`}
                             </button>
                         )
                     )}
@@ -431,13 +437,15 @@ function Result({
     const wins = WINS.includes(outcome);
 
     const { run } = action;
+    // a seat the other player never accepted is accepted on the way to wrapping up
+    const pending = () => fetchPendingSeats(action.client, gameId, players);
     const sent = useRef(false);
     useEffect(() => {
         if (gone || sent.current) return;
         const timer = window.setTimeout(
             () => {
                 sent.current = true;
-                void run([() => completeGameTx(gameId, players)]);
+                void run([async () => completeGameTx(gameId, players, await pending())]);
             },
             wins ? WINNER_GRACE_MS : LOSER_GRACE_MS,
         );
@@ -484,7 +492,9 @@ function Result({
                 className="btn self-start"
                 disabled={!gone && action.busy}
                 onClick={() =>
-                    gone ? navigate("/") : void run([() => completeGameTx(gameId, players)])
+                    gone
+                        ? navigate("/")
+                        : void run([async () => completeGameTx(gameId, players, await pending())])
                 }
             >
                 {gone ? "Continue" : "Wrap up"}
@@ -495,8 +505,9 @@ function Result({
 
 /**
  * A match, from the squad pick to the result. Everything on screen comes from
- * the `Game`; the `Account` only says which game, and is `Idle` again once the
- * game is deleted. The last read of the game stays around to show how it ended.
+ * the `Game`; the `Account` only says which game (or the seat a match sent it,
+ * taken with the squad), and is `Idle` again once the game is deleted. The last
+ * read of the game stays around to show how it ended.
  */
 export default function Match() {
     const accountId = useAccountId();
@@ -505,8 +516,9 @@ export default function Match() {
     const recruits = useChainRecruits(account.data);
     const action = useGhostsAction();
 
-    const search = account.data?.search;
-    const playing = search?.$kind === "Playing" ? search.Playing : null;
+    // the game the `Account` is in, or has a seat in from the match that found it
+    const current = useCurrentGame();
+    const playing = current.gameId;
     if (playing && playing !== gameId) setGameId(playing);
 
     /** Sent home: the `Account` is out of the game, which is deleted by now. */
@@ -616,6 +628,7 @@ export default function Match() {
                         accountId={accountId.data}
                         recruits={recruits.data ?? []}
                         deployedSquad={(inGame.data ?? []).filter((r) => mine.includes(r.objectId))}
+                        seat={current.seat?.ref ?? null}
                         action={action}
                         onAbandon={abandon}
                     />
@@ -653,8 +666,17 @@ export default function Match() {
                 onConfirm={() => {
                     setConfirming(false);
                     setAbandoned(true);
+                    const players = game.data!.players;
                     void action
-                        .run([() => abandonGameTx(gameId, accountId.data!, game.data!.players)])
+                        .run([
+                            async () =>
+                                abandonGameTx(
+                                    gameId,
+                                    accountId.data!,
+                                    players,
+                                    await fetchPendingSeats(action.client, gameId, players),
+                                ),
+                        ])
                         .then((done) => setAbandoned(done));
                 }}
             >

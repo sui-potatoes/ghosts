@@ -15,6 +15,7 @@ import { GHOSTS } from "../constants";
 import { Game, Recruit, type ChainGame } from "./bcs";
 import type { Order } from "./fast-lane";
 import { useTable } from "./ghosts";
+import { acceptSeat, type ChainSeat } from "./matchmaking";
 import { useBcsObject } from "./objects";
 
 type Client = ReturnType<typeof useCurrentClient>;
@@ -184,12 +185,17 @@ export function nextTurnTx(gameId: string, accountId: string): Transaction {
     return tx;
 }
 
+/** A seat in the game its player never accepted, and whose `Account` it is in. */
+export type PendingSeat = { accountId: string; seat: ChainSeat["ref"] };
+
 /**
  * Wrap up a game that is over: survivors and dog tags go home, the result goes on
  * both scores, both `Account`s are `Idle` again, whoever misbehaved is suspended
  * and the `Game` is deleted. Anyone can send this; `players` are in the game's order.
+ * A seat its player never accepted is accepted first: wrapping up needs both in.
  */
-function completeGame(tx: Transaction, gameId: string, players: string[]) {
+function completeGame(tx: Transaction, gameId: string, players: string[], pending: PendingSeat[]) {
+    for (const { accountId, seat } of pending) acceptSeat(tx, accountId, seat);
     tx.moveCall({
         target: target("complete_game"),
         arguments: [
@@ -201,19 +207,38 @@ function completeGame(tx: Transaction, gameId: string, players: string[]) {
     });
 }
 
-export function completeGameTx(gameId: string, players: string[]): Transaction {
+export function completeGameTx(
+    gameId: string,
+    players: string[],
+    pending: PendingSeat[] = [],
+): Transaction {
     const tx = new Transaction();
-    completeGame(tx, gameId, players);
+    completeGame(tx, gameId, players, pending);
     return tx;
 }
 
-/** Give up a running game: it ends for both, and the `Account` is suspended for a minute. */
-export function abandonGameTx(gameId: string, accountId: string, players: string[]): Transaction {
+/**
+ * Give up a running game: it ends for both, and the `Account` is suspended for a
+ * minute. The player's own seat, still pending, is accepted first.
+ */
+export function abandonGameTx(
+    gameId: string,
+    accountId: string,
+    players: string[],
+    pending: PendingSeat[] = [],
+): Transaction {
     const tx = new Transaction();
+    const own = pending.filter((p) => p.accountId === accountId);
+    for (const { seat } of own) acceptSeat(tx, accountId, seat);
     tx.moveCall({
         target: target("abandon_game"),
         arguments: [tx.object(gameId), tx.object(accountId)],
     });
-    completeGame(tx, gameId, players);
+    completeGame(
+        tx,
+        gameId,
+        players,
+        pending.filter((p) => p.accountId !== accountId),
+    );
     return tx;
 }

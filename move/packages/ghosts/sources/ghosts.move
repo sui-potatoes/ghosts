@@ -3,11 +3,16 @@
 
 /// The frontend module for the game: the map preset, matchmaking and the `Game`.
 ///
-/// Players find each other in the queue and whoever finds a match starts the
-/// `Game` for both. Its `Account`s stand for the players: every call takes one
-/// and checks the sender controls it. Turns last `TURN_LIMIT_MS`, and first
-/// both get `DEPLOY_LIMIT_MS` to pick their squads, then they take turns. A player
-/// who runs out of time cannot act anymore, and any player can move the game on.
+/// Players find each other in the queue, and whoever finds a match starts the
+/// `Game` in the same call and is in it right away. The `Account` of the player
+/// who waited can't be in that call, as nobody knows it beforehand, so they are
+/// sent a `Seat` in the game instead, to their `Account`, which is on its search
+/// until `accept_seat` puts it into the game: before anything else, by anyone. A
+/// player is their `Account` ID throughout; every call takes the `Account`, and
+/// all but accepting a seat check the sender controls it. Turns last
+/// `TURN_LIMIT_MS`, and first both get `DEPLOY_LIMIT_MS` to pick their squads, then
+/// they take turns. A player who runs out of time cannot act anymore, and any
+/// player can move the game on.
 ///
 /// The goal is to eliminate the other side. The proof is the `Game` itself: a
 /// recruit only leaves a squad by falling, which the `Map` decides, leaving a
@@ -16,8 +21,8 @@
 /// to call.
 ///
 /// Every state has a way out, and whoever made it necessary pays for it with
-/// `SUSPENSION_MS` without searching: leaving a match unstarted, not deploying,
-/// abandoning the game, or missing `MAX_MISSED_TURNS` turns in a row. A game that
+/// `SUSPENSION_MS` without searching: not deploying, abandoning the game, or
+/// missing `MAX_MISSED_TURNS` turns in a row. A game that
 /// goes nowhere ends in a draw at `MAX_TURNS`, without blame.
 ///
 /// A game is what the rest of the game runs on. It moves both ratings, and pays both
@@ -35,7 +40,13 @@ use ghosts::{
 };
 use matchmaker::matchmaker::{Self, Matchmaker};
 use std::string::String;
-use sui::{clock::Clock, object_table::{Self, ObjectTable}, random::Random, vec_map::{Self, VecMap}};
+use sui::{
+    clock::Clock,
+    object_table::{Self, ObjectTable},
+    random::Random,
+    transfer::Receiving,
+    vec_map::{Self, VecMap}
+};
 
 const ENotPlayer: u64 = 1;
 const ENoPositions: u64 = 4;
@@ -64,14 +75,17 @@ const EAlreadyDeployed: u64 = 21;
 const EGameNotOver: u64 = 17;
 /// The `Account` has no recruits to play with.
 const ENoSquad: u64 = 22;
-/// The opponent is still waiting on the match: start the game, or take the
-/// suspension with `cancel_search`.
-const EOpponentWaiting: u64 = 23;
 /// There is no weapon on the unit's tile.
 const ENoWeaponHere: u64 = 24;
+/// A match found the search: its `Seat` waits on the `Account`, to accept first.
+const ESeatWaiting: u64 = 25;
+/// The `Account` has yet to accept its `Seat` in the game.
+const ESeatNotAccepted: u64 = 27;
 
-/// How long a search stays in the queue; past it, anyone can cancel it.
+/// How long a search waits before anyone can cancel it; the queue keeps it until then.
 const SEARCH_TIMEOUT_MS: u64 = 120_000;
+/// No bucket capacity and no ticket lifetime: the queue never drops a search itself.
+const NO_LIMIT: u64 = 18_446_744_073_709_551_615;
 /// How long the players have to pick their squads once matched.
 const DEPLOY_LIMIT_MS: u64 = 120_000;
 /// How long a player has for their turn.
@@ -119,6 +133,15 @@ public struct Preset has key {
     positions: vector<vector<u8>>,
 }
 
+/// A place in a game, sent to the `Account` of the player a match found waiting.
+/// It exists from the match until `accept_seat`, which puts the `Account` into the
+/// game: the first thing either player does about the match.
+public struct Seat has key {
+    id: UID,
+    /// The game the seat is in.
+    game: ID,
+}
+
 /// A weapon lying on a tile, for any unit standing there to take up.
 public struct Dropped has store {
     x: u16,
@@ -163,13 +186,15 @@ public struct Game has key {
 // === Matchmaking ===
 
 /// Search for an opponent with the rating stored in the `Account`, accepting
-/// those within its current deviation. The outcome lands on the `Account`:
-/// `Matched` when a compatible player was waiting, and the sender follows up
-/// with `start_game`; `Searching` otherwise. Either way another search aborts
-/// until `cancel_search` clears it. A suspended `Account` cannot search.
+/// those within its current deviation. When a compatible player is waiting, the
+/// game starts on the preset right away: the `Account` is `Playing` it, and the
+/// player who waited is sent a `Seat` in it. They go first. Otherwise the
+/// `Account` is `Searching` until a match answers it or `cancel_search` clears
+/// it. A suspended `Account` cannot search.
 entry fun find_game(
     mm: &mut Matchmaker<Ghosts>,
     acc: &mut Account,
+    preset: &Preset,
     rng: &Random,
     clock: &Clock,
     ctx: &mut TxContext,
@@ -188,6 +213,7 @@ entry fun find_game(
     let (order, found) = matchmaker::find_game(
         permit,
         mm,
+        object::id(acc),
         &mut rng,
         clock,
         rating.rating(),
@@ -195,40 +221,67 @@ entry fun find_game(
         ctx,
     );
 
-    if (found.is_some()) {
-        let m = found.destroy_some();
-        acc.set_matched(m.match_id(), m.players()[0]);
-    } else acc.start_search(order, now);
+    if (found.is_none()) return acc.start_search(order, now);
+
+    // the player who waited is sent their seat: their `Account` isn't in this call
+    let m = found.destroy_some();
+    let waiting = m.players()[0];
+    let game = new_game(preset, waiting, object::id(acc), now, ctx);
+    let seat = Seat { id: object::new(ctx), game: object::id(&game) };
+    acc.set_playing(object::id(&game));
+    transfer::transfer(seat, waiting.to_address());
+    transfer::share_object(game);
 }
 
-/// Follow-up to a `find_game` that paired the sender: start the game on
-/// the preset and put both `Account`s into it, which is how the player who was
-/// waiting learns about the match. They go first. The `opponent` id comes from
-/// `Registry.accounts`.
-public fun start_game(
+/// Accept the `Seat` a match sent to an `Account`: it is `Playing` the game from
+/// now on, and can act in it, or leave it with `abandon_game`. Anyone can do this:
+/// the player, as soon as they see the seat, or the other player when they don't,
+/// who then gets back the storage the seat took and can wrap up the game.
+public fun accept_seat(acc: &mut Account, seat: Receiving<Seat>) {
+    let Seat { id, game } = transfer::receive(acc.uid_mut(), seat);
+    id.delete();
+
+    assert!(acc.search_order().is_some(), ENotSearching);
+    acc.set_playing(game);
+}
+
+/// Leave the queue. The owner can do this at any time, anyone else once the search
+/// has run past `SEARCH_TIMEOUT_MS`. The queue never lets go of a search on its
+/// own, so one no longer in it was found by a match: its `Seat` comes first, and
+/// the game ends through `abandon_game` or `complete_game` instead.
+public fun cancel_search(
+    mm: &mut Matchmaker<Ghosts>,
     acc: &mut Account,
-    opponent: &mut Account,
-    preset: &Preset,
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    acc.authorize(ctx);
+    assert!(acc.search_order().is_some(), ENotSearching);
 
+    let id = object::id(acc);
+    if (ctx.sender() != acc.owner()) {
+        let now = clock.timestamp_ms();
+        assert!(acc.search_timed_out(now, SEARCH_TIMEOUT_MS), ESearchNotTimedOut);
+    };
+    assert!(mm.is_queued(id), ESeatWaiting);
+
+    matchmaker::remove_ticket(internal::permit<Ghosts>(), mm, id);
+    acc.clear_search();
+}
+
+/// A game on the preset between the player who `waiting` was, going first, and
+/// the one who found them, still deploying.
+fun new_game(preset: &Preset, waiting: ID, finder: ID, now: u64, ctx: &mut TxContext): Game {
     let half = preset.positions.length() / 2;
-    let id = object::new(ctx);
-    let now = clock.timestamp_ms();
-    acc.start_match(opponent, id.to_inner(), now, SEARCH_TIMEOUT_MS);
-
     let mut positions = vector[vector[], vector[]];
     preset
         .positions
         .length()
         .do!(|i| positions[if (i < half) 0 else 1].push_back(preset.positions[i]));
 
-    transfer::share_object(Game {
-        id,
+    Game {
+        id: object::new(ctx),
         map: preset.map.clone(),
-        players: vector[object::id(opponent), object::id(acc)],
+        players: vector[waiting, finder],
         squads: vector[vector[], vector[]],
         fallen: vector[vector[], vector[]],
         positions,
@@ -241,51 +294,7 @@ public fun start_game(
         abandoned_by: option::none(),
         kills: vector[vec_map::empty(), vec_map::empty()],
         dropped: vector[],
-    });
-}
-
-/// Leave the queue, taking the order out if it is still there. The owner can do
-/// this at any time, anyone else once a search has run past `SEARCH_TIMEOUT_MS`.
-///
-/// The owner can also walk away from a match they hold, for `SUSPENSION_MS`: the
-/// player they took out of the queue is left with nothing. `release_match` is the
-/// free way out, once that player is gone. A game ends through `abandon_game` or
-/// `complete_game` instead.
-public fun cancel_search(
-    mm: &mut Matchmaker<Ghosts>,
-    acc: &mut Account,
-    clock: &Clock,
-    ctx: &mut TxContext,
-) {
-    assert!(!acc.is_idle() && acc.playing().is_none(), ENotSearching);
-
-    let owner = acc.owner();
-    let now = clock.timestamp_ms();
-    if (ctx.sender() != owner) {
-        assert!(acc.search_timed_out(now, SEARCH_TIMEOUT_MS), ESearchNotTimedOut);
-    } else if (acc.is_matched()) {
-        acc.suspend(now + SUSPENSION_MS);
-    };
-
-    if (mm.is_queued(owner)) {
-        matchmaker::remove_ticket(internal::permit<Ghosts>(), mm, owner);
-    };
-    acc.clear_search();
-}
-
-/// Let go of a match the opponent is no longer waiting on, without blame: they
-/// cancelled, or their search ran out.
-public fun release_match(
-    acc: &mut Account,
-    opponent: &Account,
-    clock: &Clock,
-    ctx: &mut TxContext,
-) {
-    acc.authorize(ctx);
-
-    let now = clock.timestamp_ms();
-    assert!(!acc.is_waited_on_by(opponent, now, SEARCH_TIMEOUT_MS), EOpponentWaiting);
-    acc.clear_search();
+    }
 }
 
 // === Ending the Game ===
@@ -302,9 +311,10 @@ public fun abandon_game(game: &mut Game, acc: &Account, ctx: &mut TxContext) {
 
 /// Wrap up a game that is over and delete it. Anyone can call this, so neither
 /// player can keep the other in: the survivors go back to their `Account`s, the
-/// dog tags onto their walls, the result onto their scores, both `Account`s are
-/// `Idle` again, and whoever abandoned the game or never deployed is suspended
-/// for `SUSPENSION_MS`.
+/// dog tags onto their walls, the result onto their scores, the `Account`s playing
+/// it are `Idle` again, and whoever abandoned the game or never deployed is
+/// suspended for `SUSPENSION_MS`. Both `Account`s must be in the game: a `Seat` not
+/// yet accepted is accepted first, by whoever wraps up.
 public fun complete_game(
     mut game: Game,
     first: &mut Account,
@@ -317,6 +327,8 @@ public fun complete_game(
         object::id(first) == game.players[0] && object::id(second) == game.players[1],
         ENotPlayer,
     );
+    let id = option::some(object::id(&game));
+    assert!(first.playing() == id && second.playing() == id, ESeatNotAccepted);
 
     let now = clock.timestamp_ms();
     if (game.misbehaved(0)) first.suspend(now + SUSPENSION_MS);
@@ -335,8 +347,8 @@ public fun complete_game(
     let (credits_second, xp_second) = game.earnings(1, winner);
     game.send_home(first, 0, credits_first, xp_first);
     game.send_home(second, 1, credits_second, xp_second);
-    first.clear_search();
-    second.clear_search();
+    game.release(first);
+    game.release(second);
 
     let Game { id, map, recruits, fallen, dropped, .. } = game;
     map.destroy();
@@ -531,7 +543,13 @@ fun side(game: &Game, acc: &Account, ctx: &mut TxContext): u64 {
     acc.authorize(ctx);
     let (found, side) = game.players.index_of(&object::id(acc));
     assert!(found, ENotPlayer);
+    assert!(acc.playing() == option::some(object::id(game)), ESeatNotAccepted);
     side
+}
+
+/// Clear the search of an `Account` playing this game.
+fun release(game: &Game, acc: &mut Account) {
+    if (acc.playing() == option::some(object::id(game))) acc.clear_search();
 }
 
 /// The side whose turn it is.
@@ -683,8 +701,10 @@ fun init(ctx: &mut TxContext) {
         id,
     });
 
-    // the default buckets and windows, with tickets as long-lived as a search
-    let config = matchmaker::new_config(100, 32, 50, 30_000, 1_000, SEARCH_TIMEOUT_MS);
+    // the default buckets and windows, with no ticket ever let go of by the queue:
+    // a search leaves it only by its player's cancel or by a match, which sends
+    // a `Seat`, so the `Account` always knows where it stands
+    let config = matchmaker::new_config(100, NO_LIMIT, 50, 30_000, 1_000, NO_LIMIT);
     matchmaker::new(internal::permit<Ghosts>(), config, ctx).share();
 }
 
@@ -793,16 +813,31 @@ fun finish(f: Fixture) {
     ts.end();
 }
 
-/// Alice queues, Bob finds her and starts the game. Alice goes first.
+/// Alice queues, Bob finds her, which starts the game, and Alice takes her seat.
+/// Alice goes first.
 #[test_only]
 fun start(f: &mut Fixture): Game {
+    f.match_up();
     f.ts.next_tx(ALICE);
-    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
+    let game = f.ts.take_shared<Game>();
+    let seat = f.seat();
+    accept_seat(&mut f.alice, seat);
+    game
+}
+
+/// Alice queues and Bob finds her: the game is on, and Alice's seat on its way.
+#[test_only]
+fun match_up(f: &mut Fixture) {
+    f.ts.next_tx(ALICE);
+    find_game(&mut f.mm, &mut f.alice, &f.preset, &f.rng, &f.clock, f.ts.ctx());
     f.ts.next_tx(BOB);
-    find_game(&mut f.mm, &mut f.bob, &f.rng, &f.clock, f.ts.ctx());
-    start_game(&mut f.bob, &mut f.alice, &f.preset, &f.clock, f.ts.ctx());
-    f.ts.next_tx(ALICE);
-    f.ts.take_shared<Game>()
+    find_game(&mut f.mm, &mut f.bob, &f.preset, &f.rng, &f.clock, f.ts.ctx());
+}
+
+/// The seat last sent to Alice's `Account`.
+#[test_only]
+fun seat(f: &Fixture): Receiving<Seat> {
+    ts::most_recent_receiving_ticket<Seat>(&object::id(&f.alice))
 }
 
 /// A recruit armed like the ones in `demo_test`, in the `Account` of the sender.
@@ -836,30 +871,32 @@ fun test_search_and_start() {
     let f = &mut fixture;
 
     // nobody is waiting: Alice's order is queued and her `Account` records it
-    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
-    assert!(f.mm.is_queued(ALICE));
+    find_game(&mut f.mm, &mut f.alice, &f.preset, &f.rng, &f.clock, f.ts.ctx());
+    assert!(f.mm.is_queued(object::id(&f.alice)));
     assert!(f.alice.search_order().is_some());
 
     // Alice cancels: the order leaves the queue and the `Account` is free again
     cancel_search(&mut f.mm, &mut f.alice, &f.clock, f.ts.ctx());
-    assert!(!f.mm.is_queued(ALICE));
+    assert!(!f.mm.is_queued(object::id(&f.alice)));
     assert!(f.alice.is_idle());
 
-    // Alice queues again and Bob is paired with her right away
-    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
+    // Alice queues again and Bob is paired with her right away: his call starts
+    // the game, and he is in it; Alice is still on her search
+    find_game(&mut f.mm, &mut f.alice, &f.preset, &f.rng, &f.clock, f.ts.ctx());
+    let order = f.alice.search_order();
     f.ts.next_tx(BOB);
-    find_game(&mut f.mm, &mut f.bob, &f.rng, &f.clock, f.ts.ctx());
+    find_game(&mut f.mm, &mut f.bob, &f.preset, &f.rng, &f.clock, f.ts.ctx());
     assert_eq!(f.mm.queue_length(), 0);
-    assert_eq!(f.bob.opponent(), option::some(ALICE));
-    assert!(f.alice.search_order().is_some());
-
-    // Bob's follow-up starts the game for both, with Alice going first
-    start_game(&mut f.bob, &mut f.alice, &f.preset, &f.clock, f.ts.ctx());
+    assert_eq!(f.alice.search_order(), order);
     f.ts.next_tx(ALICE);
     let game = f.ts.take_shared<Game>();
     let id = object::id(&game);
-    assert_eq!(f.alice.playing(), option::some(id));
     assert_eq!(f.bob.playing(), option::some(id));
+
+    // the seat Bob's call sent puts Alice into the game, going first
+    let seat = f.seat();
+    accept_seat(&mut f.alice, seat);
+    assert_eq!(f.alice.playing(), option::some(id));
     assert_eq!(game.players, vector[object::id(&f.alice), object::id(&f.bob)]);
     assert_eq!(game.active_side(), 0);
     assert_eq!(game.positions, vector[vector[vector[0, 3]], vector[vector[6, 5]]]);
@@ -899,11 +936,11 @@ fun test_anyone_cancels_after_timeout() {
     let mut fixture = setup();
     let f = &mut fixture;
 
-    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
+    find_game(&mut f.mm, &mut f.alice, &f.preset, &f.rng, &f.clock, f.ts.ctx());
     f.clock.set_for_testing(SEARCH_TIMEOUT_MS + 1);
     f.ts.next_tx(BOB);
     cancel_search(&mut f.mm, &mut f.alice, &f.clock, f.ts.ctx());
-    assert!(!f.mm.is_queued(ALICE));
+    assert!(!f.mm.is_queued(object::id(&f.alice)));
     assert!(f.alice.is_idle());
 
     fixture.finish();
@@ -914,7 +951,7 @@ fun test_cancel_foreign_search_before_timeout_fail() {
     let mut fixture = setup();
     let f = &mut fixture;
 
-    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
+    find_game(&mut f.mm, &mut f.alice, &f.preset, &f.rng, &f.clock, f.ts.ctx());
     f.clock.set_for_testing(SEARCH_TIMEOUT_MS);
     f.ts.next_tx(BOB);
     cancel_search(&mut f.mm, &mut f.alice, &f.clock, f.ts.ctx());
@@ -922,29 +959,138 @@ fun test_cancel_foreign_search_before_timeout_fail() {
     abort
 }
 
-#[test, expected_failure(abort_code = ESearchNotTimedOut)]
-fun test_cancel_foreign_match_fail() {
+/// A search the queue answered ends with its seat: no leaving it otherwise.
+#[test, expected_failure(abort_code = ESeatWaiting)]
+fun test_cancel_answered_search_fail() {
     let mut fixture = setup();
     let f = &mut fixture;
 
-    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
-    f.ts.next_tx(BOB);
-    find_game(&mut f.mm, &mut f.bob, &f.rng, &f.clock, f.ts.ctx());
-
-    // a match has no timeout: only its owner clears it
-    f.clock.set_for_testing(SEARCH_TIMEOUT_MS + 1);
+    f.match_up();
     f.ts.next_tx(ALICE);
-    cancel_search(&mut f.mm, &mut f.bob, &f.clock, f.ts.ctx());
+    cancel_search(&mut f.mm, &mut f.alice, &f.clock, f.ts.ctx());
 
     abort
+}
+
+/// Not by anyone else long after the search timed out either.
+#[test, expected_failure(abort_code = ESeatWaiting)]
+fun test_clear_answered_search_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+
+    f.match_up();
+    f.clock.set_for_testing(100 * SEARCH_TIMEOUT_MS);
+    f.ts.next_tx(CAROL);
+    cancel_search(&mut f.mm, &mut f.alice, &f.clock, f.ts.ctx());
+
+    abort
+}
+
+/// One seat at a time: with one waiting, there is no new search.
+#[test, expected_failure(abort_code = EAlreadySearching)]
+fun test_search_with_a_seat_waiting_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+
+    f.match_up();
+    f.ts.next_tx(ALICE);
+    find_game(&mut f.mm, &mut f.alice, &f.preset, &f.rng, &f.clock, f.ts.ctx());
+
+    abort
+}
+
+/// Anyone can accept the seat: here Bob, for an Alice who is away.
+#[test]
+fun test_anyone_accepts_the_seat() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup();
+    let f = &mut fixture;
+
+    f.match_up();
+    f.ts.next_tx(BOB);
+    let game = f.ts.take_shared<Game>();
+    let seat = f.seat();
+    accept_seat(&mut f.alice, seat);
+    assert_eq!(f.alice.playing(), option::some(object::id(&game)));
+
+    ts::return_shared(game);
+    fixture.finish();
+}
+
+/// Accepting comes before anything else: no squad from an `Account` still on its search.
+#[test, expected_failure(abort_code = ESeatNotAccepted)]
+fun test_deploy_before_accepting_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+
+    f.match_up();
+    f.ts.next_tx(ALICE);
+    let mut game = f.ts.take_shared<Game>();
+    deploy_squad(&mut game, &mut f.alice, &f.clock, vector[f.alice_recruit], f.ts.ctx());
+
+    abort
+}
+
+/// Nor walking out of a game not yet accepted: accept, then abandon.
+#[test, expected_failure(abort_code = ESeatNotAccepted)]
+fun test_abandon_before_accepting_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+
+    f.match_up();
+    f.ts.next_tx(ALICE);
+    let mut game = f.ts.take_shared<Game>();
+    abandon_game(&mut game, &f.alice, f.ts.ctx());
+
+    abort
+}
+
+/// Alice wants out once matched: she accepts her seat and walks away from the game.
+#[test]
+fun test_walk_away_after_accepting() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup();
+    let f = &mut fixture;
+
+    f.match_up();
+    f.ts.next_tx(ALICE);
+    let mut game = f.ts.take_shared<Game>();
+    let seat = f.seat();
+    accept_seat(&mut f.alice, seat);
+    abandon_game(&mut game, &f.alice, f.ts.ctx());
+    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    assert!(f.alice.is_idle() && f.bob.is_idle());
+    assert_eq!(f.alice.suspended_until(), SUSPENSION_MS);
+
+    fixture.finish();
+}
+
+/// The queue keeps a search as long as it takes: Bob finds Alice however long after.
+#[test]
+fun test_searches_never_expire_in_the_queue() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup();
+    let f = &mut fixture;
+    f.ts.next_tx(ALICE);
+    find_game(&mut f.mm, &mut f.alice, &f.preset, &f.rng, &f.clock, f.ts.ctx());
+    f.clock.set_for_testing(1000 * SEARCH_TIMEOUT_MS);
+    f.ts.next_tx(BOB);
+    find_game(&mut f.mm, &mut f.bob, &f.preset, &f.rng, &f.clock, f.ts.ctx());
+    assert_eq!(f.mm.queue_length(), 0);
+    assert!(f.bob.playing().is_some());
+
+    fixture.finish();
 }
 
 #[test, expected_failure(abort_code = EAlreadySearching)]
 fun test_find_game_twice_fail() {
     let mut fixture = setup();
     let f = &mut fixture;
-    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
-    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
+    find_game(&mut f.mm, &mut f.alice, &f.preset, &f.rng, &f.clock, f.ts.ctx());
+    find_game(&mut f.mm, &mut f.alice, &f.preset, &f.rng, &f.clock, f.ts.ctx());
     abort
 }
 
@@ -953,7 +1099,7 @@ fun test_find_game_while_playing_fail() {
     let mut fixture = setup();
     let f = &mut fixture;
     let _game = f.start();
-    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
+    find_game(&mut f.mm, &mut f.alice, &f.preset, &f.rng, &f.clock, f.ts.ctx());
     abort
 }
 
@@ -980,49 +1126,7 @@ fun test_find_game_with_foreign_account_fail() {
     let mut fixture = setup();
     let f = &mut fixture;
     // Alice tries to queue with Bob's rating
-    find_game(&mut f.mm, &mut f.bob, &f.rng, &f.clock, f.ts.ctx());
-    abort
-}
-
-#[test, expected_failure(abort_code = account::ENotMatched)]
-fun test_start_game_without_match_fail() {
-    let mut fixture = setup();
-    let f = &mut fixture;
-    f.ts.next_tx(BOB);
-    start_game(&mut f.bob, &mut f.alice, &f.preset, &f.clock, f.ts.ctx());
-    abort
-}
-
-#[test, expected_failure(abort_code = account::ENotOpponent)]
-fun test_start_game_after_opponent_moved_on_fail() {
-    let mut fixture = setup();
-    let f = &mut fixture;
-
-    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
-    f.ts.next_tx(BOB);
-    find_game(&mut f.mm, &mut f.bob, &f.rng, &f.clock, f.ts.ctx());
-
-    // Alice moves on before Bob's follow-up: her new order is none of his
-    f.ts.next_tx(ALICE);
-    cancel_search(&mut f.mm, &mut f.alice, &f.clock, f.ts.ctx());
-    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
-
-    f.ts.next_tx(BOB);
-    start_game(&mut f.bob, &mut f.alice, &f.preset, &f.clock, f.ts.ctx());
-    abort
-}
-
-#[test, expected_failure(abort_code = account::ENotOwner)]
-fun test_start_game_from_foreign_account_fail() {
-    let mut fixture = setup();
-    let f = &mut fixture;
-
-    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
-    f.ts.next_tx(BOB);
-    find_game(&mut f.mm, &mut f.bob, &f.rng, &f.clock, f.ts.ctx());
-
-    f.ts.next_tx(ALICE);
-    start_game(&mut f.bob, &mut f.alice, &f.preset, &f.clock, f.ts.ctx());
+    find_game(&mut f.mm, &mut f.bob, &f.preset, &f.rng, &f.clock, f.ts.ctx());
     abort
 }
 
@@ -1550,127 +1654,45 @@ fun test_stalemate_ends_in_a_draw() {
     fixture.finish();
 }
 
-/// Walking away from a match takes the other player out of the queue for nothing.
+/// No wrapping up with a seat not yet accepted.
+#[test, expected_failure(abort_code = ESeatNotAccepted)]
+fun test_complete_with_a_seat_waiting_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    f.match_up();
+    f.ts.next_tx(BOB);
+    let mut game = f.ts.take_shared<Game>();
+    f.clock.set_for_testing(DEPLOY_LIMIT_MS + 1);
+    next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());
+    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+
+    abort
+}
+
+/// Alice never shows: Bob accepts her seat to wrap up, and she is back to `Idle`,
+/// suspended for not deploying.
 #[test]
-fun test_cancel_held_match_is_punished() {
+fun test_no_show_on_an_untaken_seat() {
     use std::unit_test::assert_eq;
 
     let mut fixture = setup();
     let f = &mut fixture;
-
-    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
+    f.match_up();
     f.ts.next_tx(BOB);
-    find_game(&mut f.mm, &mut f.bob, &f.rng, &f.clock, f.ts.ctx());
+    let mut game = f.ts.take_shared<Game>();
+    deploy_squad(&mut game, &mut f.bob, &f.clock, vector[f.bob_recruit], f.ts.ctx());
 
-    cancel_search(&mut f.mm, &mut f.bob, &f.clock, f.ts.ctx());
-    assert!(f.bob.is_idle());
-    assert_eq!(f.bob.suspended_until(), SUSPENSION_MS);
+    f.clock.set_for_testing(DEPLOY_LIMIT_MS + 1);
+    next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());
+    assert_eq!(game.winner(), option::some(game.players[1]));
 
-    // Alice is not stuck: she leaves the empty search, for free, and is back
-    f.ts.next_tx(ALICE);
-    cancel_search(&mut f.mm, &mut f.alice, &f.clock, f.ts.ctx());
-    assert_eq!(f.alice.suspended_until(), 0);
-    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
-    assert!(f.mm.is_queued(ALICE));
+    let seat = f.seat();
+    accept_seat(&mut f.alice, seat);
+    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    assert!(f.alice.is_idle() && f.bob.is_idle());
+    assert_eq!(f.alice.suspended_until(), DEPLOY_LIMIT_MS + 1 + SUSPENSION_MS);
 
     fixture.finish();
-}
-
-#[test, expected_failure(abort_code = ESuspended)]
-fun test_search_after_walking_away_fail() {
-    let mut fixture = setup();
-    let f = &mut fixture;
-
-    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
-    f.ts.next_tx(BOB);
-    find_game(&mut f.mm, &mut f.bob, &f.rng, &f.clock, f.ts.ctx());
-    cancel_search(&mut f.mm, &mut f.bob, &f.clock, f.ts.ctx());
-    find_game(&mut f.mm, &mut f.bob, &f.rng, &f.clock, f.ts.ctx());
-
-    abort
-}
-
-/// The opponent left first: the match is let go of, without blame.
-#[test]
-fun test_release_match_after_opponent_left() {
-    use std::unit_test::assert_eq;
-
-    let mut fixture = setup();
-    let f = &mut fixture;
-
-    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
-    f.ts.next_tx(BOB);
-    find_game(&mut f.mm, &mut f.bob, &f.rng, &f.clock, f.ts.ctx());
-
-    f.ts.next_tx(ALICE);
-    cancel_search(&mut f.mm, &mut f.alice, &f.clock, f.ts.ctx());
-
-    f.ts.next_tx(BOB);
-    release_match(&mut f.bob, &f.alice, &f.clock, f.ts.ctx());
-    assert!(f.bob.is_idle());
-    assert_eq!(f.bob.suspended_until(), 0);
-
-    fixture.finish();
-}
-
-/// The opponent's search ran out: no game on a player long gone, and no blame.
-#[test]
-fun test_release_match_after_search_ran_out() {
-    let mut fixture = setup();
-    let f = &mut fixture;
-
-    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
-    f.ts.next_tx(BOB);
-    find_game(&mut f.mm, &mut f.bob, &f.rng, &f.clock, f.ts.ctx());
-
-    f.clock.set_for_testing(SEARCH_TIMEOUT_MS + 1);
-    release_match(&mut f.bob, &f.alice, &f.clock, f.ts.ctx());
-    assert!(f.bob.is_idle());
-
-    fixture.finish();
-}
-
-#[test, expected_failure(abort_code = EOpponentWaiting)]
-fun test_release_match_with_opponent_waiting_fail() {
-    let mut fixture = setup();
-    let f = &mut fixture;
-
-    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
-    f.ts.next_tx(BOB);
-    find_game(&mut f.mm, &mut f.bob, &f.rng, &f.clock, f.ts.ctx());
-    release_match(&mut f.bob, &f.alice, &f.clock, f.ts.ctx());
-
-    abort
-}
-
-#[test, expected_failure(abort_code = account::ENotOwner)]
-fun test_release_foreign_match_fail() {
-    let mut fixture = setup();
-    let f = &mut fixture;
-
-    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
-    f.ts.next_tx(BOB);
-    find_game(&mut f.mm, &mut f.bob, &f.rng, &f.clock, f.ts.ctx());
-
-    f.ts.next_tx(ALICE);
-    release_match(&mut f.bob, &f.alice, &f.clock, f.ts.ctx());
-
-    abort
-}
-
-#[test, expected_failure(abort_code = account::ENotOpponent)]
-fun test_start_game_after_search_ran_out_fail() {
-    let mut fixture = setup();
-    let f = &mut fixture;
-
-    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
-    f.ts.next_tx(BOB);
-    find_game(&mut f.mm, &mut f.bob, &f.rng, &f.clock, f.ts.ctx());
-
-    f.clock.set_for_testing(SEARCH_TIMEOUT_MS + 1);
-    start_game(&mut f.bob, &mut f.alice, &f.preset, &f.clock, f.ts.ctx());
-
-    abort
 }
 
 /// Nobody gets matched against a player with nobody to send.
@@ -1683,7 +1705,7 @@ fun test_search_without_recruits_fail() {
     f.registry.new_account(f.ts.ctx());
     f.ts.next_tx(CAROL);
     let mut carol = f.ts.take_shared_by_id<Account>(f.registry.account_of(CAROL));
-    find_game(&mut f.mm, &mut carol, &f.rng, &f.clock, f.ts.ctx());
+    find_game(&mut f.mm, &mut carol, &f.preset, &f.rng, &f.clock, f.ts.ctx());
 
     abort
 }
@@ -1728,7 +1750,7 @@ fun test_abandon() {
 
     // the suspension is over at the hour
     f.clock.set_for_testing(1000 + SUSPENSION_MS);
-    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
+    find_game(&mut f.mm, &mut f.alice, &f.preset, &f.rng, &f.clock, f.ts.ctx());
     assert!(f.alice.search_order().is_some());
 
     fixture.finish();
@@ -2095,7 +2117,7 @@ fun test_search_while_suspended_fail() {
     abandon_game(&mut game, &f.alice, f.ts.ctx());
     complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
     f.clock.set_for_testing(SUSPENSION_MS - 1);
-    find_game(&mut f.mm, &mut f.alice, &f.rng, &f.clock, f.ts.ctx());
+    find_game(&mut f.mm, &mut f.alice, &f.preset, &f.rng, &f.clock, f.ts.ctx());
 
     abort
 }
