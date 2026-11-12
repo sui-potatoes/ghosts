@@ -17,6 +17,7 @@ import {
     type CombatBindings,
     type PadCombatBindings,
 } from "@ghosts/engine/keys";
+import { validateRpcUrl } from "../rpcUrl";
 import { DEFAULT_BINDINGS, actionOf, type Action, type Bindings } from "./keys";
 
 /** How the Settings screen lays itself out; "auto" follows the connected pad. */
@@ -46,6 +47,10 @@ export type Settings = {
         /** The "controller connected" prompt was answered; never ask again. */
         layoutAnswered: boolean;
     };
+    network: {
+        /** Fullnode RPC override; "" is the public default. Read once at startup. */
+        rpcUrl: string;
+    };
 };
 
 export const DEFAULTS: Settings = {
@@ -58,6 +63,7 @@ export const DEFAULTS: Settings = {
         layout: "auto",
         layoutAnswered: false,
     },
+    network: { rpcUrl: "" },
 };
 
 const KEY = "ghosts:settings";
@@ -90,10 +96,13 @@ function sanitize(raw: unknown): Settings {
         audio?: Record<string, unknown>;
         display?: Record<string, unknown>;
         controls?: Record<string, unknown>;
+        network?: Record<string, unknown>;
     };
     const a = r.audio ?? {};
     const d = r.display ?? {};
     const c = r.controls ?? {};
+    const n = r.network ?? {};
+    const rpc = typeof n.rpcUrl === "string" ? validateRpcUrl(n.rpcUrl) : null;
     return {
         audio: {
             master: level(a.master, DEFAULTS.audio.master),
@@ -116,6 +125,7 @@ function sanitize(raw: unknown): Settings {
             layout: layoutChoice(c.layout),
             layoutAnswered: flag(c.layoutAnswered, DEFAULTS.controls.layoutAnswered),
         },
+        network: { rpcUrl: rpc?.ok ? rpc.url : DEFAULTS.network.rpcUrl },
     };
 }
 

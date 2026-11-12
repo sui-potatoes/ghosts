@@ -5,6 +5,7 @@ import { createDAppKit } from "@mysten/dapp-kit-react";
 import { enokiWalletsInitializer } from "@mysten/enoki";
 import { SuiGrpcClient } from "@mysten/sui/grpc";
 
+import { getSettings } from "./settings/store";
 import { GOOGLE_CLIENT_ID, NETWORK } from "./constants";
 import { passkeyWalletInitializer } from "./wallets/passkey";
 
@@ -17,6 +18,12 @@ if (!ENOKI_API_KEY) {
     );
 }
 
+/** Public Mysten fullnode for a network. */
+export const defaultRpcUrl = (network: string) => `https://fullnode.${network}.sui.io:443`;
+
+/** The player's RPC override (Settings → Network), or the public default. */
+export const activeRpcUrl = getSettings().network.rpcUrl || defaultRpcUrl(NETWORK);
+
 /**
  * Central dApp Kit instance: one gRPC client per network, the passkey wallet
  * and, when an Enoki key is configured, the Google zkLogin wallet.
@@ -27,7 +34,7 @@ export const dAppKit = createDAppKit({
     createClient: (network) =>
         new SuiGrpcClient({
             network,
-            baseUrl: `https://fullnode.${network}.sui.io:443`,
+            baseUrl: activeRpcUrl,
         }),
     walletInitializers: [
         passkeyWalletInitializer(),

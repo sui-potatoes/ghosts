@@ -25,8 +25,8 @@ public enum Record has copy, drop, store {
     Damage(u8),
     Miss,
     /// Explosion at `(x, y)` with the given radius. The effect of a `Grenade`
-    /// throw or of an `Attack` with an area weapon. Followed by `[Dodged]`,
-    /// `Damage`, `[UnitKIA]` for each unit in the area, in the order the tiles
+    /// throw or of an `Attack` with an area weapon. Followed by `Dodged`,
+    /// or `Damage`, `[UnitKIA]`, for each unit in the area, in the order the tiles
     /// are visited (see `Map.explode`).
     Explosion(u16, u16, u16),
     CriticalHit(u8),

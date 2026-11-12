@@ -3148,3 +3148,49 @@
   align-items: center;
   gap: 5px;
 }
+
+/*
+ * Phones in landscape: the app sets --ui-scale on :root (index.css, 1 on
+ * anything taller than 500px). The HUD roots are zoomed by it; the canvas and
+ * its host never are, so rendering stays at full resolution and pointer rays
+ * keep mapping. Insets scale with the zoom, which keeps the layout's
+ * proportions; the notch margins are divided by the scale to stay true pixels.
+ */
+@media (orientation: landscape) and (max-height: 500px) {
+  .encounter .command-deck,
+  .encounter .workspace > .end-turn,
+  .encounter .field-bottom,
+  .encounter .view-tools,
+  .encounter #field-objectives,
+  .encounter #pad-hints,
+  .encounter #feedback,
+  .encounter #targeting-hud,
+  .encounter .camera-hint,
+  .encounter .wheel-ring {
+    zoom: var(--ui-scale, 1);
+  }
+  .encounter .command-deck,
+  .encounter .field-bottom,
+  .encounter #targeting-hud {
+    margin-inline: calc(env(safe-area-inset-left, 0px) / var(--ui-scale, 1))
+      calc(env(safe-area-inset-right, 0px) / var(--ui-scale, 1));
+  }
+  .encounter .workspace > .end-turn,
+  .encounter .view-tools,
+  .encounter #field-objectives,
+  .encounter #pad-hints {
+    margin-right: calc(env(safe-area-inset-right, 0px) / var(--ui-scale, 1));
+  }
+  .encounter dialog {
+    zoom: var(--ui-scale, 1);
+    width: min(900px, calc(90vw / var(--ui-scale, 1)));
+    max-height: calc(88dvh / var(--ui-scale, 1));
+  }
+  /* The briefing caps itself in dvh (ghosts-theme.css); undo the zoom there too. */
+  .encounter dialog.briefing-modal {
+    max-height: calc(94dvh / var(--ui-scale, 1));
+  }
+  .encounter dialog.briefing-modal #modal-content {
+    max-height: calc(94dvh / var(--ui-scale, 1) - 84px);
+  }
+}

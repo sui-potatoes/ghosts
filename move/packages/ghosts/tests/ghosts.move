@@ -7,6 +7,13 @@ extend module ghosts::ghosts;
 use ghosts::{account::{Self, Registry}, items, recruit as recruit_module};
 use sui::{clock, random, test_scenario::{Self as ts, Scenario}};
 
+/// The recruits fall, the way they do to an attack: off the map, the game over if
+/// that was a side's last, and still in the game until `bury_fallen`.
+fun kill(game: &mut Game, recruits: vector<ID>) {
+    let records = recruits.map!(|id| game.map.kill_for_testing(id));
+    game.count_losses(&records);
+}
+
 fun is_deploying(game: &Game): bool {
     match (&game.state) {
         State::Deploying { .. } => true,
@@ -1125,12 +1132,18 @@ fun test_every_recruit_must_fall() {
     assert!(!game.is_over());
 
     // Bob loses one: still in it
-    game.bury_fallen(&vector[history::new_kia(third, 0, 0)], f.ts.ctx());
+    game.kill(vector[third]);
     assert_eq!(game.squad(1), vector[fourth]);
     assert!(!game.is_over());
 
+    // the fallen stays in the game until the turn changes: a kill frees nothing
+    assert!(game.recruits.contains(third));
+    f.ts.next_tx(ALICE);
+    next_turn(&mut game, &f.alice, &f.clock, f.ts.ctx());
+    assert!(!game.recruits.contains(third));
+
     // and the other: out
-    game.bury_fallen(&vector[history::new_kia(fourth, 0, 0)], f.ts.ctx());
+    game.kill(vector[fourth]);
     assert!(game.is_over());
     assert_eq!(game.winner(), option::some(object::id(&f.alice)));
 
@@ -1153,7 +1166,7 @@ fun test_draw() {
     f.deploy(&mut game);
 
     let (a, b) = (game.squad(0)[0], game.squad(1)[0]);
-    game.bury_fallen(&vector[history::new_kia(a, 0, 0), history::new_kia(b, 0, 0)], f.ts.ctx());
+    game.kill(vector[a, b]);
     assert!(game.is_over());
     assert!(game.winner().is_none());
 
@@ -1197,8 +1210,7 @@ fun test_scores() {
 
 /// Bob's recruit falls at the hands of Alice's, on the tile it stands on.
 fun alice_kills_bob(f: &mut Fixture, game: &mut Game) {
-    let records = vector[history::new_kia(f.bob_recruit, 6, 5)];
-    game.bury_fallen(&records, f.ts.ctx());
+    game.kill(vector[f.bob_recruit]);
 }
 
 /// A fight to the end: the survivor comes home with a winner's experience, and the
@@ -1235,8 +1247,7 @@ fun test_a_draw() {
     f.deploy(&mut game);
 
     f.alice_kills_bob(&mut game);
-    let records = vector[history::new_kia(f.alice_recruit, 0, 3)];
-    game.bury_fallen(&records, f.ts.ctx());
+    game.kill(vector[f.alice_recruit]);
     complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
 
     let (_, _, draws) = f.alice.score();

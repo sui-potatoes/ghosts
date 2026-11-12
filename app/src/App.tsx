@@ -20,6 +20,7 @@ const Match = lazy(() => import("./screens/Match"));
 // The level editor brings three.js and the full asset catalog.
 const Editor = lazy(() => import("./screens/Editor"));
 import { SquadPreload, TransactionSender } from "./chain";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { LoadingSpinner } from "./components/LoadingSpinner";
 import { MatchStatus } from "./components/MatchStatus";
 import { SaveIndicator } from "./components/SaveIndicator";
@@ -95,9 +96,11 @@ export function App() {
                 <Route
                     path="/match"
                     element={
-                        <Suspense fallback={<LoadingSpinner />}>
-                            <Match />
-                        </Suspense>
+                        <ErrorBoundary scope="match" fullScreen={false}>
+                            <Suspense fallback={<LoadingSpinner />}>
+                                <Match />
+                            </Suspense>
+                        </ErrorBoundary>
                     }
                 />
                 <Route

@@ -22,7 +22,8 @@ import { createSidearm, SIDEARM_MOUNT_OFFSET } from "@ghosts/squad/studio/sidear
 import { aimClip, combatClips } from "./combat-pose";
 import { createWeaponMount } from "./weapon-mount";
 import * as T from "three";
-import { GLTFLoader, type GLTF } from "three/addons/loaders/GLTFLoader.js";
+import type { GLTF } from "three/addons/loaders/GLTFLoader.js";
+import { createGLTFLoader } from "@ghosts/squad/studio/gltf-loader";
 import { KTX2Loader } from "three/addons/loaders/KTX2Loader.js";
 import { clone } from "three/addons/utils/SkeletonUtils.js";
 import type { Unit, Weapon } from "./game";
@@ -35,7 +36,7 @@ export async function loadOperatives(renderer: T.WebGLRenderer) {
     .setWorkerLimit(1)
     .detectSupport(renderer);
   try {
-    asset = await new GLTFLoader()
+    asset = await createGLTFLoader()
       .setKTX2Loader(ktx)
       .loadAsync(demoAsset("models/blackline-operative.glb"));
   } finally {

@@ -42,3 +42,54 @@ jobs:
           name: dist
           path: app/dist
           retention-days: 7
+
+  move:
+    name: Move build and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Matches toolchain-version in move/packages/*/Published.toml.
+      SUI_VERSION: 1.82.1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Sui CLI
+        id: sui-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/sui
+          key: sui-${{ runner.os }}-${{ runner.arch }}-${{ env.SUI_VERSION }}
+
+      # Release binary from MystenLabs/sui, tag testnet-v<version>. The tarball is
+      # large (~1.2 GB) and holds every node binary; only `sui` is extracted and cached.
+      - name: Install Sui CLI
+        if: steps.sui-cache.outputs.cache-hit != 'true'
+        run: |
+          case "$(uname -m)" in
+            x86_64) arch=x86_64 ;;
+            aarch64|arm64) arch=aarch64 ;;
+            *) echo "unsupported arch" >&2; exit 1 ;;
+          esac
+          mkdir -p ~/.local/sui
+          curl -fsSL "https://github.com/MystenLabs/sui/releases/download/testnet-v${SUI_VERSION}/sui-testnet-v${SUI_VERSION}-ubuntu-${arch}.tgz" \
+            | tar -xz -C ~/.local/sui ./sui
+
+      - name: Add Sui CLI to PATH
+        run: |
+          echo "$HOME/.local/sui" >> "$GITHUB_PATH"
+
+      - run: sui --version
+
+      # `r.mvr` dependencies resolve from the committed Move.lock files and git,
+      # so the mvr CLI is not needed.
+      - name: matchmaker
+        working-directory: move/packages/matchmaker
+        run: |
+          sui move build --warnings-are-errors
+          sui move test --warnings-are-errors
+
+      - name: ghosts
+        working-directory: move/packages/ghosts
+        run: |
+          sui move build --warnings-are-errors
+          sui move test --warnings-are-errors

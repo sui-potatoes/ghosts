@@ -113,8 +113,8 @@ fun attack_respects_can_be_dodged() {
     map.place_recruit(&target, 1, 1);
 
     let history = map.perform_attack(&mut rng, 0, 0, 1, 1);
-    assert_eq!(history[1], history::new_dodged());
-    assert_eq!(history[2], history::new_damage(0));
+    // a dodge is one record, the size of a miss
+    assert_eq!(history, vector[history[0], history::new_dodged()]);
     assert!(map.unit(1, 1).is_some_and!(|unit| unit.hp() == 10));
 
     let history = map.perform_attack(&mut rng, 2, 0, 1, 1);
@@ -126,6 +126,55 @@ fun attack_respects_can_be_dodged() {
     dismiss(undodgeable);
     dismiss(target);
     map.destroy();
+}
+
+/// Bytes an attack with the given weapon adds to the `Map` and its history,
+/// against a target with the given armor.
+fun attack_cost(weapon: Stats, armor: Stats, ctx: &mut TxContext): (u64, vector<history::Record>) {
+    let mut rng = random::new_generator_from_seed_for_testing(vector[1]);
+    let mut map = map::new(@1.to_id(), 4);
+    let (attacker, target) = (recruit_with_weapon(weapon, ctx), recruit_with_armor(armor, ctx));
+    map.place_recruit(&attacker, 0, 0);
+    map.place_recruit(&target, 1, 1);
+
+    let before = bcs::to_bytes(&map).length();
+    let history = map.perform_attack(&mut rng, 0, 0, 1, 1);
+    let cost = bcs::to_bytes(&map).length() + bcs::to_bytes(&history).length() - before;
+
+    dismiss(attacker);
+    dismiss(target);
+    map.destroy();
+    (cost, history)
+}
+
+/// A weapon that always hits for exactly `damage`.
+fun sure_shot(damage: u8): Stats {
+    stats_builder::new().aim(35).damage(damage).spread(0).crit_chance(0).build_weapon()
+}
+
+#[test]
+/// An attack rolls, so its sender could set a gas budget only the cheaper
+/// outcomes fit in. What is worse for them must never take more storage.
+fun attack_outcomes_cost_in_order() {
+    let ctx = &mut tx_context::dummy();
+
+    let (dodge, history) = attack_cost(
+        sure_shot(1),
+        stats::new(0, 0, 0, 0, 100),
+        ctx,
+    );
+    assert_eq!(history[1], history::new_dodged());
+    let miss = bcs::to_bytes(&vector[history[0], history::new_miss()]).length();
+
+    let (hit, history) = attack_cost(sure_shot(1), stats::new(0, 0, 0, 0, 0), ctx);
+    assert_eq!(history[1], history::new_damage(1));
+
+    let (kill, history) = attack_cost(sure_shot(99), stats::new(0, 0, 0, 0, 0), ctx);
+    assert_eq!(history.length(), 3);
+
+    assert_eq!(miss, dodge);
+    assert!(dodge <= hit);
+    assert!(hit < kill);
 }
 
 #[test]

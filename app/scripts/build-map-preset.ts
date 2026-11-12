@@ -69,6 +69,8 @@ function encode({ map }: Scenario) {
         }
     }
     bytes.push(...u16(rows), ...u16(cols));
+    // `Map.fallen`: nobody has fallen on a preset
+    bytes.push(0);
     return { bytes, tactical, rows, cols };
 }
 

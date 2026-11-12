@@ -26,6 +26,7 @@
     "./studio/armor-materials": "./src/studio/armor-materials.ts",
     "./studio/character-assets": "./src/studio/character-assets.ts",
     "./studio/equipment-assets": "./src/studio/equipment-assets.ts",
+    "./studio/gltf-loader": "./src/studio/gltf-loader.ts",
     "./studio/held-equipment": "./src/studio/held-equipment.ts",
     "./studio/recruit-studio": "./src/studio/recruit-studio.ts",
     "./studio/long-guns": "./src/studio/long-guns.ts",

@@ -419,10 +419,16 @@ export function* gameEvents(records: ChainRecord[], field: FieldView): Generator
     const { bounds } = field;
     let i = 0;
 
-    /** One unit's share of an attack: `[Dodged]`, the damage, `[UnitKIA]`. */
+    /** One unit's share of an attack: `Dodged`, or the damage and `[UnitKIA]`. */
     const takeHit = () => {
         const dodged = records[i]?.$kind === "Dodged";
-        if (dodged) i++;
+        if (dodged) {
+            i++;
+            // games recorded before a dodge became a single record follow it with `Damage(0)`
+            const next = records[i];
+            if (next?.$kind === "Damage" && next.Damage === 0) i++;
+            return { dodged, crit: false, damage: 0, killed: false };
+        }
         const record = records[i];
         const crit = record?.$kind === "CriticalHit";
         let damage = 0;

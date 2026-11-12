@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 import { defineConfig, type Plugin } from "vite";
+import { meshoptModels } from "./vite/meshopt-models.ts";
 
 /** The checked-out commit, read once when the config loads; null outside a git checkout. */
 function lastCommit() {
@@ -33,24 +34,28 @@ function assetManifest(): Plugin {
         configResolved(config) {
             outDir = resolve(config.root, config.build.outDir);
         },
-        closeBundle() {
-            const files: Record<string, string> = {};
-            const walk = (dir: string) => {
-                for (const entry of readdirSync(dir, { withFileTypes: true })) {
-                    const path = join(dir, entry.name);
-                    if (entry.isDirectory()) walk(path);
-                    else {
-                        const url = "/" + relative(outDir, path).split(sep).join("/");
-                        if (UNCACHED.test(url)) continue;
-                        files[url] = createHash("sha1")
-                            .update(readFileSync(path))
-                            .digest("hex")
-                            .slice(0, 12);
+        closeBundle: {
+            order: "post",
+            sequential: true,
+            handler() {
+                const files: Record<string, string> = {};
+                const walk = (dir: string) => {
+                    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+                        const path = join(dir, entry.name);
+                        if (entry.isDirectory()) walk(path);
+                        else {
+                            const url = "/" + relative(outDir, path).split(sep).join("/");
+                            if (UNCACHED.test(url)) continue;
+                            files[url] = createHash("sha1")
+                                .update(readFileSync(path))
+                                .digest("hex")
+                                .slice(0, 12);
+                        }
                     }
-                }
-            };
-            walk(outDir);
-            writeFileSync(join(outDir, "asset-manifest.json"), JSON.stringify({ files }));
+                };
+                walk(outDir);
+                writeFileSync(join(outDir, "asset-manifest.json"), JSON.stringify({ files }));
+            },
         },
     };
 }
@@ -63,7 +68,7 @@ export default defineConfig({
     define: {
         __COMMIT__: JSON.stringify(lastCommit()),
     },
-    plugins: [tailwindcss(), react(), assetManifest()],
+    plugins: [tailwindcss(), react(), meshoptModels(), assetManifest()],
     // The Sui Potatoes app takes 5173; keep both dev servers runnable side by side.
     server: { port: 5174 },
 });

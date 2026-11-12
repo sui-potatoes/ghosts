@@ -30,7 +30,7 @@ fun create_displays() {
     let recruit = test.take_shared<Display<Recruit>>();
     assert_eq!(recruit.cap_id(), option::some(object::id(&recruit_cap)));
     assert_eq!(recruit.fields()[&"name"], "{metadata.name}");
-    assert_eq!(recruit.fields()[&"link"], "https://potatoes.app/commander/recruit/{id}");
+    assert_eq!(recruit.fields()[&"link"], "https://suighosts.com");
     test_scenario::return_shared(recruit);
 
     let dog_tag = test.take_shared<Display<DogTag>>();

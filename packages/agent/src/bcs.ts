@@ -58,6 +58,8 @@ export const MapBcs = bcs.struct("Map", {
         rows: bcs.u16(),
         cols: bcs.u16(),
     }),
+    /** Units killed since the last turn change, off their tiles and not yet buried. */
+    fallen: bcs.vector(UnitBcs),
     turn: bcs.u16(),
 });
 

@@ -26,8 +26,8 @@ public fun recruit(registry: &mut DisplayRegistry, ctx: &mut TxContext): Display
     let (mut display, cap) = registry.new(recruit::permit(), ctx);
     display.set(&cap, "name", "{metadata.name}");
     display.set(&cap, "description", "A Ghosts operative.");
-    display.set(&cap, "image_url", "https://potatoes.app/images/recruit.webp");
-    display.set(&cap, "link", "https://potatoes.app/commander/recruit/{id}");
+    display.set(&cap, "image_url", "https://suighosts.com/images/recruit.webp");
+    display.set(&cap, "link", "https://suighosts.com");
     display.share();
     cap
 }
@@ -37,8 +37,8 @@ public fun dog_tag(registry: &mut DisplayRegistry, ctx: &mut TxContext): Display
     let (mut display, cap) = registry.new(recruit::dog_tag_permit(), ctx);
     display.set(&cap, "name", "{metadata.name}");
     display.set(&cap, "description", "Fallen in the line of duty.");
-    display.set(&cap, "image_url", "https://potatoes.app/images/recruit.webp");
-    display.set(&cap, "link", "https://potatoes.app/commander/recruit/{id}");
+    display.set(&cap, "image_url", "https://suighosts.com/images/recruit.webp");
+    display.set(&cap, "link", "https://suighosts.com");
     display.share();
     cap
 }
@@ -48,7 +48,7 @@ public fun weapon(registry: &mut DisplayRegistry, ctx: &mut TxContext): DisplayC
     let (mut display, cap) = registry.new(weapon::permit(), ctx);
     display.set(&cap, "name", "{name}");
     display.set(&cap, "description", "A weapon that Recruits can use in battle.");
-    display.set(&cap, "image_url", "https://potatoes.app/images/weapon.webp");
+    display.set(&cap, "image_url", "https://suighosts.com/images/weapon.webp");
     display.share();
     cap
 }
@@ -70,7 +70,7 @@ public fun armor(registry: &mut DisplayRegistry, ctx: &mut TxContext): DisplayCa
     let (mut display, cap) = registry.new(armor::permit(), ctx);
     display.set(&cap, "name", "{name}");
     display.set(&cap, "description", "Armor that Recruits can wear in battle.");
-    display.set(&cap, "image_url", "https://potatoes.app/images/armor-light.webp");
+    display.set(&cap, "image_url", "https://suighosts.com/images/armor-light.webp");
     display.share();
     cap
 }
