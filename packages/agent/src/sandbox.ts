@@ -42,6 +42,7 @@ import {
     type GameState,
     type Stats,
     type Unit,
+    type UnitActionEntry,
 } from "./types.ts";
 
 export interface SandboxOptions {
@@ -92,14 +93,36 @@ const UNARMED: Stats = {
 /** The same with a standard rifle (`items::rifle`, tier 1): +10% plus-one and crit. */
 const ARMED: Stats = { ...UNARMED, plusOne: 10, critChance: 10 };
 
-/** `unit::from_recruit`: `Move` and `Grenade` for all, the weapon adds `Attack` and `Reload`. */
-const UNARMED_ACTIONS: Unit["actions"] = ["move", "grenade"];
-const ARMED_ACTIONS: Unit["actions"] = ["move", "attack", "reload", "grenade"];
+/**
+ * `unit::from_recruit`: `Move` for all, the weapon adds `Attack` and `Reload`, then each
+ * utility adds its own actions (`Grenade` for the frag grenade).
+ */
+const entry = (kind: UnitActionEntry["kind"], uses: number | null = null): UnitActionEntry => ({
+    kind,
+    uses,
+});
+const UNARMED_ACTIONS = (): UnitActionEntry[] => [entry("move")];
+const ARMED_ACTIONS = (): UnitActionEntry[] => [entry("move"), entry("attack"), entry("reload")];
+
+/** `recruit::MAX_UTILITIES`: the utility slots of a recruit. */
+const MAX_UTILITIES = 1;
+
+/**
+ * A utility as it is carried: the actions it grants, with their uses. Its stats are a modifier
+ * for the carrier, zero for the frag grenade, so the sandbox keeps none.
+ */
+interface Utility {
+    actions: UnitActionEntry[];
+}
+
+/** `items::frag_grenade`: a `Grenade` action usable once per match. */
+const fragGrenade = (): Utility => ({ actions: [entry("grenade", 1)] });
 
 /** A recruit at home in the `Account`. */
 interface Recruit {
     id: string;
     armed: boolean;
+    utilities: Utility[];
 }
 
 /** mulberry32: small, seedable, good enough for dice in a sandbox. */
@@ -128,6 +151,8 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
     let name: string | null = null;
     let account: AccountView | null = null;
     let home: Recruit[] = [];
+    /** What each recruit on the map carries, for when it goes home. */
+    const carried = new Map<string, Utility[]>();
     let current: GameState | null = null;
     /** The game a match started for this account while it waited: the seat's game. */
     let seated: GameState | null = null;
@@ -147,8 +172,8 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
         return account;
     }
 
-    function hire(armed: boolean): Recruit {
-        return { id: hexId("5", ++recruits), armed };
+    function hire(armed: boolean, utilities: Utility[] = []): Recruit {
+        return { id: hexId("5", ++recruits), armed, utilities };
     }
 
     /** `new_game`: the first half of the spawn positions goes to the first player. */
@@ -221,7 +246,7 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
         const squad: Recruit[] =
             side === yourSide
                 ? [...home].sort((a, b) => Number(b.armed) - Number(a.armed)).slice(0, open)
-                : Array.from({ length: open }, () => hire(true));
+                : Array.from({ length: open }, () => hire(true, [fragGrenade()]));
         for (const recruit of squad) {
             const [x, y] = state.positions[side].pop()!;
             const stats = recruit.armed ? ARMED : UNARMED;
@@ -237,10 +262,14 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
                 hpMax: stats.health,
                 ammo: stats.ammo,
                 ammoMax: stats.ammo,
-                grenadeUsed: false,
                 stats,
-                actions: recruit.armed ? [...ARMED_ACTIONS] : [...UNARMED_ACTIONS],
+                // `from_recruit`: base, weapon, then each utility's actions, none merged
+                actions: [
+                    ...(recruit.armed ? ARMED_ACTIONS() : UNARMED_ACTIONS()),
+                    ...recruit.utilities.flatMap((utility) => structuredClone(utility.actions)),
+                ],
             });
+            carried.set(recruit.id, recruit.utilities);
             records.push({ kind: "placed", x, y });
         }
         if (side === yourSide) {
@@ -397,7 +426,12 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
         }
 
         for (const unit of state.units.filter((unit) => unit.owner === me.id)) {
-            home.push({ id: unit.recruit, armed: unit.actions.includes("attack") });
+            home.push({
+                id: unit.recruit,
+                armed: unit.actions.some((action) => action.kind === "attack"),
+                // the match spent no item: the same utilities, their uses full again
+                utilities: carried.get(unit.recruit) ?? [],
+            });
         }
         me.recruits = home.length;
         me.search = { kind: "idle" };
@@ -416,9 +450,13 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
                 records = attack(state, action);
                 break;
             case "grenade": {
+                // `perform_grenade`: a use of the first grenade action that has one left
                 const unit = unitAt(state, action.x, action.y)!;
+                const spent = unit.actions.find(
+                    (a) => a.kind === "grenade" && (a.uses === null || a.uses > 0),
+                )!;
                 unit.ap -= 1;
-                unit.grenadeUsed = true;
+                if (spent.uses !== null) spent.uses -= 1;
                 records = [
                     { kind: "grenade", from: [action.x, action.y], to: [action.tx, action.ty] },
                     ...explode(
@@ -529,7 +567,7 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
             if (home.length >= FREE_RECRUITS) {
                 throw new ActionError("rejected", "The squad is already full.");
             }
-            // `hire_recruits`: no weapon yet, so no `Attack` or `Reload` on the map
+            // `hire_recruits`: no gear yet, so no `Attack`, `Reload` or `Grenade` on the map
             while (home.length < FREE_RECRUITS) home.push(hire(false));
             me.recruits = home.length;
             return receipt([]);
@@ -537,9 +575,15 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
 
         async armSquad() {
             requireAccount();
-            const unarmed = home.filter((recruit) => !recruit.armed);
-            if (unarmed.length === 0) return null;
-            for (const recruit of unarmed) recruit.armed = true;
+            const bare = home.filter(
+                (recruit) => !recruit.armed || recruit.utilities.length < MAX_UTILITIES,
+            );
+            if (bare.length === 0) return null;
+            for (const recruit of bare) {
+                recruit.armed = true;
+                // `requisition_utility` and `equip_utility`: a frag grenade into the free slot
+                if (recruit.utilities.length < MAX_UTILITIES) recruit.utilities.push(fragGrenade());
+            }
             return receipt([]);
         },
 

@@ -158,10 +158,13 @@ fun test_dismiss_recruit() {
     rifle.add_upgrade(items::scope(1, ts.ctx()));
     let armor = items::armor(1, ts.ctx());
     let armor_id = object::id(&armor);
+    let grenade = items::frag_grenade(ts.ctx());
+    let grenade_id = object::id(&grenade);
     ts.next_tx(user);
     let (mut jane, borrow) = acc.borrow_recruit(ts::receiving_ticket_by_id(recruit_id), ts.ctx());
     equip_weapon(&mut jane, rifle);
     equip_armor(&mut jane, armor);
+    equip_utility(&mut jane, grenade);
     return_recruit(jane, borrow);
 
     ts.next_tx(user);
@@ -175,6 +178,7 @@ fun test_dismiss_recruit() {
     assert_eq!(rifle.upgrades().length(), 1);
     ts::return_to_address(home, rifle);
     assert!(ts::ids_for_address<Armor>(home).contains(&armor_id));
+    assert!(ts::ids_for_address<Utility>(home).contains(&grenade_id));
     assert!(ts::ids_for_address<Recruit>(home).is_empty());
 
     // the freed slot hires again
@@ -432,7 +436,8 @@ fun test_equip_needs_the_rank() {
     equip_weapon(&mut recruit, rifle);
     assert_eq!(object::id(recruit.weapon().borrow()), plasma);
 
-    let (weapon, armor) = recruit.dismiss();
+    let (weapon, armor, utilities) = recruit.dismiss();
+    utilities.destroy!(|u| u.destroy());
     weapon.destroy!(|w| w.destroy());
     armor.destroy_none();
     ts.end();
@@ -453,5 +458,70 @@ fun test_equip_armor_below_rank_fail() {
     let mut recruit = recruit::new("Test", ts.ctx());
     equip_armor(&mut recruit, items::armor(3, ts.ctx()));
 
+    abort
+}
+
+/// A utility is requisitioned, fitted to a recruit, taken off by its ID and sent
+/// back to the armory; a recruit past their slots can't carry another.
+#[test]
+fun test_requisition_equip_unequip_utility() {
+    use std::unit_test::assert_eq;
+
+    let mut ts = ts::begin(@0);
+    let (registry, acc, rng) = open_account(&mut ts);
+    let mut recruit = recruit::new("Test", ts.ctx());
+
+    let grenade = acc.requisition_utility(0, ts.ctx());
+    assert_eq!(grenade.name(), b"Frag Grenade".to_string());
+    let id = object::id(&grenade);
+    equip_utility(&mut recruit, grenade);
+    assert_eq!(recruit.utilities().length(), 1);
+
+    let grenade = unequip_utility(&mut recruit, id);
+    assert!(recruit.utilities().is_empty());
+    let home = object::id_address(&acc);
+    transfer::public_transfer(grenade, home);
+    transfer::public_transfer(recruit, home);
+    ts.next_tx(@1);
+    assert_eq!(ts::ids_for_address<Utility>(home), vector[id]);
+
+    close_account(ts, registry, acc, rng);
+}
+
+/// Nobody but the owner requisitions a utility.
+#[test, expected_failure(abort_code = ENotOwner)]
+fun test_requisition_utility_not_owner_fail() {
+    let mut ts = ts::begin(@0);
+    let (_registry, acc, _rng) = open_account(&mut ts);
+
+    ts.next_tx(@2);
+    let _grenade = acc.requisition_utility(0, ts.ctx());
+    abort
+}
+
+#[test, expected_failure(abort_code = EUnknownUtility)]
+fun test_requisition_unknown_utility_fail() {
+    let mut ts = ts::begin(@0);
+    let (_registry, acc, _rng) = open_account(&mut ts);
+    let _utility = acc.requisition_utility(1, ts.ctx());
+    abort
+}
+
+/// Fitting a second utility to a recruit with one slot aborts.
+#[test, expected_failure(abort_code = ghosts::recruit::EUtilitiesFull)]
+fun test_equip_second_utility_fail() {
+    let mut ts = ts::begin(@0);
+    let mut recruit = recruit::new("Test", ts.ctx());
+    equip_utility(&mut recruit, items::frag_grenade(ts.ctx()));
+    equip_utility(&mut recruit, items::frag_grenade(ts.ctx()));
+    abort
+}
+
+/// Taking off a utility the recruit does not carry aborts.
+#[test, expected_failure(abort_code = ghosts::recruit::ENoUtility)]
+fun test_unequip_missing_utility_fail() {
+    let mut ts = ts::begin(@0);
+    let mut recruit = recruit::new("Test", ts.ctx());
+    let _utility = unequip_utility(&mut recruit, object::id_from_address(@0x1));
     abort
 }

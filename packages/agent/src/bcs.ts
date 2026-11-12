@@ -27,13 +27,16 @@ const Table = bcs.struct("Table", { id: bcs.Address, size: bcs.u64() });
 const Param = bcs.struct("Param", { value: bcs.u16(), maxValue: bcs.u16() });
 const StatsBcs = bcs.u128();
 
-/** `ghosts::action::Action`: variant order is the tag, new variants are appended. */
-const ActionBcs = bcs.enum("Action", {
+/** `ghosts::action::ActionKind`: variant order is the tag, new variants are appended. */
+const ActionKindBcs = bcs.enum("ActionKind", {
     Move: null,
     Attack: null,
     Reload: null,
     Grenade: null,
 });
+
+/** `ghosts::action::Action`: how many uses are left (`null`: unlimited), then the kind. */
+const ActionBcs = bcs.struct("Action", { uses: bcs.option(bcs.u8()), kind: ActionKindBcs });
 
 /** `ghosts::unit::Unit`: a recruit as the map holds them, with the `Account` it belongs to. */
 const UnitBcs = bcs.struct("Unit", {
@@ -42,7 +45,6 @@ const UnitBcs = bcs.struct("Unit", {
     ap: Param,
     hp: Param,
     ammo: Param,
-    grenadeUsed: bcs.bool(),
     stats: StatsBcs,
     actions: bcs.vector(ActionBcs),
 });
@@ -173,6 +175,14 @@ const Armor = bcs.struct("Armor", {
     requiredRank: Rank,
 });
 
+/** `ghosts::utility::Utility`: a stats modifier for its carrier and the actions it grants. */
+const Utility = bcs.struct("Utility", {
+    id: bcs.Address,
+    name: bcs.string(),
+    stats: StatsBcs,
+    actions: bcs.vector(ActionBcs),
+});
+
 /** `ghosts::recruit::Recruit`: an object the `Account` owns while the recruit is at home. */
 export const RecruitBcs = bcs.struct("Recruit", {
     id: bcs.Address,
@@ -182,6 +192,8 @@ export const RecruitBcs = bcs.struct("Recruit", {
     stats: StatsBcs,
     weapon: bcs.option(Weapon),
     armor: bcs.option(Armor),
+    /** In slot order, at most the recruit's utility slots (one for now). */
+    utilities: bcs.vector(Utility),
     leader: bcs.Address,
 });
 
@@ -353,11 +365,11 @@ export function decodeGame(bytes: Uint8Array, version: string): GameState {
                 hpMax: unit.hp.maxValue,
                 ammo: unit.ammo.value,
                 ammoMax: unit.ammo.maxValue,
-                grenadeUsed: unit.grenadeUsed,
                 stats: decodeStats(unit.stats),
-                actions: unit.actions.map(
-                    (action) => action.$kind.toLowerCase() as UnitAction,
-                ),
+                actions: unit.actions.map(({ kind, uses }) => ({
+                    kind: kind.$kind.toLowerCase() as UnitAction,
+                    uses,
+                })),
             });
         }),
     );

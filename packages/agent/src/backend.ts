@@ -30,11 +30,12 @@ export interface Backend {
     game(id: string): Promise<GameState | null>;
 
     createAccount(): Promise<Receipt>;
-    /** Hire the free squad: tops the account up to its free recruits, unarmed. */
+    /** Hire the free squad: tops the account up to its free recruits, with no gear. */
     hireSquad(): Promise<Receipt>;
     /**
-     * Arm the recruits at home who carry no weapon, so they can shoot once on the map.
-     * Null when everyone at home is armed already: no transaction is sent.
+     * Arm the recruits at home who carry no weapon, and give those with a free utility slot
+     * a frag grenade, so they can shoot and throw once on the map.
+     * Null when everyone at home is fitted already: no transaction is sent.
      */
     armSquad(): Promise<Receipt | null>;
     /**

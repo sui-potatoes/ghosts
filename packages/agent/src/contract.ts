@@ -52,6 +52,8 @@ export const TESTNET_DEPLOYMENT: Deployment = {
 const CLOCK = "0x6";
 /** `items::rifle` tier 1: the "Standard Rifle", the one a rank-less recruit may carry. */
 const STANDARD_RIFLE = 1;
+/** `items::utility` kind 0: the frag grenade. */
+const FRAG_GRENADE_KIND = 0;
 
 /**
  * Take `name`, shaped like the app's rename: an earlier leaf of this address is
@@ -164,26 +166,41 @@ export function acceptSeatsTx(d: Deployment, seats: PendingSeat[]): Transaction 
     return tx;
 }
 
+/** What a recruit at home still lacks to play: a weapon, or a utility for its free slot. */
+export interface Fitting {
+    recruit: ObjectRef;
+    rifle: boolean;
+    grenade: boolean;
+}
+
 /**
- * Arm recruits at home with a standard rifle, as the armory does: a recruit hired
- * with no weapon has no `Attack` or `Reload` once on the map. Each rifle is
- * requisitioned, equipped while the recruit is borrowed and handed back, in one
- * transaction.
+ * Arm recruits at home as the armory does: a recruit hired with no gear has no `Attack`,
+ * `Reload` or `Grenade` once on the map. Each standard rifle and frag grenade is requisitioned,
+ * equipped while the recruit is borrowed and handed back, in one transaction.
  */
-export function armSquadTx(d: Deployment, account: string, recruits: ObjectRef[]): Transaction {
+export function armSquadTx(d: Deployment, account: string, fittings: Fitting[]): Transaction {
     const tx = new Transaction();
     const target = (fn: string) => `${d.package}::${ACCOUNT_MODULE}::${fn}`;
     const acc = tx.object(account);
-    for (const recruit of recruits) {
-        const [rifle] = tx.moveCall({
-            target: target("requisition_rifle"),
-            arguments: [acc, tx.pure.u8(STANDARD_RIFLE)],
-        });
+    for (const { recruit, rifle: needsRifle, grenade: needsGrenade } of fittings) {
         const [borrowed, borrow] = tx.moveCall({
             target: target("borrow_recruit"),
             arguments: [acc, tx.receivingRef(recruit)],
         });
-        tx.moveCall({ target: target("equip_weapon"), arguments: [borrowed, rifle] });
+        if (needsRifle) {
+            const [rifle] = tx.moveCall({
+                target: target("requisition_rifle"),
+                arguments: [acc, tx.pure.u8(STANDARD_RIFLE)],
+            });
+            tx.moveCall({ target: target("equip_weapon"), arguments: [borrowed, rifle] });
+        }
+        if (needsGrenade) {
+            const [grenade] = tx.moveCall({
+                target: target("requisition_utility"),
+                arguments: [acc, tx.pure.u8(FRAG_GRENADE_KIND)],
+            });
+            tx.moveCall({ target: target("equip_utility"), arguments: [borrowed, grenade] });
+        }
         tx.moveCall({ target: target("return_recruit"), arguments: [borrowed, borrow] });
     }
     return tx;
@@ -299,10 +316,11 @@ const ABORTS: Record<string, Record<number, string>> = {
     },
     unit: {
         1: "The target or destination is out of range.",
-        2: "Out of ammo, or the grenade is used.",
+        2: "Out of ammo.",
         3: "That unit has no AP left.",
         4: "The weapon is already full.",
         5: "That unit cannot do that: it is not in its actions.",
+        6: "Every charge of that unit's grenade is spent.",
     },
     matchmaker: {
         0: "This account already has a live ticket in the queue.",

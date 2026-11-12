@@ -55,6 +55,29 @@ fun test_weapons() {
 }
 
 #[test]
+/// The frag grenade is the old base grenade as an item: a `Grenade` action with one
+/// use, and no stats of its own.
+fun test_utilities() {
+    use ghosts::action;
+
+    let ctx = &mut tx_context::dummy();
+    let grenade = items::utility(0, ctx);
+    assert_eq!(grenade.name(), b"Frag Grenade".to_string());
+    assert_eq!(*grenade.actions(), vector[action::limited(action::new_grenade(), 1)]);
+    // it adds nothing to its carrier: the zero modifier
+    assert_eq!(grenade.stats().inner(), 0);
+    assert!(items::is_utility(0));
+    assert!(!items::is_utility(1));
+    grenade.destroy();
+}
+
+#[test, expected_failure]
+fun test_unknown_utility_fail() {
+    let ctx = &mut tx_context::dummy();
+    items::utility(1, ctx).destroy();
+}
+
+#[test]
 fun test_armor() {
     let ctx = &mut tx_context::dummy();
 

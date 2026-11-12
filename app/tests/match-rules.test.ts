@@ -15,6 +15,7 @@ import {
     encodePath,
     engineActions,
     gameEvents,
+    hasUsesLeft,
     hitChance,
     isOver,
     lineOfSight,
@@ -395,7 +396,7 @@ test("experience reaches the same ranks as the contract", () => {
 test("a unit can do what its actions list, and nothing else", () => {
     const unit = (recruit: string, actions: string[]) => ({
         tileType: { $kind: "Empty" },
-        unit: { recruit, actions: actions.map(($kind) => ({ $kind })) },
+        unit: { recruit, actions: actions.map(($kind) => ({ uses: null, kind: { $kind } })) },
     });
     const game = {
         map: {
@@ -417,7 +418,7 @@ test("a unit can do what its actions list, and nothing else", () => {
 });
 
 test("chain actions map to the engine's orders, Attack being fire", () => {
-    const of = (...kinds: string[]) => engineActions(kinds.map(($kind) => ({ $kind })));
+    const of = (...kinds: string[]) => engineActions(kinds.map(($kind) => ({ kind: { $kind } })));
     assert.deepEqual(of("Move", "Attack", "Reload", "Grenade"), [
         "move",
         "fire",
@@ -426,4 +427,14 @@ test("chain actions map to the engine's orders, Attack being fire", () => {
     ]);
     assert.deepEqual(of("Move", "Grenade"), ["move", "grenade"]);
     assert.deepEqual(of(), []);
+});
+
+test("a grenade is available while an action of its kind has a use left", () => {
+    const action = (kind: string, uses: number | null) => ({ uses, kind: { $kind: kind } });
+    const of = (...actions: ReturnType<typeof action>[]) => ({ actions });
+    assert.ok(!hasUsesLeft(of(action("Move", null)), "Grenade"), "no grenade at all");
+    assert.ok(hasUsesLeft(of(action("Move", null), action("Grenade", 1)), "Grenade"));
+    assert.ok(!hasUsesLeft(of(action("Grenade", 0)), "Grenade"), "spent");
+    assert.ok(hasUsesLeft(of(action("Grenade", 0), action("Grenade", 2)), "Grenade"));
+    assert.ok(hasUsesLeft(of(action("Grenade", null)), "Grenade"), "unlimited");
 });

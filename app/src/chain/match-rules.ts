@@ -366,8 +366,17 @@ export type UnitAction = "Move" | "Attack" | "Reload" | "Grenade";
 /** Whether the unit on the map for `recruit` has `action`; the chain refuses the order otherwise. */
 export function canDo(game: ChainGame, recruit: string, action: UnitAction) {
     const entry = unitsOnMap(game).find(({ unit }) => unit.recruit === recruit);
-    return !!entry && entry.unit.actions.some(({ $kind }) => $kind === action);
+    return !!entry && entry.unit.actions.some(({ kind }) => kind.$kind === action);
 }
+
+/**
+ * Whether a unit still has an action of the kind it can spend: one with `uses` of `null`
+ * (unlimited) or above zero. `Unit.perform_grenade` and the like take the first such.
+ */
+export const hasUsesLeft = (
+    unit: { actions: readonly { uses: number | null; kind: { $kind: string } }[] },
+    action: UnitAction,
+) => unit.actions.some(({ kind, uses }) => kind.$kind === action && (uses === null || uses > 0));
 
 /** The engine's name for each chain action; the engine's other orders have no chain counterpart. */
 const ENGINE_ORDER = {
@@ -378,10 +387,11 @@ const ENGINE_ORDER = {
 } as const;
 
 /** A unit's chain actions as the engine's allow-list. */
-export function engineActions(actions: readonly { $kind: string }[]): UnitOrder[] {
-    return actions.flatMap(({ $kind }) =>
+export function engineActions(actions: readonly { kind: { $kind: string } }[]): UnitOrder[] {
+    const orders = actions.flatMap(({ kind: { $kind } }) =>
         $kind in ENGINE_ORDER ? [ENGINE_ORDER[$kind as keyof typeof ENGINE_ORDER]] : [],
     );
+    return [...new Set(orders)];
 }
 
 /** The units on the map with the tiles they stand on. */

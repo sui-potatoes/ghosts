@@ -75,6 +75,30 @@ export const Armor = bcs.struct("Armor", {
     requiredRank: Rank,
 });
 
+/** `ghosts::param::Param`. */
+const Param = bcs.struct("Param", { value: bcs.u16(), maxValue: bcs.u16() });
+
+/** `ghosts::action::ActionKind`: variant order is the tag; new variants are appended. */
+const ActionKind = bcs.enum("ActionKind", {
+    Move: null,
+    Attack: null,
+    Reload: null,
+    Grenade: null,
+});
+
+/** `ghosts::action::Action`: a kind and how many uses are left of it, `null` for unlimited. */
+const Action = bcs.struct("Action", { uses: bcs.option(bcs.u8()), kind: ActionKind });
+
+/** `ghosts::utility::Utility`: what a recruit carries for the actions it grants (the frag grenade). */
+export const Utility = bcs.struct("Utility", {
+    id: bcs.Address,
+    name: bcs.string(),
+    /** A modifier added to the carrier's stats, like an armor's: zero for the frag grenade. */
+    stats: Stats,
+    /** The actions the item adds to its carrier, with the uses they come with. */
+    actions: bcs.vector(Action),
+});
+
 /** `ghosts::recruit::Recruit`. */
 export const Recruit = bcs.struct("Recruit", {
     id: bcs.Address,
@@ -84,6 +108,8 @@ export const Recruit = bcs.struct("Recruit", {
     stats: Stats,
     weapon: bcs.option(Weapon),
     armor: bcs.option(Armor),
+    /** In slot order, at most `MAX_UTILITIES` (1 for now). */
+    utilities: bcs.vector(Utility),
     leader: bcs.Address,
 });
 
@@ -131,17 +157,6 @@ export const Account = bcs.struct("Account", {
     score: Score,
 });
 
-/** `ghosts::param::Param`. */
-const Param = bcs.struct("Param", { value: bcs.u16(), maxValue: bcs.u16() });
-
-/** `ghosts::action::Action`: variant order is the tag; new variants are appended. */
-const Action = bcs.enum("Action", {
-    Move: null,
-    Attack: null,
-    Reload: null,
-    Grenade: null,
-});
-
 /** `ghosts::unit::Unit`: a recruit as the map holds them, with the `Account` it belongs to. */
 export const MapUnit = bcs.struct("Unit", {
     recruit: bcs.Address,
@@ -149,9 +164,11 @@ export const MapUnit = bcs.struct("Unit", {
     ap: Param,
     hp: Param,
     ammo: Param,
-    grenadeUsed: bcs.bool(),
     stats: Stats,
-    /** What the unit may be ordered to do; an unarmed recruit has no `Attack` or `Reload`. */
+    /**
+     * What the unit may be ordered to do: `Move`, the weapon's `Attack` and `Reload`, then the
+     * actions of its utilities, each with its uses left; no weapon, no `Attack` or `Reload`.
+     */
     actions: bcs.vector(Action),
 });
 

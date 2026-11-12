@@ -35,7 +35,8 @@ SHOTS: distance is |dx|+|dy|. Base chance is aim, +5 per tile inside weapon rang
 it, up to range+3. Cover at the target facing the shooter subtracts 25 (low) or 50 (high), plus
 the target's defense. Walls and high cover in between block the line of sight.
 DAMAGE: weapon damage ± spread, reduced by armor to at least 1. Dodge can avoid it entirely.
-GRENADES: once per unit, range ${GRENADE_RANGE}, ${GRENADE_DAMAGE} damage in a diamond of radius ${GRENADE_RADIUS}, friend or foe.
+GRENADES: only a unit carrying a grenade utility can throw one (setup equips a frag grenade), once
+per match: range ${GRENADE_RANGE}, ${GRENADE_DAMAGE} damage in a diamond of radius ${GRENADE_RADIUS}, friend or foe.
 They can't be dodged, only walls block the throw, and they destroy cover.
 WINNING: eliminate the enemy squad. A game still going at turn ${MAX_TURNS} is a draw. Fallen recruits
 are gone for good.

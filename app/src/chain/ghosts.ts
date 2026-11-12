@@ -32,7 +32,16 @@ import { useState } from "react";
 
 import type { VisualAreas } from "@ghosts/squad/appearance/codec";
 import { GHOSTS } from "../constants";
-import { Account, AccountRecord, Armor, Recruit, Registry, Weapon, WeaponUpgrade } from "./bcs";
+import {
+    Account,
+    AccountRecord,
+    Armor,
+    Recruit,
+    Registry,
+    Utility,
+    Weapon,
+    WeaponUpgrade,
+} from "./bcs";
 import { movedOn, noteOwned, type ExecutedOrder } from "./fast-lane";
 import { RANKS } from "./match-rules";
 import { absorbWrites, current, useBcsObject } from "./objects";
@@ -85,6 +94,7 @@ export type ChainRecruit = ReturnType<typeof Recruit.parse> & { objectId: string
 export type ChainWeapon = ReturnType<typeof Weapon.parse> & { objectId: string };
 export type ChainArmor = ReturnType<typeof Armor.parse> & { objectId: string };
 export type ChainAccount = ReturnType<typeof Account.parse>;
+export type ChainUtility = ReturnType<typeof Utility.parse> & { objectId: string };
 export type ChainUpgrade = ReturnType<typeof WeaponUpgrade.parse> & { objectId: string };
 
 // === Reads ===
@@ -189,6 +199,7 @@ const HELD = {
     recruits: { type: "recruit::Recruit", schema: Recruit as BcsType<unknown> },
     weapons: { type: "weapon::Weapon", schema: Weapon as BcsType<unknown> },
     armors: { type: "armor::Armor", schema: Armor as BcsType<unknown> },
+    utilities: { type: "utility::Utility", schema: Utility as BcsType<unknown> },
     upgrades: { type: "weapon_upgrade::WeaponUpgrade", schema: WeaponUpgrade as BcsType<unknown> },
 };
 type Held = keyof typeof HELD;
@@ -305,14 +316,16 @@ export function useChainRecruits(account?: ChainAccount) {
     return useHeld<ReturnType<typeof Recruit.parse>>("recruits", account?.id, account?.recruits);
 }
 
-/** The armory: unequipped weapons and armor, and the stock of upgrades, sent to an `Account`. */
+/** The armory: unequipped weapons, armor and utilities, and the stock of upgrades, sent to an `Account`. */
 export function useArmory(account?: ChainAccount) {
     const weapons = useHeld<ReturnType<typeof Weapon.parse>>("weapons", account?.id);
     const armors = useHeld<ReturnType<typeof Armor.parse>>("armors", account?.id);
+    const utilities = useHeld<ReturnType<typeof Utility.parse>>("utilities", account?.id);
     const upgrades = useHeld<ReturnType<typeof WeaponUpgrade.parse>>("upgrades", account?.id);
     return {
         weapons: weapons.data ?? [],
         armors: armors.data ?? [],
+        utilities: utilities.data ?? [],
         upgrades: upgrades.data,
     };
 }
@@ -432,7 +445,7 @@ export function hireRecruitsTx(accountId: string): Transaction {
     return tx;
 }
 
-/** Dismiss a recruit for good; their weapon and armor go back to the armory. */
+/** Dismiss a recruit for good; their weapon, armor and utilities go back to the armory. */
 export function dismissRecruitTx(accountId: string, recruitId: string): Transaction {
     const tx = new Transaction();
     tx.moveCall({
@@ -505,6 +518,57 @@ export const unequipWeaponTx = (accountId: string, recruitId: string): Transacti
 
 export const unequipArmorTx = (accountId: string, recruitId: string): Transaction =>
     unequipTx(accountId, recruitId, "armor");
+
+/** Take a utility off a recruit, by its id, into the armory. */
+export function unequipUtilityTx(
+    accountId: string,
+    recruitId: string,
+    utilityId: string,
+): Transaction {
+    const tx = new Transaction();
+    withRecruit(tx, tx.object(accountId), recruitId, (recruit) => {
+        const [item] = tx.moveCall({
+            target: target("unequip_utility"),
+            arguments: [recruit, tx.pure.id(utilityId)],
+        });
+        tx.transferObjects([item], accountId);
+    });
+    return tx;
+}
+
+/**
+ * Fit a recruit with a utility out of the armory. The chain aborts if their
+ * utility slots are full: take one off first (`unequipUtilityTx`).
+ */
+export function equipUtilityTx(accountId: string, recruitId: string, utilityId: string) {
+    const tx = new Transaction();
+    const acc = tx.object(accountId);
+    withRecruit(tx, acc, recruitId, (recruit) => {
+        const [item] = tx.moveCall({
+            target: target("take_utility"),
+            arguments: [acc, tx.object(utilityId)],
+        });
+        tx.moveCall({ target: target("equip_utility"), arguments: [recruit, item] });
+    });
+    return tx;
+}
+
+/** The utility kinds of `ghosts::items`. */
+export const UTILITY_KINDS = { fragGrenade: 0 } as const;
+
+/** Requisition a utility into the armory: sent to the `Account`. */
+export function requisitionUtilityTx(
+    accountId: string,
+    kind: (typeof UTILITY_KINDS)[keyof typeof UTILITY_KINDS],
+): Transaction {
+    const tx = new Transaction();
+    const [item] = tx.moveCall({
+        target: target("requisition_utility"),
+        arguments: [tx.object(accountId), tx.pure.u8(kind)],
+    });
+    tx.transferObjects([item], accountId);
+    return tx;
+}
 
 /** A requested weapon fitting: its upgrade name, family and tier. */
 export interface Fitting {

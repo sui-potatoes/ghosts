@@ -17,6 +17,7 @@ import {
     FREE_RECRUITS,
     legalActions,
     SEARCH_TIMEOUT_MS,
+    hasUsesLeft,
     validateBatch,
     type LegalAction,
 } from "./rules.ts";
@@ -336,7 +337,7 @@ export class GhostsAgent {
         if (account && account.recruits < FREE_RECRUITS && account.search.kind === "idle") {
             await this.backend.hireSquad();
         }
-        // A recruit hired with no weapon can't attack or reload on the map.
+        // A recruit hired with no gear can't attack, reload or throw on the map.
         if (account && account.search.kind !== "playing") await this.backend.armSquad();
         return this.situation();
     }
@@ -394,7 +395,7 @@ export class GhostsAgent {
                         hp: `${unit.hp}/${unit.hpMax}`,
                         ap: unit.ap,
                         ammo: `${unit.ammo}/${unit.ammoMax}`,
-                        grenade: !unit.grenadeUsed,
+                        grenade: hasUsesLeft(unit, "grenade"),
                         mobility: unit.stats.mobility,
                         aim: unit.stats.aim,
                         range: unit.stats.range,

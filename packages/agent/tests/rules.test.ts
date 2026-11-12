@@ -11,6 +11,8 @@ import {
     checkPath,
     coverBonus,
     DOWN,
+    hasAction,
+    hasUsesLeft,
     hitChance,
     LEFT,
     legalActions,
@@ -23,7 +25,13 @@ import {
     UP,
     validateBatch,
 } from "../src/rules.ts";
-import { ActionError, type GameState, type Stats, type Tile } from "../src/types.ts";
+import {
+    ActionError,
+    type GameState,
+    type Stats,
+    type Tile,
+    type UnitActionEntry,
+} from "../src/types.ts";
 
 const bytes = (hex: string) => Uint8Array.from(Buffer.from(hex, "hex"));
 
@@ -60,6 +68,14 @@ function open(rows: number, cols: number): GameState {
     return { ...board(DEMO_1), rows, cols, tiles };
 }
 
+/** Actions as a unit holds them: unlimited, unless a count is given as `kind:uses`. */
+function acts(...kinds: string[]): UnitActionEntry[] {
+    return kinds.map((text) => {
+        const [kind, uses] = text.split(":");
+        return { kind: kind as UnitActionEntry["kind"], uses: uses === undefined ? null : +uses };
+    });
+}
+
 function place(state: GameState, side: number, x: number, y: number, ap = 2) {
     state.units.push({
         recruit: `0x${side}${x}${y}`,
@@ -73,9 +89,8 @@ function place(state: GameState, side: number, x: number, y: number, ap = 2) {
         hpMax: 10,
         ammo: 3,
         ammoMax: 3,
-        grenadeUsed: false,
         stats: OPERATIVE,
-        actions: ["move", "attack", "reload", "grenade"],
+        actions: acts("move", "attack", "reload", "grenade:1"),
     });
 }
 
@@ -260,7 +275,7 @@ test("a unit is only offered and allowed what is in its actions", () => {
     place(state, 0, 1, 1);
     place(state, 1, 3, 1);
     const runner = state.units[0];
-    runner.actions = ["move", "grenade"];
+    runner.actions = acts("move", "grenade:1");
     runner.ammo = 0;
     const attack = { kind: "attack", x: 1, y: 1, tx: 3, ty: 1 } as const;
     assert.match(refusal(state, 0, attack, 0)!, /cannot attack/);
@@ -269,7 +284,7 @@ test("a unit is only offered and allowed what is in its actions", () => {
     assert.ok(kinds.has("move") && kinds.has("grenade"));
     assert.ok(!kinds.has("attack") && !kinds.has("reload"));
 
-    runner.actions = ["attack", "reload"];
+    runner.actions = acts("attack", "reload");
     assert.match(refusal(state, 0, { kind: "move", x: 1, y: 1, path: [DOWN] }, 0)!, /cannot move/);
     assert.match(refusal(state, 0, { kind: "grenade", x: 1, y: 1, tx: 3, ty: 1 }, 0)!, /cannot/);
     assert.ok(!legalActions(state, 0, 0).some((a) => a.kind === "move" || a.kind === "grenade"));
@@ -302,4 +317,41 @@ test("legal moves stay within mobility and never enter a unit's tile", () => {
         assert.ok(manhattan(6, 6, move.to![0], move.to![1]) <= OPERATIVE.mobility);
         assert.notDeepEqual(move.to, [6, 8]);
     }
+});
+
+test("a grenade is offered while an action of its kind has a use left", () => {
+    const state = open(10, 10);
+    place(state, 0, 1, 1);
+    place(state, 1, 1, 7);
+    const thrower = state.units[0];
+    const throwAt = (ty: number) => ({ kind: "grenade", x: 1, y: 1, tx: 1, ty }) as const;
+    const listed = () => legalActions(state, 0, 0).some((a) => a.kind === "grenade");
+
+    // its range is the grenade's 5, whatever carries it
+    assert.equal(refusal(state, 0, throwAt(6), 0), null);
+    assert.match(refusal(state, 0, throwAt(7), 0)!, /out of throwing range/);
+    assert.ok(listed());
+
+    // spent: refused and not listed, though the unit still has the action
+    thrower.actions = acts("move", "grenade:0");
+    assert.ok(hasAction(thrower, "grenade") && !hasUsesLeft(thrower, "grenade"));
+    assert.match(refusal(state, 0, throwAt(6), 0)!, /no grenade left/);
+    assert.ok(!listed());
+});
+
+test("two grenade actions keep their own counts, and an unlimited one never runs out", () => {
+    const state = open(10, 10);
+    place(state, 0, 1, 1);
+    place(state, 1, 1, 7);
+    const thrower = state.units[0];
+    thrower.actions = acts("move", "grenade:0", "grenade:2");
+    assert.ok(hasUsesLeft(thrower, "grenade"), "the second one has uses left");
+    assert.equal(refusal(state, 0, { kind: "grenade", x: 1, y: 1, tx: 1, ty: 6 }, 0), null);
+
+    thrower.actions = acts("move", "grenade:0", "grenade:0");
+    assert.ok(hasAction(thrower, "grenade") && !hasUsesLeft(thrower, "grenade"));
+
+    thrower.actions = [...acts("move"), { kind: "grenade", uses: null }];
+    assert.ok(hasUsesLeft(thrower, "grenade"));
+    assert.ok(!hasUsesLeft({ ...thrower, actions: acts("move") }, "grenade"), "none at all");
 });

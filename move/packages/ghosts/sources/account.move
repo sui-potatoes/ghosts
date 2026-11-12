@@ -3,7 +3,7 @@
 
 /// Player `Account`s: the shared object a player is identified by, with their
 /// rating and score. Everything the player has is sent to the `Account` and taken
-/// with `Receiving` when needed: recruits, the armory's weapons and armor, the
+/// with `Receiving` when needed: recruits, the armory's weapons, armor and utilities, the
 /// stock of weapon upgrades, and the dog tags of the fallen. The `Registry` maps owner
 /// addresses to account IDs; `new_account` aborts if the sender already has an
 /// entry. Account mutations call `authorize` to compare the transaction sender
@@ -24,6 +24,7 @@ use ghosts::{
     armor::Armor,
     items,
     recruit::{Self, DogTag, Recruit},
+    utility::Utility,
     visuals,
     weapon::Weapon,
     weapon_upgrade::WeaponUpgrade
@@ -47,6 +48,8 @@ const EWrongRecruit: u64 = 7;
 
 /// The `Recruit`'s rank is below what the gear asks for.
 const ERankTooLow: u64 = 8;
+/// Requisitioning a kind of utility there is none of.
+const EUnknownUtility: u64 = 9;
 
 /// The squad an `Account` can always hold for free, so that nobody is ever out of
 /// the game for having lost one.
@@ -250,14 +253,15 @@ public fun edit_recruit(
     recruit.set_voice(voice);
 }
 
-/// Dismiss a `Recruit` for good: their weapon and armor go back to the armory,
+/// Dismiss a `Recruit` for good: their weapon, armor and utilities go back to the armory,
 /// and the freed slot can be filled by `hire_recruits`.
 public fun dismiss_recruit(acc: &mut Account, recruit: Receiving<Recruit>, ctx: &mut TxContext) {
     acc.authorize(ctx);
-    let (weapon, armor) = transfer::public_receive(&mut acc.id, recruit).dismiss();
+    let (weapon, armor, utilities) = transfer::public_receive(&mut acc.id, recruit).dismiss();
     let home = acc.id.to_address();
     weapon.do!(|w| transfer::public_transfer(w, home));
     armor.do!(|a| transfer::public_transfer(a, home));
+    utilities.do!(|u| transfer::public_transfer(u, home));
     acc.recruits = acc.recruits - 1;
 }
 
@@ -295,6 +299,14 @@ public fun requisition_armor(acc: &Account, tier: u8, ctx: &mut TxContext): Armo
     items::armor(tier, ctx)
 }
 
+/// Requisition a utility of the given kind (0 is the frag grenade): for a recruit,
+/// or the armory. Aborts with `EUnknownUtility` on any other kind.
+public fun requisition_utility(acc: &Account, kind: u8, ctx: &mut TxContext): Utility {
+    acc.authorize(ctx);
+    assert!(items::is_utility(kind), EUnknownUtility);
+    items::utility(kind, ctx)
+}
+
 /// Requisition a weapon upgrade of the given kind and tier: for a weapon, or the
 /// stock.
 public fun requisition_upgrade(
@@ -307,7 +319,7 @@ public fun requisition_upgrade(
     items::upgrade(kind, tier, ctx)
 }
 
-// === Gear: Weapons, Armor, Upgrades ===
+// === Gear: Weapons, Armor, Utilities, Upgrades ===
 
 /// Take a `Weapon` out of the armory.
 public fun take_weapon(acc: &mut Account, weapon: Receiving<Weapon>, ctx: &mut TxContext): Weapon {
@@ -346,6 +358,24 @@ public fun equip_armor(recruit: &mut Recruit, armor: Armor) {
 
 /// Take the `Armor` off a borrowed `Recruit`: for the armory, or another recruit.
 public fun unequip_armor(recruit: &mut Recruit): Armor { recruit.remove_armor() }
+
+/// Take a `Utility` out of the armory.
+public fun take_utility(
+    acc: &mut Account,
+    utility: Receiving<Utility>,
+    ctx: &mut TxContext,
+): Utility {
+    acc.authorize(ctx);
+    transfer::public_receive(&mut acc.id, utility)
+}
+
+/// Fit a borrowed `Recruit` with a `Utility`: from the armory, or off another
+/// recruit. Aborts if all their utility slots are taken: take one off first.
+public fun equip_utility(recruit: &mut Recruit, utility: Utility) { recruit.add_utility(utility) }
+
+/// Take the `Utility` with the given ID off a borrowed `Recruit`: for the armory,
+/// or another recruit.
+public fun unequip_utility(recruit: &mut Recruit, id: ID): Utility { recruit.remove_utility(id) }
 
 /// Take a `WeaponUpgrade` out of the stock: to fit to a weapon with
 /// `weapon::add_upgrade`.

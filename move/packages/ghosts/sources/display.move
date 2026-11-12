@@ -16,6 +16,7 @@ module ghosts::display;
 use ghosts::{
     armor::{Self, Armor},
     recruit::{Self, DogTag, Recruit},
+    utility::{Self, Utility},
     weapon::{Self, Weapon},
     weapon_upgrade::{Self, WeaponUpgrade}
 };
@@ -71,6 +72,16 @@ public fun armor(registry: &mut DisplayRegistry, ctx: &mut TxContext): DisplayCa
     display.set(&cap, "name", "{name}");
     display.set(&cap, "description", "Armor that Recruits can wear in battle.");
     display.set(&cap, "image_url", "https://suighosts.com/images/armor-light.webp");
+    display.share();
+    cap
+}
+
+/// Create and share the `Display` for the `Utility` object.
+public fun utility(registry: &mut DisplayRegistry, ctx: &mut TxContext): DisplayCap<Utility> {
+    let (mut display, cap) = registry.new(utility::permit(), ctx);
+    display.set(&cap, "name", "{name}");
+    display.set(&cap, "description", "A utility that gives Recruits an action in battle.");
+    display.set(&cap, "image_url", "https://suighosts.com/images/utility.webp");
     display.share();
     cap
 }

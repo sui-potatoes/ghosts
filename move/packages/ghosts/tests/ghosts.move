@@ -66,16 +66,38 @@ public struct Fixture {
 /// Publish the game, open an `Account` for Alice and Bob, and play on Demo 1:
 /// one recruit a side keeps the tests short.
 fun setup(): Fixture {
-    setup_on!(|id| map::demo_1(id), vector[vector[0, 3], vector[6, 5]])
+    setup_on!(|id| map::demo_1(id), vector[vector[0, 3], vector[6, 5]], |acc, ctx| hire(acc, ctx))
+}
+
+/// `setup` with recruits who carry no weapon and nothing else.
+fun setup_unarmed(): Fixture {
+    setup_on!(
+        |id| map::demo_1(id),
+        vector[vector[0, 3], vector[6, 5]],
+        |acc, ctx| hire_with(acc, false, false, ctx),
+    )
+}
+
+/// `setup` with recruits who carry a frag grenade too.
+fun setup_grenadiers(): Fixture {
+    setup_on!(
+        |id| map::demo_1(id),
+        vector[vector[0, 3], vector[6, 5]],
+        |acc, ctx| hire_with(acc, true, true, ctx),
+    )
 }
 
 /// `setup` with the matches on another map: Demo 2 has two recruits a side.
 fun setup_on_demo_2(): Fixture {
     let positions = vector[vector[8, 2], vector[7, 6], vector[1, 2], vector[1, 7]];
-    setup_on!(|id| map::demo_2(id), positions)
+    setup_on!(|id| map::demo_2(id), positions, |acc, ctx| hire(acc, ctx))
 }
 
-macro fun setup_on($map: |ID| -> Map, $positions: vector<vector<u8>>): Fixture {
+macro fun setup_on(
+    $map: |ID| -> Map,
+    $positions: vector<vector<u8>>,
+    $hire: |&mut Account, &mut TxContext| -> ID,
+): Fixture {
     let mut ts = ts::begin(@0);
     init_for_testing(ts.ctx());
     account::init_for_testing(ts.ctx());
@@ -98,9 +120,9 @@ macro fun setup_on($map: |ID| -> Map, $positions: vector<vector<u8>>): Fixture {
 
     let mut alice = ts.take_shared_by_id<Account>(registry.account_of(ALICE));
     let mut bob = ts.take_shared_by_id<Account>(registry.account_of(BOB));
-    let alice_recruit = hire(&mut alice, ts.ctx());
+    let alice_recruit = $hire(&mut alice, ts.ctx());
     ts.next_tx(BOB);
-    let bob_recruit = hire(&mut bob, ts.ctx());
+    let bob_recruit = $hire(&mut bob, ts.ctx());
     ts.next_tx(ALICE);
     let mm = ts.take_shared<Matchmaker<Ghosts>>();
     let rng = ts.take_shared<Random>();
@@ -159,10 +181,17 @@ fun seat(f: &Fixture): Receiving<Seat> {
 }
 
 /// A recruit armed like the ones in `demo_test`, in the `Account` of the sender.
-fun hire(acc: &mut Account, ctx: &mut TxContext): ID {
+fun hire(acc: &mut Account, ctx: &mut TxContext): ID { hire_with(acc, true, false, ctx) }
+
+/// A recruit in the `Account` of the sender: with the armor and rifle of `hire` if
+/// `armed`, and with a frag grenade if `grenade`.
+fun hire_with(acc: &mut Account, armed: bool, grenade: bool, ctx: &mut TxContext): ID {
     let mut recruit = recruit_module::new("Jane Doe", ctx);
-    recruit.add_armor(items::armor(2, ctx));
-    recruit.add_weapon(items::rifle(3, ctx));
+    if (armed) {
+        recruit.add_armor(items::armor(2, ctx));
+        recruit.add_weapon(items::rifle(3, ctx));
+    };
+    if (grenade) recruit.add_utility(items::frag_grenade(ctx));
     let id = object::id(&recruit);
     acc.add_recruit(recruit);
     id
@@ -657,7 +686,11 @@ fun test_deploy_in_any_order() {
 fun test_pick_squad_on_match_preset() {
     use std::unit_test::assert_eq;
 
-    let mut fixture = setup_on!(|id| map::black_rain(id), map::black_rain_positions());
+    let mut fixture = setup_on!(
+        |id| map::black_rain(id),
+        map::black_rain_positions(),
+        |acc, ctx| hire(acc, ctx),
+    );
     let f = &mut fixture;
     let mut game = f.start();
 
@@ -766,6 +799,51 @@ fun test_next_turn_during_deployment_fail() {
 
     f.clock.set_for_testing(DEPLOY_LIMIT_MS);
     next_turn(&mut game, &f.alice, &f.clock, f.ts.ctx());
+
+    abort
+}
+
+/// A recruit with no utility cannot throw a grenade, however the order comes in.
+#[test, expected_failure(abort_code = ghosts::unit::EActionNotAllowed)]
+fun test_grenade_without_utility_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut game = f.start();
+    f.deploy(&mut game);
+
+    perform_grenade(&mut game, &f.alice, &f.rng, &f.clock, 0, 3, 0, 5, f.ts.ctx());
+
+    abort
+}
+
+/// A recruit with no weapon cannot attack.
+#[test, expected_failure(abort_code = ghosts::unit::EActionNotAllowed)]
+fun test_unarmed_attack_fail() {
+    let mut fixture = setup_unarmed();
+    let f = &mut fixture;
+    let mut game = f.start();
+    f.deploy(&mut game);
+
+    // the tile holds a unit (its own), so the refusal is the action's
+    perform_attack(&mut game, &f.alice, &f.rng, &f.clock, 0, 3, 0, 3, f.ts.ctx());
+
+    abort
+}
+
+/// With a frag grenade the throw works once; the second one is refused.
+#[test, expected_failure(abort_code = ghosts::unit::ENoUsesLeft)]
+fun test_grenade_once_per_match() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup_grenadiers();
+    let f = &mut fixture;
+    let mut game = f.start();
+    f.deploy(&mut game);
+
+    perform_grenade(&mut game, &f.alice, &f.rng, &f.clock, 0, 3, 0, 5, f.ts.ctx());
+    assert_eq!(game.map.unit(0, 3).borrow().ap(), 1);
+    assert_eq!(game.map.unit(0, 3).borrow().actions()[3].uses(), option::some(0));
+    perform_grenade(&mut game, &f.alice, &f.rng, &f.clock, 0, 3, 0, 5, f.ts.ctx());
 
     abort
 }

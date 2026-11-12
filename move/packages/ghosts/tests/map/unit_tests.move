@@ -15,6 +15,13 @@ fun armed_recruit(ctx: &mut TxContext): Recruit {
     recruit
 }
 
+/// A recruit carrying the frag grenade.
+fun grenadier(ctx: &mut TxContext): Recruit {
+    let mut recruit = recruit::default(ctx);
+    recruit.add_utility(items::frag_grenade(ctx));
+    recruit
+}
+
 #[test]
 fun default() {
     let ctx = &mut tx_context::dummy();
@@ -32,7 +39,8 @@ fun default() {
     unit.apply_damage(&mut rng, 5, true);
     assert_eq!(unit.hp(), 5);
 
-    let (weapon, armor) = recruit.dismiss();
+    let (weapon, armor, utilities) = recruit.dismiss();
+    utilities.destroy!(|u| u.destroy());
     weapon.destroy_none();
     armor.destroy_none();
     unit.destroy();
@@ -58,7 +66,8 @@ fun armor_modifiers_reach_the_recruit() {
     assert_eq!(unit.stats().damage(), 4);
     assert_eq!(unit.ammo(), 3);
 
-    let (weapon, armor) = recruit.dismiss();
+    let (weapon, armor, utilities) = recruit.dismiss();
+    utilities.destroy!(|u| u.destroy());
     weapon.destroy_none();
     armor.destroy_some().destroy();
     unit.destroy();
@@ -72,7 +81,8 @@ fun armor_modifiers_reach_the_recruit() {
     assert_eq!(unit.stats().armor(), 1);
     assert_eq!(unit.stats().dodge(), 10);
 
-    let (weapon, armor) = recruit.dismiss();
+    let (weapon, armor, utilities) = recruit.dismiss();
+    utilities.destroy!(|u| u.destroy());
     weapon.destroy_none();
     armor.destroy_some().destroy();
     unit.destroy();
@@ -92,7 +102,8 @@ fun perform_reload() {
     unit.reset_ap();
     unit.perform_reload();
 
-    let (weapon, armor) = recruit.dismiss();
+    let (weapon, armor, utilities) = recruit.dismiss();
+    utilities.destroy!(|u| u.destroy());
     weapon.do!(|weapon| weapon.destroy());
     armor.destroy_none();
     unit.destroy();
@@ -129,36 +140,45 @@ fun perform_reload_full_clip_fail() {
 #[test]
 // Scenario:
 // - throw a grenade
-// - check AP and whether grenade was used
+// - check AP and the uses of the action
 fun perform_grenade() {
     let ctx = &mut tx_context::dummy();
-    let recruit = recruit::default(ctx);
+    let recruit = grenadier(ctx);
     let mut unit = recruit.to_unit();
 
-    assert!(!unit.grenade_used());
+    assert_eq!(unit.actions()[1].uses(), option::some(1));
     assert_eq!(unit.ap(), 2);
     unit.perform_grenade();
 
     assert_eq!(unit.ap(), 1);
-    assert!(unit.grenade_used());
+    assert_eq!(unit.actions()[1].uses(), option::some(0));
+    assert!(unit.has_action(action::new_grenade()));
 
-    let (weapon, armor) = recruit.dismiss();
-    weapon.destroy_none();
-    armor.destroy_none();
+    recruit.kill(ctx).throw_away();
     unit.destroy();
 }
 
-#[test, expected_failure(abort_code = unit::EOutOfAmmo)]
+#[test, expected_failure(abort_code = unit::ENoUsesLeft)]
 // Scenario:
-// - throw grenade twice - fail - grenade used
+// - throw grenade twice - fail - uses spent
 fun perform_grenade_twice_fail() {
     let ctx = &mut tx_context::dummy();
-    let recruit = recruit::default(ctx);
+    let recruit = grenadier(ctx);
     let mut unit = recruit.to_unit();
 
     unit.perform_grenade();
     unit.perform_grenade();
 
+    abort
+}
+
+#[test, expected_failure(abort_code = unit::EActionNotAllowed, location = unit)]
+// A recruit with no utility has no grenade to throw.
+fun perform_grenade_without_utility_fail() {
+    let ctx = &mut tx_context::dummy();
+    let mut unit = recruit::default(ctx).to_unit();
+
+    unit.perform_grenade();
     abort
 }
 
@@ -169,7 +189,8 @@ fun perform_grenade_twice_fail() {
 fun perform_grenade_no_ap_fail() {
     let ctx = &mut tx_context::dummy();
     let mut rng = random::new_generator_from_seed_for_testing(vector[0]);
-    let recruit = armed_recruit(ctx);
+    let mut recruit = armed_recruit(ctx);
+    recruit.add_utility(items::frag_grenade(ctx));
     let mut unit = recruit.to_unit();
 
     unit.perform_attack(&mut rng, 4, 0);
@@ -269,7 +290,8 @@ fun unit_custom_weapon() {
     recruit.add_weapon(weapon);
 
     let unit = recruit.to_unit();
-    let (weapon, armor) = recruit.dismiss();
+    let (weapon, armor, utilities) = recruit.dismiss();
+    utilities.destroy!(|u| u.destroy());
 
     assert_eq!(unit.stats().damage(), 7);
 
@@ -290,7 +312,8 @@ fun from_bcs() {
     assert_eq!(unit.recruit_id(), unit2.recruit_id());
     assert_eq!(*unit.actions(), *unit2.actions());
     assert_eq!(bcs::to_bytes(&unit2), bytes);
-    let (weapon, armor) = recruit.dismiss();
+    let (weapon, armor, utilities) = recruit.dismiss();
+    utilities.destroy!(|u| u.destroy());
     weapon.do!(|weapon| weapon.destroy());
     armor.do!(|armor| armor.destroy());
     unit2.destroy();
@@ -298,7 +321,7 @@ fun from_bcs() {
 }
 
 #[test]
-fun armed_recruit_has_all_actions() {
+fun armed_recruit_has_weapon_actions() {
     let ctx = &mut tx_context::dummy();
     let recruit = armed_recruit(ctx);
     let unit = recruit.to_unit();
@@ -306,30 +329,29 @@ fun armed_recruit_has_all_actions() {
     assert_eq!(
         *unit.actions(),
         vector[
-            action::new_move(),
-            action::new_attack(),
-            action::new_reload(),
-            action::new_grenade(),
+            action::unlimited(action::new_move()),
+            action::unlimited(action::new_attack()),
+            action::unlimited(action::new_reload()),
         ],
     );
-    assert!(unit.has_action(&action::new_attack()));
+    assert!(unit.has_action(action::new_attack()));
 
     recruit.kill(ctx).throw_away();
     unit.destroy();
 }
 
 #[test]
-// An unarmed recruit is a runner: it moves and throws, it does not shoot.
-fun unarmed_recruit_has_move_and_grenade() {
+// An unarmed recruit with no utility only moves; the grenade adds its action after
+// the weapon's.
+fun unarmed_recruit_has_move_only() {
     let ctx = &mut tx_context::dummy();
     let recruit = recruit::default(ctx);
     let mut unit = recruit.to_unit();
 
-    assert_eq!(*unit.actions(), vector[action::new_move(), action::new_grenade()]);
-    assert!(unit.has_action(&action::new_move()));
-    assert!(unit.has_action(&action::new_grenade()));
-    assert!(!unit.has_action(&action::new_attack()));
-    assert!(!unit.has_action(&action::new_reload()));
+    assert_eq!(*unit.actions(), vector[action::unlimited(action::new_move())]);
+    assert!(!unit.has_action(action::new_grenade()));
+    assert!(!unit.has_action(action::new_attack()));
+    assert!(!unit.has_action(action::new_reload()));
 
     // moving still works
     unit.perform_move(1);
@@ -337,6 +359,33 @@ fun unarmed_recruit_has_move_and_grenade() {
 
     recruit.kill(ctx).throw_away();
     unit.destroy();
+}
+
+#[test]
+// The grenade is an action of the utility item, after those of the weapon, and the
+// item changes nothing else about the unit.
+fun grenadier_has_grenade_action() {
+    let ctx = &mut tx_context::dummy();
+    let mut recruit = armed_recruit(ctx);
+    let without = recruit.to_unit();
+    recruit.add_utility(items::frag_grenade(ctx));
+    let unit = recruit.to_unit();
+
+    assert_eq!(
+        *unit.actions(),
+        vector[
+            action::unlimited(action::new_move()),
+            action::unlimited(action::new_attack()),
+            action::unlimited(action::new_reload()),
+            action::limited(action::new_grenade(), 1),
+        ],
+    );
+    // the grenade is a zero modifier: the same stats with and without it
+    assert_eq!(unit.stats().inner(), without.stats().inner());
+
+    recruit.kill(ctx).throw_away();
+    unit.destroy();
+    without.destroy();
 }
 
 #[test, expected_failure(abort_code = unit::EActionNotAllowed, location = unit)]
@@ -366,7 +415,8 @@ fun to_string() {
 
     assert_eq!(unit.to_string(), b"HP 10/10 AP 2/2 AMMO 3/3".to_string());
 
-    let (weapon, armor) = recruit.dismiss();
+    let (weapon, armor, utilities) = recruit.dismiss();
+    utilities.destroy!(|u| u.destroy());
     weapon.destroy_none();
     armor.destroy_none();
     unit.destroy();

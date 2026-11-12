@@ -263,7 +263,7 @@ test("a search a match answered can't be cancelled before its seat is accepted",
     assert.equal((await backend.account())?.search.kind, "playing");
 });
 
-test("a recruit with no weapon can move and throw, but not shoot", async () => {
+test("a recruit with no gear can only move: no shot, no throw", async () => {
     const backend = createSandbox({ seed: 7 });
     const agent = new GhostsAgent(backend, fast);
     await agent.setName("unarmed-one");
@@ -273,11 +273,11 @@ test("a recruit with no weapon can move and throw, but not shoot", async () => {
     await agent.act(["deploy"]);
 
     const kinds = new Set((await agent.legal()).actions.map((a) => a.kind));
-    assert.ok(kinds.has("move") && kinds.has("grenade"));
-    assert.ok(!kinds.has("attack") && !kinds.has("reload"));
+    assert.ok(kinds.has("move"));
+    assert.ok(!kinds.has("attack") && !kinds.has("reload") && !kinds.has("grenade"));
 
-    // Arming takes one transaction, and only while someone at home is unarmed.
-    assert.equal(await backend.armSquad(), null, "everyone at home is armed or deployed");
+    // Arming takes one transaction, and only while someone at home lacks gear.
+    assert.equal(await backend.armSquad(), null, "everyone at home is fitted or deployed");
 });
 
 test("setup arms a hired squad, once", async () => {
@@ -290,6 +290,8 @@ test("setup arms a hired squad, once", async () => {
     await agent.act(["deploy"]);
     const kinds = new Set((await agent.legal()).actions.map((a) => a.kind));
     assert.ok(kinds.has("attack") || kinds.has("reload"));
+    const unit = (await agent.observe()).units.find((unit) => unit.mine)!;
+    assert.ok(unit.grenade, "setup equipped a frag grenade too");
 });
 
 test("the clock passes a turn: it doesn't end the game", async () => {
@@ -544,15 +546,21 @@ test("matchmaking, seats, hiring and arming follow the package's signatures", ()
     assert.deepEqual(calls(acceptSeatsTx(DEPLOYMENT, [{ account: "0x5", seat: REF }])), [
         "ghosts::accept_seat(object, receiving)",
     ]);
-    // A rifle for each recruit: requisitioned, equipped while borrowed, and handed back.
-    assert.deepEqual(calls(armSquadTx(DEPLOYMENT, "0x5", [REF, REF])), [
-        "account::requisition_rifle(object, pure)",
+    // What each recruit lacks: requisitioned, equipped while borrowed, and handed back.
+    const fittings = [
+        { recruit: REF, rifle: true, grenade: true },
+        { recruit: REF, rifle: false, grenade: true },
+    ];
+    assert.deepEqual(calls(armSquadTx(DEPLOYMENT, "0x5", fittings)), [
         "account::borrow_recruit(object, receiving)",
+        "account::requisition_rifle(object, pure)",
         "account::equip_weapon(result, result)",
+        "account::requisition_utility(object, pure)",
+        "account::equip_utility(result, result)",
         "account::return_recruit(result, result)",
-        "account::requisition_rifle(object, pure)",
         "account::borrow_recruit(object, receiving)",
-        "account::equip_weapon(result, result)",
+        "account::requisition_utility(object, pure)",
+        "account::equip_utility(result, result)",
         "account::return_recruit(result, result)",
     ]);
 });
