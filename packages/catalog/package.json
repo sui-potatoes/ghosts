@@ -4,6 +4,7 @@
     "private": true,
     "type": "module",
     "exports": {
-        "./actions.json": "./actions.json"
+        "./actions.json": "./actions.json",
+        "./items.json": "./items.json"
     }
 }

@@ -29,6 +29,7 @@
     "./studio/gltf-loader": "./src/studio/gltf-loader.ts",
     "./studio/held-equipment": "./src/studio/held-equipment.ts",
     "./studio/recruit-studio": "./src/studio/recruit-studio.ts",
+    "./studio/wireframe": "./src/studio/wireframe.ts",
     "./studio/long-guns": "./src/studio/long-guns.ts",
     "./studio/sidearm": "./src/studio/sidearm.ts",
     "./types": "./src/types.ts",
@@ -36,7 +37,7 @@
     "./motion/smoking": "./src/motion/smoking.ts"
   },
   "scripts": {
-    "test": "node --experimental-strip-types --test tests/squad.test.ts tests/eyewear.test.ts tests/codec.test.ts",
+    "test": "node --experimental-strip-types --test tests/squad.test.ts tests/eyewear.test.ts tests/codec.test.ts tests/wireframe.test.ts",
     "typecheck": "tsc -p ."
   },
   "dependencies": {

@@ -6,7 +6,9 @@ import * as T from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { EquipmentAssets } from "@ghosts/squad/studio/equipment-assets";
+import { applyWireframe, formatMeshStats, meshStats } from "@ghosts/squad/studio/wireframe";
 import type { Equipment, WeaponAttachments } from "@ghosts/squad/types";
+import { useWireframe, useWireframeShortcut, wireframeColors } from "../useWireframe";
 
 /** Product-lighting inspection of the actual equipped assembly, with full orbit and zoom. */
 export function WeaponPreview({
@@ -18,6 +20,9 @@ export function WeaponPreview({
 }) {
     const [error, setError] = useState("");
     const [expanded, setExpanded] = useState(false);
+    const [wireframe, setWireframe] = useWireframe();
+    const [stats, setStats] = useState("");
+    useWireframeShortcut();
     const dialog = useRef<HTMLDialogElement>(null);
     useEffect(() => {
         if (expanded) dialog.current?.showModal();
@@ -26,10 +31,26 @@ export function WeaponPreview({
     return (
         <>
             <div className="weapon-preview">
-                <WeaponCanvas item={item} attachments={attachments} onError={setError} />
+                <WeaponCanvas
+                    item={item}
+                    attachments={attachments}
+                    wireframe={wireframe}
+                    onStats={setStats}
+                    onError={setError}
+                />
+                {wireframe && stats && <span className="weapon-wire-stats">{stats}</span>}
                 <div className="weapon-preview-caption">
                     <span>Drag to rotate · scroll to zoom</span>
-                    <button onClick={() => setExpanded(true)}>Inspect ↗</button>
+                    <span className="weapon-preview-actions">
+                        <button
+                            aria-pressed={wireframe}
+                            title="Wireframe (Z)"
+                            onClick={() => setWireframe(!wireframe)}
+                        >
+                            Wireframe
+                        </button>
+                        <button onClick={() => setExpanded(true)}>Inspect ↗</button>
+                    </span>
                 </div>
                 {error && (
                     <p role="alert" className="sq-error">
@@ -43,17 +64,35 @@ export function WeaponPreview({
                         <span className="sq-eyebrow">ARMORY / INSPECTION</span>
                         <h2>{item.name}</h2>
                     </div>
-                    <button
-                        autoFocus
-                        aria-label="Close weapon inspection"
-                        onClick={() => setExpanded(false)}
-                    >
-                        Close ×
-                    </button>
+                    <span className="weapon-preview-actions">
+                        <button
+                            aria-pressed={wireframe}
+                            title="Wireframe (Z)"
+                            onClick={() => setWireframe(!wireframe)}
+                        >
+                            Wireframe
+                        </button>
+                        <button
+                            autoFocus
+                            aria-label="Close weapon inspection"
+                            onClick={() => setExpanded(false)}
+                        >
+                            Close ×
+                        </button>
+                    </span>
                 </header>
                 <div className="weapon-inspect-stage">
                     {expanded && (
-                        <WeaponCanvas item={item} attachments={attachments} onError={setError} />
+                        <WeaponCanvas
+                            item={item}
+                            attachments={attachments}
+                            wireframe={wireframe}
+                            onStats={setStats}
+                            onError={setError}
+                        />
+                    )}
+                    {expanded && wireframe && stats && (
+                        <span className="weapon-wire-stats">{stats}</span>
                     )}
                 </div>
                 <p>Drag to rotate · scroll to zoom · right-drag to pan</p>
@@ -65,13 +104,22 @@ export function WeaponPreview({
 function WeaponCanvas({
     item,
     attachments,
+    wireframe,
+    onStats,
     onError,
 }: {
     item: Equipment;
     attachments?: WeaponAttachments;
+    wireframe: boolean;
+    onStats(text: string): void;
     onError(message: string): void;
 }) {
     const host = useRef<HTMLDivElement>(null);
+    // The wireframe switch reaches into the running scene without rebuilding it.
+    const wire = useRef<(on: boolean) => void>(undefined);
+    const latest = useRef(wireframe);
+    latest.current = wireframe;
+    useEffect(() => wire.current?.(wireframe), [wireframe]);
     useEffect(() => {
         const element = host.current;
         if (!element) return;
@@ -119,6 +167,13 @@ function WeaponCanvas({
             if (!disposed) renderer.render(scene, camera);
         };
         let extent = 0.85;
+        let shown: T.Object3D | undefined;
+        let unwire: (() => void) | undefined;
+        wire.current = (on) => {
+            unwire?.();
+            unwire = on && shown ? applyWireframe(shown, wireframeColors(element)) : undefined;
+            draw();
+        };
         const resize = () => {
             const { width, height } = element.getBoundingClientRect();
             if (!width || !height) return;
@@ -147,6 +202,9 @@ function WeaponCanvas({
                 extent = bounds.getSize(new T.Vector3()).x;
                 model.position.sub(bounds.getCenter(new T.Vector3()));
                 scene.add(model);
+                shown = model;
+                onStats(formatMeshStats(meshStats(model)));
+                wire.current?.(latest.current);
                 onError("");
                 resize();
             })
@@ -156,6 +214,8 @@ function WeaponCanvas({
             });
         return () => {
             disposed = true;
+            unwire?.();
+            wire.current = undefined;
             observer.disconnect();
             controls.dispose();
             assets.dispose();
@@ -164,6 +224,6 @@ function WeaponCanvas({
             renderer.forceContextLoss();
             renderer.domElement.remove();
         };
-    }, [item, attachments, onError]);
+    }, [item, attachments, onError, onStats]);
     return <div className="weapon-canvas" ref={host} />;
 }

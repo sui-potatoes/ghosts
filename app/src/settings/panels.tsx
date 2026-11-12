@@ -368,7 +368,7 @@ export function DisplayPanel() {
     const layoutRow = useLayoutRow();
 
     const flag = (
-        key: "batterySaver" | "scanlines" | "vignette" | "reduceMotion",
+        key: "batterySaver" | "scanlines" | "vignette" | "reduceMotion" | "wireframe",
         label: string,
         description: string,
     ): SettingRow =>
@@ -403,6 +403,11 @@ export function DisplayPanel() {
             "reduceMotion",
             "Reduce motion",
             "Cut interface animation and transitions to a minimum.",
+        ),
+        flag(
+            "wireframe",
+            "Wireframe models",
+            "Draw gear and recruit models as triangle wireframes, with a triangle count, to check topology. Also the Z key in the Armory.",
         ),
     ];
 

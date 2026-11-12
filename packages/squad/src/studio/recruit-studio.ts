@@ -13,6 +13,7 @@ import { EquipmentAssets } from "./equipment-assets";
 import { ATTACHMENTS, EQUIPMENT, itemById } from "../catalog";
 import type { Appearance, Recruit } from "../types";
 import { breather } from "./breather";
+import { WireframeDraw } from "./wireframe";
 export type Focus = "body" | "face";
 export interface RecruitStudio {
     apply(recruit: Recruit, appearance?: Appearance, look?: CharacterLook): Promise<void>;
@@ -25,6 +26,8 @@ export interface RecruitStudio {
     resumeMotion(): void;
     seekMotion(time: number): void;
     stopMotion(): void;
+    /** Draw every mesh as a wireframe (a development aid); `line` is the edge colour. */
+    wireframe(on: boolean, line?: T.ColorRepresentation): void;
     dispose(): void;
 }
 export function createRecruitStudio(
@@ -122,12 +125,14 @@ export function createRecruitStudio(
     let current: Character | undefined,
         weapon: T.Group | undefined,
         focus: Focus = "body",
+        wire: WireframeDraw | undefined,
         disposed = false,
         epoch = 0,
         raf = 0;
     function draw() {
         if (!disposed && !document.hidden) {
-            renderer.render(scene, camera);
+            if (wire) wire.run(scene, () => renderer.render(scene, camera));
+            else renderer.render(scene, camera);
             host.dataset.drawCalls = String(renderer.info.render.calls);
         }
     }
@@ -465,8 +470,14 @@ export function createRecruitStudio(
             }
             return result;
         },
+        wireframe(on, line = 0x7fe3ef) {
+            wire?.dispose();
+            wire = on ? new WireframeDraw(line) : undefined;
+            schedule();
+        },
         dispose() {
             disposed = true;
+            wire?.dispose();
             epoch++;
             motionEpoch++;
             player?.dispose();
