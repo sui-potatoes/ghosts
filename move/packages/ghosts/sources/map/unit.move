@@ -11,7 +11,7 @@
 /// - to_string
 module ghosts::unit;
 
-use ghosts::{param::{Self, Param}, recruit::Recruit, stats::{Self, Stats}};
+use ghosts::{action::{Self, Action}, param::{Self, Param}, recruit::Recruit, stats::{Self, Stats}};
 use std::string::String;
 use sui::{bcs::{Self, BCS}, random::RandomGenerator};
 
@@ -23,6 +23,8 @@ const EOutOfAmmo: u64 = 2;
 const ENoAP: u64 = 3;
 /// Trying to reload at full clip capacity.
 const EFullAmmo: u64 = 4;
+/// The `Unit` does not have the `Action` it is ordered to perform.
+const EActionNotAllowed: u64 = 5;
 
 /// Weapon range can be exceeded by this value with aim penalty.
 const MAX_RANGE_OFFSET: u8 = 3;
@@ -49,6 +51,8 @@ public struct Unit has copy, store {
     grenade_used: bool,
     /// Stats of the `Recruit`.
     stats: Stats,
+    /// What the `Unit` can be ordered to do. Checked before anything else.
+    actions: vector<Action>,
 }
 
 /// Give the `Unit` its action points back, as its side's turn begins.
@@ -56,6 +60,7 @@ public fun reset_ap(unit: &mut Unit) { unit.ap.reset() }
 
 /// Spend 1 AP on movement; abort if distance exceeds mobility or AP is zero.
 public fun perform_move(unit: &mut Unit, distance: u8) {
+    assert!(unit.has_action(&action::new_move()), EActionNotAllowed);
     assert!(unit.stats.mobility() >= distance, ERangeExceeded);
     assert!(unit.ap.value() > 0, ENoAP);
 
@@ -64,6 +69,7 @@ public fun perform_move(unit: &mut Unit, distance: u8) {
 
 /// Reload `Unit`'s weapon. It costs 1 AP.
 public fun perform_reload(unit: &mut Unit) {
+    assert!(unit.has_action(&action::new_reload()), EActionNotAllowed);
     assert!(unit.ap.value() > 0, ENoAP);
     assert!(!unit.ammo.is_full(), EFullAmmo);
     unit.ap.decrease(1);
@@ -72,6 +78,7 @@ public fun perform_reload(unit: &mut Unit) {
 
 /// Throw a grenade if there's one in the inventory. It costs 1 AP.
 public fun perform_grenade(unit: &mut Unit) {
+    assert!(unit.has_action(&action::new_grenade()), EActionNotAllowed);
     assert!(unit.ap.value() > 0, ENoAP);
     assert!(!unit.grenade_used, EOutOfAmmo);
 
@@ -81,7 +88,7 @@ public fun perform_grenade(unit: &mut Unit) {
 
 #[allow(lint(public_random))]
 /// Deplete AP, consume one round and roll an attack using the unit's stats.
-/// Abort if AP or ammo is zero, or range exceeds weapon range plus
+/// Abort if the unit cannot attack, AP or ammo is zero, or range exceeds weapon range plus
 /// `MAX_RANGE_OFFSET`. Hit chance includes range bonuses or penalties and
 /// subtracts `target_defense`.
 ///
@@ -96,6 +103,7 @@ public fun perform_attack(
     range: u8,
     target_defense: u8,
 ): (bool, bool, bool, u8, u8) {
+    assert!(unit.has_action(&action::new_attack()), EActionNotAllowed);
     assert!(unit.ap.value() > 0, ENoAP);
     assert!(unit.ammo.value() > 0, EOutOfAmmo);
 
@@ -181,6 +189,15 @@ public fun from_recruit(recruit: &Recruit): Unit {
     recruit.armor().do_ref!(|a| armor_stats = *a.stats());
     let stats = stats.add(&weapon_stats).add(&armor_stats);
 
+    // `Move` and `Grenade` are base actions; the weapon gives `Attack` and
+    // `Reload`, so an unarmed recruit cannot shoot. Gear will add actions here.
+    let mut actions = vector[action::new_move()];
+    if (recruit.weapon().is_some()) {
+        actions.push_back(action::new_attack());
+        actions.push_back(action::new_reload());
+    };
+    actions.push_back(action::new_grenade());
+
     Unit {
         recruit: object::id(recruit),
         owner: recruit.leader().to_id(),
@@ -189,6 +206,7 @@ public fun from_recruit(recruit: &Recruit): Unit {
         ammo: param::new(stats.ammo() as u16),
         grenade_used: false,
         stats,
+        actions,
     }
 }
 
@@ -221,6 +239,12 @@ public fun grenade_used(unit: &Unit): bool { unit.grenade_used }
 /// Get the `Unit`'s stats.
 public fun stats(unit: &Unit): &Stats { &unit.stats }
 
+/// Get the actions the `Unit` can perform.
+public fun actions(unit: &Unit): &vector<Action> { &unit.actions }
+
+/// Get whether the `Unit` can perform the `Action`.
+public fun has_action(unit: &Unit, action: &Action): bool { unit.actions.contains(action) }
+
 // === Convenience and compatibility ===
 
 /// Deserialize bytes into a `Rank`.
@@ -238,6 +262,7 @@ public(package) fun from_bcs(bcs: &mut BCS): Unit {
         ammo: param::from_bcs(bcs),
         grenade_used: bcs.peel_bool(),
         stats: stats::from_bcs(bcs),
+        actions: bcs.peel_vec!(|bcs| action::from_bcs(bcs)),
     }
 }
 

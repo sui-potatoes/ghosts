@@ -134,6 +134,14 @@ export const Account = bcs.struct("Account", {
 /** `ghosts::param::Param`. */
 const Param = bcs.struct("Param", { value: bcs.u16(), maxValue: bcs.u16() });
 
+/** `ghosts::action::Action`: variant order is the tag; new variants are appended. */
+const Action = bcs.enum("Action", {
+    Move: null,
+    Attack: null,
+    Reload: null,
+    Grenade: null,
+});
+
 /** `ghosts::unit::Unit`: a recruit as the map holds them, with the `Account` it belongs to. */
 export const MapUnit = bcs.struct("Unit", {
     recruit: bcs.Address,
@@ -143,6 +151,8 @@ export const MapUnit = bcs.struct("Unit", {
     ammo: Param,
     grenadeUsed: bcs.bool(),
     stats: Stats,
+    /** What the unit may be ordered to do; an unarmed recruit has no `Attack` or `Reload`. */
+    actions: bcs.vector(Action),
 });
 
 /** `ghosts::map::TileType`. */

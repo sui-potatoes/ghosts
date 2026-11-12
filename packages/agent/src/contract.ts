@@ -9,7 +9,7 @@
 
 import { Transaction } from "@mysten/sui/transactions";
 
-import { ActionError, type Action, type GameState } from "./types.ts";
+import { ActionError, type Action, type GameState, type ObjectRef } from "./types.ts";
 
 const GAME_MODULE = "ghosts";
 const ACCOUNT_MODULE = "account";
@@ -50,6 +50,8 @@ export const TESTNET_DEPLOYMENT: Deployment = {
 };
 
 const CLOCK = "0x6";
+/** `items::rifle` tier 1: the "Standard Rifle", the one a rank-less recruit may carry. */
+const STANDARD_RIFLE = 1;
 
 /**
  * Take `name`, shaped like the app's rename: an earlier leaf of this address is
@@ -110,6 +112,11 @@ export function hireRecruitsTx(d: Deployment, account: string): Transaction {
     return tx;
 }
 
+/**
+ * Pair with a compatible waiting player, or leave an order in the queue. A match
+ * starts the game in the same call and puts the finder in it; the player who waited
+ * is sent a `Seat` and stays on their search until it is accepted.
+ */
 export function findGameTx(d: Deployment, account: string): Transaction {
     const tx = new Transaction();
     tx.moveCall({
@@ -117,6 +124,7 @@ export function findGameTx(d: Deployment, account: string): Transaction {
         arguments: [
             tx.object(d.matchmaker),
             tx.object(account),
+            tx.object(d.preset),
             tx.object.random(),
             tx.object(CLOCK),
         ],
@@ -124,6 +132,7 @@ export function findGameTx(d: Deployment, account: string): Transaction {
     return tx;
 }
 
+/** Leave the queue. A search a match found is left through its game instead. */
 export function cancelSearchTx(d: Deployment, account: string): Transaction {
     const tx = new Transaction();
     tx.moveCall({
@@ -133,26 +142,50 @@ export function cancelSearchTx(d: Deployment, account: string): Transaction {
     return tx;
 }
 
-/** Whoever found the opponent opens the game; the waiting player goes first. */
-export function startGameTx(d: Deployment, account: string, opponent: string): Transaction {
-    const tx = new Transaction();
+/** A `Seat` sent to an `Account` and still to be accepted, by the reference that receives it. */
+export interface PendingSeat {
+    account: string;
+    seat: ObjectRef;
+    /** The game the seat is in, when known. */
+    game?: string;
+}
+
+/** `accept_seat`: put the `Account` into the game its `Seat` is in. Anyone can send it. */
+function acceptSeat(d: Deployment, tx: Transaction, { account, seat }: PendingSeat) {
     tx.moveCall({
-        target: `${d.package}::${GAME_MODULE}::start_game`,
-        arguments: [tx.object(account), tx.object(opponent), tx.object(d.preset), tx.object(CLOCK)],
+        target: `${d.package}::${GAME_MODULE}::accept_seat`,
+        arguments: [tx.object(account), tx.receivingRef(seat)],
     });
+}
+
+export function acceptSeatsTx(d: Deployment, seats: PendingSeat[]): Transaction {
+    const tx = new Transaction();
+    for (const seat of seats) acceptSeat(d, tx, seat);
     return tx;
 }
 
 /**
- * Let go of a found game the opponent is no longer waiting on, with no penalty.
- * `cancel_search` does the same, but costs a suspension if they are still there.
+ * Arm recruits at home with a standard rifle, as the armory does: a recruit hired
+ * with no weapon has no `Attack` or `Reload` once on the map. Each rifle is
+ * requisitioned, equipped while the recruit is borrowed and handed back, in one
+ * transaction.
  */
-export function releaseGameTx(d: Deployment, account: string, opponent: string): Transaction {
+export function armSquadTx(d: Deployment, account: string, recruits: ObjectRef[]): Transaction {
     const tx = new Transaction();
-    tx.moveCall({
-        target: `${d.package}::${GAME_MODULE}::release_match`,
-        arguments: [tx.object(account), tx.object(opponent), tx.object(CLOCK)],
-    });
+    const target = (fn: string) => `${d.package}::${ACCOUNT_MODULE}::${fn}`;
+    const acc = tx.object(account);
+    for (const recruit of recruits) {
+        const [rifle] = tx.moveCall({
+            target: target("requisition_rifle"),
+            arguments: [acc, tx.pure.u8(STANDARD_RIFLE)],
+        });
+        const [borrowed, borrow] = tx.moveCall({
+            target: target("borrow_recruit"),
+            arguments: [acc, tx.receivingRef(recruit)],
+        });
+        tx.moveCall({ target: target("equip_weapon"), arguments: [borrowed, rifle] });
+        tx.moveCall({ target: target("return_recruit"), arguments: [borrowed, borrow] });
+    }
     return tx;
 }
 
@@ -166,6 +199,7 @@ export function actionsTx(
     game: GameState,
     account: string,
     actions: Action[],
+    seats: PendingSeat[] = [],
 ): Transaction {
     const tx = new Transaction();
     const call = (fn: string, ...args: Parameters<typeof tx.moveCall>[0]["arguments"] & object) =>
@@ -182,20 +216,22 @@ export function actionsTx(
             clock(),
         );
 
+    // a seat not yet accepted is accepted first: wrapping up or leaving needs both in
+    for (const seat of seats) acceptSeat(d, tx, seat);
+
     for (const action of actions) {
         switch (action.kind) {
-            case "deploy":
+            case "deploy": {
                 if (!action.recruits?.length) {
                     throw new ActionError("rejected", "This account has no recruits to deploy.");
                 }
-                call(
-                    "deploy_squad",
-                    gameObject(),
-                    me(),
-                    clock(),
-                    tx.pure.vector("id", action.recruits),
-                );
+                const recruits = tx.makeMoveVec({
+                    type: `0x2::transfer::Receiving<${d.package}::recruit::Recruit>`,
+                    elements: action.recruits.map((recruit) => tx.receivingRef(recruit)),
+                });
+                call("deploy_squad", gameObject(), me(), clock(), recruits);
                 break;
+            }
             case "move":
                 call(
                     "move_unit",
@@ -237,7 +273,7 @@ export function actionsTx(
                 break;
             case "abandon":
                 // As the app does: nothing is left to wait for, so wrap up in one go.
-                call("abandon_game", gameObject(), me(), clock());
+                call("abandon_game", gameObject(), me());
                 complete();
                 break;
         }
@@ -266,6 +302,7 @@ const ABORTS: Record<string, Record<number, string>> = {
         2: "Out of ammo, or the grenade is used.",
         3: "That unit has no AP left.",
         4: "The weapon is already full.",
+        5: "That unit cannot do that: it is not in its actions.",
     },
     matchmaker: {
         0: "This account already has a live ticket in the queue.",
@@ -288,15 +325,17 @@ const ABORTS: Record<string, Record<number, string>> = {
         17: "The game is still running.",
         21: "Your squad is already deployed.",
         22: "This account has no recruits to play with.",
-        23: "The opponent is still waiting on this game: start it.",
+        25: "A match found this search: accept its seat first.",
+        27: "This account has yet to accept its seat in the game.",
     },
     [ACCOUNT_MODULE]: {
         0: "This address already has an account.",
         1: "This address does not own the account.",
         2: "The squad is already full.",
-        4: "This account has not found a game.",
-        5: "The opponent is no longer waiting on this game.",
+        3: "That voice does not exist.",
         6: "The squad is in a game.",
+        7: "That is not the recruit that was borrowed.",
+        8: "That recruit's rank is too low for this gear.",
     },
 };
 

@@ -4,7 +4,7 @@
 import { action, endTurn, pick, select } from "./actions";
 import { audio } from "./audio";
 import { runCombatAction, type ControlOptions } from "./controls";
-import type { Cell } from "./game";
+import { allows, type Cell } from "./game";
 import { cancelDialog, onPad, padActive, type PadDir, type PadInput } from "./gamepad";
 import { PAD_COMBAT_ACTIONS, type PadBindable, type PadCombatAction, type PadCombatBindings } from "./keys";
 import { session } from "./session";
@@ -294,7 +294,7 @@ export function bindPadCombat({ onPause }: ControlOptions = {}): () => void {
       cursorFor = s.selected;
     }
     const d = navDelta(pad);
-    if (d && u.ap) {
+    if (d && u.ap && allows(u, "move")) {
       // Cover and props are not destinations; the cursor hops them to the
       // next reachable cell in that direction. The path routes on its own.
       const [dx, dz] = battlefield.screenDelta(d);

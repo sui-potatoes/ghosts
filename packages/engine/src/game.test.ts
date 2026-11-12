@@ -237,3 +237,28 @@ test("grenade targeting rejects both off-map and out-of-range tiles", () => {
   );
   assert.match(grenadeBlockReason(g, u, g.enemies[0].pos)!, /THROW RANGE/);
 });
+
+test("a unit with an allow-list only takes what it lists; without one nothing changes", () => {
+  const g = new Encounter(), u = g.allies[0], foe = g.enemies[0];
+  u.pos = [0, 0]; foe.pos = [0, -4]; u.ammo = u.clip - 1;
+  assert.equal(u.actions, undefined);
+  assert.ok(g.allows(u, "fire") && g.allows(u, "overwatch"));
+  u.actions = ["move", "grenade"];
+  assert.ok(g.allows(u, "move") && g.allows(u, "grenade"));
+  for (const o of ["fire", "reload", "overwatch", "hunker", "secure"] as const) assert.ok(!g.allows(u, o), o);
+  const before = g.events.length;
+  assert.equal(g.attack(u, foe), null);
+  assert.equal(g.reload(u), false);
+  assert.equal(g.watch(u), false);
+  assert.equal(g.hunker(u), false);
+  assert.equal(g.secure(u), false);
+  assert.deepEqual(g.apply({ type: "fire", unit: u.id, target: foe.id }), []);
+  assert.deepEqual(g.apply({ type: "reload", unit: u.id }), []);
+  assert.equal(g.events.length, before);
+  assert.equal(u.ammo, u.clip - 1);
+  assert.ok(g.move(u, [-3, 3]));
+  assert.ok(g.throwGrenade(u, u.pos));
+  const free = new Encounter(), v = free.allies[0];
+  v.pos = [0, 0]; v.ammo = v.clip - 1;
+  assert.ok(free.reload(v));
+});

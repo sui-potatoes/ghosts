@@ -3,7 +3,7 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore, type RefObject } from "react";
 import { cancelTargeting, deselect, fire, pick, select, throwGrenade } from "../actions";
-import { distance, weapons, type Encounter, type Unit } from "../game";
+import { allows, distance, weapons, type Encounter, type Unit } from "../game";
 import { padActive, padGlyph, padKind, subscribePad } from "../gamepad";
 import { pad2 } from "../html";
 import { confirmWheel, WHEEL_ACTIONS } from "../pad-combat";
@@ -124,6 +124,7 @@ function wheelStatus(game: Encounter, u: Unit | undefined, id: WheelId): { locke
   if (game.scenario.versus && (id === "overwatch" || id === "hunker" || id === "secure"))
     return { locked: true, note: "UNAVAILABLE" };
   if (!u) return { locked: true, note: "NO OPERATOR" };
+  if (!allows(u, id)) return { locked: true, note: "UNAVAILABLE" };
   if (!game.canAct(u)) return { locked: true, note: "NO AP" };
   switch (id) {
     case "fire":

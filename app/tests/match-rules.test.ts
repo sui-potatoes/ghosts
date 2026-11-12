@@ -8,10 +8,12 @@ import { Encounter } from "../../packages/engine/src/game.ts";
 import { blackRain, type Scenario } from "../../packages/engine/src/scenario.ts";
 import {
     blastCells,
+    canDo,
     coverBonus,
     decodePath,
     experienceFor,
     encodePath,
+    engineActions,
     gameEvents,
     hitChance,
     isOver,
@@ -388,4 +390,40 @@ test("experience reaches the same ranks as the contract", () => {
     assert.equal(rankWith("Corporal", 26), "Lieutenant");
     assert.equal(rankWith("Major", 1000), "Colonel");
     assert.equal(rankWith("Colonel", 1000), "Colonel");
+});
+
+test("a unit can do what its actions list, and nothing else", () => {
+    const unit = (recruit: string, actions: string[]) => ({
+        tileType: { $kind: "Empty" },
+        unit: { recruit, actions: actions.map(($kind) => ({ $kind })) },
+    });
+    const game = {
+        map: {
+            grid: {
+                grid: [
+                    [
+                        unit("armed", ["Move", "Attack", "Reload", "Grenade"]),
+                        unit("runner", ["Move", "Grenade"]),
+                    ],
+                ],
+            },
+        },
+    } as never;
+    for (const action of ["Move", "Attack", "Reload", "Grenade"] as const)
+        assert.ok(canDo(game, "armed", action));
+    assert.ok(canDo(game, "runner", "Move") && canDo(game, "runner", "Grenade"));
+    assert.ok(!canDo(game, "runner", "Attack") && !canDo(game, "runner", "Reload"));
+    assert.ok(!canDo(game, "nobody", "Move"));
+});
+
+test("chain actions map to the engine's orders, Attack being fire", () => {
+    const of = (...kinds: string[]) => engineActions(kinds.map(($kind) => ({ $kind })));
+    assert.deepEqual(of("Move", "Attack", "Reload", "Grenade"), [
+        "move",
+        "fire",
+        "reload",
+        "grenade",
+    ]);
+    assert.deepEqual(of("Move", "Grenade"), ["move", "grenade"]);
+    assert.deepEqual(of(), []);
 });

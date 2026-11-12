@@ -67,6 +67,27 @@ fun from_bcs() {
     map.destroy();
 }
 
+#[test]
+// A map with a unit on it survives a BCS round-trip, the unit's actions included.
+fun from_bcs_with_unit() {
+    let ctx = &mut tx_context::dummy();
+    let mut map = map::new(@1.to_id(), 3);
+    let recruit = recruit::default(ctx);
+    map.place_recruit(&recruit, 1, 2);
+
+    let bytes = bcs::to_bytes(&map);
+    let restored = map::from_bytes(bytes);
+
+    assert_eq!(bcs::to_bytes(&restored), bytes);
+    assert_eq!(*restored.unit(1, 2).borrow().actions(), *map.unit(1, 2).borrow().actions());
+
+    let (weapon, armor) = recruit.dismiss();
+    weapon.destroy_none();
+    armor.destroy_none();
+    restored.destroy();
+    map.destroy();
+}
+
 // === Attacks ===
 
 /// A recruit with a custom weapon. Aim is a recruit stat (65 by default), so a

@@ -14,25 +14,39 @@ import { SimulationError } from "@mysten/sui/client";
 import type { Signer } from "@mysten/sui/cryptography";
 import { SuiGrpcClient } from "@mysten/sui/grpc";
 import type { Transaction } from "@mysten/sui/transactions";
-import { deriveDynamicFieldID, deriveObjectID, normalizeSuiAddress } from "@mysten/sui/utils";
+import {
+    deriveDynamicFieldID,
+    deriveObjectID,
+    normalizeStructTag,
+    normalizeSuiAddress,
+} from "@mysten/sui/utils";
 
 import type { Backend } from "./backend.ts";
-import { AccountBcs, AccountRecord, decodeAccount, decodeGame, RegistryHead } from "./bcs.ts";
+import {
+    AccountBcs,
+    AccountRecord,
+    decodeAccount,
+    decodeGame,
+    RecruitBcs,
+    RegistryHead,
+    SeatBcs,
+} from "./bcs.ts";
 import {
     abortMessage,
+    acceptSeatsTx,
     actionsTx,
+    armSquadTx,
     cancelSearchTx,
     findGameTx,
     hireRecruitsTx,
     nameChangeTx,
     newAccountTx,
-    releaseGameTx,
     setRecoveryTx,
-    startGameTx,
     type Deployment,
+    type PendingSeat,
 } from "./contract.ts";
 import { rollsDice } from "./rules.ts";
-import { ActionError, type GameState, type Receipt } from "./types.ts";
+import { ActionError, type GameState, type ObjectRef, type Receipt } from "./types.ts";
 
 export interface SuiBackendOptions {
     network: "testnet" | "mainnet";
@@ -262,25 +276,62 @@ export function createSuiBackend(options: SuiBackendOptions): Backend {
         }
     }
 
-    /** The recruits stored in the `Account`. A fresh listing can lag, so re-list until it's whole. */
-    async function listRecruits(): Promise<string[]> {
-        const account = await content(await requireAccount());
-        const { id, size } = AccountBcs.parse(account.content).recruits;
-        let ids: string[] = [];
+    /**
+     * Everything of a type the `Account` owns, with the references that receive it. The
+     * recruits at home are objects sent to the `Account`. `expected` is how many the
+     * `Account` counts: a fresh listing can lag, so it is read again until it is whole.
+     */
+    async function listOwned<T>(
+        owner: string,
+        type: string,
+        parse: (content: Uint8Array) => T,
+        expected?: number,
+    ): Promise<(T & { ref: ObjectRef })[]> {
+        let owned: (T & { ref: ObjectRef })[] = [];
         for (let attempt = 0; attempt < LIST_ATTEMPTS; attempt++) {
-            ids = [];
+            owned = [];
             let cursor: string | undefined;
             do {
-                const page = await client.core.listDynamicFields({ parentId: id, cursor });
-                for (const field of page.dynamicFields) {
-                    if (field.$kind === "DynamicObject") ids.push(field.childId);
+                const page = await client.core.listOwnedObjects({
+                    owner,
+                    type: normalizeStructTag(type),
+                    include: { content: true },
+                    cursor,
+                });
+                for (const { objectId, version, digest, content } of page.objects) {
+                    owned.push({ ...parse(content), ref: { objectId, version, digest } });
                 }
                 cursor = page.hasNextPage ? (page.cursor ?? undefined) : undefined;
             } while (cursor);
-            if (ids.length >= Number(size)) break;
+            if (expected === undefined || owned.length >= expected) break;
             await new Promise((resolve) => setTimeout(resolve, LIST_RETRY_MS));
         }
-        return ids;
+        return owned;
+    }
+
+    /** The recruits at home, armed or not. */
+    async function homeRecruits() {
+        const id = await requireAccount();
+        const { recruits } = AccountBcs.parse((await content(id)).content);
+        return listOwned(
+            id,
+            `${deployment.package}::recruit::Recruit`,
+            (bytes) => {
+                const recruit = RecruitBcs.parse(bytes);
+                return { armed: recruit.weapon !== null };
+            },
+            Number(recruits),
+        );
+    }
+
+    /** The seats waiting on an `Account` that is still on its search, the one a match answered. */
+    async function seatsOf(accountId: string): Promise<PendingSeat[]> {
+        const account = AccountBcs.parse((await content(accountId)).content);
+        if (account.state.$kind !== "Searching") return [];
+        const seats = await listOwned(accountId, `${deployment.package}::ghosts::Seat`, (bytes) =>
+            SeatBcs.parse(bytes),
+        );
+        return seats.map(({ ref, game }) => ({ account: accountId, seat: ref, game }));
     }
 
     return {
@@ -328,29 +379,45 @@ export function createSuiBackend(options: SuiBackendOptions): Backend {
             send(findGameTx(deployment, await requireAccount()), 200n, FIND_GAME_MIN_BUDGET),
         cancelSearch: async () => send(cancelSearchTx(deployment, await requireAccount())),
 
-        async releaseGame(opponent) {
-            const theirs = await accountIdOf(opponent);
-            if (!theirs) throw new ActionError("rejected", "The opponent has no account.");
-            return send(releaseGameTx(deployment, await requireAccount(), theirs));
+        async armSquad() {
+            const unarmed = (await homeRecruits()).filter((recruit) => !recruit.armed);
+            if (unarmed.length === 0) return null;
+            const tx = armSquadTx(
+                deployment,
+                await requireAccount(),
+                unarmed.map((recruit) => recruit.ref),
+            );
+            return send(tx, 150n);
         },
 
-        async startGame(opponent) {
-            const theirs = await accountIdOf(opponent);
-            if (!theirs) throw new ActionError("rejected", "The opponent has no account.");
-            return send(startGameTx(deployment, await requireAccount(), theirs));
+        async acceptSeat() {
+            const [seat] = await seatsOf(await requireAccount());
+            return seat ? send(acceptSeatsTx(deployment, [seat])) : null;
         },
 
         async submit(game, actions) {
             const me = await requireAccount();
-            const open = game.positions[game.players.indexOf(me)]?.length ?? 0;
-            const resolved = await Promise.all(
-                actions.map(async (action) =>
-                    action.kind === "deploy"
-                        ? { ...action, recruits: (await listRecruits()).slice(0, open) }
-                        : action,
-                ),
+            const side = game.players.indexOf(me);
+            const open = game.positions[side]?.length ?? 0;
+
+            // the armed recruits go first: an unarmed one can't shoot
+            const recruits = actions.some((action) => action.kind === "deploy")
+                ? (await homeRecruits())
+                      .sort((a, b) => Number(b.armed) - Number(a.armed))
+                      .slice(0, open)
+                      .map((recruit) => recruit.ref)
+                : [];
+            const resolved = actions.map((action) =>
+                action.kind === "deploy" ? { ...action, recruits } : action,
             );
-            const tx = actionsTx(deployment, game, me, resolved);
+
+            // wrapping up or leaving needs both players in the game: accept a seat the
+            // opponent never did
+            const leaving = actions.some((a) => a.kind === "complete" || a.kind === "abandon");
+            const seat = leaving
+                ? (await seatsOf(game.players[1 - side])).find((s) => s.game === game.id)
+                : undefined;
+            const tx = actionsTx(deployment, game, me, resolved, seat ? [seat] : []);
             const receipt = await send(tx, actions.some(rollsDice) ? 200n : 130n);
 
             // There are no events: what happened is whatever the history gained.

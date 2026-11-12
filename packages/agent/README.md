@@ -40,7 +40,7 @@ to an MCP client:
 | `ghosts_rules`         | The rules and the tool loop                         |
 | `ghosts_status`        | Address, name, balance, account and what to do next |
 | `ghosts_set_name`      | Pick your name, required before your first game     |
-| `ghosts_setup`         | Open the account and fill the squad                 |
+| `ghosts_setup`         | Open the account, fill the squad and arm it         |
 | `ghosts_find_game`     | Search for a game                                   |
 | `ghosts_cancel_search` | Stop searching                                      |
 | `ghosts_wait`          | Sleep up to 50s until there is something to do      |
@@ -106,27 +106,44 @@ column. Moves and reloads chain in one call; a dice roll or `next_turn` goes las
 
 ## The game loop
 
-- **Finding a game:** whoever finds a waiting player starts the game, and the player
-  who was waiting goes first. The SDK starts it, so an agent only sees `deploy`. A
-  search that nobody answers expires after 120s, and the SDK then frees the account.
-  If the opponent left, it releases the found game, which carries no penalty.
-- **Deploying:** `deploy` places as many recruits as the map has spawn positions, three
-  on Black Rain. They leave the `Account` until the game ends.
+- **Finding a game:** a player who finds someone waiting starts the game in that call
+  and is in it at once, deploying. The player who was waiting goes first and is sent a
+  `Seat` in the game; they stay on their search until the seat is accepted, which the
+  SDK does on the next `wait`, and anyone can do. So an agent only ever sees `deploy`.
+  The queue never drops a search itself: the SDK cancels one nobody answered after 120s
+  and frees the account, unless a match has answered it by then (its seat comes first).
+- **Armed squads:** `hire_recruits` leaves a recruit with no weapon, and an unarmed unit
+  has no `Attack` or `Reload`, only `Move` and `Grenade`. `ghosts_setup` therefore also
+  requisitions a Standard Rifle for each unarmed recruit at home and equips it, in one
+  transaction. What a unit may do is the `actions` on its `Unit`, which the legal
+  actions follow.
+- **Deploying:** `deploy` receives as many recruits from the `Account` as the map has
+  spawn positions, three on Black Rain, armed ones first, and places them. They leave
+  the `Account` until the game ends. Squads are not a field of the `Game`: a side's
+  recruits are its units on the map, whose `owner` is the `Account` ID.
 - **The clock:** deployment lasts 120s and a turn 90s. Once a turn runs out, its player
   can only send `next_turn`, and the other player can send it to take their turn. That
-  counts as a miss, and three in a row lose the game. Acting or passing your own turn
-  clears the count.
-- **Ending:** a side with nobody left on the map loses, and both gone is a draw, as is
-  a game still going at turn 60. `complete` then brings the survivors home, records the
-  result in `Account.score` and deletes the game. Anyone can send it.
-- **Suspension:** an account can't search for an hour after it gives up, misses three
-  turns in a row, or never deploys. Cancelling a found game the opponent is still
-  waiting on costs the same.
+  counts as a miss (`State::Playing.missed`), and three in a row forfeit the game.
+  Acting or passing your own turn clears the count. Past the deployment time,
+  `next_turn` begins the game, or ends it if a side never showed.
+- **AP:** a unit's AP is what the chain holds. `next_turn` gives the AP of the side whose
+  turn begins back; there is no lazy reset.
+- **Kills:** a unit that dies leaves its tile at once and lies in `Map.fallen`, still
+  part of the `Game`, until the next `next_turn` buries it (its dog tag goes to its
+  `Account`). A side with nobody left on the map loses there and then.
+- **Ending:** `State::Over(Ending)`: `Won`, `Draw` (both sides wiped out together),
+  `Stalemate` (turn 60, no blame), `Abandoned`, `Forfeited` (three missed turns),
+  `NoShow` (a side deployed nobody) and `NobodyShowed`. `complete` then brings the
+  survivors home, records the result in `Account.score` and the rating, and deletes the
+  game. Anyone can send it, and a seat the other player never accepted is accepted in
+  the same transaction. A game nobody showed up for counts for no score.
+- **Suspension:** `Account.state` becomes `Suspended` for a minute after the account
+  abandons a game, forfeits it or never deploys, and it can't search until then.
 - **Giving up:** `abandon` loses the game and completes it in one transaction. It works
-  at any time and is never listed as a legal action.
+  at any time in a running game and is never listed as a legal action.
 - **What happened:** the contract emits no events, so `Game.history` is the only record.
   Receipts are what the history gained, and `recent` in `observe` shows the last two
-  turns.
+  turns. A dodge is one `Dodged` record, and a kill adds `UnitKIA` with the tile.
 
 ## Names
 
@@ -186,8 +203,11 @@ who controls its account.
 ## Still assumed
 
 Move calls live in `src/contract.ts` and the object layouts in `src/bcs.ts`, and they
-follow the package source. Recovery is the one thing the SDK expects that the source
-doesn't have yet. On a network, `GHOSTS_RECOVERY` makes setup fail until this exists:
+follow the working-tree source in `move/packages/ghosts` and `move/packages/matchmaker`.
+`TESTNET_DEPLOYMENT` is not updated until the next publish, so until then the SDK
+doesn't match the package that is live. Recovery is the one thing the SDK expects that
+the source doesn't have yet. On a network, `GHOSTS_RECOVERY` makes setup fail until this
+exists:
 
 ```move
 // Account gains `recovery: Option<address>`. The owner can set it once. After that only
@@ -206,9 +226,20 @@ The turn feed is assumed too: an indexer on `SubscribeCheckpoints` that answers
 `GET {url}/v1/wake/{account}?cursor=&timeout=25`. With no events to route, it has to
 watch `Account` and `Game` objects change. Without it, agents poll.
 
+## How the layouts are checked
+
+`tests/fixtures.ts` holds bytes Move itself wrote: `sui::bcs::to_bytes` of real `Game`,
+`Account`, `Seat`, `Recruit`, `State`, `Ending` and `Record` values, from a throwaway
+`sui move test` on a scratch copy of the package. `tests/chain.test.ts` decodes them
+and checks that the SDK's schemas write the same bytes back, so a changed Move struct
+fails there. Regenerate them the same way after a contract change. The preset maps in
+`src/maps.ts` are the bytes `map.move` builds them from.
+
 ## Not verified yet
 
 - `rules.ts` is checked against the Move test fixtures, the real map bytes and the
   documented formulas, not run side by side with Move. A rules mismatch shows up as a
   refusal from the simulation, not a lost transaction.
+- The transactions are checked against the entry functions' signatures, never sent: the
+  working-tree package is not published, so the SDK hasn't played a game on it.
 - Anything past a dozen agents: the matchmaker's and the fullnode's limits under load.

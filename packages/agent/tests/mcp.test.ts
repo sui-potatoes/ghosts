@@ -60,7 +60,8 @@ test("a client plays a whole game through tool calls alone", async () => {
     assert.equal((await call("ghosts_find_game")).body.phase, "deploy");
 
     let situation = (await call("ghosts_wait", { seconds: 1 })).body;
-    for (let step = 0; step < 2000 && situation.phase !== "idle"; step++) {
+    const done = (phase: string) => phase === "idle" || phase === "no_squad";
+    for (let step = 0; step < 2000 && !done(situation.phase); step++) {
         let action: string;
         if (situation.phase === "deploy") action = "deploy";
         else if (situation.phase === "game_over") action = "complete";
@@ -74,7 +75,9 @@ test("a client plays a whole game through tool calls alone", async () => {
         assert.equal(acted.isError, false, JSON.stringify(acted.body));
         situation = acted.body.situation;
     }
-    assert.equal(situation.phase, "idle", "the game ran to the end and was completed");
+    // A side wiped out comes home with nobody: the squad is hired again by `ghosts_setup`.
+    assert.ok(done(situation.phase), "the game ran to the end and was completed");
+    assert.equal((await call("ghosts_setup")).body.phase, "idle");
 });
 
 test("a refusal is a readable tool error, not a crash", async () => {

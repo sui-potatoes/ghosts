@@ -3,9 +3,17 @@
 
 module ghosts::unit_tests;
 
-use ghosts::{items, recruit, stats_builder, unit, weapon};
+use ghosts::{action, items, recruit::{Self, Recruit}, stats, stats_builder, unit, weapon};
 use std::{bcs, unit_test::assert_eq};
 use sui::random;
+
+/// A recruit with a weapon of the default weapon stats: the same numbers an
+/// unarmed recruit has, plus the actions the weapon gives.
+fun armed_recruit(ctx: &mut TxContext): Recruit {
+    let mut recruit = recruit::default(ctx);
+    recruit.add_weapon(weapon::new(b"Test".to_string(), stats::default_weapon(), ctx));
+    recruit
+}
 
 #[test]
 fun default() {
@@ -77,7 +85,7 @@ fun armor_modifiers_reach_the_recruit() {
 fun perform_reload() {
     let ctx = &mut tx_context::dummy();
     let mut rng = random::new_generator_from_seed_for_testing(vector[0]);
-    let recruit = recruit::default(ctx);
+    let recruit = armed_recruit(ctx);
     let mut unit = recruit.to_unit();
 
     unit.perform_attack(&mut rng, 1, 0);
@@ -85,7 +93,7 @@ fun perform_reload() {
     unit.perform_reload();
 
     let (weapon, armor) = recruit.dismiss();
-    weapon.destroy_none();
+    weapon.do!(|weapon| weapon.destroy());
     armor.destroy_none();
     unit.destroy();
 }
@@ -96,7 +104,7 @@ fun perform_reload() {
 fun perform_reload_no_ap_fail() {
     let ctx = &mut tx_context::dummy();
     let mut rng = random::new_generator_from_seed_for_testing(vector[0]);
-    let recruit = recruit::default(ctx);
+    let recruit = armed_recruit(ctx);
     let mut unit = recruit.to_unit();
 
     unit.perform_attack(&mut rng, 1, 0);
@@ -110,7 +118,7 @@ fun perform_reload_no_ap_fail() {
 // - reload at full clip capacity - fail
 fun perform_reload_full_clip_fail() {
     let ctx = &mut tx_context::dummy();
-    let recruit = recruit::default(ctx);
+    let recruit = armed_recruit(ctx);
     let mut unit = recruit.to_unit();
 
     unit.perform_reload();
@@ -161,7 +169,7 @@ fun perform_grenade_twice_fail() {
 fun perform_grenade_no_ap_fail() {
     let ctx = &mut tx_context::dummy();
     let mut rng = random::new_generator_from_seed_for_testing(vector[0]);
-    let recruit = recruit::default(ctx);
+    let recruit = armed_recruit(ctx);
     let mut unit = recruit.to_unit();
 
     unit.perform_attack(&mut rng, 4, 0);
@@ -174,7 +182,7 @@ fun perform_grenade_no_ap_fail() {
 fun perform_attack_distance_modifiers() {
     let ctx = &mut tx_context::dummy();
     let mut rng = random::new_generator_from_seed_for_testing(vector[0]);
-    let recruit = recruit::default(ctx);
+    let recruit = armed_recruit(ctx);
     let mut unit = recruit.to_unit();
 
     assert_eq!(unit.stats().range(), 4);
@@ -225,7 +233,7 @@ fun perform_attack_distance_modifiers() {
 fun shoot_and_reload() {
     let ctx = &mut tx_context::dummy();
     let mut rng = random::new_generator_from_seed_for_testing(vector[0]);
-    let recruit = recruit::default(ctx);
+    let recruit = armed_recruit(ctx);
     let mut unit = recruit.to_unit();
 
     assert_eq!(unit.ammo(), 3);
@@ -280,11 +288,74 @@ fun from_bcs() {
     let unit2 = unit::from_bytes(bytes);
 
     assert_eq!(unit.recruit_id(), unit2.recruit_id());
+    assert_eq!(*unit.actions(), *unit2.actions());
+    assert_eq!(bcs::to_bytes(&unit2), bytes);
     let (weapon, armor) = recruit.dismiss();
     weapon.do!(|weapon| weapon.destroy());
     armor.do!(|armor| armor.destroy());
     unit2.destroy();
     unit.destroy();
+}
+
+#[test]
+fun armed_recruit_has_all_actions() {
+    let ctx = &mut tx_context::dummy();
+    let recruit = armed_recruit(ctx);
+    let unit = recruit.to_unit();
+
+    assert_eq!(
+        *unit.actions(),
+        vector[
+            action::new_move(),
+            action::new_attack(),
+            action::new_reload(),
+            action::new_grenade(),
+        ],
+    );
+    assert!(unit.has_action(&action::new_attack()));
+
+    recruit.kill(ctx).throw_away();
+    unit.destroy();
+}
+
+#[test]
+// An unarmed recruit is a runner: it moves and throws, it does not shoot.
+fun unarmed_recruit_has_move_and_grenade() {
+    let ctx = &mut tx_context::dummy();
+    let recruit = recruit::default(ctx);
+    let mut unit = recruit.to_unit();
+
+    assert_eq!(*unit.actions(), vector[action::new_move(), action::new_grenade()]);
+    assert!(unit.has_action(&action::new_move()));
+    assert!(unit.has_action(&action::new_grenade()));
+    assert!(!unit.has_action(&action::new_attack()));
+    assert!(!unit.has_action(&action::new_reload()));
+
+    // moving still works
+    unit.perform_move(1);
+    assert_eq!(unit.ap(), 1);
+
+    recruit.kill(ctx).throw_away();
+    unit.destroy();
+}
+
+#[test, expected_failure(abort_code = unit::EActionNotAllowed, location = unit)]
+fun unarmed_recruit_cannot_attack() {
+    let ctx = &mut tx_context::dummy();
+    let mut rng = random::new_generator_from_seed_for_testing(vector[0]);
+    let mut unit = recruit::default(ctx).to_unit();
+
+    unit.perform_attack(&mut rng, 1, 0);
+    abort
+}
+
+#[test, expected_failure(abort_code = unit::EActionNotAllowed, location = unit)]
+fun unarmed_recruit_cannot_reload() {
+    let ctx = &mut tx_context::dummy();
+    let mut unit = recruit::default(ctx).to_unit();
+
+    unit.perform_reload();
+    abort
 }
 
 #[test]

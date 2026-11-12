@@ -8,7 +8,7 @@
  * is `[x, z]` around its center. Mirrors `ghosts::ghosts`.
  */
 
-import type { GameEvent } from "@ghosts/engine";
+import type { GameEvent, UnitOrder } from "@ghosts/engine";
 
 import type { ChainGame, ChainRecord } from "./bcs";
 
@@ -359,6 +359,30 @@ export const blastCells = (game: ChainGame, bounds: Bounds): Cell[] =>
     game.history.flatMap((record) =>
         record.$kind === "Explosion" ? [toCell(record.Explosion.slice(0, 2), bounds)] : [],
     );
+
+/** What a unit may be ordered to do: `ghosts::action::Action`. */
+export type UnitAction = "Move" | "Attack" | "Reload" | "Grenade";
+
+/** Whether the unit on the map for `recruit` has `action`; the chain refuses the order otherwise. */
+export function canDo(game: ChainGame, recruit: string, action: UnitAction) {
+    const entry = unitsOnMap(game).find(({ unit }) => unit.recruit === recruit);
+    return !!entry && entry.unit.actions.some(({ $kind }) => $kind === action);
+}
+
+/** The engine's name for each chain action; the engine's other orders have no chain counterpart. */
+const ENGINE_ORDER = {
+    Move: "move",
+    Attack: "fire",
+    Reload: "reload",
+    Grenade: "grenade",
+} as const;
+
+/** A unit's chain actions as the engine's allow-list. */
+export function engineActions(actions: readonly { $kind: string }[]): UnitOrder[] {
+    return actions.flatMap(({ $kind }) =>
+        $kind in ENGINE_ORDER ? [ENGINE_ORDER[$kind as keyof typeof ENGINE_ORDER]] : [],
+    );
+}
 
 /** The units on the map with the tiles they stand on. */
 export function unitsOnMap(game: ChainGame) {
