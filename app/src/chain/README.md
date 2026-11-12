@@ -59,20 +59,24 @@ is what the screens and the future encounter driver import.
 
 - `bcs.ts` — the BCS schemas mirroring the on-chain types of the ghosts Move
   package (`Registry`, `Account`, `Recruit` with its `Metadata`/`Visuals`,
-  gear and the table wrappers). Field order mirrors the Move structs.
+  gear and the table wrapper). Field order mirrors the Move structs.
 - `ghosts.ts` — the ghosts package frontend behind Headquarters: the
   `Registry` and the player's `Account` id (a derived dynamic-field read of
-  `Registry.accounts`), the account's recruits and armory (dynamic object
-  fields of its `ObjectTable`s, re-listed until they match the table's
-  length and no entry is older than one already seen), and the transactions — account, hire, `edit_recruit` with the
+  `Registry.accounts`), the recruits, armory and upgrade stock sent to the account (listed
+  as objects it owns, re-listed until the recruits match the account's count
+  and no object is older than one already seen, or than where it has gone
+  since), and the transactions — account, hire, `edit_recruit` with the
   appearance codec's five areas, unequip, `issueTx` (hand gear from carrier
   to recruit in one PTB), `fittingsTx` (bring a rifle to a whole draft of
-  fittings in one PTB — unequip, strip, fit from stock, mint the missing,
-  re-equip; indices tracked against a local copy of the upgrade vector),
-  testnet requisition. `useGhostsAction` sends each step on the fast lane and
-  reads what it wrote straight into the reads on screen: the objects
-  `useBcsObject` holds, and the tables' entries, changed, dropped, or found by
-  the dynamic field made for them. Only a step with another after it is waited
+  fittings in one PTB — take it out, strip into the stock, fit from the stock
+  by id, requisition the missing, put it back),
+  testnet requisition. A recruit is changed between `borrow_recruit` and
+  `return_recruit`, once per PTB; recruits and gear go in by id alone, and the
+  fast lane passes each by the newest reference this client has seen — from a
+  read or its own effects — as a `Receiving` input. `useGhostsAction` sends
+  each step on the fast lane and reads what it wrote straight into the reads on
+  screen: the objects `useBcsObject` holds, and what the account holds,
+  changed, dropped, or new by its owner and type. Only a step with another after it is waited
   for, as that one may read the chain. About 0.7s a write against 3.6–4.5s
   when every read was refreshed afterwards. Ids live in `GHOSTS`
   (`src/constants.ts`); `ghostsEnabled` gates every consumer.
@@ -87,8 +91,8 @@ is what the screens and the future encounter driver import.
   wrapping up a game (`completeGameTx`, `abandonGameTx`) accepts a seat its
   player never did, which also hands the storage back. The queue never drops a
   search itself, so a `Searching` `Account` is either queued (it can cancel) or
-  has its seat waiting. State is `Account.search` (`Idle`, `Searching`,
-  `Playing`) and that seat; there are no events to follow. `useCurrentGame`
+  has its seat waiting. State is `Account.state` (`Idle`, `Searching`,
+  `Playing`, `Suspended`) and that seat; there are no events to follow. `useCurrentGame`
   answers which game the player is in, by either; `useMatchSearch` reads it and
   sends the player's transactions; `useMatchmakingDriver` (called once, by the
   shell's `MatchStatus`) polls the `Account` and its seat while it waits, accepts

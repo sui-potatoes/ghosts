@@ -90,77 +90,77 @@ fun test_weapon_upgrades() {
     assert_eq!(rifle.stats().aim(), 0);
 
     // scope 1
-    rifle.add_upgrade(items::scope(1));
+    rifle.add_upgrade(items::scope(1, ctx));
     assert_eq!(rifle.stats().aim(), 5);
-    let _ = rifle.remove_upgrade(0);
+    rifle.remove_upgrade(0).destroy();
     assert_eq!(rifle.stats().aim(), 0);
 
     // scope 2
-    rifle.add_upgrade(items::scope(2));
+    rifle.add_upgrade(items::scope(2, ctx));
     assert_eq!(rifle.stats().aim(), 10);
-    let _ = rifle.remove_upgrade(0);
+    rifle.remove_upgrade(0).destroy();
     assert_eq!(rifle.stats().aim(), 0);
 
     // scope 3
-    rifle.add_upgrade(items::scope(3));
+    rifle.add_upgrade(items::scope(3, ctx));
     assert_eq!(rifle.stats().aim(), 15);
-    let _ = rifle.remove_upgrade(0);
+    rifle.remove_upgrade(0).destroy();
     assert_eq!(rifle.stats().aim(), 0);
 
     assert_eq!(rifle.stats().crit_chance(), 10);
 
     // laser sight 1
-    rifle.add_upgrade(items::laser_sight(1));
+    rifle.add_upgrade(items::laser_sight(1, ctx));
     assert_eq!(rifle.stats().crit_chance(), 15);
-    let _ = rifle.remove_upgrade(0);
+    rifle.remove_upgrade(0).destroy();
     assert_eq!(rifle.stats().crit_chance(), 10);
 
     // laser sight 2
-    rifle.add_upgrade(items::laser_sight(2));
+    rifle.add_upgrade(items::laser_sight(2, ctx));
     assert_eq!(rifle.stats().crit_chance(), 20);
-    let _ = rifle.remove_upgrade(0);
+    rifle.remove_upgrade(0).destroy();
     assert_eq!(rifle.stats().crit_chance(), 10);
 
     // laser sight 3
-    rifle.add_upgrade(items::laser_sight(3));
+    rifle.add_upgrade(items::laser_sight(3, ctx));
     assert_eq!(rifle.stats().crit_chance(), 25);
-    let _ = rifle.remove_upgrade(0);
+    rifle.remove_upgrade(0).destroy();
     assert_eq!(rifle.stats().crit_chance(), 10);
 
     // stock 1
-    rifle.add_upgrade(items::stock(1));
+    rifle.add_upgrade(items::stock(1, ctx));
     assert_eq!(rifle.stats().range(), 5);
-    let _ = rifle.remove_upgrade(0);
+    rifle.remove_upgrade(0).destroy();
     assert_eq!(rifle.stats().range(), 4);
 
     // stock 2
-    rifle.add_upgrade(items::stock(2));
+    rifle.add_upgrade(items::stock(2, ctx));
     assert_eq!(rifle.stats().range(), 6);
-    let _ = rifle.remove_upgrade(0);
+    rifle.remove_upgrade(0).destroy();
     assert_eq!(rifle.stats().range(), 4);
 
     // stock 3
-    rifle.add_upgrade(items::stock(3));
+    rifle.add_upgrade(items::stock(3, ctx));
     assert_eq!(rifle.stats().range(), 7);
-    let _ = rifle.remove_upgrade(0);
+    rifle.remove_upgrade(0).destroy();
     assert_eq!(rifle.stats().range(), 4);
 
     // expanded clip 1
-    rifle.add_upgrade(items::expanded_clip(1));
+    rifle.add_upgrade(items::expanded_clip(1, ctx));
     assert_eq!(rifle.stats().ammo(), 4);
-    let _ = rifle.remove_upgrade(0);
+    rifle.remove_upgrade(0).destroy();
     assert_eq!(rifle.stats().ammo(), 3);
 
     // expanded clip 2
-    rifle.add_upgrade(items::expanded_clip(2));
+    rifle.add_upgrade(items::expanded_clip(2, ctx));
     assert_eq!(rifle.stats().ammo(), 5);
-    let _ = rifle.remove_upgrade(0);
+    rifle.remove_upgrade(0).destroy();
     assert_eq!(rifle.stats().ammo(), 3);
 
     // expanded clip 3
-    rifle.add_upgrade(items::expanded_clip(3));
+    rifle.add_upgrade(items::expanded_clip(3, ctx));
     assert_eq!(rifle.stats().ammo(), 6);
-    let _ = rifle.remove_upgrade(0);
+    rifle.remove_upgrade(0).destroy();
     assert_eq!(rifle.stats().ammo(), 3);
 
     rifle.destroy();
@@ -171,14 +171,14 @@ fun test_weapon_upgrade_kinds() {
     let ctx = &mut tx_context::dummy();
     let mut rifle = items::rifle(1, ctx);
 
-    rifle.add_upgrade(items::scope(1));
-    rifle.add_upgrade(items::stock(2));
-    rifle.add_upgrade(items::expanded_clip(3));
+    rifle.add_upgrade(items::scope(1, ctx));
+    rifle.add_upgrade(items::stock(2, ctx));
+    rifle.add_upgrade(items::expanded_clip(3, ctx));
     assert_eq!(rifle.upgrades().length(), 3);
 
     // a kind frees up once its upgrade comes off
-    let _ = rifle.remove_upgrade(0);
-    rifle.add_upgrade(items::scope(3));
+    rifle.remove_upgrade(0).destroy();
+    rifle.add_upgrade(items::scope(3, ctx));
     assert_eq!(rifle.stats().aim(), 15);
 
     rifle.destroy();
@@ -189,8 +189,8 @@ fun test_weapon_upgrade_kind_taken() {
     let ctx = &mut tx_context::dummy();
     let mut rifle = items::rifle(1, ctx);
 
-    rifle.add_upgrade(items::laser_sight(1));
-    rifle.add_upgrade(items::laser_sight(2));
+    rifle.add_upgrade(items::laser_sight(1, ctx));
+    rifle.add_upgrade(items::laser_sight(2, ctx));
 
     abort
 }
@@ -200,10 +200,10 @@ fun test_weapon_upgrade_limit() {
     let ctx = &mut tx_context::dummy();
     let mut rifle = items::rifle(1, ctx);
 
-    rifle.add_upgrade(items::scope(1));
-    rifle.add_upgrade(items::laser_sight(1));
-    rifle.add_upgrade(items::stock(1));
-    rifle.add_upgrade(items::expanded_clip(1));
+    rifle.add_upgrade(items::scope(1, ctx));
+    rifle.add_upgrade(items::laser_sight(1, ctx));
+    rifle.add_upgrade(items::stock(1, ctx));
+    rifle.add_upgrade(items::expanded_clip(1, ctx));
 
     abort
 }

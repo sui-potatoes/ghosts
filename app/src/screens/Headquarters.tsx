@@ -28,7 +28,6 @@ import {
     editRecruitsTx,
     fetchAccountId,
     FREE_RECRUITS,
-    HIRE_PRICE,
     hireRecruitsTx,
     hireRecruitTx,
     MAX_RECRUITS,
@@ -327,7 +326,7 @@ export default function Headquarters() {
                 guard={guard}
                 status={
                     recruits.length > 0 && account.data
-                        ? `${account.data.credits} credits · Rating ${account.data.rating.rating} · ${account.data.score.wins}W ${account.data.score.losses}L ${account.data.score.draws}D`
+                        ? `Rating ${account.data.rating.rating} · ${account.data.score.wins}W ${account.data.score.losses}L ${account.data.score.draws}D`
                         : ""
                 }
             />
@@ -367,15 +366,12 @@ export default function Headquarters() {
                                 accountId.data && (
                                     <button
                                         className="btn roster-hire"
-                                        disabled={
-                                            pending ||
-                                            Number(account.data?.credits ?? 0) < HIRE_PRICE
-                                        }
+                                        disabled={pending}
                                         onClick={() =>
                                             void action.run([() => hireRecruitTx(accountId.data!)])
                                         }
                                     >
-                                        Hire · {HIRE_PRICE} credits
+                                        Hire
                                     </button>
                                 )}
                             {action.error && <p className="sq-footnote hq-error">{action.error}</p>}

@@ -10,15 +10,24 @@
  *
  * Shared and frozen objects keep the version they are passed by for good, and a
  * published package's signatures never change, so both are looked up once per
- * session. The gas coin is tracked from each transaction's effects. Signed bytes
- * can be sent again safely when the network drops: the chain runs them once.
+ * session. The gas coin is tracked from each transaction's effects, and so is
+ * every object owned by an address: what an `Account` holds is sent to it and
+ * received by reference, and each write to one moves the reference on, so the
+ * next transaction takes the newest this client has seen, from a read or from
+ * its own effects. Signed bytes can be sent again safely when the network
+ * drops: the chain runs them once.
  */
 
 import type { useCurrentClient } from "@mysten/dapp-kit-react";
 import type { Signer } from "@mysten/sui/cryptography";
 import type { SuiGrpcClient } from "@mysten/sui/grpc";
 import { Inputs, Transaction, type TransactionPlugin } from "@mysten/sui/transactions";
-import { fromBase64, normalizeSuiAddress, normalizeSuiObjectId } from "@mysten/sui/utils";
+import {
+    fromBase64,
+    normalizeStructTag,
+    normalizeSuiAddress,
+    normalizeSuiObjectId,
+} from "@mysten/sui/utils";
 
 /** What an order calls; every object in it is a resolved reference. */
 export type Order = (tx: Transaction) => void;
@@ -29,6 +38,10 @@ export interface WrittenObject {
     version: bigint;
     /** The object that owns it: a dynamic field holds a table's entry. */
     parent?: string;
+    /** The address that owns it: an object's own, for one sent to an object. */
+    owner?: string;
+    /** Its Move type, normalized. */
+    type?: string;
     contents?: Uint8Array;
 }
 
@@ -50,19 +63,50 @@ const READ_MASK = [
     "effects",
     "objects.objects.object_id",
     "objects.objects.version",
+    "objects.objects.object_type",
     "objects.objects.contents",
 ];
 const NETWORK_ERROR = /Failed to fetch|NetworkError|UNAVAILABLE|DEADLINE|timed? ?out|aborted/i;
 const NETWORK_RETRIES = 3;
 /** `ChangedObject.outputState` and `Owner.kind` in the effects. */
-const [GONE, WRITTEN, OWNED_BY_OBJECT, SHARED] = [1, 2, 2, 3];
+const [GONE, WRITTEN] = [1, 2];
+const [OWNED_BY_ADDRESS, OWNED_BY_OBJECT, SHARED] = [1, 2, 3];
 /** `OpenSignature.reference` of a parameter taken by `&`. */
 const IMMUTABLE = 1;
 
-/** How an object goes into a transaction, where that never changes. */
-type Passed = { shared: string } | { ref: { objectId: string; version: string; digest: string } };
+type ObjectRef = { objectId: string; version: string; digest: string };
+/**
+ * How an object goes into a transaction: shared, by reference, or received by the
+ * object it was sent to.
+ */
+type Passed = { shared: string } | { ref: ObjectRef } | { receiving: ObjectRef };
 /** Shared objects by their initial version, frozen ones by their reference. */
 const permanent = new Map<string, Passed>();
+
+/**
+ * The newest reference of each object owned by an address this client has seen,
+ * from a read or from its own effects, and who owns it; no owner once it went
+ * anywhere else (into another object, a table, or gone), so that a read a moment
+ * behind cannot bring it back.
+ */
+const owned = new Map<string, { ref: ObjectRef; owner?: string }>();
+
+/** Note an owned object as a read found it; kept only when newer than what is known. */
+export function noteOwned(ref: ObjectRef, owner: string) {
+    const objectId = normalizeSuiObjectId(ref.objectId);
+    const known = owned.get(objectId);
+    if (known && BigInt(known.ref.version) >= BigInt(ref.version)) return;
+    owned.set(objectId, { ref: { ...ref, objectId }, owner: normalizeSuiAddress(owner) });
+}
+
+/** Whether a read of an object at `version` is older than where it has since gone. */
+export function movedOn(objectId: string, version: string): boolean {
+    const known = owned.get(normalizeSuiObjectId(objectId));
+    return !!known && BigInt(known.ref.version) > BigInt(version);
+}
+
+/** Transactions sent here, with what their objects were passed by: see `forgetOwned`. */
+const inputsOf = new WeakMap<Transaction, Parameters<TransactionPlugin>[0]>();
 /** Per Move function, whether each parameter can change what it is passed. */
 const signatures = new Map<string, Promise<boolean[]>>();
 const signatureKey = (packageId: string, moduleName: string, name: string) =>
@@ -147,7 +191,10 @@ export class FastLane {
         if (!built) order(tx);
         else if (!resolving.has(tx)) {
             resolving.add(tx);
-            tx.addBuildPlugin(this.resolve);
+            tx.addBuildPlugin((data, options, next) => {
+                inputsOf.set(tx, data);
+                return this.resolve(data, options, next);
+            });
         }
         // The objects are looked up while the gas is: settling the commands needs no gas.
         // With the client, whatever the lookup could not settle is settled by the node.
@@ -188,19 +235,33 @@ export class FastLane {
                               initialSharedVersion: input.initialSharedVersion ?? how.shared,
                               mutable: input.mutable ?? mutable[n],
                           })
-                        : Inputs.ObjectRef(how.ref);
+                        : "receiving" in how
+                          ? Inputs.ReceivingRef(how.receiving)
+                          : Inputs.ObjectRef(how.ref);
             });
         }
         await next();
     };
 
-    /** How each object goes into a transaction: from memory where that never changes, else read now. */
+    /**
+     * How each object goes into a transaction: from memory where that never changes
+     * or this client knows the newest reference, else read now. One owned by
+     * another address than the sender's is an object's, to be received.
+     */
     private async lookUp(named: string[]): Promise<Map<string, Passed>> {
         const ids = named.map((id) => normalizeSuiObjectId(id));
-        const missing = [...new Set(ids.filter((id) => !permanent.has(id)))];
         const now = new Map<string, Passed>();
-        if (missing.length) {
+        const sender = normalizeSuiAddress(this.owner);
+        const byOwner = (ref: ObjectRef, owner: string): Passed =>
+            owner === sender ? { ref } : { receiving: ref };
+        for (const id of ids) {
+            const known = owned.get(id);
+            if (!permanent.has(id) && known?.owner) now.set(id, byOwner(known.ref, known.owner));
+        }
+        let missing = [...new Set(ids.filter((id) => !permanent.has(id) && !now.has(id)))];
+        for (let attempt = 0; missing.length; attempt++) {
             const { objects } = await this.grpc.core.getObjects({ objectIds: missing });
+            const behind: string[] = [];
             objects.forEach((object, i) => {
                 if (object instanceof Error) throw object;
                 const { objectId, version, digest, owner } = object;
@@ -210,10 +271,37 @@ export class FastLane {
                 else if (owner.$kind === "Immutable") permanent.set(missing[i], { ref });
                 else if (owner.$kind === "ConsensusAddressOwner")
                     now.set(missing[i], { shared: owner.ConsensusAddressOwner.startVersion });
-                else now.set(missing[i], { ref });
+                else if (owner.$kind === "AddressOwner") {
+                    // a node a moment behind: what it has is older than where the object went
+                    if (movedOn(objectId, version) && attempt < 4) behind.push(missing[i]);
+                    else {
+                        noteOwned(ref, owner.AddressOwner);
+                        now.set(missing[i], byOwner(ref, normalizeSuiAddress(owner.AddressOwner)));
+                    }
+                } else now.set(missing[i], { ref });
             });
+            missing = behind;
+            if (missing.length) await sleep(400);
         }
         return new Map(ids.map((id) => [id, permanent.get(id) ?? now.get(id)!]));
+    }
+
+    /**
+     * A transaction the chain turned away or refused may have named an owned object
+     * by a reference gone stale: someone else moved it on. Forget what it was passed
+     * by, so it is read again, by this transaction when it is signed once more.
+     */
+    private forgetOwned(order: Order | Transaction) {
+        const data = order instanceof Transaction ? inputsOf.get(order) : undefined;
+        data?.inputs.forEach((input, index) => {
+            const ref = input.Object?.Receiving ?? input.Object?.ImmOrOwnedObject;
+            if (!ref) return;
+            owned.delete(normalizeSuiObjectId(ref.objectId));
+            data.inputs[index] = {
+                $kind: "UnresolvedObject",
+                UnresolvedObject: { objectId: ref.objectId },
+            };
+        });
     }
 
     /**
@@ -239,7 +327,10 @@ export class FastLane {
                 );
                 return this.settle(response.transaction, signed.gas);
             } catch (error) {
-                if (error instanceof OrderRefused) throw error;
+                if (error instanceof OrderRefused) {
+                    this.forgetOwned(order);
+                    throw error;
+                }
                 const message = error instanceof Error ? error.message : String(error);
                 if (NETWORK_ERROR.test(message)) {
                     if (attempt >= NETWORK_RETRIES) throw error;
@@ -251,6 +342,7 @@ export class FastLane {
                 rebuilt = true;
                 this.gas = null;
                 this.price = null;
+                this.forgetOwned(order);
                 await sleep(500);
                 signed = await this.sign(order, signer);
             }
@@ -281,38 +373,56 @@ export class FastLane {
             });
         } else this.gas = null;
 
-        // An object the order shared is passed by that version from now on.
-        for (const { objectId, outputOwner } of effects?.changedObjects ?? [])
-            if (objectId && outputOwner?.kind === SHARED && outputOwner.version !== undefined)
-                permanent.set(normalizeSuiObjectId(objectId), {
-                    shared: String(outputOwner.version),
-                });
+        // An object the order shared is passed by that version from now on, and one it
+        // left with an address by its new reference; one it moved anywhere else isn't.
+        const lamport = String(effects?.lamportVersion ?? 0);
+        for (const change of effects?.changedObjects ?? []) {
+            const { objectId, outputState, outputOwner, outputVersion, outputDigest } = change;
+            if (!objectId) continue;
+            const id = normalizeSuiObjectId(objectId);
+            if (outputOwner?.kind === SHARED && outputOwner.version !== undefined)
+                permanent.set(id, { shared: String(outputOwner.version) });
+            if (id === normalizeSuiObjectId(coin?.objectId ?? "0x0")) continue;
+            const version = outputVersion !== undefined ? String(outputVersion) : lamport;
+            const ref = { objectId: id, version, digest: outputDigest ?? "" };
+            const left =
+                outputState === WRITTEN && outputOwner?.kind === OWNED_BY_ADDRESS && outputDigest;
+            if (left) owned.set(id, { ref, owner: normalizeSuiAddress(outputOwner.address!) });
+            else if (owned.has(id) || outputState === GONE) owned.set(id, { ref });
+        }
 
         if (!effects?.status?.success) {
             throw new OrderRefused(effects?.status?.error?.description ?? "execution failed");
         }
 
         const objects = executed?.objects?.objects ?? [];
-        const contents = (objectId: string) => {
-            let latest: (typeof objects)[number] | undefined;
+        const latest = (objectId: string) => {
+            let found: (typeof objects)[number] | undefined;
             for (const object of objects) {
                 if (object.objectId !== objectId) continue;
-                if (!latest || BigInt(object.version ?? 0) > BigInt(latest.version ?? 0))
-                    latest = object;
+                if (!found || BigInt(object.version ?? 0) > BigInt(found.version ?? 0))
+                    found = object;
             }
-            return latest?.contents?.value;
+            return found;
         };
+        const contents = (objectId: string) => latest(objectId)?.contents?.value;
         const written: WrittenObject[] = [];
         const removed: string[] = [];
         for (const change of effects?.changedObjects ?? []) {
             const { objectId, outputState, outputVersion, outputOwner } = change;
             if (!objectId) continue;
+            const type = change.objectType ?? latest(objectId)?.objectType;
             if (outputState === GONE) removed.push(objectId);
             else if (outputState === WRITTEN)
                 written.push({
                     objectId,
                     version: BigInt(outputVersion ?? 0),
                     parent: outputOwner?.kind === OWNED_BY_OBJECT ? outputOwner.address : undefined,
+                    owner:
+                        outputOwner?.kind === OWNED_BY_ADDRESS && outputOwner.address
+                            ? normalizeSuiAddress(outputOwner.address)
+                            : undefined,
+                    type: type ? normalizeStructTag(type) : undefined,
                     contents: contents(objectId),
                 });
         }

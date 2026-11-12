@@ -35,6 +35,8 @@ const DISTANCE_PENALTY: u8 = 10;
 public struct Unit has copy, store {
     /// The `ID` of the `Recruit`.
     recruit: ID,
+    /// The `Account` the `Recruit` belongs to, its leader: whose unit it is.
+    owner: ID,
     /// Number of actions the `Unit` can perform in a single turn. Resets at the
     /// beginning of each turn. A single action takes 1 point, options vary from
     /// moving, attacking, using abilities, etc.
@@ -47,15 +49,10 @@ public struct Unit has copy, store {
     grenade_used: bool,
     /// Stats of the `Recruit`.
     stats: Stats,
-    /// The last turn the `Unit` has performed an action.
-    last_turn: u16,
 }
 
-/// Reset the AP of the `Unit` to the default value if the turn is over.
-public fun try_reset_ap(unit: &mut Unit, turn: u16) {
-    if (unit.last_turn < turn) unit.ap.reset();
-    unit.last_turn = turn;
-}
+/// Give the `Unit` its action points back, as its side's turn begins.
+public fun reset_ap(unit: &mut Unit) { unit.ap.reset() }
 
 /// Spend 1 AP on movement; abort if distance exceeds mobility or AP is zero.
 public fun perform_move(unit: &mut Unit, distance: u8) {
@@ -63,17 +60,6 @@ public fun perform_move(unit: &mut Unit, distance: u8) {
     assert!(unit.ap.value() > 0, ENoAP);
 
     unit.ap.decrease(1);
-}
-
-/// Take up the weapon the `Recruit` now carries: its stats replace the old one's,
-/// and it comes with a full magazine. It costs 1 AP.
-public fun perform_pick_up(unit: &mut Unit, recruit: &Recruit) {
-    assert!(unit.ap.value() > 0, ENoAP);
-    unit.ap.decrease(1);
-
-    let Unit { stats, ammo, .. } = from_recruit(recruit);
-    unit.stats = stats;
-    unit.ammo = ammo;
 }
 
 /// Reload `Unit`'s weapon. It costs 1 AP.
@@ -197,12 +183,12 @@ public fun from_recruit(recruit: &Recruit): Unit {
 
     Unit {
         recruit: object::id(recruit),
+        owner: recruit.leader().to_id(),
         ap: param::new(2),
         hp: param::new(stats.health() as u16),
         ammo: param::new(stats.ammo() as u16),
         grenade_used: false,
         stats,
-        last_turn: 0,
     }
 }
 
@@ -216,6 +202,9 @@ public fun destroy(unit: Unit): ID {
 
 /// Get the `Recruit`'s ID from the `Unit`.
 public fun recruit_id(unit: &Unit): ID { unit.recruit }
+
+/// Get the `Account` the unit's `Recruit` belongs to.
+public fun owner(unit: &Unit): ID { unit.owner }
 
 /// Get the `Unit`'s HP.
 public fun hp(unit: &Unit): u16 { unit.hp.value() }
@@ -243,12 +232,12 @@ public fun from_bytes(bytes: vector<u8>): Unit {
 public(package) fun from_bcs(bcs: &mut BCS): Unit {
     Unit {
         recruit: bcs.peel_address().to_id(),
+        owner: bcs.peel_address().to_id(),
         ap: param::from_bcs(bcs),
         hp: param::from_bcs(bcs),
         ammo: param::from_bcs(bcs),
         grenade_used: bcs.peel_bool(),
         stats: stats::from_bcs(bcs),
-        last_turn: bcs.peel_u16(),
     }
 }
 

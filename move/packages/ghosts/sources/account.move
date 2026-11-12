@@ -1,10 +1,23 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
-/// Stores player recruits, gear, dog tags, ratings and scores in shared
-/// `Account` objects. The `Registry` maps owner addresses to account IDs;
-/// `new_account` aborts if the sender already has an entry. Account mutations
-/// call `authorize` to compare the transaction sender with the stored owner.
+/// Player `Account`s: the shared object a player is identified by, with their
+/// rating and score. Everything the player has is sent to the `Account` and taken
+/// with `Receiving` when needed: recruits, the armory's weapons and armor, the
+/// stock of weapon upgrades, and the dog tags of the fallen. The `Registry` maps owner
+/// addresses to account IDs; `new_account` aborts if the sender already has an
+/// entry. Account mutations call `authorize` to compare the transaction sender
+/// with the stored owner.
+///
+/// A `Recruit` is only ever reached through here. `borrow_recruit` takes them out
+/// with a `Borrow` that cannot be dropped, stored or destroyed in any other way
+/// than by `return_recruit`, which sends the recruit back to their leader - the
+/// `Account` - so a transaction that borrows a recruit ends with them home, however
+/// many changes they went through. Out of the `Account`, a recruit is only in a
+/// game, which lets go of them by their death. Gear is the player's to do with as
+/// they like once requisitioned, out of the armory or off a recruit, and upgrades
+/// fit with the functions of `ghosts::weapon`; the armory and the stock are
+/// whatever is sent back to the `Account`.
 module ghosts::account;
 
 use ghosts::{
@@ -17,12 +30,7 @@ use ghosts::{
 };
 use glicko::glicko::{Self, Rating};
 use name_gen::name_gen;
-use sui::{
-    object_table::{Self, ObjectTable},
-    random::Random,
-    table::{Self, Table},
-    table_vec::{Self, TableVec}
-};
+use sui::{random::Random, table::{Self, Table}, transfer::Receiving};
 
 /// Trying to create an `Account` when the sender already has one.
 const EAccountExists: u64 = 0;
@@ -34,21 +42,17 @@ const ERecruitLimitReached: u64 = 2;
 const EInvalidVoice: u64 = 3;
 /// Trying to hire while the squad is in a game.
 const EInGame: u64 = 6;
+/// Returning a `Recruit` for another one's `Borrow`.
+const EWrongRecruit: u64 = 7;
 
-/// Not enough credits for what was asked.
-const ENotEnoughCredits: u64 = 7;
 /// The `Recruit`'s rank is below what the gear asks for.
 const ERankTooLow: u64 = 8;
 
 /// The squad an `Account` can always hold for free, so that nobody is ever out of
 /// the game for having lost one.
 const FREE_RECRUITS: u64 = 3;
-/// How many `Recruit`s an `Account` can hold, paid for past the free squad.
+/// How many `Recruit`s an `Account` can hold, hired one at a time past the free squad.
 const MAX_RECRUITS: u64 = 8;
-/// What a `Recruit` costs past the free squad.
-const HIRE_PRICE: u64 = 50;
-/// What an `Account` starts with. Generous while the game is in testing.
-const STARTING_CREDITS: u64 = 1000;
 /// Number of visual presets per gender in the `Registry`.
 const PRESETS_PER_GENDER: u64 = 16;
 /// Independent preset draws per recruit: identity (head and eyes), face, body
@@ -71,36 +75,30 @@ public struct Registry has key {
     visual_presets: vector<vector<u256>>,
 }
 
-/// Shared storage for a player's recruits, gear, dog tags, rating and score.
-/// Mutation functions compare the transaction sender with `owner`. Recruit
-/// and gear deposits are public; their removal functions are package-visible.
+/// A player, shared. Their recruits, gear and dog tags are owned by it: sent to
+/// its ID, and taken with `Receiving`. Mutation functions compare the
+/// transaction sender with `owner`.
 public struct Account has key {
     id: UID,
     /// The address which created - and controls - the `Account`.
     owner: address,
-    /// The player's `Recruit`s, stored by their ID.
-    recruits: ObjectTable<ID, Recruit>,
-    /// Unequipped `Weapon`s - the armory, stored by ID.
-    weapons: ObjectTable<ID, Weapon>,
-    /// Unequipped `Armor`s, stored by ID.
-    armors: ObjectTable<ID, Armor>,
-    /// Unattached `WeaponUpgrade` values stored inline.
-    upgrades: vector<WeaponUpgrade>,
-    /// Dog tags of fallen recruits - the memorial wall.
-    dog_tags: TableVec<DogTag>,
+    /// Where the player stands: free, searching, in a game or suspended. Anything
+    /// but `Idle`, or a `Suspended` past its time, blocks another search.
+    state: State,
+    /// How many `Recruit`s are at home: hired or back from a game, and neither
+    /// dismissed nor out in one.
+    recruits: u64,
     /// Glicko rating the player is matched by in `ghosts::find_game`.
     rating: Rating,
-    /// Where the player stands in matchmaking. Anything but `Idle` blocks
-    /// another search: `ghosts::cancel_search` clears a search still in the
-    /// queue, and the end of the game clears playing it.
-    search: Search,
-    /// The player cannot search for a game before this time, after misbehaving.
-    suspended_until_ms: u64,
     /// How the player's games ended.
     score: Score,
-    /// What the player has to spend on recruits and gear. Earned in games, and
-    /// not transferable.
-    credits: u64,
+}
+
+/// A `Recruit` taken out of their `Account` by `borrow_recruit`. Only
+/// `return_recruit` settles it, by sending the recruit back to their leader, so it
+/// can't outlive the transaction without them home.
+public struct Borrow {
+    object: ID,
 }
 
 /// How a player's games ended; their sum is the number of games played.
@@ -110,16 +108,19 @@ public struct Score has copy, drop, store {
     draws: u64,
 }
 
-/// An `Account`'s place in matchmaking. A search a match found stays `Searching`
-/// until the `ghosts::Seat` sent to the `Account` is accepted, which makes it
-/// `Playing`.
-public enum Search has copy, drop, store {
-    /// Not looking for a game.
+/// Where an `Account` stands; this is all there is to poll. A search a match found
+/// stays `Searching` until the `ghosts::Seat` sent to the `Account` is accepted,
+/// which makes it `Playing`.
+public enum State has copy, drop, store {
+    /// Free to search for a game.
     Idle,
     /// An order went into the queue at `since_ms`.
     Searching { order: ID, since_ms: u64 },
     /// In the game with this ID.
     Playing(ID),
+    /// Kept from searching until `until_ms` for misbehaving in a game; free to
+    /// search again past it.
+    Suspended { until_ms: u64 },
 }
 
 // === Account Creation ===
@@ -133,16 +134,10 @@ public fun new_account(registry: &mut Registry, ctx: &mut TxContext) {
     let account = Account {
         id: object::new(ctx),
         owner,
-        recruits: object_table::new(ctx),
-        weapons: object_table::new(ctx),
-        armors: object_table::new(ctx),
-        upgrades: vector[],
-        dog_tags: table_vec::empty(ctx),
+        state: State::Idle,
+        recruits: 0,
         rating: glicko::default(),
-        search: Search::Idle,
-        suspended_until_ms: 0,
         score: Score { wins: 0, losses: 0, draws: 0 },
-        credits: STARTING_CREDITS,
     };
 
     registry.accounts.add(owner, account.id.to_inner());
@@ -157,20 +152,18 @@ public fun new_account(registry: &mut Registry, ctx: &mut TxContext) {
 entry fun hire_recruits(acc: &mut Account, registry: &Registry, rng: &Random, ctx: &mut TxContext) {
     acc.authorize(ctx);
     assert!(acc.playing().is_none(), EInGame);
+    assert!(acc.recruits < FREE_RECRUITS, ERecruitLimitReached);
 
-    let count = acc.recruits.length();
-    assert!(count < FREE_RECRUITS, ERecruitLimitReached);
-    acc.hire(registry, rng, FREE_RECRUITS - count, ctx);
+    let count = FREE_RECRUITS - acc.recruits;
+    acc.hire(registry, rng, count, ctx);
 }
 
-/// Hire one more `Recruit` past the free squad, for `HIRE_PRICE`, up to
-/// `MAX_RECRUITS`.
+/// Hire one more `Recruit` past the free squad, up to `MAX_RECRUITS`.
 entry fun hire_recruit(acc: &mut Account, registry: &Registry, rng: &Random, ctx: &mut TxContext) {
     acc.authorize(ctx);
     assert!(acc.playing().is_none(), EInGame);
-    assert!(acc.recruits.length() < MAX_RECRUITS, ERecruitLimitReached);
+    assert!(acc.recruits < MAX_RECRUITS, ERecruitLimitReached);
 
-    acc.spend(HIRE_PRICE);
     acc.hire(registry, rng, 1, ctx);
 }
 
@@ -211,213 +204,183 @@ fun hire(acc: &mut Account, registry: &Registry, rng: &Random, count: u64, ctx: 
         );
 
         let mut recruit = recruit::new(name, ctx);
-        recruit.set_leader(acc.id.to_address());
         recruit.set_visuals(visuals);
         recruit.set_voice(if (is_female) 1 else 0);
-        acc.recruits.add(object::id(&recruit), recruit);
+        acc.add_recruit(recruit);
     });
 }
 
-/// Edit a stored `Recruit`: visual properties (packed by area, up to 32 `u8`
-/// values each) and voice configuration. The name is fixed once the Recruit
-/// is received and cannot be changed.
-public fun edit_recruit(
+/// Take a `Recruit` out of the `Account` to change them: their looks with
+/// `edit_recruit`, their gear with `equip_*` and `unequip_*`. The `Borrow` only
+/// `return_recruit` settles, in the same transaction.
+public fun borrow_recruit(
     acc: &mut Account,
-    recruit_id: ID,
+    recruit: Receiving<Recruit>,
+    ctx: &mut TxContext,
+): (Recruit, Borrow) {
+    acc.authorize(ctx);
+    let recruit = transfer::public_receive(&mut acc.id, recruit);
+    let borrow = Borrow { object: object::id(&recruit) };
+    (recruit, borrow)
+}
+
+/// Send a `Recruit` taken by `borrow_recruit` back to their leader, the `Account`
+/// they came from.
+public fun return_recruit(recruit: Recruit, borrow: Borrow) {
+    let Borrow { object } = borrow;
+    assert!(object == object::id(&recruit), EWrongRecruit);
+    let leader = recruit.leader();
+    transfer::public_transfer(recruit, leader);
+}
+
+/// Edit a borrowed `Recruit`: visual properties (packed by area, up to 32 `u8`
+/// values each) and voice configuration. The name is fixed once the Recruit
+/// is hired and cannot be changed.
+public fun edit_recruit(
+    recruit: &mut Recruit,
     head: vector<u8>,
     face: vector<u8>,
     eyes: vector<u8>,
     body: vector<u8>,
     outfit: vector<u8>,
     voice: u8,
-    ctx: &mut TxContext,
 ) {
-    acc.authorize(ctx);
     assert!(voice < NUM_VOICES, EInvalidVoice);
-
-    let recruit = &mut acc.recruits[recruit_id];
     recruit.set_visuals(visuals::new(head, face, eyes, body, outfit));
     recruit.set_voice(voice);
 }
 
-/// Store a `Recruit` in the `Account`. The `Account` becomes the recruit's
-/// leader, so dog tags and other spoils are sent to it.
-public(package) fun add_recruit(acc: &mut Account, mut recruit: Recruit, ctx: &mut TxContext) {
+/// Dismiss a `Recruit` for good: their weapon and armor go back to the armory,
+/// and the freed slot can be filled by `hire_recruits`.
+public fun dismiss_recruit(acc: &mut Account, recruit: Receiving<Recruit>, ctx: &mut TxContext) {
     acc.authorize(ctx);
+    let (weapon, armor) = transfer::public_receive(&mut acc.id, recruit).dismiss();
+    let home = acc.id.to_address();
+    weapon.do!(|w| transfer::public_transfer(w, home));
+    armor.do!(|a| transfer::public_transfer(a, home));
+    acc.recruits = acc.recruits - 1;
+}
+
+/// Send a `Recruit` home to the `Account`, which becomes their leader: dog tags
+/// and other spoils are sent to it.
+public(package) fun add_recruit(acc: &mut Account, mut recruit: Recruit) {
     recruit.set_leader(acc.id.to_address());
-    acc.recruits.add(object::id(&recruit), recruit);
+    transfer::public_transfer(recruit, acc.id.to_address());
+    acc.recruits = acc.recruits + 1;
 }
 
-/// Dismiss a stored `Recruit` for good: their weapon and armor go back to the
-/// armory, and the freed slot can be filled by `hire_recruits`.
-public fun dismiss_recruit(acc: &mut Account, recruit_id: ID, ctx: &mut TxContext) {
-    acc.authorize(ctx);
-    let (weapon, armor) = acc.recruits.remove(recruit_id).dismiss();
-    weapon.do!(|w| acc.weapons.add(object::id(&w), w));
-    armor.do!(|a| acc.armors.add(object::id(&a), a));
-}
-
-/// Remove and return a stored `Recruit` after checking the sender is the owner.
+/// Take a `Recruit` out of the `Account` for a game, after checking the sender is
+/// the owner.
 public(package) fun remove_recruit(
     acc: &mut Account,
-    recruit_id: ID,
+    recruit: Receiving<Recruit>,
     ctx: &mut TxContext,
 ): Recruit {
     acc.authorize(ctx);
-    acc.recruits.remove(recruit_id)
+    acc.recruits = acc.recruits - 1;
+    transfer::public_receive(&mut acc.id, recruit)
 }
 
-// === Credits ===
+// === Requisition ===
 
-/// Take what something costs out of the `Account`'s credits.
-fun spend(acc: &mut Account, price: u64) {
-    assert!(acc.credits >= price, ENotEnoughCredits);
-    acc.credits = acc.credits - price;
-}
-
-/// Pay credits into the `Account`.
-public(package) fun pay(acc: &mut Account, credits: u64) {
-    acc.credits = acc.credits + credits;
-}
-
-/// Buy a rifle of the given tier, into the armory.
-public fun buy_rifle(acc: &mut Account, tier: u8, ctx: &mut TxContext) {
+/// Requisition a rifle of the given tier: for a recruit, or the armory.
+public fun requisition_rifle(acc: &Account, tier: u8, ctx: &mut TxContext): Weapon {
     acc.authorize(ctx);
-    acc.spend(items::rifle_price(tier));
-    let rifle = items::rifle(tier, ctx);
-    acc.weapons.add(object::id(&rifle), rifle);
+    items::rifle(tier, ctx)
 }
 
-/// Buy armor of the given tier, into the armory.
-public fun buy_armor(acc: &mut Account, tier: u8, ctx: &mut TxContext) {
+/// Requisition armor of the given tier: for a recruit, or the armory.
+public fun requisition_armor(acc: &Account, tier: u8, ctx: &mut TxContext): Armor {
     acc.authorize(ctx);
-    acc.spend(items::armor_price(tier));
-    let armor = items::armor(tier, ctx);
-    acc.armors.add(object::id(&armor), armor);
+    items::armor(tier, ctx)
 }
 
-/// Buy a weapon upgrade of the given kind and tier, into the stock.
-public fun buy_upgrade(acc: &mut Account, kind: u8, tier: u8, ctx: &mut TxContext) {
+/// Requisition a weapon upgrade of the given kind and tier: for a weapon, or the
+/// stock.
+public fun requisition_upgrade(
+    acc: &Account,
+    kind: u8,
+    tier: u8,
+    ctx: &mut TxContext,
+): WeaponUpgrade {
     acc.authorize(ctx);
-    acc.spend(items::upgrade_price(tier));
-    acc.upgrades.push_back(items::upgrade(kind, tier));
+    items::upgrade(kind, tier, ctx)
 }
 
 // === Gear: Weapons, Armor, Upgrades ===
 
-/// Store a `Weapon` in the `Account`'s armory.
-public(package) fun add_weapon(acc: &mut Account, weapon: Weapon, ctx: &mut TxContext) {
+/// Take a `Weapon` out of the armory.
+public fun take_weapon(acc: &mut Account, weapon: Receiving<Weapon>, ctx: &mut TxContext): Weapon {
     acc.authorize(ctx);
-    acc.weapons.add(object::id(&weapon), weapon);
+    transfer::public_receive(&mut acc.id, weapon)
 }
 
-/// Remove and return a stored `Weapon` after checking the sender is the owner.
-public(package) fun remove_weapon(acc: &mut Account, weapon_id: ID, ctx: &mut TxContext): Weapon {
+/// Take an `Armor` out of the armory.
+public fun take_armor(acc: &mut Account, armor: Receiving<Armor>, ctx: &mut TxContext): Armor {
     acc.authorize(ctx);
-    acc.weapons.remove(weapon_id)
+    transfer::public_receive(&mut acc.id, armor)
 }
 
-/// Store an `Armor` in the `Account`.
-public(package) fun add_armor(acc: &mut Account, armor: Armor, ctx: &mut TxContext) {
-    acc.authorize(ctx);
-    acc.armors.add(object::id(&armor), armor);
-}
-
-/// Remove and return a stored `Armor` after checking the sender is the owner.
-public(package) fun remove_armor(acc: &mut Account, armor_id: ID, ctx: &mut TxContext): Armor {
-    acc.authorize(ctx);
-    acc.armors.remove(armor_id)
-}
-
-/// Store a `WeaponUpgrade` in the `Account`.
-public(package) fun add_upgrade(acc: &mut Account, upgrade: WeaponUpgrade, ctx: &mut TxContext) {
-    acc.authorize(ctx);
-    acc.upgrades.push_back(upgrade);
-}
-
-/// Remove and return the `WeaponUpgrade` at an index after checking the owner.
-public(package) fun remove_upgrade(
-    acc: &mut Account,
-    index: u64,
-    ctx: &mut TxContext,
-): WeaponUpgrade {
-    acc.authorize(ctx);
-    acc.upgrades.remove(index)
-}
-
-// === Equipment Management ===
-
-/// Equip a stored `Weapon` on a stored `Recruit`.
-public fun equip_weapon(acc: &mut Account, recruit_id: ID, weapon_id: ID, ctx: &mut TxContext) {
-    acc.authorize(ctx);
-    let weapon = acc.weapons.remove(weapon_id);
-    let recruit = &mut acc.recruits[recruit_id];
+/// Arm a borrowed `Recruit` with a `Weapon` their rank allows: from the armory, or
+/// off another recruit. The one they carried goes to the armory.
+public fun equip_weapon(recruit: &mut Recruit, weapon: Weapon) {
     assert!(recruit.rank().at_least(weapon.required_rank()), ERankTooLow);
+    if (recruit.weapon().is_some()) {
+        transfer::public_transfer(recruit.remove_weapon(), recruit.leader());
+    };
     recruit.add_weapon(weapon);
 }
 
-/// Unequip the `Weapon` from a stored `Recruit`, back into the armory.
-public fun unequip_weapon(acc: &mut Account, recruit_id: ID, ctx: &mut TxContext) {
-    acc.authorize(ctx);
-    let weapon = acc.recruits[recruit_id].remove_weapon();
-    acc.weapons.add(object::id(&weapon), weapon);
-}
+/// Take the `Weapon` off a borrowed `Recruit`: for the armory, or another recruit.
+public fun unequip_weapon(recruit: &mut Recruit): Weapon { recruit.remove_weapon() }
 
-/// Equip a stored `Armor` on a stored `Recruit`.
-public fun equip_armor(acc: &mut Account, recruit_id: ID, armor_id: ID, ctx: &mut TxContext) {
-    acc.authorize(ctx);
-    let armor = acc.armors.remove(armor_id);
-    let recruit = &mut acc.recruits[recruit_id];
+/// Fit a borrowed `Recruit` with an `Armor` their rank allows: from the armory, or
+/// off another recruit. The one they wore goes to the armory.
+public fun equip_armor(recruit: &mut Recruit, armor: Armor) {
     assert!(recruit.rank().at_least(armor.required_rank()), ERankTooLow);
+    if (recruit.armor().is_some()) {
+        transfer::public_transfer(recruit.remove_armor(), recruit.leader());
+    };
     recruit.add_armor(armor);
 }
 
-/// Unequip the `Armor` from a stored `Recruit`, back into the `Account`.
-public fun unequip_armor(acc: &mut Account, recruit_id: ID, ctx: &mut TxContext) {
-    acc.authorize(ctx);
-    let armor = acc.recruits[recruit_id].remove_armor();
-    acc.armors.add(object::id(&armor), armor);
-}
+/// Take the `Armor` off a borrowed `Recruit`: for the armory, or another recruit.
+public fun unequip_armor(recruit: &mut Recruit): Armor { recruit.remove_armor() }
 
-/// Attach a stored `WeaponUpgrade` to a `Weapon` in the armory.
-public fun attach_upgrade(acc: &mut Account, weapon_id: ID, index: u64, ctx: &mut TxContext) {
+/// Take a `WeaponUpgrade` out of the stock: to fit to a weapon with
+/// `weapon::add_upgrade`.
+public fun take_upgrade(
+    acc: &mut Account,
+    upgrade: Receiving<WeaponUpgrade>,
+    ctx: &mut TxContext,
+): WeaponUpgrade {
     acc.authorize(ctx);
-    let upgrade = acc.upgrades.remove(index);
-    acc.weapons[weapon_id].add_upgrade(upgrade);
-}
-
-/// Detach a `WeaponUpgrade` from a `Weapon` in the armory, back into the `Account`.
-public fun detach_upgrade(acc: &mut Account, weapon_id: ID, index: u8, ctx: &mut TxContext) {
-    acc.authorize(ctx);
-    let upgrade = acc.weapons[weapon_id].remove_upgrade(index);
-    acc.upgrades.push_back(upgrade);
+    transfer::public_receive(&mut acc.id, upgrade)
 }
 
 // === Dog Tags ===
 
-/// Store a `DogTag` on the `Account`'s memorial wall.
-public fun add_dog_tag(acc: &mut Account, dog_tag: DogTag, ctx: &mut TxContext) {
+/// Take a `DogTag` off the memorial wall: the tags of the fallen are sent to
+/// their `Account`.
+public fun take_dog_tag(
+    acc: &mut Account,
+    dog_tag: Receiving<DogTag>,
+    ctx: &mut TxContext,
+): DogTag {
     acc.authorize(ctx);
-    acc.dog_tags.push_back(dog_tag);
-}
-
-/// Take a `DogTag` off the memorial wall by its index.
-/// Swaps with the last element, so the order of the remaining tags changes.
-public fun remove_dog_tag(acc: &mut Account, index: u64, ctx: &mut TxContext): DogTag {
-    acc.authorize(ctx);
-    acc.dog_tags.swap_remove(index)
+    transfer::public_receive(&mut acc.id, dog_tag)
 }
 
 // === Matchmaking ===
 
 /// Record an order left in the queue at `since_ms`.
 public(package) fun start_search(acc: &mut Account, order: ID, since_ms: u64) {
-    acc.search = Search::Searching { order, since_ms };
+    acc.state = State::Searching { order, since_ms };
 }
 
 /// Put the player into `game`.
 public(package) fun set_playing(acc: &mut Account, game: ID) {
-    acc.search = Search::Playing(game);
+    acc.state = State::Playing(game);
 }
 
 /// The `Account`'s `UID`, for taking what was sent to it.
@@ -425,17 +388,7 @@ public(package) fun uid_mut(acc: &mut Account): &mut UID { &mut acc.id }
 
 /// Back to `Idle`.
 public(package) fun clear_search(acc: &mut Account) {
-    acc.search = Search::Idle;
-}
-
-/// Take a recruit back from a finished game, whoever completed it.
-public(package) fun return_recruit(acc: &mut Account, recruit: Recruit) {
-    acc.recruits.add(object::id(&recruit), recruit);
-}
-
-/// Put the `DogTag` of a recruit fallen in a game on the wall, whoever completed it.
-public(package) fun add_fallen(acc: &mut Account, dog_tag: DogTag) {
-    acc.dog_tags.push_back(dog_tag);
+    acc.state = State::Idle;
 }
 
 /// Put a finished game on the player's score, given who won it; none for a draw.
@@ -472,7 +425,7 @@ public(package) fun rate_game(
 
 /// Keep the player from searching for a game until `until_ms`.
 public(package) fun suspend(acc: &mut Account, until_ms: u64) {
-    acc.suspended_until_ms = until_ms;
+    acc.state = State::Suspended { until_ms };
 }
 
 // === Authorization ===
@@ -490,37 +443,46 @@ public fun owner(acc: &Account): address { acc.owner }
 /// Get the player's Glicko rating.
 public fun rating(acc: &Account): Rating { acc.rating }
 
-/// Whether the player is neither searching nor in a game.
+/// Get where the player stands.
+public fun state(acc: &Account): State { acc.state }
+
+/// Whether the player is neither searching nor in a game: `Idle`, or `Suspended`.
 public fun is_idle(acc: &Account): bool {
-    match (&acc.search) {
-        Search::Idle => true,
+    match (&acc.state) {
+        State::Idle | State::Suspended { .. } => true,
         _ => false,
     }
 }
 
 /// Get the matchmaking order ID, if the player is searching for a game.
 public fun search_order(acc: &Account): Option<ID> {
-    match (&acc.search) {
-        Search::Searching { order, .. } => option::some(*order),
+    match (&acc.state) {
+        State::Searching { order, .. } => option::some(*order),
         _ => option::none(),
     }
 }
 
 /// Get the ID of the game the player is in, if any.
 public fun playing(acc: &Account): Option<ID> {
-    match (&acc.search) {
-        Search::Playing(game) => option::some(*game),
+    match (&acc.state) {
+        State::Playing(game) => option::some(*game),
         _ => option::none(),
     }
 }
 
-/// Get the time until which the player cannot search for a game.
-public fun suspended_until(acc: &Account): u64 { acc.suspended_until_ms }
+/// Get the time until which the player cannot search for a game; none past a
+/// suspension, or without one.
+public fun suspended_until(acc: &Account): u64 {
+    match (&acc.state) {
+        State::Suspended { until_ms } => *until_ms,
+        _ => 0,
+    }
+}
 
 /// Whether the player has been searching for longer than `timeout_ms`.
 public fun search_timed_out(acc: &Account, now_ms: u64, timeout_ms: u64): bool {
-    match (&acc.search) {
-        Search::Searching { since_ms, .. } => now_ms - *since_ms > timeout_ms,
+    match (&acc.state) {
+        State::Searching { since_ms, .. } => now_ms - *since_ms > timeout_ms,
         _ => false,
     }
 }
@@ -535,19 +497,13 @@ public fun account_of(registry: &Registry, addr: address): ID {
     registry.accounts[addr]
 }
 
-/// Number of `Recruit`s in the `Account`.
-public fun num_recruits(acc: &Account): u64 { acc.recruits.length() }
-
-/// Number of `DogTag`s on the memorial wall.
-public fun num_dog_tags(acc: &Account): u64 { acc.dog_tags.length() }
+/// Number of `Recruit`s at home in the `Account`.
+public fun num_recruits(acc: &Account): u64 { acc.recruits }
 
 /// How the player's games ended, as `(wins, losses, draws)`.
 public fun score(acc: &Account): (u64, u64, u64) {
     (acc.score.wins, acc.score.losses, acc.score.draws)
 }
-
-/// What the player has to spend.
-public fun credits(acc: &Account): u64 { acc.credits }
 
 /// Number of games the player has finished.
 public fun games_played(acc: &Account): u64 {
@@ -565,11 +521,9 @@ fun init(ctx: &mut TxContext) {
     });
 }
 
+/// `init` for the tests: a module's own extensions cannot call it.
 #[test_only]
 public fun init_for_testing(ctx: &mut TxContext) { init(ctx) }
-
-#[test_only]
-public fun recruits_contain_for_testing(acc: &Account, id: ID): bool { acc.recruits.contains(id) }
 
 /// The looks hires are mixed from: 16 male, then 16 female presets, encoded
 /// with the appearance codec in `@ghosts/squad` (codec version 1).
@@ -802,432 +756,4 @@ fun visual_presets(): vector<vector<u256>> {
         ],
     ]
     // presets:end
-}
-
-// === Tests ===
-
-#[test_only]
-public fun recruit_for_testing(acc: &Account, id: ID): &Recruit { &acc.recruits[id] }
-
-#[test_only]
-public fun add_xp_for_testing(acc: &mut Account, id: ID, xp: u16) { acc.recruits[id].add_xp(xp) }
-
-#[test_only]
-use sui::test_scenario as ts;
-#[test_only]
-
-#[test]
-fun test_account_lifecycle() {
-    use std::unit_test::assert_eq;
-
-    let user = @0xA11CE;
-    let mut ts = ts::begin(user);
-    init(ts.ctx());
-
-    // create an account for the user
-    ts.next_tx(user);
-    let mut registry = ts.take_shared<Registry>();
-    new_account(&mut registry, ts.ctx());
-
-    ts.next_tx(user);
-    let mut acc = ts.take_shared<Account>();
-    assert_eq!(acc.owner(), user);
-    assert_eq!(acc.rating(), glicko::default());
-    assert!(acc.is_idle());
-    assert!(registry.has_account(user));
-    assert_eq!(registry.account_of(user), object::id(&acc));
-
-    // hire a recruit, stash gear
-    let recruit = recruit::new("Jane Doe", ts.ctx());
-    let recruit_id = object::id(&recruit);
-    acc.add_recruit(recruit, ts.ctx());
-
-    // customize the recruit: looks and voice (the name stays)
-    acc.edit_recruit(
-        recruit_id,
-        vector[1, 2],
-        vector[3],
-        vector[4, 5],
-        vector[6],
-        vector[7],
-        1,
-        ts.ctx(),
-    );
-
-    let weapon = items::rifle(1, ts.ctx());
-    let weapon_id = object::id(&weapon);
-    acc.add_weapon(weapon, ts.ctx());
-    acc.add_armor(items::armor(1, ts.ctx()), ts.ctx());
-    acc.add_upgrade(items::scope(1), ts.ctx());
-
-    // attach the scope to the stored rifle, then arm the recruit with it
-    acc.attach_upgrade(weapon_id, 0, ts.ctx());
-    assert_eq!(acc.upgrades.length(), 0);
-    acc.equip_weapon(recruit_id, weapon_id, ts.ctx());
-    assert!(acc.recruits[recruit_id].weapon().is_some());
-
-    // change of heart: strip the rifle and put the scope back on the shelf
-    acc.unequip_weapon(recruit_id, ts.ctx());
-    acc.detach_upgrade(weapon_id, 0, ts.ctx());
-    assert_eq!(acc.upgrades.length(), 1);
-    assert_eq!(acc.weapons[weapon_id].upgrades().length(), 0);
-
-    // the recruit falls in battle; keep the dog tag
-    let (dog_tag, weapon) = acc.remove_recruit(recruit_id, ts.ctx()).kill(ts.ctx());
-    weapon.destroy!(|w| w.destroy());
-    acc.add_dog_tag(dog_tag, ts.ctx());
-    assert_eq!(acc.num_dog_tags(), 1);
-    acc.remove_dog_tag(0, ts.ctx()).throw_away();
-
-    ts::return_shared(registry);
-    ts::return_shared(acc);
-    ts.end();
-}
-
-#[test]
-fun test_hire_recruits() {
-    use std::unit_test::assert_eq;
-
-    let user = @0xA11CE;
-    let mut ts = ts::begin(user);
-    init(ts.ctx());
-
-    // `Random` can only be created by the system address
-    ts.next_tx(@0);
-    sui::random::create_for_testing(ts.ctx());
-
-    ts.next_tx(user);
-    let mut registry = ts.take_shared<Registry>();
-    let rng = ts.take_shared<Random>();
-    new_account(&mut registry, ts.ctx());
-
-    ts.next_tx(user);
-    let mut acc = ts.take_shared<Account>();
-
-    // deposit one recruit manually, then top the squad up to the free limit
-    let recruit = recruit::new("Jane Doe", ts.ctx());
-    let recruit_id = object::id(&recruit);
-    acc.add_recruit(recruit, ts.ctx());
-    acc.hire_recruits(&registry, &rng, ts.ctx());
-    assert_eq!(acc.num_recruits(), FREE_RECRUITS);
-
-    // the looks hires are mixed from: 16 + 16 presets, five areas, codec version 1
-    assert_eq!(registry.visual_presets.length(), 2 * PRESETS_PER_GENDER);
-    registry.visual_presets.do_ref!(|preset| {
-        assert_eq!(preset.length(), 5);
-        assert_eq!(preset[0] & 0xff, 1);
-    });
-
-    // the account itself leads every stored recruit
-    assert_eq!(acc.recruits[recruit_id].leader(), object::id_address(&acc));
-
-    ts::return_shared(registry);
-    ts::return_shared(rng);
-    ts::return_shared(acc);
-    ts.end();
-}
-
-#[test]
-fun test_dismiss_recruit() {
-    use std::unit_test::assert_eq;
-
-    let user = @0xA11CE;
-    let mut ts = ts::begin(user);
-    init(ts.ctx());
-
-    ts.next_tx(@0);
-    sui::random::create_for_testing(ts.ctx());
-
-    ts.next_tx(user);
-    let mut registry = ts.take_shared<Registry>();
-    let rng = ts.take_shared<Random>();
-    new_account(&mut registry, ts.ctx());
-
-    ts.next_tx(user);
-    let mut acc = ts.take_shared<Account>();
-    let recruit = recruit::new("Jane Doe", ts.ctx());
-    let recruit_id = object::id(&recruit);
-    acc.add_recruit(recruit, ts.ctx());
-
-    // arm the recruit with a modded rifle and armor, then let them go
-    let weapon = items::rifle(1, ts.ctx());
-    let weapon_id = object::id(&weapon);
-    acc.add_weapon(weapon, ts.ctx());
-    acc.add_upgrade(items::scope(1), ts.ctx());
-    acc.attach_upgrade(weapon_id, 0, ts.ctx());
-    acc.equip_weapon(recruit_id, weapon_id, ts.ctx());
-    let armor = items::armor(1, ts.ctx());
-    let armor_id = object::id(&armor);
-    acc.add_armor(armor, ts.ctx());
-    acc.equip_armor(recruit_id, armor_id, ts.ctx());
-
-    acc.dismiss_recruit(recruit_id, ts.ctx());
-    assert_eq!(acc.num_recruits(), 0);
-    // every piece is back in the armory, the rifle with its mod still fitted
-    assert!(acc.weapons.contains(weapon_id));
-    assert!(acc.armors.contains(armor_id));
-    assert_eq!(acc.weapons[weapon_id].upgrades().length(), 1);
-    assert_eq!(acc.upgrades.length(), 0);
-
-    // the freed slot hires again
-    acc.hire_recruits(&registry, &rng, ts.ctx());
-    assert_eq!(acc.num_recruits(), FREE_RECRUITS);
-
-    ts::return_shared(registry);
-    ts::return_shared(rng);
-    ts::return_shared(acc);
-    ts.end();
-}
-
-#[test, expected_failure(abort_code = ERecruitLimitReached)]
-fun test_hire_recruits_full_squad_fail() {
-    let user = @0xA11CE;
-    let mut ts = ts::begin(user);
-    init(ts.ctx());
-
-    // `Random` can only be created by the system address
-    ts.next_tx(@0);
-    sui::random::create_for_testing(ts.ctx());
-
-    ts.next_tx(user);
-    let mut registry = ts.take_shared<Registry>();
-    let rng = ts.take_shared<Random>();
-    new_account(&mut registry, ts.ctx());
-
-    ts.next_tx(user);
-    let mut acc = ts.take_shared<Account>();
-    acc.hire_recruits(&registry, &rng, ts.ctx());
-    acc.hire_recruits(&registry, &rng, ts.ctx()); // squad is already full - aborts
-
-    abort
-}
-
-#[test, expected_failure(abort_code = EInGame)]
-/// Recruits on a map are not in the `Account`: no topping up for free meanwhile.
-fun test_hire_recruits_in_game_fail() {
-    let user = @0xA11CE;
-    let mut ts = ts::begin(user);
-    init(ts.ctx());
-
-    ts.next_tx(@0);
-    sui::random::create_for_testing(ts.ctx());
-
-    ts.next_tx(user);
-    let mut registry = ts.take_shared<Registry>();
-    let rng = ts.take_shared<Random>();
-    new_account(&mut registry, ts.ctx());
-
-    ts.next_tx(user);
-    let mut acc = ts.take_shared<Account>();
-    acc.search = Search::Playing(@1.to_id());
-    acc.hire_recruits(&registry, &rng, ts.ctx());
-
-    abort
-}
-
-#[test, expected_failure(abort_code = EInvalidVoice)]
-fun test_edit_recruit_invalid_voice_fail() {
-    let user = @0xA11CE;
-    let mut ts = ts::begin(user);
-    init(ts.ctx());
-
-    ts.next_tx(user);
-    let mut registry = ts.take_shared<Registry>();
-    new_account(&mut registry, ts.ctx());
-
-    ts.next_tx(user);
-    let mut acc = ts.take_shared<Account>();
-    let recruit = recruit::new("Jane Doe", ts.ctx());
-    let recruit_id = object::id(&recruit);
-    acc.add_recruit(recruit, ts.ctx());
-    acc.edit_recruit(
-        recruit_id,
-        vector[],
-        vector[],
-        vector[],
-        vector[],
-        vector[],
-        NUM_VOICES,
-        ts.ctx(),
-    );
-
-    abort
-}
-
-#[test, expected_failure(abort_code = EAccountExists)]
-fun test_duplicate_account_fail() {
-    let user = @0xA11CE;
-    let mut ts = ts::begin(user);
-    init(ts.ctx());
-
-    ts.next_tx(user);
-    let mut registry = ts.take_shared<Registry>();
-    new_account(&mut registry, ts.ctx());
-    new_account(&mut registry, ts.ctx());
-
-    abort
-}
-
-#[test, expected_failure(abort_code = ENotOwner)]
-fun test_not_owner_fail() {
-    let (user, thief) = (@0xA11CE, @0xB0B);
-    let mut ts = ts::begin(user);
-    init(ts.ctx());
-
-    ts.next_tx(user);
-    let mut registry = ts.take_shared<Registry>();
-    new_account(&mut registry, ts.ctx());
-
-    // another party attempts to use the account
-    ts.next_tx(thief);
-    let mut acc = ts.take_shared<Account>();
-    acc.add_upgrade(items::scope(1), ts.ctx());
-
-    abort
-}
-
-/// A fresh `Account` in a transaction of its owner, and what it takes to hire.
-#[test_only]
-fun open_account(ts: &mut ts::Scenario): (Registry, Account, Random) {
-    init(ts.ctx());
-    sui::random::create_for_testing(ts.ctx());
-    ts.next_tx(@1);
-    let mut registry = ts.take_shared<Registry>();
-    let rng = ts.take_shared<Random>();
-    registry.new_account(ts.ctx());
-    ts.next_tx(@1);
-    let acc = ts.take_shared<Account>();
-    (registry, acc, rng)
-}
-
-#[test_only]
-fun close_account(ts: ts::Scenario, registry: Registry, acc: Account, rng: Random) {
-    ts::return_shared(registry);
-    ts::return_shared(acc);
-    ts::return_shared(rng);
-    ts.end();
-}
-
-/// Three are free, and the rest cost credits, up to the limit.
-#[test]
-fun test_hire_past_the_free_squad() {
-    use std::unit_test::assert_eq;
-
-    let mut ts = ts::begin(@0);
-    let (registry, mut acc, rng) = open_account(&mut ts);
-    assert_eq!(acc.credits(), STARTING_CREDITS);
-
-    acc.hire_recruits(&registry, &rng, ts.ctx());
-    assert_eq!(acc.num_recruits(), FREE_RECRUITS);
-    assert_eq!(acc.credits(), STARTING_CREDITS);
-
-    (MAX_RECRUITS - FREE_RECRUITS).do!(|_| acc.hire_recruit(&registry, &rng, ts.ctx()));
-    assert_eq!(acc.num_recruits(), MAX_RECRUITS);
-    assert_eq!(acc.credits(), STARTING_CREDITS - HIRE_PRICE * (MAX_RECRUITS - FREE_RECRUITS));
-
-    close_account(ts, registry, acc, rng);
-}
-
-#[test, expected_failure(abort_code = ERecruitLimitReached)]
-fun test_hire_past_the_limit_fail() {
-    let mut ts = ts::begin(@0);
-    let (registry, mut acc, rng) = open_account(&mut ts);
-    (MAX_RECRUITS + 1).do!(|_| acc.hire_recruit(&registry, &rng, ts.ctx()));
-
-    abort
-}
-
-/// Gear costs what it costs, and goes to the armory.
-#[test]
-fun test_buy_gear() {
-    use std::unit_test::assert_eq;
-
-    let mut ts = ts::begin(@0);
-    let (registry, mut acc, rng) = open_account(&mut ts);
-
-    acc.buy_rifle(2, ts.ctx());
-    assert_eq!(acc.credits(), STARTING_CREDITS - 300);
-    assert_eq!(acc.weapons.length(), 1);
-
-    acc.buy_armor(1, ts.ctx());
-    assert_eq!(acc.credits(), STARTING_CREDITS - 400);
-    assert_eq!(acc.armors.length(), 1);
-
-    acc.buy_upgrade(0, 3, ts.ctx());
-    assert_eq!(acc.credits(), STARTING_CREDITS - 700);
-    assert_eq!(acc.upgrades.length(), 1);
-
-    close_account(ts, registry, acc, rng);
-}
-
-#[test, expected_failure(abort_code = ENotEnoughCredits)]
-fun test_buy_without_the_credits_fail() {
-    let mut ts = ts::begin(@0);
-    let (_registry, mut acc, _rng) = open_account(&mut ts);
-    acc.buy_rifle(3, ts.ctx());
-    acc.buy_rifle(3, ts.ctx()); // 1600, with 1000 to spend
-
-    abort
-}
-
-/// A rookie can't be issued a Plasma Rifle until they've earned the rank for it.
-#[test]
-fun test_equip_needs_the_rank() {
-    use std::unit_test::assert_eq;
-
-    let mut ts = ts::begin(@0);
-    let (registry, mut acc, rng) = open_account(&mut ts);
-    let recruit = recruit::new("Test", ts.ctx());
-    let id = object::id(&recruit);
-    acc.add_recruit(recruit, ts.ctx());
-
-    // standard gear is for anyone
-    let rifle = items::rifle(1, ts.ctx());
-    let standard = object::id(&rifle);
-    acc.add_weapon(rifle, ts.ctx());
-    acc.equip_weapon(id, standard, ts.ctx());
-    acc.unequip_weapon(id, ts.ctx());
-
-    // enough experience for a Lieutenant, and the Plasma Rifle goes on
-    let rifle = items::rifle(3, ts.ctx());
-    let plasma = object::id(&rifle);
-    acc.add_weapon(rifle, ts.ctx());
-    acc.add_xp_for_testing(id, 25);
-    assert!(acc.recruit_for_testing(id).rank().is_lieutenant());
-    acc.equip_weapon(id, plasma, ts.ctx());
-    assert_eq!(object::id(acc.recruit_for_testing(id).weapon().borrow()), plasma);
-
-    close_account(ts, registry, acc, rng);
-}
-
-#[test, expected_failure(abort_code = ERankTooLow)]
-fun test_equip_weapon_below_rank_fail() {
-    let mut ts = ts::begin(@0);
-    let (_registry, mut acc, _rng) = open_account(&mut ts);
-    let recruit = recruit::new("Test", ts.ctx());
-    let id = object::id(&recruit);
-    acc.add_recruit(recruit, ts.ctx());
-
-    let rifle = items::rifle(2, ts.ctx());
-    let weapon = object::id(&rifle);
-    acc.add_weapon(rifle, ts.ctx());
-    acc.equip_weapon(id, weapon, ts.ctx());
-
-    abort
-}
-
-#[test, expected_failure(abort_code = ERankTooLow)]
-fun test_equip_armor_below_rank_fail() {
-    let mut ts = ts::begin(@0);
-    let (_registry, mut acc, _rng) = open_account(&mut ts);
-    let recruit = recruit::new("Test", ts.ctx());
-    let id = object::id(&recruit);
-    acc.add_recruit(recruit, ts.ctx());
-
-    let heavy = items::armor(3, ts.ctx());
-    let armor = object::id(&heavy);
-    acc.add_armor(heavy, ts.ctx());
-    acc.equip_armor(id, armor, ts.ctx());
-
-    abort
 }

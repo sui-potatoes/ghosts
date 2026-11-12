@@ -311,11 +311,6 @@ export class Battlefield {
     this.overlays.showPath(path, grenade);
   }
 
-  /** Mark the tiles with a weapon lying on them. */
-  showDropped(cells: Cell[]) {
-    if (this.overlays.showDropped(cells)) this.invalidate();
-  }
-
   previewPath(p: Cell) {
     return this.overlays.previewPath(p);
   }
@@ -594,7 +589,6 @@ export class Battlefield {
       case "shot":
         return this.shot(unit(event.unit), unit(event.target), event.hit, event.environment ?? []);
       case "reload":
-      case "pick-up":
         return this.units.reload(unit(event.unit));
       case "grenade":
         return this.throwAt(unit(event.unit), event.at, event.environment ?? []);

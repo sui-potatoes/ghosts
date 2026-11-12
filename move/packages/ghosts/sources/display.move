@@ -13,7 +13,12 @@
 /// the `DisplayCap`, any following call aborts.
 module ghosts::display;
 
-use ghosts::{armor::{Self, Armor}, recruit::{Self, DogTag, Recruit}, weapon::{Self, Weapon}};
+use ghosts::{
+    armor::{Self, Armor},
+    recruit::{Self, DogTag, Recruit},
+    weapon::{Self, Weapon},
+    weapon_upgrade::{Self, WeaponUpgrade}
+};
 use sui::display_registry::{DisplayCap, DisplayRegistry};
 
 /// Create and share the `Display` for the `Recruit` object.
@@ -44,6 +49,18 @@ public fun weapon(registry: &mut DisplayRegistry, ctx: &mut TxContext): DisplayC
     display.set(&cap, "name", "{name}");
     display.set(&cap, "description", "A weapon that Recruits can use in battle.");
     display.set(&cap, "image_url", "https://potatoes.app/images/weapon.webp");
+    display.share();
+    cap
+}
+
+/// Create and share the `Display` for the `WeaponUpgrade` object.
+public fun weapon_upgrade(
+    registry: &mut DisplayRegistry,
+    ctx: &mut TxContext,
+): DisplayCap<WeaponUpgrade> {
+    let (mut display, cap) = registry.new(weapon_upgrade::permit(), ctx);
+    display.set(&cap, "name", "{name}");
+    display.set(&cap, "description", "An upgrade module that fits a weapon.");
     display.share();
     cap
 }

@@ -28,7 +28,6 @@ function syncScene() {
   const { game, battlefield } = s;
   battlefield.invalidate();
   s.settleSelection();
-  battlefield.showDropped((game.authority?.dropped() ?? []).map((d) => d.cell));
   const u = s.selectedUnit(),
     t = s.targetUnit();
   battlefield.sync();
@@ -239,7 +238,7 @@ export async function throwGrenade() {
   });
 }
 
-const STANDING_ORDERS = ["reload", "pick-up", "hunker", "overwatch", "secure"] as const;
+const STANDING_ORDERS = ["reload", "hunker", "overwatch", "secure"] as const;
 
 /** Orders the bundled rules have and a game against a player does not. */
 const VERSUS_OFF = ["overwatch", "hunker", "secure"];
@@ -254,10 +253,6 @@ export async function action(name: string) {
   }
   if (!s.game.canAct(u)) return;
   if (s.game.scenario.versus && VERSUS_OFF.includes(name)) return;
-  if (name === "pick-up" && !s.game.weaponAt(u.pos)) {
-    notify("NO WEAPON HERE");
-    return;
-  }
   audio.tone("click");
   if (name === "move" || name === "fire" || name === "grenade") {
     if (name === "fire" && s.mode === "fire") {

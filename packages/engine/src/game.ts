@@ -94,8 +94,6 @@ export interface GameAuthority {
   clearShot(from: Cell, to: Cell): boolean;
   clearThrow(from: Cell, to: Cell): boolean;
   terrain(cell: Cell): "open" | "cover" | "blocked";
-  /** The weapons lying on the field, for a unit standing there to take up. */
-  dropped(): { cell: Cell; name: string }[];
 }
 export class Encounter {
   readonly scenario: Scenario;
@@ -202,8 +200,7 @@ export class Encounter {
         if (event.killed) this.creditKill(a, b);
         return;
       }
-      case "reload":
-      case "pick-up": {
+      case "reload": {
         const u = this.unit(event.unit)!;
         u.ammo = u.clip;
         u.magazines[u.weapon] = u.ammo;
@@ -294,9 +291,6 @@ export class Encounter {
           return this.throwGrenade(u, command.at);
         case "reload":
           return this.reload(u);
-        // only whoever decides the game has anything lying around
-        case "pick-up":
-          return null;
         case "hunker":
           return this.hunker(u);
         case "overwatch":
@@ -307,10 +301,6 @@ export class Encounter {
           return this.switchWeapon(u, command.weapon);
       }
     });
-  }
-  /** The name of a weapon lying on a cell, if there is one. */
-  weaponAt(cell: Cell) {
-    return this.authority?.dropped().find((d) => key(d.cell) === key(cell))?.name ?? null;
   }
   /** Whether a shot from one cell to another has a clear line. */
   shotBlocked(from: Cell, to: Cell) {

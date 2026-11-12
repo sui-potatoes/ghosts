@@ -31,7 +31,6 @@ import {
     fetchGameRefs,
     moveUnitOrder,
     nextTurnOrder,
-    pickUpOrder,
     reloadOrder,
     strikeOrder,
     type GameRefs,
@@ -75,13 +74,16 @@ const callsign = (name: string) => (name.split(" ").pop() ?? name).toUpperCase()
 export function matchScenario(game: ChainGame, side: number, names: Map<string, string>): Scenario {
     const allyColors = blackRain.units.filter((u) => !u.enemy).map((u) => u.color);
     let allies = 0;
-    // By squad, not by tile: a player's cards stay in order wherever the units stand.
-    const order = game.squads.flat();
+    // By side and recruit, not by tile: a player's cards stay in order wherever the
+    // units stand.
+    const sideOf = (owner: string) => game.players.indexOf(owner);
     const onMap = unitsOnMap(game).sort(
-        (a, b) => order.indexOf(a.unit.recruit) - order.indexOf(b.unit.recruit),
+        (a, b) =>
+            sideOf(a.unit.owner) - sideOf(b.unit.owner) ||
+            a.unit.recruit.localeCompare(b.unit.recruit),
     );
     const units: UnitSpec[] = onMap.map(({ row, col, unit }) => {
-        const enemy = !game.squads[side].includes(unit.recruit);
+        const enemy = unit.owner !== game.players[side];
         const name = names.get(unit.recruit) ?? "Operative";
         return {
             id: unit.recruit,
@@ -119,8 +121,8 @@ function syncUnits(rules: EncounterRules, game: ChainGame) {
         u.pos = toCell([row, col], MATCH_BOUNDS);
         u.hp = unit.hp.value;
         u.maxHp = unit.hp.maxValue;
-        // a unit's AP refill with the first order of a later turn
-        u.ap = unit.lastTurn < game.map.turn ? unit.ap.maxValue : unit.ap.value;
+        // the contract gives a side its AP back as its turn begins
+        u.ap = unit.ap.value;
         u.ammo = unit.ammo.value;
         u.clip = unit.ammo.maxValue;
         u.armor = stats.armor;
@@ -173,7 +175,7 @@ export function chainDriver({
         syncUnits(rules, start);
         restoreBlasts(rules, start);
         rules.phase = activeSide(start) === side ? "player" : "enemy";
-        rules.turn = Math.floor(start.map.turn / 2);
+        rules.turn = Math.floor(start.turn / 2);
 
         const tile = (cell: readonly number[]) => toTile(cell as Cell, MATCH_BOUNDS);
         /** The stats the contract keeps on a unit, which the rules have no place for. */
@@ -182,11 +184,6 @@ export function chainDriver({
             return entry ? unpack(BigInt(entry.unit.stats.value)) : null;
         };
         rules.authority = {
-            dropped: () =>
-                latest.dropped.map((d) => ({
-                    cell: toCell([d.x, d.y], MATCH_BOUNDS),
-                    name: d.weapon.name,
-                })),
             terrain: (cell) => terrainAt(latest, tile(cell)),
             clearShot: (from, to) => lineOfSight(latest, tile(from), tile(to)),
             clearThrow: (from, to) => lineOfThrow(latest, tile(from), tile(to)),
@@ -218,7 +215,6 @@ export function chainDriver({
             isCover: (cell) => terrainAt(latest, tile(cell)) === "cover",
             coverAt: (cell) => rules.coverAt(cell),
             blast: (cell) => rules.map.blastProps(cell),
-            weaponAt: (cell) => rules.weaponAt(cell),
         };
 
         /** Read the game, waiting out the network; nothing once it is deleted. */
@@ -284,7 +280,7 @@ export function chainDriver({
             for (const event of events) rules.ingest(event);
             syncUnits(rules, game);
             rules.phase = activeSide(game) === side ? "player" : "enemy";
-            rules.turn = Math.floor(game.map.turn / 2);
+            rules.turn = Math.floor(game.turn / 2);
             note(game);
             // not waited on: it waits for whatever is playing, which may be waiting on this
             void correctEncounter(events, "ORDER REFUSED / FIELD RESYNCED");
@@ -340,14 +336,6 @@ export function chainDriver({
                     const events = rules.apply(command);
                     if (events.length) behind((r) => reloadOrder(r, from));
                     return Promise.resolve(events);
-                }
-                case "pick-up": {
-                    const weapon = rules.weaponAt(unit.pos as Cell);
-                    if (!weapon || !rules.canAct(unit)) return Promise.resolve([]);
-                    const event: GameEvent = { type: "pick-up", unit: unit.id, weapon };
-                    rules.ingest(event);
-                    behind((r) => pickUpOrder(r, from));
-                    return Promise.resolve([event]);
                 }
                 case "fire": {
                     const target = rules.unit(command.target);

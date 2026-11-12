@@ -79,12 +79,11 @@ const STANDARD_RIFLE = itemById("mx4")!;
 
 export default function Armory() {
     const [params] = useSearchParams();
-    const { accountId, account, armory, action, recruits, gate } = useHeadquarters();
+    const { accountId, armory, action, recruits, gate } = useHeadquarters();
     return (
         <ArmoryView
             accountId={accountId.data}
-            upgrades={account.data?.upgrades}
-            credits={Number(account.data?.credits ?? 0)}
+            upgrades={armory.upgrades}
             armory={armory}
             recruits={recruits}
             action={action}
@@ -98,8 +97,6 @@ export interface ArmoryViewProps {
     /** The account id; null when the address has none, undefined while unknown. */
     accountId: string | null | undefined;
     upgrades: ChainUpgrade[] | undefined;
-    /** What the player has to spend. */
-    credits: number;
     armory: { weapons: ChainWeapon[]; armors: ChainArmor[] };
     recruits: ChainRecruit[];
     action: { busy: boolean; error: string; run(steps: Step[]): Promise<boolean> };
@@ -113,7 +110,6 @@ export interface ArmoryViewProps {
 export function ArmoryView({
     accountId,
     upgrades: held,
-    credits,
     armory,
     recruits,
     action,
@@ -286,10 +282,7 @@ export function ArmoryView({
     function issue(kind: "weapon" | "armor", held: Held<Gear>, to: ChainRecruit) {
         if (!acc) return;
         void run(() =>
-            issueTx(acc, kind, held.item.id, held.carrier?.objectId ?? null, {
-                id: to.objectId,
-                equipped: !!(kind === "weapon" ? to.weapon : to.armor),
-            }),
+            issueTx(acc, kind, held.item.id, held.carrier?.objectId ?? null, to.objectId),
         );
     }
 
@@ -314,7 +307,7 @@ export function ArmoryView({
     return (
         <main className="squad-screen hq-screen">
             <HqHeader
-                status={`${credits} credits · ${weapons.length} weapons · ${armors.length} armor · ${Object.values(stock).reduce((n, c) => n + c, 0)} mods`}
+                status={`${weapons.length} weapons · ${armors.length} armor · ${Object.values(stock).reduce((n, c) => n + c, 0)} mods`}
             />
             {gate ??
                 (noAccount ? (
@@ -470,7 +463,6 @@ export function ArmoryView({
                                         groups={catalog}
                                         preview={preview}
                                         busy={busy}
-                                        credits={credits}
                                         onPreview={setPreview}
                                         onRequisition={(entry) =>
                                             acc &&

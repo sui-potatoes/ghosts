@@ -50,9 +50,10 @@ public(package) fun default(ctx: &mut TxContext): Weapon {
     new("Standard Issue Rifle", stats::default_weapon(), ctx)
 }
 
-/// Destroy the `Weapon`.
+/// Destroy the `Weapon`, with whatever upgrades are fitted to it.
 public fun destroy(weapon: Weapon) {
-    let Weapon { id, .. } = weapon;
+    let Weapon { id, upgrades, .. } = weapon;
+    upgrades.destroy!(|u| u.destroy());
     id.delete();
 }
 
