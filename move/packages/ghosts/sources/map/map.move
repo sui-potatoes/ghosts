@@ -561,6 +561,8 @@ public fun tile_to_string(tile: &Tile): String {
 /// Returns `None` if the path is not walkable, otherwise returns the end cell
 /// of the path.
 public fun check_path(map: &Map, mut path: vector<u8>): Option<vector<u16>> {
+    use grid::direction::{up, down, left, right};
+
     path.reverse();
 
     // first two values are X and Y coordinates, the rest are directions
@@ -574,6 +576,12 @@ public fun check_path(map: &Map, mut path: vector<u8>): Option<vector<u16>> {
 
     'path: {
         path.destroy!(|direction| {
+            // a step goes to one of the four neighbors: no diagonals, no standing still
+            let is_step =
+                direction == up!() || direction == down!() ||
+                direction == left!() || direction == right!();
+            if (!is_step) return 'path none;
+
             cursor.move_to(direction);
             let (x1, y1) = cursor.to_values();
             let target = &map.grid[x1, y1];

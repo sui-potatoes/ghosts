@@ -159,6 +159,33 @@ fun test_cover_system_b() {
 }
 
 #[test]
+// A step is up, down, left or right. Diagonal bytes, which would cover two
+// tiles for one step and slip past cover, and anything else are not a path.
+fun test_check_path_orthogonal_only() {
+    use grid::direction::{up, down, left, right};
+
+    let map = new(@1.to_id(), 3);
+
+    vector[up!(), down!(), left!(), right!()].do!(|d| {
+        assert!(map.check_path(vector[1, 1, d]).is_some());
+    });
+
+    let diagonals = vector[
+        up!() | right!(),
+        right!() | down!(),
+        down!() | left!(),
+        up!() | left!(),
+    ];
+    diagonals.do!(|d| assert!(map.check_path(vector[1, 1, d]).is_none()));
+    vector[0, 5, 7, 10, 15, 16, 255].do!(|d| assert!(map.check_path(vector[1, 1, d]).is_none()));
+
+    // a diagonal anywhere in the path spoils it
+    assert!(map.check_path(vector[1, 1, up!(), down!() | right!()]).is_none());
+
+    map.destroy();
+}
+
+#[test]
 // Map in this test is 3x3
 //
 // First (high cover):
