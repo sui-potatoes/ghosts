@@ -10,7 +10,7 @@ import {
     blastCells,
     coverBonus,
     decodePath,
-    earningsFor,
+    experienceFor,
     encodePath,
     gameEvents,
     hitChance,
@@ -70,7 +70,6 @@ function fixture(side = 0) {
         isCover: (cell) => rules.map.isCover(cell),
         coverAt: (cell) => rules.coverAt(cell),
         blast: () => [],
-        weaponAt: () => "Plasma Rifle",
     };
     /** The events of some records, taken into the rules one by one, as the driver does. */
     const play = (records: never[]) => {
@@ -187,60 +186,53 @@ test("records with nothing to show are skipped", () => {
     assert.deepEqual(fixture().play([record("RecruitPlaced", [0, 0])]), []);
 });
 
+const ending = (kind: string, player?: string) => ({ $kind: kind, [kind]: player ?? true });
+const over = (kind: string, player?: string) => ({ $kind: "Over", Over: ending(kind, player) });
 const game = (overrides: object) =>
     ({
-        map: { turn: 0 },
+        map: { grid: { grid: [], rows: 0, cols: 0 } },
         players: ["a", "b"],
-        squads: [["x"], ["y"]],
-        fallen: [[], []],
-        missed: [0, 0],
-        kills: [{ contents: [] }, { contents: [] }],
-        dropped: [],
-        deploying: false,
-        abandonedBy: null,
+        turn: 0,
+        state: { $kind: "Playing", Playing: { startedMs: "0", missed: [0, 0] } },
         ...overrides,
     }) as never;
 
-test("a game ends on an empty squad, after deployment only, or at the last turn", () => {
+test("a game is over once its state says so", () => {
     assert.equal(isOver(game({})), false);
-    assert.equal(isOver(game({ squads: [[], ["y"]] })), true);
-    assert.equal(isOver(game({ squads: [[], []], deploying: true })), false);
-    assert.equal(isOver(game({ deploying: true, abandonedBy: "a" })), true);
-    assert.equal(isOver(game({ map: { turn: 59 } })), false);
-    assert.equal(isOver(game({ map: { turn: 60 } })), true);
+    const deploying = { $kind: "Deploying", Deploying: { untilMs: "0" } };
+    assert.equal(isOver(game({ state: deploying })), false);
+    assert.equal(isOver(game({ state: over("Stalemate") })), true);
 });
 
 test("how it ended, for each side", () => {
-    const won = game({ squads: [["x"], []], fallen: [[], ["tag"]] });
+    const won = game({ state: over("Won", "a") });
     assert.equal(outcomeFor(won, 0), "victory");
     assert.equal(outcomeFor(won, 1), "defeat");
 
-    const wiped = game({ squads: [[], []], fallen: [["tag"], ["tag"]] });
-    assert.equal(outcomeFor(wiped, 0), "draw");
+    assert.equal(outcomeFor(game({ state: over("Draw") }), 0), "draw");
+    assert.equal(outcomeFor(game({ state: over("Stalemate") }), 0), "stalemate");
 
-    assert.equal(outcomeFor(game({ map: { turn: 60 } }), 0), "stalemate");
-
-    const left = game({ abandonedBy: "a" });
+    const left = game({ state: over("Abandoned", "a") });
     assert.equal(outcomeFor(left, 0), "abandoned");
     assert.equal(outcomeFor(left, 1), "opponent-abandoned");
 });
 
 test("a side that never deployed is the one to blame, even when both didn't", () => {
-    const skipped = game({ squads: [[], ["y"]] });
+    const skipped = game({ state: over("NoShow", "a") });
     assert.equal(outcomeFor(skipped, 0), "no-show");
     assert.equal(outcomeFor(skipped, 1), "opponent-no-show");
 
-    const nobody = game({ squads: [[], []] });
+    const nobody = game({ state: over("NobodyShowed") });
     assert.equal(outcomeFor(nobody, 0), "no-show");
     assert.equal(outcomeFor(nobody, 1), "no-show");
 });
 
 test("a player who ran out of turns forfeited, one who left abandoned", () => {
-    const gone = game({ abandonedBy: "a", missed: [3, 0] });
+    const gone = game({ state: over("Forfeited", "a") });
     assert.equal(outcomeFor(gone, 0), "forfeited");
     assert.equal(outcomeFor(gone, 1), "opponent-forfeited");
 
-    const left = game({ abandonedBy: "a", missed: [2, 1] });
+    const left = game({ state: over("Abandoned", "a") });
     assert.equal(outcomeFor(left, 0), "abandoned");
     assert.equal(outcomeFor(left, 1), "opponent-abandoned");
 });
@@ -365,42 +357,28 @@ test("the blasts of a game, replayed in order, leave the scene as they did in pl
     assert.notDeepEqual(state(reopened), state(new Encounter(blackRain)));
 });
 
-test("a weapon taken up reads as the unit standing there taking it", () => {
-    const { play } = fixture();
-    const [event] = play([record("PickUp", at([0, 2]))]);
-    assert.deepEqual(event, { type: "pick-up", unit: "a1", weapon: "Plasma Rifle" });
-});
-
-test("what a game pays, as the contract works it out", () => {
-    const kills = (n: number) => [
-        { contents: n ? [{ key: "x", value: n }] : [] },
-        { contents: [] },
-    ];
-    const earned = (overrides: object, side: number) => {
-        const { credits, xpOf } = earningsFor(game(overrides), side);
-        return [credits, xpOf("x")];
-    };
+test("what a game earns the squad coming home, as the contract works it out", () => {
+    const earned = (overrides: object, side: number) => experienceFor(game(overrides), side);
 
     // a fight to the end, for the winner and the loser
-    const won = { squads: [["x"], []], fallen: [[], ["tag"]], kills: kills(1), map: { turn: 8 } };
-    assert.deepEqual(earned(won, 0), [120, 4]);
-    assert.deepEqual(earned(won, 1), [40, 1]);
+    const won = { state: over("Won", "a"), turn: 8 };
+    assert.equal(earned(won, 0), 2);
+    assert.equal(earned(won, 1), 1);
 
     // a draw at the last turn, and when both sides went down
-    assert.deepEqual(earned({ map: { turn: 60 } }, 0), [60, 1]);
-    const wiped = { squads: [[], []], fallen: [["tag"], ["tag"]], map: { turn: 8 } };
-    assert.deepEqual(earned(wiped, 0), [60, 1]);
+    assert.equal(earned({ state: over("Stalemate"), turn: 60 }, 0), 1);
+    assert.equal(earned({ state: over("Draw"), turn: 8 }, 0), 1);
 
     // walking out: nothing for the one who left, a little for the one left behind
-    const left = { abandonedBy: "a", map: { turn: 8 } };
-    assert.deepEqual(earned(left, 0), [0, 0]);
-    assert.deepEqual(earned(left, 1), [40, 1]);
-    assert.deepEqual(earned({ abandonedBy: "a", map: { turn: 1 } }, 1), [0, 0]);
+    const left = { state: over("Abandoned", "a"), turn: 8 };
+    assert.equal(earned(left, 0), 0);
+    assert.equal(earned(left, 1), 1);
+    assert.equal(earned({ state: over("Abandoned", "a"), turn: 1 }, 1), 0);
 
-    // a no-show pays nobody
-    const absent = { squads: [["x"], []], map: { turn: 0 } };
-    assert.deepEqual(earned(absent, 0), [0, 0]);
-    assert.deepEqual(earned(absent, 1), [0, 0]);
+    // a no-show earns nobody anything
+    const absent = { state: over("NoShow", "b"), turn: 0 };
+    assert.equal(earned(absent, 0), 0);
+    assert.equal(earned(absent, 1), 0);
 });
 
 test("experience reaches the same ranks as the contract", () => {

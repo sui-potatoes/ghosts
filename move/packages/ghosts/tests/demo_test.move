@@ -52,6 +52,9 @@ fun run_simulation_demo_1(seed: vector<u8>): vector<u16> {
     // recruit placement over
     map.place_recruit(&r1, 6, 5);
     map.place_recruit(&r3, 0, 3);
+    // both recruits are the sender's: each turn gives both their AP back
+    let owner = r1.leader().to_id();
+    let mut turn = 0u16;
 
     // Unit 1 performs a move action and takes cover in the construction on
     // the left side (high cover + low cover mix)
@@ -67,14 +70,15 @@ fun run_simulation_demo_1(seed: vector<u8>): vector<u16> {
         assert_eq!(unit.stats().dodge(), 0);
     });
 
-    map.next_turn();
+    turn = turn + 1;
+    map.reset_ap(owner);
 
     // prettier-ignore
     let result = 'crossfire: loop {
         map.unit(3, 1).do_ref!(|unit| if (unit.ammo() == 0) { map.perform_reload(3, 1); });
         let history = map.perform_attack(&mut rng, 3, 1, 0, 3);
         if (history::list_kia(&history).length() > 0) {
-            break 'crossfire vector[map.turn(), 2]
+            break 'crossfire vector[turn, 2]
         };
 
         // map.unit(0, 3).do_ref!(|unit| if (is_hit) assert!(unit.hp() < 10)); // some damage
@@ -85,14 +89,15 @@ fun run_simulation_demo_1(seed: vector<u8>): vector<u16> {
         map.unit(0, 3).do_ref!(|unit| if (unit.ammo() == 0) { map.perform_reload(0, 3); });
         let history = map.perform_attack(&mut rng, 0, 3, 3, 1);
         if (history::list_kia(&history).length() > 0) {
-            break 'crossfire vector[map.turn(), 1]
+            break 'crossfire vector[turn, 1]
         };
 
         // map.unit(3, 1).do_ref!(|unit| if (is_hit) assert!(unit.hp() < 10)); // some damage
         map.unit(0, 3).do_ref!(|unit| assert_eq!(unit.ap(), 0)); // depleted AP
 
         // Reset the Map turn
-        map.next_turn();
+        turn = turn + 1;
+    map.reset_ap(owner);
     };
 
     // print the result (uncomment if results are needed)

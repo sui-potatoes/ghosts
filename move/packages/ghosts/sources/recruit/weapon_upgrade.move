@@ -8,10 +8,11 @@ module ghosts::weapon_upgrade;
 use ghosts::stats::Stats;
 use std::string::String;
 
-/// `WeaponUpgrade` is a primitive which represents an upgrade module for a
-/// `Weapon`. Upgrades are identified by their name, and can be applied to a
-/// `Weapon` to modify its stats. A `Weapon` takes one upgrade of each `kind`.
-public struct WeaponUpgrade has drop, store {
+/// `WeaponUpgrade` is an upgrade module for a `Weapon`: an object of its own,
+/// kept in the stock of an `Account` it is sent to, or fitted to a `Weapon` to
+/// modify its stats. A `Weapon` takes one upgrade of each `kind`.
+public struct WeaponUpgrade has key, store {
+    id: UID,
     name: String,
     /// The family of the upgrade: scope, laser sight, stock, etc.
     kind: u8,
@@ -20,8 +21,14 @@ public struct WeaponUpgrade has drop, store {
 }
 
 /// Create a new `WeaponUpgrade` with the provided parameters.
-public(package) fun new(name: String, kind: u8, tier: u8, modifier: Stats): WeaponUpgrade {
-    WeaponUpgrade { name, kind, tier, modifier }
+public(package) fun new(
+    name: String,
+    kind: u8,
+    tier: u8,
+    modifier: Stats,
+    ctx: &mut TxContext,
+): WeaponUpgrade {
+    WeaponUpgrade { id: object::new(ctx), name, kind, tier, modifier }
 }
 
 /// Get the name of the `WeaponUpgrade`.
@@ -37,7 +44,14 @@ public fun tier(u: &WeaponUpgrade): u8 { u.tier }
 public fun modifier(u: &WeaponUpgrade): &Stats { &u.modifier }
 
 /// Destroy the `WeaponUpgrade`.
-public fun destroy(u: WeaponUpgrade) { let WeaponUpgrade { .. } = u; }
+public fun destroy(u: WeaponUpgrade) {
+    let WeaponUpgrade { id, .. } = u;
+    id.delete();
+}
+
+/// Issue a `Permit` for the `WeaponUpgrade` type. Package-only: used to create
+/// `Display<WeaponUpgrade>` in the `display` module.
+public(package) fun permit(): internal::Permit<WeaponUpgrade> { internal::permit() }
 
 /// Print the `WeaponUpgrade` as a string.
 public fun to_string(u: &WeaponUpgrade): String {
@@ -46,20 +60,4 @@ public fun to_string(u: &WeaponUpgrade): String {
     str.append(u.tier.to_string());
     str.append_utf8(b")");
     str
-}
-
-#[test]
-fun new_weapon_upgrade() {
-    use std::unit_test::assert_eq;
-    use ghosts::stats;
-    let modifier = stats::default();
-    let upgrade = Self::new(b"Damage Upgrade".to_string(), 0, 1, modifier);
-
-    assert_eq!(upgrade.name(), b"Damage Upgrade".to_string());
-    assert_eq!(upgrade.kind(), 0);
-    assert_eq!(upgrade.tier(), 1);
-    assert_eq!(upgrade.modifier().inner(), modifier.inner());
-    assert_eq!(upgrade.to_string(), b"Damage Upgrade (Tier 1)".to_string());
-
-    upgrade.destroy();
 }

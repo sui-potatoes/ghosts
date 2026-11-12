@@ -32,23 +32,23 @@ fun demo_maps() {
 }
 
 #[test]
-fun next_turn() {
+fun reset_ap() {
     let ctx = &mut tx_context::dummy();
     let mut map = map::demo_1(@1.to_id());
     let recruit = recruit::default(ctx);
+    let owner = recruit.leader().to_id();
 
-    assert_eq!(map.turn(), 0);
     map.place_recruit(&recruit, 0, 0);
+    assert_eq!(map.units_of(owner), vector[object::id(&recruit)]);
     map.move_unit(vector[0, 0, direction::right!()]); // spend 1 AP point
     assert!(map.unit(0, 1).is_some_and!(|unit| unit.ap() == 1));
 
-    map.next_turn();
+    // another side's turn leaves the unit alone; its own gives it its AP back
+    map.reset_ap(@2.to_id());
+    assert!(map.unit(0, 1).is_some_and!(|unit| unit.ap() == 1));
+    map.reset_ap(owner);
     map.move_unit(vector[0, 1, direction::left!()]); // spend 1 AP point
     assert!(map.unit(0, 0).is_some_and!(|unit| unit.ap() == 1));
-    assert_eq!(map.turn(), 1);
-
-    map.next_turn();
-    assert_eq!(map.turn(), 2);
 
     let (w, a) = recruit.dismiss();
     w.destroy_none();

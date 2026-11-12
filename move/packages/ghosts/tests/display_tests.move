@@ -3,7 +3,13 @@
 
 module ghosts::display_tests;
 
-use ghosts::{armor::Armor, display, recruit::{DogTag, Recruit}, weapon::Weapon};
+use ghosts::{
+    armor::Armor,
+    display,
+    recruit::{DogTag, Recruit},
+    weapon::Weapon,
+    weapon_upgrade::WeaponUpgrade
+};
 use std::unit_test::{assert_eq, destroy};
 use sui::{display_registry::{Display, DisplayRegistry}, test_scenario};
 
@@ -17,6 +23,7 @@ fun create_displays() {
     let dog_tag_cap = display::dog_tag(&mut registry, test.ctx());
     let weapon_cap = display::weapon(&mut registry, test.ctx());
     let armor_cap = display::armor(&mut registry, test.ctx());
+    let upgrade_cap = display::weapon_upgrade(&mut registry, test.ctx());
     test_scenario::return_shared(registry);
     test.next_tx(@1);
 
@@ -41,10 +48,16 @@ fun create_displays() {
     assert_eq!(armor.fields()[&"name"], "{name}");
     test_scenario::return_shared(armor);
 
+    let upgrade = test.take_shared<Display<WeaponUpgrade>>();
+    assert_eq!(upgrade.cap_id(), option::some(object::id(&upgrade_cap)));
+    assert_eq!(upgrade.fields()[&"name"], "{name}");
+    test_scenario::return_shared(upgrade);
+
     destroy(recruit_cap);
     destroy(dog_tag_cap);
     destroy(weapon_cap);
     destroy(armor_cap);
+    destroy(upgrade_cap);
     test.end();
 }
 

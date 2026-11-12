@@ -81,7 +81,7 @@ fun perform_reload() {
     let mut unit = recruit.to_unit();
 
     unit.perform_attack(&mut rng, 1, 0);
-    unit.try_reset_ap(1);
+    unit.reset_ap();
     unit.perform_reload();
 
     let (weapon, armor) = recruit.dismiss();
@@ -183,43 +183,41 @@ fun perform_attack_distance_modifiers() {
     // 15% bonus
     let (_, _, _, _, hit_chance) = unit.perform_attack(&mut rng, 1, 0);
     assert_eq!(hit_chance, 80);
-    unit.try_reset_ap(1);
+    unit.reset_ap();
 
     // 10% bonus
     let (_, _, _, _, hit_chance) = unit.perform_attack(&mut rng, 2, 0);
     assert_eq!(hit_chance, 75);
-    unit.try_reset_ap(2);
+    unit.reset_ap();
 
     // 5% bonus
     let (_, _, _, _, hit_chance) = unit.perform_attack(&mut rng, 3, 0);
     assert_eq!(hit_chance, 70);
-    unit.try_reset_ap(3);
+    unit.reset_ap();
 
     // no bonus, no penalty
     unit.perform_reload();
     let (_, _, _, _, hit_chance) = unit.perform_attack(&mut rng, 4, 0);
     assert_eq!(hit_chance, 65);
-    unit.try_reset_ap(4);
+    unit.reset_ap();
 
     // 10% penalty
     let (_, _, _, _, hit_chance) = unit.perform_attack(&mut rng, 5, 0);
     assert_eq!(hit_chance, 55);
-    unit.try_reset_ap(5);
+    unit.reset_ap();
 
     // 20% penalty
     let (_, _, _, _, hit_chance) = unit.perform_attack(&mut rng, 6, 0);
     assert_eq!(hit_chance, 45);
-    unit.try_reset_ap(6);
+    unit.reset_ap();
 
     // 30% penalty
     unit.perform_reload();
     let (_, _, _, _, hit_chance) = unit.perform_attack(&mut rng, 7, 0);
     assert_eq!(hit_chance, 35);
-    unit.try_reset_ap(7);
+    unit.reset_ap();
 
-    let (tag, weapon) = recruit.kill(ctx);
-    tag.throw_away();
-    weapon.destroy!(|w| w.destroy());
+    recruit.kill(ctx).throw_away();
     unit.destroy();
 }
 
@@ -233,22 +231,20 @@ fun shoot_and_reload() {
     assert_eq!(unit.ammo(), 3);
     unit.perform_attack(&mut rng, 1, 0);
     assert_eq!(unit.ammo(), 2);
-    unit.try_reset_ap(1);
+    unit.reset_ap();
     unit.perform_reload();
     assert_eq!(unit.ammo(), 3);
     assert_eq!(unit.ap(), 1);
     unit.perform_attack(&mut rng, 1, 0);
     assert_eq!(unit.ammo(), 2);
-    unit.try_reset_ap(2);
+    unit.reset_ap();
     unit.perform_attack(&mut rng, 1, 0);
     assert_eq!(unit.ammo(), 1);
-    unit.try_reset_ap(3);
+    unit.reset_ap();
     unit.perform_attack(&mut rng, 1, 0);
     assert_eq!(unit.ammo(), 0);
 
-    let (tag, weapon) = recruit.kill(ctx);
-    tag.throw_away();
-    weapon.destroy!(|w| w.destroy());
+    recruit.kill(ctx).throw_away();
     unit.destroy();
 }
 

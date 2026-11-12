@@ -42,11 +42,12 @@ inventory (Weapons / Armor / Mods), a full-size 3D stage and a bench.
   grid, one row per attachment type with tiers 1–3. A fit is tier by type, so
   one-per-type holds by construction; three in all is enforced as the draft
   changes ("Slots full"). Chips say fitted / in stock (×n) / mint. The stage
-  previews the draft live. **Apply fittings** is one `fittingsTx`: unequip an
-  issued rifle, strip, fit from stock, mint what is missing (testnet),
-  re-equip.
+  previews the draft live. **Apply fittings** is one `fittingsTx`: take the
+  rifle off its carrier or out of the racks, strip, fit from stock, mint what
+  is missing (testnet), put it back.
 - **Issue**: hand a rifle or armor to any recruit (`issueTx`: off the current
-  carrier, the target's own piece back to the racks, onto the target) or
+  carrier or out of the racks, onto the target, whose own piece goes back to
+  the racks) or
   return it to the racks. Blocked while fittings are drafted.
 - **Mods** (weapon upgrades on chain): stock and where each is fitted; "Try it on" opens a rifle's
   bench with the upgrade drafted.

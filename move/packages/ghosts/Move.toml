@@ -1,6 +1,6 @@
 [package]
 name = "ghosts"
-edition = "2024.beta"
+edition = "2024.alpha"
 license = "MIT"
 authors = ["Damir Shamanaev (damirka.ru@gmail.com)"]
 

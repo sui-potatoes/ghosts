@@ -51,7 +51,6 @@ export async function present(event: GameEvent) {
       if (event.vault && !unit!.enemy) notify("TRAVERSING LOW COVER");
       audio.speak(event.cover ? "cover" : "move", unit!);
       await battlefield.play(event);
-      if (!unit!.enemy && game.weaponAt(unit!.pos)) notify(`${game.weaponAt(unit!.pos)!.toUpperCase()} ON THE GROUND`);
       return;
     case "shot": {
       const target = game.unit(event.target)!;
@@ -72,11 +71,6 @@ export async function present(event: GameEvent) {
       audio.tone("reload", unit!.weapon);
       await battlefield.play(event);
       if (!unit!.enemy) notify(`${unit!.name} / MAGAZINE READY`);
-      return;
-    case "pick-up":
-      audio.tone("reload", unit!.weapon);
-      await battlefield.play(event);
-      notify(`${unit!.name} / ${event.weapon.toUpperCase()} TAKEN`);
       return;
     case "grenade":
       await battlefield.aimAt(unit!, event.at, "grenade");

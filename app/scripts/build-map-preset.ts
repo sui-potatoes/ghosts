@@ -49,7 +49,7 @@ function inBuilding(plan: MapPlan, [x, z]: Cell) {
 const u16 = (value: number) => [value & 0xff, value >> 8];
 const hex = (bytes: number[]) => bytes.map((b) => b.toString(16).padStart(2, "0")).join("");
 
-/** `ghosts::map::Map`: an empty id, the rows of tiles, `rows`, `cols`, then `turn`. */
+/** `ghosts::map::Map`: an empty id, the rows of tiles, then `rows` and `cols`. */
 function encode({ map }: Scenario) {
     const plan = map;
     const tactical = new TacticalMap(plan);
@@ -68,7 +68,7 @@ function encode({ map }: Scenario) {
             else bytes.push(2, 0);
         }
     }
-    bytes.push(...u16(rows), ...u16(cols), ...u16(0));
+    bytes.push(...u16(rows), ...u16(cols));
     return { bytes, tactical, rows, cols };
 }
 

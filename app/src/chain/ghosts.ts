@@ -3,26 +3,37 @@
 
 /**
  * The ghosts Move package frontend behind Headquarters: the shared `Registry`
- * (account directory plus the hire presets) and the player's `Account` with
- * its recruits, armory and upgrades. Reads decode BCS like everything else in
- * this folder; writes are small transactions run through `useGhostsAction`,
- * which reads what each one wrote straight into those reads before it
- * settles. Ids come from `GHOSTS` in `src/constants.ts`; `ghostsEnabled`
+ * (account directory plus the hire presets) and the player's `Account`, with
+ * the recruits, armory and stock of upgrades sent to it. Reads decode BCS like
+ * everything else in this folder; writes are small transactions run through
+ * `useGhostsAction`, which reads what each one wrote straight into those reads
+ * before it settles. What an `Account` holds goes into a transaction by its id
+ * alone: the fast lane passes it by the newest reference it knows, to be
+ * received. Ids come from `GHOSTS` in `src/constants.ts`; `ghostsEnabled`
  * answers whether they are set.
  */
 
 import { useCurrentAccount, useCurrentClient } from "@mysten/dapp-kit-react";
 import type { BcsType } from "@mysten/sui/bcs";
 import { bcs } from "@mysten/sui/bcs";
-import { Transaction } from "@mysten/sui/transactions";
-import { deriveDynamicFieldID } from "@mysten/sui/utils";
+import {
+    Transaction,
+    type TransactionArgument,
+    type TransactionObjectArgument,
+} from "@mysten/sui/transactions";
+import {
+    deriveDynamicFieldID,
+    normalizeStructTag,
+    normalizeSuiAddress,
+    normalizeSuiObjectId,
+} from "@mysten/sui/utils";
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import type { VisualAreas } from "@ghosts/squad/appearance/codec";
 import { GHOSTS } from "../constants";
-import { Account, AccountRecord, Armor, Recruit, Registry, Weapon } from "./bcs";
-import type { ExecutedOrder } from "./fast-lane";
+import { Account, AccountRecord, Armor, Recruit, Registry, Weapon, WeaponUpgrade } from "./bcs";
+import { movedOn, noteOwned, type ExecutedOrder } from "./fast-lane";
 import { RANKS } from "./match-rules";
 import { absorbWrites, current, useBcsObject } from "./objects";
 import { trackSaving } from "./saving";
@@ -35,10 +46,8 @@ export const ghostsEnabled = !!GHOSTS.package && !!GHOSTS.registry;
 
 /** The squad an `Account` can always hold for free (`FREE_RECRUITS`). */
 export const FREE_RECRUITS = 3;
-/** How many recruits an `Account` can hold, paid for past the free squad. */
+/** How many recruits an `Account` can hold, hired one at a time past the free squad. */
 export const MAX_RECRUITS = 8;
-/** What a recruit costs past the free squad. */
-export const HIRE_PRICE = 50;
 
 /** Voice configurations: the four on chain, all recorded. */
 export const VOICES = [
@@ -52,23 +61,11 @@ export const VOICES = [
 /** The upgrade kinds of `ghosts::items`. */
 export const UPGRADE_KINDS = { scope: 0, laser: 1, stock: 2, clip: 3 } as const;
 
-/** What gear costs in `ghosts::items`, by tier. */
-const PRICES = {
-    rifle: [100, 300, 800],
-    armor: [100, 250, 500],
-    upgrade: [75, 150, 300],
-};
-
 /** The rank needed to be issued gear from `ghosts::items`, by tier. */
 const REQUIRED_RANKS = {
     rifle: ["Rookie", "Corporal", "Lieutenant"],
     armor: ["Rookie", "Squaddie", "Sergeant"],
 } as const;
-
-/** What a piece of gear costs. */
-export function priceOf({ kind, tier }: Requisition): number {
-    return (kind === "rifle" || kind === "armor" ? PRICES[kind] : PRICES.upgrade)[tier - 1];
-}
 
 /** The rank needed to be issued a piece of gear from the catalog. */
 export function rankFor({ kind, tier }: Requisition): string {
@@ -88,7 +85,7 @@ export type ChainRecruit = ReturnType<typeof Recruit.parse> & { objectId: string
 export type ChainWeapon = ReturnType<typeof Weapon.parse> & { objectId: string };
 export type ChainArmor = ReturnType<typeof Armor.parse> & { objectId: string };
 export type ChainAccount = ReturnType<typeof Account.parse>;
-export type ChainUpgrade = ChainAccount["upgrades"][number];
+export type ChainUpgrade = ReturnType<typeof WeaponUpgrade.parse> & { objectId: string };
 
 // === Reads ===
 
@@ -184,140 +181,140 @@ export function useGhostsAccount(id?: string | null, refetchInterval?: number) {
     return useBcsObject({ id, schema: Account, refetchInterval });
 }
 
-/** An entry of an `ObjectTable`: the object, and the dynamic field holding it. */
-type Entry<T> = T & { objectId: string; fieldId?: string };
+/** An object the `Account` holds: decoded, with its id. */
+type Entry<T> = T & { objectId: string };
+
+/** What an `Account` holds, by kind: each one is sent to it, and received when used. */
+const HELD = {
+    recruits: { type: "recruit::Recruit", schema: Recruit as BcsType<unknown> },
+    weapons: { type: "weapon::Weapon", schema: Weapon as BcsType<unknown> },
+    armors: { type: "armor::Armor", schema: Armor as BcsType<unknown> },
+    upgrades: { type: "weapon_upgrade::WeaponUpgrade", schema: WeaponUpgrade as BcsType<unknown> },
+};
+type Held = keyof typeof HELD;
+const heldType = (kind: Held) => normalizeStructTag(`${GHOSTS.package}::${HELD[kind].type}`);
 
 /**
- * Every object stored in an `ObjectTable`, decoded. `size` is the table's
- * length as its parent reports it: a node a moment behind lists fewer entries,
- * or an entry as it was before a write, so either is read again until it
- * catches up.
+ * Every object of a kind the `Account` holds, decoded. `size`, where the
+ * `Account` counts them: a node a moment behind lists fewer, or one as it was
+ * before a write, or one a write has since taken out, so it is read again until
+ * it catches up.
  */
-async function listTable<T, Input>(
+async function listHeld(
     client: Client,
-    tableId: string,
-    size: number,
-    schema: BcsType<T, Input>,
-): Promise<Entry<T>[]> {
-    let entries: Entry<T>[] = [];
+    accountId: string,
+    kind: Held,
+    size?: number,
+): Promise<Entry<unknown>[]> {
+    let entries: Entry<unknown>[] = [];
     for (let attempt = 0; attempt < 6; attempt++) {
-        const fields: { objectId: string; fieldId: string }[] = [];
+        const objects = [];
         let cursor: string | undefined;
         do {
-            const page = await client.core.listDynamicFields({ parentId: tableId, cursor });
-            for (const field of page.dynamicFields)
-                if (field.$kind === "DynamicObject")
-                    fields.push({ objectId: field.childId, fieldId: field.fieldId });
+            const page = await client.core.listOwnedObjects({
+                owner: accountId,
+                type: heldType(kind),
+                include: { content: true },
+                cursor,
+            });
+            objects.push(...page.objects);
             cursor = page.hasNextPage ? (page.cursor ?? undefined) : undefined;
         } while (cursor);
-        let behind = fields.length < size;
-        if (!behind) {
-            entries = await Promise.all(
-                fields.map(async ({ objectId, fieldId }) => {
-                    const { object } = await client.core.getObject({
-                        objectId,
-                        include: { content: true },
-                    });
-                    if (!current(objectId, object.version)) behind = true;
-                    return { ...schema.parse(object.content), objectId, fieldId };
-                }),
-            );
-        }
+        let behind = size !== undefined && objects.length !== size;
+        entries = objects.map(({ objectId, version, digest, content }) => {
+            if (!current(objectId, version) || movedOn(objectId, version)) behind = true;
+            else noteOwned({ objectId, version, digest }, accountId);
+            return { ...(HELD[kind].schema.parse(content) as object), objectId };
+        });
         if (!behind || attempt === 5) break;
         await new Promise((r) => setTimeout(r, 500));
     }
     return entries;
 }
 
-/** How each table's entries decode, so a write can be read straight into it. */
-const tables = new Map<string, { name: string; schema: BcsType<unknown> }>();
+/** The query a kind of held objects is filed under; recruits by how many the `Account` counts. */
+const heldKey = (kind: Held, accountId?: string, size?: string) =>
+    size === undefined ? ["ghosts", kind, accountId] : ["ghosts", kind, accountId, size];
 
-export function useTable<T, Input>(
-    name: string,
-    table: { id: string; size: string } | undefined,
-    schema: BcsType<T, Input>,
-) {
+function useHeld<T>(kind: Held, accountId?: string, size?: string) {
     const client = useCurrentClient();
-    if (table) tables.set(table.id, { name, schema: schema as BcsType<unknown> });
     return useQuery({
-        queryKey: ["ghosts", name, table?.id, table?.size],
-        enabled: !!table,
+        queryKey: heldKey(kind, accountId, size),
+        enabled: !!accountId,
         placeholderData: (previous) => previous,
-        queryFn: () => listTable(client, table!.id, Number(table!.size), schema),
+        queryFn: async () =>
+            (await listHeld(
+                client,
+                accountId!,
+                kind,
+                size === undefined ? undefined : Number(size),
+            )) as Entry<T>[],
     });
 }
 
 /**
- * Bring every table read in line with what a write left: entries it changed are
- * decoded from the response, entries it took out are dropped, and entries it put
- * in are found by the dynamic field it made for them. The result is filed under
- * the table's new size, which is what the screens ask for next; a table the
- * response cannot account for is read again.
+ * Bring every read of what an `Account` holds in line with what a write left:
+ * objects it left with the `Account` are decoded from the response, and objects it
+ * took out (into a recruit, a game, or gone) are dropped. Recruits are filed under
+ * their new count, which is what the screens ask for next.
  */
-function absorbTables(queryClient: QueryClient, { written, removed }: ExecutedOrder) {
-    const byId = new Map(written.map((object) => [object.objectId, object]));
-    const gone = new Set(removed);
-    for (const [tableId, { name, schema }] of tables) {
-        const queries = queryClient
-            .getQueryCache()
-            .findAll({ queryKey: ["ghosts", name, tableId] })
-            .filter((query) => query.state.data !== undefined);
-        if (!queries.length) continue;
-        const latest = queries.reduce((a, b) =>
-            b.state.dataUpdatedAt > a.state.dataUpdatedAt ? b : a,
-        );
-        const before = latest.state.data as Entry<unknown>[];
-        let touched = false;
-        let unaccounted = false;
-        const after: Entry<unknown>[] = [];
-        for (const entry of before) {
-            const object = byId.get(entry.objectId);
-            const { fieldId } = entry;
-            if (gone.has(entry.objectId) || (fieldId && gone.has(fieldId))) touched = true;
-            else if (!object) after.push(entry);
-            else if (!fieldId || !object.contents) {
-                after.push(entry);
-                unaccounted = true;
-            } else if (object.parent !== fieldId) touched = true;
-            else {
-                touched = true;
-                after.push({
-                    ...(schema.parse(object.contents) as object),
-                    objectId: entry.objectId,
-                    fieldId,
-                });
+function absorbHeld(queryClient: QueryClient, { written, removed }: ExecutedOrder) {
+    const gone = new Set(removed.map((id) => normalizeSuiObjectId(id)));
+    for (const kind of Object.keys(HELD) as Held[]) {
+        const type = heldType(kind);
+        const latest = new Map<string, Entry<unknown>[]>();
+        const updated = new Map<string, number>();
+        for (const query of queryClient.getQueryCache().findAll({ queryKey: ["ghosts", kind] })) {
+            const accountId = query.queryKey[2] as string | undefined;
+            const data = query.state.data as Entry<unknown>[] | undefined;
+            if (!accountId || !data) continue;
+            if ((updated.get(accountId) ?? -1) >= query.state.dataUpdatedAt) continue;
+            updated.set(accountId, query.state.dataUpdatedAt);
+            latest.set(accountId, data);
+        }
+        for (const [accountId, before] of latest) {
+            const home = normalizeSuiAddress(accountId);
+            const after = new Map(before.map((e) => [normalizeSuiObjectId(e.objectId), e]));
+            let touched = false;
+            let unaccounted = false;
+            for (const id of gone) touched = after.delete(id) || touched;
+            for (const object of written) {
+                const id = normalizeSuiObjectId(object.objectId);
+                if (object.owner !== home || object.type !== type) {
+                    touched = after.delete(id) || touched;
+                } else if (!object.contents) {
+                    unaccounted = true;
+                } else {
+                    touched = true;
+                    const decoded = HELD[kind].schema.parse(object.contents) as object;
+                    after.set(id, { ...decoded, objectId: object.objectId });
+                }
+            }
+            if (unaccounted)
+                void queryClient.invalidateQueries({ queryKey: heldKey(kind, accountId) });
+            else if (touched) {
+                const size = kind === "recruits" ? String(after.size) : undefined;
+                queryClient.setQueryData(heldKey(kind, accountId, size), [...after.values()]);
             }
         }
-        const held = new Set(after.map((entry) => entry.objectId));
-        for (const object of written) {
-            const field = object.parent ? byId.get(object.parent) : undefined;
-            if (field?.parent !== tableId || held.has(object.objectId)) continue;
-            touched = true;
-            if (!object.contents) unaccounted = true;
-            else
-                after.push({
-                    ...(schema.parse(object.contents) as object),
-                    objectId: object.objectId,
-                    fieldId: field.objectId,
-                });
-        }
-        if (unaccounted)
-            void queryClient.invalidateQueries({ queryKey: ["ghosts", name, tableId] });
-        else if (touched)
-            queryClient.setQueryData(["ghosts", name, tableId, String(after.length)], after);
     }
 }
 
-/** The recruits stored in an `Account`. */
+/** The recruits at home in an `Account`. */
 export function useChainRecruits(account?: ChainAccount) {
-    return useTable("recruits", account?.recruits, Recruit);
+    return useHeld<ReturnType<typeof Recruit.parse>>("recruits", account?.id, account?.recruits);
 }
 
-/** The armory: unequipped weapons and armor stored in an `Account`. */
+/** The armory: unequipped weapons and armor, and the stock of upgrades, sent to an `Account`. */
 export function useArmory(account?: ChainAccount) {
-    const weapons = useTable("weapons", account?.weapons, Weapon);
-    const armors = useTable("armors", account?.armors, Armor);
-    return { weapons: weapons.data ?? [], armors: armors.data ?? [] };
+    const weapons = useHeld<ReturnType<typeof Weapon.parse>>("weapons", account?.id);
+    const armors = useHeld<ReturnType<typeof Armor.parse>>("armors", account?.id);
+    const upgrades = useHeld<ReturnType<typeof WeaponUpgrade.parse>>("upgrades", account?.id);
+    return {
+        weapons: weapons.data ?? [],
+        armors: armors.data ?? [],
+        upgrades: upgrades.data,
+    };
 }
 
 /**
@@ -360,7 +357,7 @@ export function useGhostsAction() {
             const executed = await sent;
             digest = executed.digest;
             absorbWrites(queryClient, executed.written);
-            absorbTables(queryClient, executed);
+            absorbHeld(queryClient, executed);
             if (owner) await noteOpenedAccount(client, queryClient, owner, executed);
         }
         // An `Account` the response did not account for: wait for it and look again.
@@ -399,8 +396,6 @@ export function friendlyError(e: unknown): string {
     if (/reject|cancel|abort(ed)? by user|NotAllowedError/i.test(message)) return "Cancelled.";
     if (/Failed to fetch|NetworkError|timed? ?out/i.test(message))
         return "Connection lost. Try again.";
-    if (/function_name: Some\("(hire_recruit|buy_\w+|spend)"\).*, 7\)/.test(message))
-        return "Not enough credits.";
     if (/function_name: Some\("equip_\w+"\).*, 8\)/.test(message))
         return "That recruit's rank is too low for this gear.";
     if (/function_name: Some\("cancel_search"\).*, 25\)/.test(message))
@@ -417,7 +412,7 @@ export function createAccountTx(): Transaction {
     return tx;
 }
 
-/** One more recruit past the free squad, for `HIRE_PRICE` credits. */
+/** One more recruit past the free squad, up to `MAX_RECRUITS`. */
 export function hireRecruitTx(accountId: string): Transaction {
     const tx = new Transaction();
     tx.moveCall({
@@ -442,9 +437,28 @@ export function dismissRecruitTx(accountId: string, recruitId: string): Transact
     const tx = new Transaction();
     tx.moveCall({
         target: target("dismiss_recruit"),
-        arguments: [tx.object(accountId), tx.pure.id(recruitId)],
+        arguments: [tx.object(accountId), tx.object(recruitId)],
     });
     return tx;
+}
+
+/**
+ * Borrow a recruit from the `Account`, change them with `change`, and send them
+ * back to it: any number of changes, one receipt. The chain takes nothing else
+ * for the `Borrow`, and a recruit is borrowed once per transaction.
+ */
+function withRecruit(
+    tx: Transaction,
+    acc: TransactionArgument,
+    recruitId: string,
+    change: (recruit: TransactionArgument) => void,
+) {
+    const [recruit, borrow] = tx.moveCall({
+        target: target("borrow_recruit"),
+        arguments: [acc, tx.object(recruitId)],
+    });
+    change(recruit);
+    tx.moveCall({ target: target("return_recruit"), arguments: [recruit, borrow] });
 }
 
 /** A recruit's looks (the codec's five areas) and voice, as `edit_recruit` takes them. */
@@ -459,41 +473,38 @@ export function editRecruitsTx(accountId: string, edits: RecruitEdit[]): Transac
     const tx = new Transaction();
     const acc = tx.object(accountId);
     for (const { recruitId, areas, voice } of edits)
-        tx.moveCall({
-            target: target("edit_recruit"),
-            arguments: [
-                acc,
-                tx.pure.id(recruitId),
-                tx.pure.vector("u8", areas.head),
-                tx.pure.vector("u8", areas.face),
-                tx.pure.vector("u8", areas.eyes),
-                tx.pure.vector("u8", areas.body),
-                tx.pure.vector("u8", areas.outfit),
-                tx.pure.u8(voice),
-            ],
-        });
+        withRecruit(tx, acc, recruitId, (recruit) =>
+            tx.moveCall({
+                target: target("edit_recruit"),
+                arguments: [
+                    recruit,
+                    tx.pure.vector("u8", areas.head),
+                    tx.pure.vector("u8", areas.face),
+                    tx.pure.vector("u8", areas.eyes),
+                    tx.pure.vector("u8", areas.body),
+                    tx.pure.vector("u8", areas.outfit),
+                    tx.pure.u8(voice),
+                ],
+            }),
+        );
     return tx;
 }
 
-/** Return a recruit's weapon to the armory. */
-export function unequipWeaponTx(accountId: string, recruitId: string): Transaction {
+/** Return a recruit's weapon or armor to the armory: whatever is sent to the `Account`. */
+function unequipTx(accountId: string, recruitId: string, kind: "weapon" | "armor") {
     const tx = new Transaction();
-    tx.moveCall({
-        target: target("unequip_weapon"),
-        arguments: [tx.object(accountId), tx.pure.id(recruitId)],
+    withRecruit(tx, tx.object(accountId), recruitId, (recruit) => {
+        const [item] = tx.moveCall({ target: target(`unequip_${kind}`), arguments: [recruit] });
+        tx.transferObjects([item], accountId);
     });
     return tx;
 }
 
-/** Return a recruit's armor to the armory. */
-export function unequipArmorTx(accountId: string, recruitId: string): Transaction {
-    const tx = new Transaction();
-    tx.moveCall({
-        target: target("unequip_armor"),
-        arguments: [tx.object(accountId), tx.pure.id(recruitId)],
-    });
-    return tx;
-}
+export const unequipWeaponTx = (accountId: string, recruitId: string): Transaction =>
+    unequipTx(accountId, recruitId, "weapon");
+
+export const unequipArmorTx = (accountId: string, recruitId: string): Transaction =>
+    unequipTx(accountId, recruitId, "armor");
 
 /** A requested weapon fitting: its upgrade name, family and tier. */
 export interface Fitting {
@@ -503,94 +514,113 @@ export interface Fitting {
 }
 
 /**
- * Bring a weapon's fittings to `desired` in one transaction: an issued weapon
- * comes off its recruit first (the chain only modifies armory weapons),
- * unwanted fittings go back to stock, wanted ones come from stock — minted
- * on the spot when there is none, for its price — and the weapon goes
- * back to its recruit. Indices are tracked against a local copy of the
- * account's upgrade vector, mirroring `remove`/`push_back` on chain.
+ * Bring a weapon's fittings to `desired` in one transaction: the weapon is taken
+ * out of the armory, or off its carrier, unwanted fittings go to the stock,
+ * wanted ones come out of it — requisitioned on the spot when there is none —
+ * and the weapon goes back where it came from. Fittings come off by their index
+ * on the weapon, highest first, so the ones still to go keep theirs.
  */
 export function fittingsTx(
     accountId: string,
     weapon: { id: string; upgrades: { name: string }[] },
-    stock: { name: string }[],
+    stock: { name: string; objectId: string }[],
     desired: Fitting[],
     carrier: string | null,
 ): Transaction {
     const tx = new Transaction();
     const acc = tx.object(accountId);
-    const wid = tx.pure.id(weapon.id);
-    const pool = stock.map((u) => u.name);
+    const pool = [...stock];
     const wanted = [...desired];
 
-    if (carrier)
-        tx.moveCall({ target: target("unequip_weapon"), arguments: [acc, tx.pure.id(carrier)] });
-
-    // keep fittings still wanted; strip the rest, highest index first
-    const fitted = weapon.upgrades.map((u) => u.name);
-    for (let i = fitted.length - 1; i >= 0; i--) {
-        const keep = wanted.findIndex((f) => f.name === fitted[i]);
-        if (keep >= 0) {
-            wanted.splice(keep, 1);
-            continue;
+    const refit = (rifle: TransactionArgument) => {
+        // keep fittings still wanted; strip the rest into the stock
+        const fitted = weapon.upgrades.map((u) => u.name);
+        const stripped: TransactionObjectArgument[] = [];
+        for (let i = fitted.length - 1; i >= 0; i--) {
+            const keep = wanted.findIndex((f) => f.name === fitted[i]);
+            if (keep >= 0) wanted.splice(keep, 1);
+            else
+                stripped.push(
+                    tx.moveCall({
+                        target: `${GHOSTS.package}::weapon::remove_upgrade`,
+                        arguments: [rifle, tx.pure.u8(i)],
+                    })[0],
+                );
         }
-        tx.moveCall({
-            target: target("detach_upgrade"),
-            arguments: [acc, wid, tx.pure.u8(i)],
-        });
-        pool.push(fitted[i]);
-    }
+        if (stripped.length) tx.transferObjects(stripped, accountId);
 
-    for (const fitting of wanted) {
-        let index = pool.indexOf(fitting.name);
-        if (index < 0) {
+        for (const fitting of wanted) {
+            const at = pool.findIndex((u) => u.name === fitting.name);
+            const [upgrade] =
+                at >= 0
+                    ? tx.moveCall({
+                          target: target("take_upgrade"),
+                          arguments: [acc, tx.object(pool.splice(at, 1)[0].objectId)],
+                      })
+                    : tx.moveCall({
+                          target: target("requisition_upgrade"),
+                          arguments: [
+                              acc,
+                              tx.pure.u8(UPGRADE_KINDS[fitting.family]),
+                              tx.pure.u8(fitting.tier),
+                          ],
+                      });
             tx.moveCall({
-                target: target("buy_upgrade"),
-                arguments: [
-                    acc,
-                    tx.pure.u8(UPGRADE_KINDS[fitting.family]),
-                    tx.pure.u8(fitting.tier),
-                ],
+                target: `${GHOSTS.package}::weapon::add_upgrade`,
+                arguments: [rifle, upgrade],
             });
-            pool.push(fitting.name);
-            index = pool.length - 1;
         }
-        tx.moveCall({
-            target: target("attach_upgrade"),
-            arguments: [acc, wid, tx.pure.u64(index)],
-        });
-        pool.splice(index, 1);
-    }
+    };
 
     if (carrier)
-        tx.moveCall({
-            target: target("equip_weapon"),
-            arguments: [acc, tx.pure.id(carrier), wid],
+        withRecruit(tx, acc, carrier, (recruit) => {
+            const [rifle] = tx.moveCall({ target: target("unequip_weapon"), arguments: [recruit] });
+            refit(rifle);
+            tx.moveCall({ target: target("equip_weapon"), arguments: [recruit, rifle] });
         });
+    else {
+        const [rifle] = tx.moveCall({
+            target: target("take_weapon"),
+            arguments: [acc, tx.object(weapon.id)],
+        });
+        refit(rifle);
+        tx.transferObjects([rifle], accountId);
+    }
     return tx;
 }
 
 /**
- * Hand a weapon or armor to `to` in one transaction: off its current carrier
- * (when issued), the target's own piece back to the armory (when they have
- * one), then onto the target.
+ * Hand a weapon or armor to `to` in one transaction: out of the armory or off its
+ * current carrier, onto the target, whose own piece goes to the armory.
  */
 export function issueTx(
     accountId: string,
     kind: "weapon" | "armor",
     itemId: string,
     from: string | null,
-    to: { id: string; equipped: boolean },
+    to: string,
 ): Transaction {
     const tx = new Transaction();
     const acc = tx.object(accountId);
-    if (from)
-        tx.moveCall({ target: target(`unequip_${kind}`), arguments: [acc, tx.pure.id(from)] });
-    if (to.equipped && to.id !== from)
-        tx.moveCall({ target: target(`unequip_${kind}`), arguments: [acc, tx.pure.id(to.id)] });
-    tx.moveCall({
-        target: target(`equip_${kind}`),
-        arguments: [acc, tx.pure.id(to.id), tx.pure.id(itemId)],
+    const equip = (recruit: TransactionArgument, item: TransactionArgument) =>
+        tx.moveCall({ target: target(`equip_${kind}`), arguments: [recruit, item] });
+    withRecruit(tx, acc, to, (recruit) => {
+        if (from === to) return;
+        if (from)
+            withRecruit(tx, acc, from, (carrier) => {
+                const [item] = tx.moveCall({
+                    target: target(`unequip_${kind}`),
+                    arguments: [carrier],
+                });
+                equip(recruit, item);
+            });
+        else {
+            const [item] = tx.moveCall({
+                target: target(`take_${kind}`),
+                arguments: [acc, tx.object(itemId)],
+            });
+            equip(recruit, item);
+        }
     });
     return tx;
 }
@@ -598,20 +628,20 @@ export function issueTx(
 export type Requisition =
     { kind: "rifle" | "armor"; tier: number } | { kind: keyof typeof UPGRADE_KINDS; tier: number };
 
-/** Buy a piece of gear, into the racks. */
+/** Requisition a piece of gear, into the racks or the stock: sent to the `Account`. */
 export function requisitionTx(accountId: string, { kind, tier }: Requisition): Transaction {
     const tx = new Transaction();
     const acc = tx.object(accountId);
-    if (kind === "rifle" || kind === "armor") {
-        tx.moveCall({
-            target: target(kind === "rifle" ? "buy_rifle" : "buy_armor"),
-            arguments: [acc, tx.pure.u8(tier)],
-        });
-    } else {
-        tx.moveCall({
-            target: target("buy_upgrade"),
-            arguments: [acc, tx.pure.u8(UPGRADE_KINDS[kind]), tx.pure.u8(tier)],
-        });
-    }
+    const [item] =
+        kind === "rifle" || kind === "armor"
+            ? tx.moveCall({
+                  target: target(kind === "rifle" ? "requisition_rifle" : "requisition_armor"),
+                  arguments: [acc, tx.pure.u8(tier)],
+              })
+            : tx.moveCall({
+                  target: target("requisition_upgrade"),
+                  arguments: [acc, tx.pure.u8(UPGRADE_KINDS[kind]), tx.pure.u8(tier)],
+              });
+    tx.transferObjects([item], accountId);
     return tx;
 }

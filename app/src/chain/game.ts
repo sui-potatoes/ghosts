@@ -8,13 +8,15 @@
  */
 
 import { useCurrentClient } from "@mysten/dapp-kit-react";
+import { bcs } from "@mysten/sui/bcs";
 import { Transaction } from "@mysten/sui/transactions";
 import { normalizeSuiAddress } from "@mysten/sui/utils";
+import { useQuery } from "@tanstack/react-query";
 
 import { GHOSTS } from "../constants";
 import { Game, Recruit, type ChainGame } from "./bcs";
 import type { Order } from "./fast-lane";
-import { useTable } from "./ghosts";
+import type { ChainRecruit } from "./ghosts";
 import { acceptSeat, type ChainSeat } from "./matchmaking";
 import { useBcsObject } from "./objects";
 
@@ -33,26 +35,73 @@ export function useGame(id?: string | null, refetchInterval?: number) {
     return useBcsObject({ id, schema: Game, refetchInterval });
 }
 
-/** The recruits in a game, of both sides. */
-export function useGameRecruits(game?: ChainGame) {
-    return useTable("game-recruits", game?.recruits, Recruit);
+/** `sui::dynamic_field::Field<ID, Recruit>`: one entry of a game's `Table` of recruits. */
+const RecruitField = bcs.struct("Field", { id: bcs.Address, name: bcs.Address, value: Recruit });
+
+/**
+ * Every recruit in a game's `Table`, decoded from the dynamic fields holding them.
+ * `size` is the table's length as the game reports it: a listing a moment behind
+ * is read again until it catches up.
+ */
+async function fetchGameRecruits(
+    client: Client,
+    tableId: string,
+    size: number,
+): Promise<ChainRecruit[]> {
+    for (let attempt = 0; ; attempt++) {
+        const fields: string[] = [];
+        let cursor: string | undefined;
+        do {
+            const page = await client.core.listDynamicFields({ parentId: tableId, cursor });
+            fields.push(...page.dynamicFields.map((field) => field.fieldId));
+            cursor = page.hasNextPage ? (page.cursor ?? undefined) : undefined;
+        } while (cursor);
+        if (fields.length >= size || attempt === 5) {
+            if (!fields.length) return [];
+            const { objects } = await client.core.getObjects({
+                objectIds: fields,
+                include: { content: true },
+            });
+            return objects.flatMap((object) => {
+                if (object instanceof Error) return [];
+                const { value } = RecruitField.parse(object.content);
+                return [{ ...value, objectId: value.id }];
+            });
+        }
+        await new Promise((resolve) => setTimeout(resolve, 500));
+    }
 }
 
-/** Pick the squad: these recruits go on the map, the rest stay in the `Account`. */
+/** The recruits in a game, of both sides. */
+export function useGameRecruits(game?: ChainGame) {
+    const client = useCurrentClient();
+    const table = game?.recruits;
+    return useQuery({
+        queryKey: ["ghosts", "game-recruits", table?.id, table?.size],
+        enabled: !!table,
+        placeholderData: (previous) => previous,
+        queryFn: () => fetchGameRecruits(client, table!.id, Number(table!.size)),
+    });
+}
+
+/**
+ * Pick the squad: these recruits are received from the `Account` onto the map, the
+ * rest stay home. Each goes in by its id; the fast lane passes it by its newest
+ * reference.
+ */
 export function deploySquadTx(
     gameId: string,
     accountId: string,
     recruitIds: string[],
 ): Transaction {
     const tx = new Transaction();
+    const recruits = tx.makeMoveVec({
+        type: `0x2::transfer::Receiving<${GHOSTS.package}::recruit::Recruit>`,
+        elements: recruitIds.map((id) => tx.object(id)),
+    });
     tx.moveCall({
         target: target("deploy_squad"),
-        arguments: [
-            tx.object(gameId),
-            tx.object(accountId),
-            tx.object.clock(),
-            tx.pure.vector("id", recruitIds),
-        ],
+        arguments: [tx.object(gameId), tx.object(accountId), tx.object.clock(), recruits],
     });
     return tx;
 }
@@ -122,22 +171,6 @@ export const reloadOrder =
         });
     };
 
-/** Take up the weapon lying on the unit's tile. */
-export const pickUpOrder =
-    (refs: GameRefs, [row, col]: [number, number]): Order =>
-    (tx) => {
-        tx.moveCall({
-            target: target("pick_up_weapon"),
-            arguments: [
-                tx.sharedObjectRef(refs.game),
-                tx.sharedObjectRef(refs.account),
-                tx.sharedObjectRef(refs.clock),
-                tx.pure.u16(row),
-                tx.pure.u16(col),
-            ],
-        });
-    };
-
 /** Fire from one tile at another, or throw a grenade; the dice roll on chain. */
 export const strikeOrder =
     (
@@ -189,7 +222,7 @@ export function nextTurnTx(gameId: string, accountId: string): Transaction {
 export type PendingSeat = { accountId: string; seat: ChainSeat["ref"] };
 
 /**
- * Wrap up a game that is over: survivors and dog tags go home, the result goes on
+ * Wrap up a game that is over: survivors go home, the result goes on
  * both scores, both `Account`s are `Idle` again, whoever misbehaved is suspended
  * and the `Game` is deleted. Anyone can send this; `players` are in the game's order.
  * A seat its player never accepted is accepted first: wrapping up needs both in.

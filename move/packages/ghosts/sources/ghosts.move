@@ -15,8 +15,9 @@
 /// player can move the game on.
 ///
 /// The goal is to eliminate the other side. The proof is the `Game` itself: a
-/// recruit only leaves a squad by falling, which the `Map` decides, leaving a
-/// `DogTag` behind. A side with nobody on the map after deployment has lost.
+/// recruit only leaves a squad by falling, which the `Map` decides, and their
+/// `DogTag` is sent to their `Account` there and then. A side with nobody on the
+/// map after deployment has lost.
 /// `complete_game` then sends everyone home and deletes the `Game`, and is anyone's
 /// to call.
 ///
@@ -25,28 +26,20 @@
 /// missing `MAX_MISSED_TURNS` turns in a row. A game that
 /// goes nowhere ends in a draw at `MAX_TURNS`, without blame.
 ///
-/// A game is what the rest of the game runs on. It moves both ratings, and pays both
-/// sides credits by how it ended, with experience for the recruits who come home and
-/// whatever kills they made. The fallen are gone for good, armor included, but their
-/// weapons stay where they fell for anyone to take up, and whoever does keeps them.
+/// A game is what the rest of the game runs on. It moves both ratings, and gives the
+/// recruits who come home experience by how it ended. The fallen are gone for good,
+/// with their gear.
 module ghosts::ghosts;
 
 use ghosts::{
     account::Account,
     history::{Self, History, Record},
     map::{Self, Map},
-    recruit::{DogTag, Recruit},
-    weapon::Weapon
+    recruit::Recruit
 };
 use matchmaker::matchmaker::{Self, Matchmaker};
 use std::string::String;
-use sui::{
-    clock::Clock,
-    object_table::{Self, ObjectTable},
-    random::Random,
-    transfer::Receiving,
-    vec_map::{Self, VecMap}
-};
+use sui::{clock::Clock, random::Random, table::{Self, Table}, transfer::Receiving};
 
 const ENotPlayer: u64 = 1;
 const ENoPositions: u64 = 4;
@@ -75,8 +68,6 @@ const EAlreadyDeployed: u64 = 21;
 const EGameNotOver: u64 = 17;
 /// The `Account` has no recruits to play with.
 const ENoSquad: u64 = 22;
-/// There is no weapon on the unit's tile.
-const ENoWeaponHere: u64 = 24;
 /// A match found the search: its `Seat` waits on the `Account`, to accept first.
 const ESeatWaiting: u64 = 25;
 /// The `Account` has yet to accept its `Seat` in the game.
@@ -98,23 +89,14 @@ const MAX_MISSED_TURNS: u8 = 3;
 /// How long a game can go on before it ends in a draw: 30 rounds.
 const MAX_TURNS: u16 = 60;
 
-/// What a game pays each side, in credits, by how it ended.
-const WIN_CREDITS: u64 = 100;
-const DRAW_CREDITS: u64 = 60;
-const LOSS_CREDITS: u64 = 40;
-/// A win handed over by an opponent who left pays no more than a loss, so that two
-/// accounts have nothing to farm from each other.
-const WALKOVER_CREDITS: u64 = 40;
-/// What each kill pays on top, in credits.
-const KILL_CREDITS: u64 = 20;
 /// What a recruit earns, in experience, for coming home.
 const SURVIVAL_XP: u16 = 1;
-/// What a recruit earns, in experience, for each kill.
-const KILL_XP: u16 = 2;
-/// What a recruit earns, in experience, for coming home from a win.
+/// What a recruit earns, in experience, for coming home from a win. A win handed
+/// over by an opponent who left earns no more than a loss, so that two accounts have
+/// nothing to farm from each other.
 const WIN_XP: u16 = 1;
-/// A game left before this many turns pays nobody anything.
-const MIN_TURNS_TO_PAY: u16 = 2;
+/// A game left before this many turns earns nobody anything.
+const MIN_TURNS_TO_EARN: u16 = 2;
 
 /// Identifies this game's matchmaking queue, `Matchmaker<Ghosts>`.
 public struct Ghosts()
@@ -142,45 +124,52 @@ public struct Seat has key {
     game: ID,
 }
 
-/// A weapon lying on a tile, for any unit standing there to take up.
-public struct Dropped has store {
-    x: u16,
-    y: u16,
-    weapon: Weapon,
-}
-
 /// A game between `Account`s, shared between them.
 public struct Game has key {
     id: UID,
     map: Map,
     /// `Account` IDs of the players, in turn order. An index is a player's side.
     players: vector<ID>,
-    /// The recruits each side has on the map; the fallen are taken out.
-    squads: vector<vector<ID>>,
-    /// The dog tags of the recruits each side lost: the proof of elimination.
-    fallen: vector<vector<DogTag>>,
+    /// Where the game stands.
+    state: State,
+    /// How many turns have passed since the deployment ended.
+    turn: u16,
     /// The spawn positions each side has left, used from the back.
     positions: vector<vector<vector<u8>>>,
     /// History of the game.
     history: History,
-    /// Temporarily stores recruits for the duration of the game.
-    /// If recruits are KIA, they're "killed" upon removal from this table.
-    recruits: ObjectTable<ID, Recruit>,
-    /// The players are picking their squads, until `deploy_until_ms`.
-    deploying: bool,
-    deploy_until_ms: u64,
-    /// When the current turn started.
-    turn_started_ms: u64,
-    /// How many turns in a row each side let run out.
-    missed: vector<u8>,
-    /// The `Account` that abandoned the game, or missed too many turns.
-    abandoned_by: Option<ID>,
-    /// Each side's kills, by the recruit who made them. Fire on one's own side
-    /// doesn't count.
-    kills: vector<VecMap<ID, u8>>,
-    /// The weapons the fallen left behind. Whatever is still here when the game
-    /// ends goes with it.
-    dropped: vector<Dropped>,
+    /// The recruits on the map, for the duration of the game; whose each one is,
+    /// its unit says. The fallen are killed as they are taken out.
+    recruits: Table<ID, Recruit>,
+}
+
+/// Where a game stands. It only moves forward: `Deploying`, `Playing`, `Over`.
+public enum State has copy, drop, store {
+    /// The players pick their squads, until `until_ms`.
+    Deploying { until_ms: u64 },
+    /// The sides take turns. The current one started at `started_ms`; `missed` is
+    /// how many turns in a row each side let run out.
+    Playing { started_ms: u64, missed: vector<u8> },
+    /// The game is over, the way `Ending` says, until `complete_game` wraps it up.
+    Over(Ending),
+}
+
+/// How a game ended. A player in it is their `Account` ID.
+public enum Ending has copy, drop, store {
+    /// The other side has nobody left on the map.
+    Won(ID),
+    /// Both sides went down at once.
+    Draw,
+    /// `MAX_TURNS` passed without an end: a draw, without blame.
+    Stalemate,
+    /// The player walked out of the game.
+    Abandoned(ID),
+    /// The player let `MAX_MISSED_TURNS` turns in a row run out.
+    Forfeited(ID),
+    /// The deployment ended with the player having picked nobody.
+    NoShow(ID),
+    /// The deployment ended with neither player having picked anyone.
+    NobodyShowed,
 }
 
 // === Matchmaking ===
@@ -282,18 +271,11 @@ fun new_game(preset: &Preset, waiting: ID, finder: ID, now: u64, ctx: &mut TxCon
         id: object::new(ctx),
         map: preset.map.clone(),
         players: vector[waiting, finder],
-        squads: vector[vector[], vector[]],
-        fallen: vector[vector[], vector[]],
+        state: State::Deploying { until_ms: now + DEPLOY_LIMIT_MS },
+        turn: 0,
         positions,
         history: history::empty(),
-        recruits: object_table::new(ctx),
-        deploying: true,
-        deploy_until_ms: now + DEPLOY_LIMIT_MS,
-        turn_started_ms: now,
-        missed: vector[0, 0],
-        abandoned_by: option::none(),
-        kills: vector[vec_map::empty(), vec_map::empty()],
-        dropped: vector[],
+        recruits: table::new(ctx),
     }
 }
 
@@ -306,12 +288,12 @@ public fun abandon_game(game: &mut Game, acc: &Account, ctx: &mut TxContext) {
     game.side(acc, ctx);
     assert!(!game.is_over(), EGameOver);
 
-    game.abandoned_by.fill(object::id(acc));
+    game.state = State::Over(Ending::Abandoned(object::id(acc)));
 }
 
 /// Wrap up a game that is over and delete it. Anyone can call this, so neither
 /// player can keep the other in: the survivors go back to their `Account`s, the
-/// dog tags onto their walls, the result onto their scores, the `Account`s playing
+/// result onto their scores, the `Account`s playing
 /// it are `Idle` again, and whoever abandoned the game or never deployed is
 /// suspended for `SUSPENSION_MS`. Both `Account`s must be in the game: a `Seat` not
 /// yet accepted is accepted first, by whoever wraps up.
@@ -331,8 +313,6 @@ public fun complete_game(
     assert!(first.playing() == id && second.playing() == id, ESeatNotAccepted);
 
     let now = clock.timestamp_ms();
-    if (game.misbehaved(0)) first.suspend(now + SUSPENSION_MS);
-    if (game.misbehaved(1)) second.suspend(now + SUSPENSION_MS);
 
     // nobody showing up isn't a game: it goes on no score and moves no rating
     let winner = game.winner();
@@ -342,55 +322,55 @@ public fun complete_game(
         first.rate_game(second, winner, now);
     };
 
-    // worked out up front: going home empties a squad, which reads as never showing
-    let (credits_first, xp_first) = game.earnings(0, winner);
-    let (credits_second, xp_second) = game.earnings(1, winner);
-    game.send_home(first, 0, credits_first, xp_first);
-    game.send_home(second, 1, credits_second, xp_second);
+    let (xp_first, xp_second) = (game.experience(0, winner), game.experience(1, winner));
+    game.send_home(first, 0, xp_first);
+    game.send_home(second, 1, xp_second);
     game.release(first);
     game.release(second);
+    if (game.misbehaved(0)) first.suspend(now + SUSPENSION_MS);
+    if (game.misbehaved(1)) second.suspend(now + SUSPENSION_MS);
 
-    let Game { id, map, recruits, fallen, dropped, .. } = game;
+    let Game { id, map, recruits, .. } = game;
     map.destroy();
     recruits.destroy_empty();
-    fallen.destroy!(|tags| tags.destroy_empty());
-    dropped.destroy!(|Dropped { weapon, .. }| weapon.destroy());
     id.delete();
 }
 
 // === Game Actions ===
 
-/// Pick the squad: recruits from the `Account`, placed on the side's spawn
-/// positions, as many as the map has for a side. Once per side, in any order,
-/// within `DEPLOY_LIMIT_MS` of the match. The first turn starts as soon as both
-/// sides have deployed.
-entry fun deploy_squad(
+/// Pick the squad: recruits received from the `Account`, placed on the side's
+/// spawn positions, as many as the map has for a side. Once per side, in any
+/// order, within `DEPLOY_LIMIT_MS` of the match. The first turn starts as soon as
+/// both sides have deployed.
+public fun deploy_squad(
     game: &mut Game,
     acc: &mut Account,
     clock: &Clock,
-    recruit_ids: vector<ID>,
+    recruits: vector<Receiving<Recruit>>,
     ctx: &mut TxContext,
 ) {
     let side = game.side(acc, ctx);
     let now = clock.timestamp_ms();
 
-    assert!(!game.is_over(), EGameOver);
-    assert!(game.deploying && now <= game.deploy_until_ms, EDeploymentOver);
-    assert!(game.squads[side].is_empty(), EAlreadyDeployed);
-    assert!(!recruit_ids.is_empty(), ENoPositions);
-    assert!(recruit_ids.length() <= game.positions[side].length(), ENoPositions);
+    match (&game.state) {
+        State::Deploying { until_ms } => assert!(now <= *until_ms, EDeploymentOver),
+        State::Playing { .. } => abort EDeploymentOver,
+        State::Over(_) => abort EGameOver,
+    };
+    assert!(game.squad(side).is_empty(), EAlreadyDeployed);
+    assert!(!recruits.is_empty(), ENoPositions);
+    assert!(recruits.length() <= game.positions[side].length(), ENoPositions);
 
-    recruit_ids.do!(|recruit_id| {
-        let recruit = acc.remove_recruit(recruit_id, ctx);
+    recruits.do!(|recruit| {
+        let recruit = acc.remove_recruit(recruit, ctx);
         let position = game.positions[side].pop_back();
         let record = game.map.place_recruit(&recruit, position[0] as u16, position[1] as u16);
 
-        game.squads[side].push_back(recruit_id);
-        game.recruits.add(recruit_id, recruit);
+        game.recruits.add(object::id(&recruit), recruit);
         game.history.add(record);
     });
 
-    if (game.squads.all!(|squad| !squad.is_empty())) game.begin_match(now);
+    if (!game.squad(0).is_empty() && !game.squad(1).is_empty()) game.begin_match(now);
 }
 
 /// Move a unit along the path, the first point is the current position of the unit.
@@ -418,32 +398,6 @@ entry fun perform_reload(
     game.history.add(game.map.perform_reload(x, y))
 }
 
-/// Take up a weapon lying on the unit's tile, leaving the one the recruit carries
-/// in its place. A recruit on the standard issue rifle has nothing to leave. Costs
-/// 1 AP and comes with a full magazine. The weapon goes home with the recruit: rank
-/// only matters for issuing gear at headquarters.
-entry fun pick_up_weapon(
-    game: &mut Game,
-    acc: &Account,
-    clock: &Clock,
-    x: u16,
-    y: u16,
-    ctx: &mut TxContext,
-) {
-    let recruit_id = game.begin_unit_action(acc, clock, x, y, ctx);
-
-    let index = game.dropped.find_index!(|d| d.x == x && d.y == y);
-    assert!(index.is_some(), ENoWeaponHere);
-    let Dropped { weapon, .. } = game.dropped.swap_remove(index.destroy_some());
-
-    let recruit = &mut game.recruits[recruit_id];
-    if (recruit.weapon().is_some()) {
-        game.dropped.push_back(Dropped { x, y, weapon: recruit.remove_weapon() });
-    };
-    recruit.add_weapon(weapon);
-    game.history.add(game.map.perform_pick_up(&game.recruits[recruit_id], x, y));
-}
-
 /// Perform a grenade throw action.
 entry fun perform_grenade(
     game: &mut Game,
@@ -456,12 +410,12 @@ entry fun perform_grenade(
     y1: u16,
     ctx: &mut TxContext,
 ) {
-    let attacker = game.begin_unit_action(acc, clock, x0, y0, ctx);
+    game.begin_unit_action(acc, clock, x0, y0, ctx);
 
     let mut rng = rng.new_generator(ctx);
     let history = game.map.perform_grenade(&mut rng, x0, y0, x1, y1);
 
-    game.bury_fallen(attacker, &history, ctx);
+    game.bury_fallen(&history, ctx);
     game.history.append(history)
 }
 
@@ -477,12 +431,12 @@ entry fun perform_attack(
     y1: u16,
     ctx: &mut TxContext,
 ) {
-    let attacker = game.begin_unit_action(acc, clock, x0, y0, ctx);
+    game.begin_unit_action(acc, clock, x0, y0, ctx);
 
     let mut rng = rng.new_generator(ctx);
     let history = game.map.perform_attack(&mut rng, x0, y0, x1, y1);
 
-    game.bury_fallen(attacker, &history, ctx);
+    game.bury_fallen(&history, ctx);
     game.history.append(history)
 }
 
@@ -493,47 +447,62 @@ entry fun perform_attack(
 /// the game is over.
 entry fun next_turn(game: &mut Game, acc: &Account, clock: &Clock, ctx: &mut TxContext) {
     let side = game.side(acc, ctx);
-    assert!(!game.is_over(), EGameOver);
-
     let now = clock.timestamp_ms();
-    if (game.deploying) {
-        assert!(now > game.deploy_until_ms, EStillDeploying);
-        return game.begin_match(now)
-    };
-
     let active = game.active_side();
-    if (side == active) {
-        *&mut game.missed[active] = 0;
-    } else {
-        assert!(now - game.turn_started_ms > TURN_LIMIT_MS, ETurnNotExpired);
-        *&mut game.missed[active] = game.missed[active] + 1;
-        if (game.missed[active] == MAX_MISSED_TURNS) {
-            game.abandoned_by.fill(game.players[active]);
-            return
-        };
+
+    let missed = match (&mut game.state) {
+        State::Deploying { until_ms } => {
+            assert!(now > *until_ms, EStillDeploying);
+            return game.begin_match(now)
+        },
+        State::Playing { started_ms, missed } => {
+            if (side == active) {
+                *&mut missed[active] = 0;
+            } else {
+                assert!(now - *started_ms > TURN_LIMIT_MS, ETurnNotExpired);
+                *&mut missed[active] = missed[active] + 1;
+            };
+            *missed
+        },
+        State::Over(_) => abort EGameOver,
     };
 
-    game.history.add(game.map.next_turn());
-    game.turn_started_ms = now;
+    if (missed[active] == MAX_MISSED_TURNS) {
+        game.state = State::Over(Ending::Forfeited(game.players[active]));
+        return
+    };
+
+    game.turn = game.turn + 1;
+    game.history.add(history::new_next_turn(game.turn));
+    if (game.turn >= MAX_TURNS) {
+        game.state = State::Over(Ending::Stalemate);
+        return
+    };
+
+    game.state = State::Playing { started_ms: now, missed };
+    let next = game.players[game.active_side()];
+    game.map.reset_ap(next);
 }
 
 // === Getters ===
 
-/// Get the current turn of the game.
-public fun turn(self: &Game): u16 { self.map.turn() }
+/// Get how many turns have passed since the deployment ended.
+public fun turn(self: &Game): u16 { self.turn }
 
-/// Get the `Account` that won a game that is over: whoever did not abandon it, or
-/// the side with someone left. None for a draw, or while the game is on.
+/// Get where the game stands.
+public fun state(self: &Game): State { self.state }
+
+/// Get the `Account` that won a game that is over: the side with someone left, or
+/// whoever did not abandon, forfeit or miss the game. None for a draw, or while the
+/// game is on.
 public fun winner(self: &Game): Option<ID> {
-    if (!self.is_over()) return option::none();
-
-    let (first, second) = (self.players[0], self.players[1]);
-    if (self.abandoned_by.is_some()) {
-        return option::some(if (self.abandoned_by == option::some(first)) second else first)
-    };
-
-    let (first_out, second_out) = (self.squads[0].is_empty(), self.squads[1].is_empty());
-    if (first_out == second_out) option::none() else option::some(if (second_out) first else second)
+    match (&self.state) {
+        State::Over(Ending::Won(winner)) => option::some(*winner),
+        State::Over(Ending::Abandoned(by)) |
+        State::Over(Ending::Forfeited(by)) |
+        State::Over(Ending::NoShow(by)) => option::some(self.other(*by)),
+        _ => option::none(),
+    }
 }
 
 // === Internal ===
@@ -547,6 +516,16 @@ fun side(game: &Game, acc: &Account, ctx: &mut TxContext): u64 {
     side
 }
 
+/// The recruits a side has in the game: its units on the map, the fallen aside.
+fun squad(game: &Game, side: u64): vector<ID> {
+    game.map.units_of(game.players[side]).filter!(|id| game.recruits.contains(*id))
+}
+
+/// The player who isn't `player`.
+fun other(game: &Game, player: ID): ID {
+    if (game.players[0] == player) game.players[1] else game.players[0]
+}
+
 /// Clear the search of an `Account` playing this game.
 fun release(game: &Game, acc: &mut Account) {
     if (acc.playing() == option::some(object::id(game))) acc.clear_search();
@@ -554,89 +533,84 @@ fun release(game: &Game, acc: &mut Account) {
 
 /// The side whose turn it is.
 fun active_side(game: &Game): u64 {
-    (game.map.turn() as u64) % game.players.length()
+    (game.turn as u64) % game.players.length()
 }
 
-/// A game ends when a player abandons it, when a side has nobody on the map after
-/// deployment, whether all its recruits fell or it never picked any, or at
-/// `MAX_TURNS`.
+/// Whether the game is over, waiting for `complete_game`.
 fun is_over(game: &Game): bool {
-    game.abandoned_by.is_some()
-        || (
-            !game.deploying
-                && (game.map.turn() >= MAX_TURNS || game.squads.any!(|squad| squad.is_empty()))
-        )
+    match (&game.state) {
+        State::Over(_) => true,
+        _ => false,
+    }
 }
 
-/// Whether a side is to blame for how the game ended: it abandoned the game, or
-/// the deployment ended without it having anyone to show, fallen or alive.
+/// Whether a side is to blame for how the game ended: it abandoned the game,
+/// forfeited it, or had nobody to show when the deployment ended.
 fun misbehaved(game: &Game, side: u64): bool {
-    game.abandoned_by == option::some(game.players[side])
-        || (!game.deploying && game.squads[side].is_empty() && game.fallen[side].is_empty())
+    let player = game.players[side];
+    match (&game.state) {
+        State::Over(Ending::Abandoned(by)) |
+        State::Over(Ending::Forfeited(by)) |
+        State::Over(Ending::NoShow(by)) => *by == player,
+        State::Over(Ending::NobodyShowed) => true,
+        _ => false,
+    }
 }
 
-/// Deployment is over: the first turn starts now.
+/// The deployment is over: the first turn begins, unless a side has nobody to
+/// show, which ends the game there.
 fun begin_match(game: &mut Game, now: u64) {
-    game.deploying = false;
-    game.turn_started_ms = now;
+    let (first, second) = (game.players[0], game.players[1]);
+    let (first_shows, second_shows) = (!game.squad(0).is_empty(), !game.squad(1).is_empty());
+    game.state = if (!first_shows && !second_shows) State::Over(Ending::NobodyShowed)
+    else if (!first_shows) State::Over(Ending::NoShow(first))
+    else if (!second_shows) State::Over(Ending::NoShow(second))
+    else State::Playing { started_ms: now, missed: vector[0, 0] };
 }
 
 /// Whether neither side deployed anyone.
 fun nobody_showed(game: &Game): bool {
-    !game.deploying
-        && game.squads.all!(|squad| squad.is_empty())
-        && game.fallen.all!(|tags| tags.is_empty())
+    match (&game.state) {
+        State::Over(Ending::NobodyShowed) => true,
+        _ => false,
+    }
 }
 
-/// What a side earns from how the game ended: credits, and experience for each
-/// recruit coming home. Nothing for a side that left or never showed, for one whose
-/// opponent never showed, or for one left behind before the game got anywhere.
-fun earnings(game: &Game, side: u64, winner: Option<ID>): (u64, u16) {
-    let other = 1 - side;
-    if (game.abandoned_by == option::some(game.players[other])) {
-        if (game.turn() < MIN_TURNS_TO_PAY) return (0, 0);
-        return (WALKOVER_CREDITS, SURVIVAL_XP)
+/// The experience each of a side's recruits coming home earns from how the game
+/// ended. None for a side that left or never showed, for one whose opponent never
+/// showed, or for one left behind before the game got anywhere.
+fun experience(game: &Game, side: u64, winner: Option<ID>): u16 {
+    let other = game.players[1 - side];
+    let walkover = match (&game.state) {
+        State::Over(Ending::Abandoned(by)) | State::Over(Ending::Forfeited(by)) => *by == other,
+        _ => false,
     };
-    if (game.misbehaved(side) || game.misbehaved(other)) return (0, 0);
+    if (walkover) return if (game.turn < MIN_TURNS_TO_EARN) 0 else SURVIVAL_XP;
+    if (game.misbehaved(side) || game.misbehaved(1 - side)) return 0;
 
-    if (winner.is_none()) (DRAW_CREDITS, SURVIVAL_XP) else if (
-        winner == option::some(game.players[side])
-    ) (WIN_CREDITS, SURVIVAL_XP + WIN_XP) else (LOSS_CREDITS, SURVIVAL_XP)
+    if (winner == option::some(game.players[side])) SURVIVAL_XP + WIN_XP else SURVIVAL_XP
 }
 
-/// Hand a side's survivors and dog tags over to its `Account`, with what it earned.
-/// Kills pay on top of a game that pays at all.
-fun send_home(game: &mut Game, acc: &mut Account, side: u64, credits: u64, xp: u16) {
-    if (credits > 0) {
-        let mut kills = 0u64;
-        game.kills[side].length().do!(|i| {
-            let (_, count) = game.kills[side].get_entry_by_idx(i);
-            kills = kills + (*count as u64);
-        });
-        acc.pay(credits + kills * KILL_CREDITS);
-
-        game.squads[side].do_ref!(|id| {
-            let made = game.kills[side].try_get(id).destroy_or!(0);
-            game.recruits[*id].add_xp(xp + (made as u16) * KILL_XP);
-        });
-    };
-
-    let squad = game.squads[side];
-    squad.do!(|id| acc.return_recruit(game.recruits.remove(id)));
-    *&mut game.squads[side] = vector[];
-
-    let fallen = &mut game.fallen[side];
-    while (!fallen.is_empty()) acc.add_fallen(fallen.pop_back());
+/// Send a side's survivors, with the experience they earned, home to its `Account`.
+fun send_home(game: &mut Game, acc: &mut Account, side: u64, xp: u16) {
+    let survivors = game.squad(side);
+    if (xp > 0) survivors.do_ref!(|id| game.recruits[*id].add_xp(xp));
+    survivors.do!(|id| acc.add_recruit(game.recruits.remove(id)));
 }
 
 /// Check the sender can act: their turn, in time, in a running game. Returns their side.
 fun begin_turn_action(game: &mut Game, acc: &Account, clock: &Clock, ctx: &mut TxContext): u64 {
     let side = game.side(acc, ctx);
-    assert!(!game.is_over(), EGameOver);
-    assert!(!game.deploying, EStillDeploying);
-    assert!(side == game.active_side(), ENotYourTurn);
-    assert!(clock.timestamp_ms() - game.turn_started_ms <= TURN_LIMIT_MS, ETurnExpired);
-    *&mut game.missed[side] = 0;
+    let active = game.active_side();
+    match (&mut game.state) {
+        State::Playing { started_ms, missed } => {
+            assert!(side == active, ENotYourTurn);
+            assert!(clock.timestamp_ms() - *started_ms <= TURN_LIMIT_MS, ETurnExpired);
+            *&mut missed[side] = 0;
+        },
+        State::Deploying { .. } => abort EStillDeploying,
+        State::Over(_) => abort EGameOver,
+    };
     side
 }
 
@@ -649,43 +623,33 @@ fun begin_unit_action(
     y: u16,
     ctx: &mut TxContext,
 ): ID {
-    let side = game.begin_turn_action(acc, clock, ctx);
+    game.begin_turn_action(acc, clock, ctx);
     let unit = game.map.unit(x, y);
     assert!(unit.is_some(), ENotYourUnit);
-    let recruit = unit.borrow().recruit_id();
-    assert!(game.squads[side].contains(&recruit), ENotYourUnit);
-    recruit
+    assert!(unit.borrow().owner() == object::id(acc), ENotYourUnit);
+    unit.borrow().recruit_id()
 }
 
-/// Take the fallen recruits out of their squads, keeping their dog tags, leaving
-/// their weapons where they fell, and crediting `attacker` for the other side's.
-fun bury_fallen(game: &mut Game, attacker: ID, records: &vector<Record>, ctx: &mut TxContext) {
-    let attacker_side = if (game.squads[0].contains(&attacker)) 0 else 1;
-    let tiles = history::list_kia_tiles(records);
+/// Take the fallen recruits out of the game, their gear going down with them and
+/// their dog tags sent to their `Account`s. A side with nobody left on the map
+/// loses; both at once, a draw.
+fun bury_fallen(game: &mut Game, records: &vector<Record>, ctx: &mut TxContext) {
+    let fallen = history::list_kia(records);
+    if (fallen.is_empty()) return;
 
-    history::list_kia(records).length().do!(|n| {
-        let id = history::list_kia(records)[n];
-        if (id.to_address() == @0) return; // skip empty addresses
+    fallen.do!(|id| {
+        // a unit the preset placed has no recruit behind it
+        if (id.to_address() == @0 || !game.recruits.contains(id)) return;
 
-        let side = if (game.squads[0].contains(&id)) 0 else 1;
-        let (found, i) = game.squads[side].index_of(&id);
-        if (!found) return; // a unit the preset placed, no recruit behind it
-
-        game.squads[side].swap_remove(i);
-        let (dog_tag, weapon) = game.recruits.remove(id).kill(ctx);
-        game.fallen[side].push_back(dog_tag);
-
-        let (x, y) = (tiles[n][0], tiles[n][1]);
-        weapon.do!(|weapon| game.dropped.push_back(Dropped { x, y, weapon }));
-
-        if (side != attacker_side) {
-            let kills = &mut game.kills[attacker_side];
-            if (kills.contains(&attacker)) {
-                let count = &mut kills[&attacker];
-                *count = *count + 1;
-            } else kills.insert(attacker, 1);
-        };
+        let recruit = game.recruits.remove(id);
+        let home = recruit.leader();
+        transfer::public_transfer(recruit.kill(ctx), home);
     });
+
+    let (first_left, second_left) = (!game.squad(0).is_empty(), !game.squad(1).is_empty());
+    if (!first_left && !second_left) game.state = State::Over(Ending::Draw)
+    else if (!first_left) game.state = State::Over(Ending::Won(game.players[1]))
+    else if (!second_left) game.state = State::Over(Ending::Won(game.players[0]));
 }
 
 // === Init ===
@@ -708,1467 +672,6 @@ fun init(ctx: &mut TxContext) {
     matchmaker::new(internal::permit<Ghosts>(), config, ctx).share();
 }
 
-// === Tests ===
-
+/// `init` for the tests: a module's own extensions cannot call it.
 #[test_only]
-use ghosts::{account::{Self, Registry}, items, recruit as recruit_module};
-#[test_only]
-use sui::{clock, random, test_scenario::{Self as ts, Scenario}};
-
-#[test_only]
-const ALICE: address = @0xA11CE;
-#[test_only]
-const BOB: address = @0xB0B;
-#[test_only]
-const CAROL: address = @0xCA401;
-
-/// Everything a game needs, held across the transactions of a test.
-#[test_only]
-public struct Fixture {
-    ts: Scenario,
-    registry: Registry,
-    mm: Matchmaker<Ghosts>,
-    rng: Random,
-    clock: Clock,
-    preset: Preset,
-    alice: Account,
-    bob: Account,
-    /// The armed recruit each player starts with.
-    alice_recruit: ID,
-    bob_recruit: ID,
-}
-
-/// Publish the game, open an `Account` for Alice and Bob, and play on Demo 1:
-/// one recruit a side keeps the tests short.
-#[test_only]
-fun setup(): Fixture {
-    setup_on!(|id| map::demo_1(id), vector[vector[0, 3], vector[6, 5]])
-}
-
-/// `setup` with the matches on another map: Demo 2 has two recruits a side.
-#[test_only]
-fun setup_on_demo_2(): Fixture {
-    let positions = vector[vector[8, 2], vector[7, 6], vector[1, 2], vector[1, 7]];
-    setup_on!(|id| map::demo_2(id), positions)
-}
-
-#[test_only]
-macro fun setup_on($map: |ID| -> Map, $positions: vector<vector<u8>>): Fixture {
-    let mut ts = ts::begin(@0);
-    init(ts.ctx());
-    account::init_for_testing(ts.ctx());
-    random::create_for_testing(ts.ctx());
-
-    ts.next_tx(ALICE);
-    let id = object::new(ts.ctx());
-    let preset = Preset {
-        map: $map(id.to_inner()),
-        name: "Test",
-        positions: $positions,
-        id,
-    };
-
-    let mut registry = ts.take_shared<Registry>();
-    registry.new_account(ts.ctx());
-    ts.next_tx(BOB);
-    registry.new_account(ts.ctx());
-    ts.next_tx(ALICE);
-
-    let mut alice = ts.take_shared_by_id<Account>(registry.account_of(ALICE));
-    let mut bob = ts.take_shared_by_id<Account>(registry.account_of(BOB));
-    let alice_recruit = hire(&mut alice, ts.ctx());
-    ts.next_tx(BOB);
-    let bob_recruit = hire(&mut bob, ts.ctx());
-    ts.next_tx(ALICE);
-    let mm = ts.take_shared<Matchmaker<Ghosts>>();
-    let rng = ts.take_shared<Random>();
-    let clock = clock::create_for_testing(ts.ctx());
-
-    Fixture {
-        ts,
-        registry,
-        mm,
-        rng,
-        clock,
-        preset,
-        alice,
-        bob,
-        alice_recruit,
-        bob_recruit,
-    }
-}
-
-#[test_only]
-fun finish(f: Fixture) {
-    let Fixture { ts, registry, mm, rng, clock, preset, alice, bob, .. } = f;
-    ts::return_shared(registry);
-    ts::return_shared(mm);
-    ts::return_shared(rng);
-    ts::return_shared(alice);
-    ts::return_shared(bob);
-    let Preset { id, map, .. } = preset;
-    map.destroy();
-    id.delete();
-    clock.destroy_for_testing();
-    ts.end();
-}
-
-/// Alice queues, Bob finds her, which starts the game, and Alice takes her seat.
-/// Alice goes first.
-#[test_only]
-fun start(f: &mut Fixture): Game {
-    f.match_up();
-    f.ts.next_tx(ALICE);
-    let game = f.ts.take_shared<Game>();
-    let seat = f.seat();
-    accept_seat(&mut f.alice, seat);
-    game
-}
-
-/// Alice queues and Bob finds her: the game is on, and Alice's seat on its way.
-#[test_only]
-fun match_up(f: &mut Fixture) {
-    f.ts.next_tx(ALICE);
-    find_game(&mut f.mm, &mut f.alice, &f.preset, &f.rng, &f.clock, f.ts.ctx());
-    f.ts.next_tx(BOB);
-    find_game(&mut f.mm, &mut f.bob, &f.preset, &f.rng, &f.clock, f.ts.ctx());
-}
-
-/// The seat last sent to Alice's `Account`.
-#[test_only]
-fun seat(f: &Fixture): Receiving<Seat> {
-    ts::most_recent_receiving_ticket<Seat>(&object::id(&f.alice))
-}
-
-/// A recruit armed like the ones in `demo_test`, in the `Account` of the sender.
-#[test_only]
-fun hire(acc: &mut Account, ctx: &mut TxContext): ID {
-    let mut recruit = recruit_module::new("Jane Doe", ctx);
-    recruit.add_armor(items::armor(2, ctx));
-    recruit.add_weapon(items::rifle(3, ctx));
-    let id = object::id(&recruit);
-    acc.add_recruit(recruit, ctx);
-    id
-}
-
-/// Both sides pick their recruit: Alice stands at (0, 3), Bob at (6, 5), Alice is next.
-#[test_only]
-fun deploy(f: &mut Fixture, game: &mut Game) {
-    f.ts.next_tx(ALICE);
-    deploy_squad(game, &mut f.alice, &f.clock, vector[f.alice_recruit], f.ts.ctx());
-
-    f.ts.next_tx(BOB);
-    deploy_squad(game, &mut f.bob, &f.clock, vector[f.bob_recruit], f.ts.ctx());
-
-    f.ts.next_tx(ALICE);
-}
-
-#[test]
-fun test_search_and_start() {
-    use std::unit_test::assert_eq;
-
-    let mut fixture = setup();
-    let f = &mut fixture;
-
-    // nobody is waiting: Alice's order is queued and her `Account` records it
-    find_game(&mut f.mm, &mut f.alice, &f.preset, &f.rng, &f.clock, f.ts.ctx());
-    assert!(f.mm.is_queued(object::id(&f.alice)));
-    assert!(f.alice.search_order().is_some());
-
-    // Alice cancels: the order leaves the queue and the `Account` is free again
-    cancel_search(&mut f.mm, &mut f.alice, &f.clock, f.ts.ctx());
-    assert!(!f.mm.is_queued(object::id(&f.alice)));
-    assert!(f.alice.is_idle());
-
-    // Alice queues again and Bob is paired with her right away: his call starts
-    // the game, and he is in it; Alice is still on her search
-    find_game(&mut f.mm, &mut f.alice, &f.preset, &f.rng, &f.clock, f.ts.ctx());
-    let order = f.alice.search_order();
-    f.ts.next_tx(BOB);
-    find_game(&mut f.mm, &mut f.bob, &f.preset, &f.rng, &f.clock, f.ts.ctx());
-    assert_eq!(f.mm.queue_length(), 0);
-    assert_eq!(f.alice.search_order(), order);
-    f.ts.next_tx(ALICE);
-    let game = f.ts.take_shared<Game>();
-    let id = object::id(&game);
-    assert_eq!(f.bob.playing(), option::some(id));
-
-    // the seat Bob's call sent puts Alice into the game, going first
-    let seat = f.seat();
-    accept_seat(&mut f.alice, seat);
-    assert_eq!(f.alice.playing(), option::some(id));
-    assert_eq!(game.players, vector[object::id(&f.alice), object::id(&f.bob)]);
-    assert_eq!(game.active_side(), 0);
-    assert_eq!(game.positions, vector[vector[vector[0, 3]], vector[vector[6, 5]]]);
-    assert!(game.deploying);
-    assert_eq!(game.deploy_until_ms, DEPLOY_LIMIT_MS);
-
-    ts::return_shared(game);
-    fixture.finish();
-}
-
-/// The one map: Black Rain, three recruits a side, on tiles a recruit can stand
-/// on, and nothing else frozen next to it.
-#[test]
-fun test_map_preset() {
-    use std::unit_test::assert_eq;
-
-    let mut ts = ts::begin(@0);
-    init(ts.ctx());
-    let frozen = ts.next_tx(ALICE).frozen();
-    assert_eq!(frozen.length(), 1);
-
-    let preset = ts.take_immutable_by_id<Preset>(frozen[0]);
-    assert_eq!(preset.map.id(), frozen[0]);
-    assert_eq!(preset.positions.length(), 6);
-    preset.positions.do_ref!(|position| {
-        let (x, y) = (position[0] as u16, position[1] as u16);
-        assert!(preset.map.is_tile_walkable(x, y));
-        assert!(!preset.map.tile_has_unit(x, y));
-    });
-
-    ts::return_immutable(preset);
-    ts.end();
-}
-
-#[test]
-fun test_anyone_cancels_after_timeout() {
-    let mut fixture = setup();
-    let f = &mut fixture;
-
-    find_game(&mut f.mm, &mut f.alice, &f.preset, &f.rng, &f.clock, f.ts.ctx());
-    f.clock.set_for_testing(SEARCH_TIMEOUT_MS + 1);
-    f.ts.next_tx(BOB);
-    cancel_search(&mut f.mm, &mut f.alice, &f.clock, f.ts.ctx());
-    assert!(!f.mm.is_queued(object::id(&f.alice)));
-    assert!(f.alice.is_idle());
-
-    fixture.finish();
-}
-
-#[test, expected_failure(abort_code = ESearchNotTimedOut)]
-fun test_cancel_foreign_search_before_timeout_fail() {
-    let mut fixture = setup();
-    let f = &mut fixture;
-
-    find_game(&mut f.mm, &mut f.alice, &f.preset, &f.rng, &f.clock, f.ts.ctx());
-    f.clock.set_for_testing(SEARCH_TIMEOUT_MS);
-    f.ts.next_tx(BOB);
-    cancel_search(&mut f.mm, &mut f.alice, &f.clock, f.ts.ctx());
-
-    abort
-}
-
-/// A search the queue answered ends with its seat: no leaving it otherwise.
-#[test, expected_failure(abort_code = ESeatWaiting)]
-fun test_cancel_answered_search_fail() {
-    let mut fixture = setup();
-    let f = &mut fixture;
-
-    f.match_up();
-    f.ts.next_tx(ALICE);
-    cancel_search(&mut f.mm, &mut f.alice, &f.clock, f.ts.ctx());
-
-    abort
-}
-
-/// Not by anyone else long after the search timed out either.
-#[test, expected_failure(abort_code = ESeatWaiting)]
-fun test_clear_answered_search_fail() {
-    let mut fixture = setup();
-    let f = &mut fixture;
-
-    f.match_up();
-    f.clock.set_for_testing(100 * SEARCH_TIMEOUT_MS);
-    f.ts.next_tx(CAROL);
-    cancel_search(&mut f.mm, &mut f.alice, &f.clock, f.ts.ctx());
-
-    abort
-}
-
-/// One seat at a time: with one waiting, there is no new search.
-#[test, expected_failure(abort_code = EAlreadySearching)]
-fun test_search_with_a_seat_waiting_fail() {
-    let mut fixture = setup();
-    let f = &mut fixture;
-
-    f.match_up();
-    f.ts.next_tx(ALICE);
-    find_game(&mut f.mm, &mut f.alice, &f.preset, &f.rng, &f.clock, f.ts.ctx());
-
-    abort
-}
-
-/// Anyone can accept the seat: here Bob, for an Alice who is away.
-#[test]
-fun test_anyone_accepts_the_seat() {
-    use std::unit_test::assert_eq;
-
-    let mut fixture = setup();
-    let f = &mut fixture;
-
-    f.match_up();
-    f.ts.next_tx(BOB);
-    let game = f.ts.take_shared<Game>();
-    let seat = f.seat();
-    accept_seat(&mut f.alice, seat);
-    assert_eq!(f.alice.playing(), option::some(object::id(&game)));
-
-    ts::return_shared(game);
-    fixture.finish();
-}
-
-/// Accepting comes before anything else: no squad from an `Account` still on its search.
-#[test, expected_failure(abort_code = ESeatNotAccepted)]
-fun test_deploy_before_accepting_fail() {
-    let mut fixture = setup();
-    let f = &mut fixture;
-
-    f.match_up();
-    f.ts.next_tx(ALICE);
-    let mut game = f.ts.take_shared<Game>();
-    deploy_squad(&mut game, &mut f.alice, &f.clock, vector[f.alice_recruit], f.ts.ctx());
-
-    abort
-}
-
-/// Nor walking out of a game not yet accepted: accept, then abandon.
-#[test, expected_failure(abort_code = ESeatNotAccepted)]
-fun test_abandon_before_accepting_fail() {
-    let mut fixture = setup();
-    let f = &mut fixture;
-
-    f.match_up();
-    f.ts.next_tx(ALICE);
-    let mut game = f.ts.take_shared<Game>();
-    abandon_game(&mut game, &f.alice, f.ts.ctx());
-
-    abort
-}
-
-/// Alice wants out once matched: she accepts her seat and walks away from the game.
-#[test]
-fun test_walk_away_after_accepting() {
-    use std::unit_test::assert_eq;
-
-    let mut fixture = setup();
-    let f = &mut fixture;
-
-    f.match_up();
-    f.ts.next_tx(ALICE);
-    let mut game = f.ts.take_shared<Game>();
-    let seat = f.seat();
-    accept_seat(&mut f.alice, seat);
-    abandon_game(&mut game, &f.alice, f.ts.ctx());
-    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
-    assert!(f.alice.is_idle() && f.bob.is_idle());
-    assert_eq!(f.alice.suspended_until(), SUSPENSION_MS);
-
-    fixture.finish();
-}
-
-/// The queue keeps a search as long as it takes: Bob finds Alice however long after.
-#[test]
-fun test_searches_never_expire_in_the_queue() {
-    use std::unit_test::assert_eq;
-
-    let mut fixture = setup();
-    let f = &mut fixture;
-    f.ts.next_tx(ALICE);
-    find_game(&mut f.mm, &mut f.alice, &f.preset, &f.rng, &f.clock, f.ts.ctx());
-    f.clock.set_for_testing(1000 * SEARCH_TIMEOUT_MS);
-    f.ts.next_tx(BOB);
-    find_game(&mut f.mm, &mut f.bob, &f.preset, &f.rng, &f.clock, f.ts.ctx());
-    assert_eq!(f.mm.queue_length(), 0);
-    assert!(f.bob.playing().is_some());
-
-    fixture.finish();
-}
-
-#[test, expected_failure(abort_code = EAlreadySearching)]
-fun test_find_game_twice_fail() {
-    let mut fixture = setup();
-    let f = &mut fixture;
-    find_game(&mut f.mm, &mut f.alice, &f.preset, &f.rng, &f.clock, f.ts.ctx());
-    find_game(&mut f.mm, &mut f.alice, &f.preset, &f.rng, &f.clock, f.ts.ctx());
-    abort
-}
-
-#[test, expected_failure(abort_code = EAlreadySearching)]
-fun test_find_game_while_playing_fail() {
-    let mut fixture = setup();
-    let f = &mut fixture;
-    let _game = f.start();
-    find_game(&mut f.mm, &mut f.alice, &f.preset, &f.rng, &f.clock, f.ts.ctx());
-    abort
-}
-
-#[test, expected_failure(abort_code = ENotSearching)]
-fun test_cancel_search_not_searching_fail() {
-    let mut fixture = setup();
-    let f = &mut fixture;
-    cancel_search(&mut f.mm, &mut f.alice, &f.clock, f.ts.ctx());
-    abort
-}
-
-#[test, expected_failure(abort_code = ENotSearching)]
-fun test_cancel_search_while_playing_fail() {
-    let mut fixture = setup();
-    let f = &mut fixture;
-    let _game = f.start();
-    // leaving a game is not a matter of cancelling a search
-    cancel_search(&mut f.mm, &mut f.alice, &f.clock, f.ts.ctx());
-    abort
-}
-
-#[test, expected_failure(abort_code = account::ENotOwner)]
-fun test_find_game_with_foreign_account_fail() {
-    let mut fixture = setup();
-    let f = &mut fixture;
-    // Alice tries to queue with Bob's rating
-    find_game(&mut f.mm, &mut f.bob, &f.preset, &f.rng, &f.clock, f.ts.ctx());
-    abort
-}
-
-/// A whole game on the Demo 1 map: both sides deploy, Bob closes in and they
-/// trade fire until one falls. The game is then over, both players leave for
-/// free, the fallen recruit's dog tag lands on the wall, and the game is gone.
-#[test]
-fun test_full_game() {
-    use std::unit_test::assert_eq;
-    use grid::direction::{up, left};
-
-    let mut fixture = setup();
-    let f = &mut fixture;
-    let mut game = f.start();
-    f.deploy(&mut game);
-    assert_eq!(game.turn(), 0);
-    assert!(!game.deploying);
-    assert_eq!(game.squads[0].length(), 1);
-    assert_eq!(game.squads[1].length(), 1);
-
-    // Alice waits; Bob moves into the firing lane and shoots
-    next_turn(&mut game, &f.alice, &f.clock, f.ts.ctx());
-    f.ts.next_tx(BOB);
-    let path = vector[6, 5, up!(), up!(), left!(), left!(), left!(), left!(), up!()];
-    move_unit(&mut game, &f.bob, &f.clock, path, f.ts.ctx());
-    perform_attack(&mut game, &f.bob, &f.rng, &f.clock, 3, 1, 0, 3, f.ts.ctx());
-
-    let mut turns = 0u64;
-    while (!game.is_over()) {
-        assert!(turns < 200);
-        turns = turns + 1;
-
-        if (game.active_side() == 1) {
-            next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());
-            f.ts.next_tx(ALICE);
-            if (game.map.unit(0, 3).borrow().ammo() == 0) {
-                perform_reload(&mut game, &f.alice, &f.clock, 0, 3, f.ts.ctx());
-            };
-            perform_attack(&mut game, &f.alice, &f.rng, &f.clock, 0, 3, 3, 1, f.ts.ctx());
-        } else {
-            next_turn(&mut game, &f.alice, &f.clock, f.ts.ctx());
-            f.ts.next_tx(BOB);
-            if (game.map.unit(3, 1).borrow().ammo() == 0) {
-                perform_reload(&mut game, &f.bob, &f.clock, 3, 1, f.ts.ctx());
-            };
-            perform_attack(&mut game, &f.bob, &f.rng, &f.clock, 3, 1, 0, 3, f.ts.ctx());
-        };
-    };
-
-    // exactly one side fell, with a dog tag to show for it
-    let alice_won = game.squads[0].length() == 1;
-    let (winner, loser) = if (alice_won) (0, 1) else (1, 0);
-    assert_eq!(game.squads[loser].length(), 0);
-    assert_eq!(game.fallen[loser].length(), 1);
-    assert_eq!(game.fallen[winner].length(), 0);
-    assert!(game.abandoned_by.is_none());
-
-    assert_eq!(game.winner(), option::some(game.players[winner]));
-
-    // a stranger can wrap it up: both are `Idle`, and nobody is suspended
-    f.ts.next_tx(CAROL);
-    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
-    assert!(f.alice.is_idle() && f.bob.is_idle());
-    assert_eq!(f.alice.suspended_until(), 0);
-    assert_eq!(f.bob.suspended_until(), 0);
-
-    // the survivor is home, and the fallen recruit's dog tag is on the wall
-    assert_eq!(f.alice.num_recruits(), if (alice_won) 1 else 0);
-    assert_eq!(f.bob.num_recruits(), if (alice_won) 0 else 1);
-    assert_eq!(f.alice.num_dog_tags(), if (alice_won) 0 else 1);
-    assert_eq!(f.bob.num_dog_tags(), if (alice_won) 1 else 0);
-
-    // the score has it too
-    let (alice_wins, alice_losses, _) = f.alice.score();
-    assert_eq!(alice_wins, if (alice_won) 1 else 0);
-    assert_eq!(alice_losses, if (alice_won) 0 else 1);
-
-    // and the game is gone
-    f.ts.next_tx(CAROL);
-    assert!(!ts::has_most_recent_shared<Game>());
-    fixture.finish();
-}
-
-#[test]
-fun test_next_turn_after_time_limit() {
-    use std::unit_test::assert_eq;
-
-    let mut fixture = setup();
-    let f = &mut fixture;
-    let mut game = f.start();
-    f.deploy(&mut game);
-
-    // Alice's turn runs out: Bob moves the game on, and the clock starts anew
-    f.clock.set_for_testing(TURN_LIMIT_MS + 1);
-    f.ts.next_tx(BOB);
-    next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());
-    assert_eq!(game.turn(), 1);
-    assert_eq!(game.turn_started_ms, TURN_LIMIT_MS + 1);
-
-    // Bob's own turn can be ended by Bob at any time
-    next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());
-    assert_eq!(game.turn(), 2);
-
-    ts::return_shared(game);
-    fixture.finish();
-}
-
-#[test, expected_failure(abort_code = ETurnNotExpired)]
-fun test_next_turn_of_running_turn_fail() {
-    let mut fixture = setup();
-    let f = &mut fixture;
-    let mut game = f.start();
-    f.deploy(&mut game);
-
-    f.clock.set_for_testing(TURN_LIMIT_MS);
-    f.ts.next_tx(BOB);
-    next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());
-
-    abort
-}
-
-#[test]
-fun test_act_at_time_limit() {
-    use grid::direction::down;
-
-    let mut fixture = setup();
-    let f = &mut fixture;
-    let mut game = f.start();
-    f.deploy(&mut game);
-
-    f.clock.set_for_testing(TURN_LIMIT_MS);
-    move_unit(&mut game, &f.alice, &f.clock, vector[0, 3, down!()], f.ts.ctx());
-
-    ts::return_shared(game);
-    fixture.finish();
-}
-
-#[test, expected_failure(abort_code = ETurnExpired)]
-fun test_order_after_time_limit_fail() {
-    let mut fixture = setup();
-    let f = &mut fixture;
-    let mut game = f.start();
-    f.deploy(&mut game);
-
-    f.clock.set_for_testing(TURN_LIMIT_MS + 1);
-    perform_reload(&mut game, &f.alice, &f.clock, 0, 3, f.ts.ctx());
-
-    abort
-}
-
-/// The clock of the first turn starts when the last side has deployed, and the
-/// sides can do so in any order.
-#[test]
-fun test_deploy_in_any_order() {
-    use std::unit_test::assert_eq;
-
-    let mut fixture = setup();
-    let f = &mut fixture;
-    let mut game = f.start();
-
-    f.ts.next_tx(BOB);
-    deploy_squad(&mut game, &mut f.bob, &f.clock, vector[f.bob_recruit], f.ts.ctx());
-    assert!(game.deploying);
-
-    f.clock.set_for_testing(DEPLOY_LIMIT_MS);
-    f.ts.next_tx(ALICE);
-    deploy_squad(&mut game, &mut f.alice, &f.clock, vector[f.alice_recruit], f.ts.ctx());
-
-    assert!(!game.deploying);
-    assert_eq!(game.turn_started_ms, DEPLOY_LIMIT_MS);
-    assert_eq!(game.active_side(), 0);
-    assert_eq!(f.alice.num_recruits(), 0);
-
-    ts::return_shared(game);
-    fixture.finish();
-}
-
-/// The match preset's squad: three recruits picked out of four.
-#[test]
-fun test_pick_squad_on_match_preset() {
-    use std::unit_test::assert_eq;
-
-    let mut fixture = setup_on!(|id| map::black_rain(id), map::black_rain_positions());
-    let f = &mut fixture;
-    let mut game = f.start();
-
-    let picked = vector[
-        f.alice_recruit,
-        hire(&mut f.alice, f.ts.ctx()),
-        hire(&mut f.alice, f.ts.ctx()),
-    ];
-    let benched = hire(&mut f.alice, f.ts.ctx());
-    deploy_squad(&mut game, &mut f.alice, &f.clock, picked, f.ts.ctx());
-
-    assert_eq!(game.squads[0], picked);
-    assert_eq!(game.positions[0].length(), 0);
-    assert_eq!(f.alice.num_recruits(), 1);
-    assert!(game.map.unit(11, 10).is_some() && game.map.unit(12, 8).is_some());
-    assert!(f.alice.recruits_contain_for_testing(benched));
-
-    ts::return_shared(game);
-    fixture.finish();
-}
-
-#[test, expected_failure(abort_code = ENoPositions)]
-fun test_pick_more_than_map_allows_fail() {
-    let mut fixture = setup();
-    let f = &mut fixture;
-    let mut game = f.start();
-
-    let squad = vector[f.alice_recruit, hire(&mut f.alice, f.ts.ctx())];
-    deploy_squad(&mut game, &mut f.alice, &f.clock, squad, f.ts.ctx());
-
-    abort
-}
-
-#[test, expected_failure(abort_code = ENoPositions)]
-fun test_pick_nobody_fail() {
-    let mut fixture = setup();
-    let f = &mut fixture;
-    let mut game = f.start();
-
-    deploy_squad(&mut game, &mut f.alice, &f.clock, vector[], f.ts.ctx());
-
-    abort
-}
-
-#[test, expected_failure(abort_code = EAlreadyDeployed)]
-fun test_deploy_twice_fail() {
-    let mut fixture = setup_on_demo_2();
-    let f = &mut fixture;
-    let mut game = f.start();
-
-    let second = hire(&mut f.alice, f.ts.ctx());
-    deploy_squad(&mut game, &mut f.alice, &f.clock, vector[f.alice_recruit], f.ts.ctx());
-    deploy_squad(&mut game, &mut f.alice, &f.clock, vector[second], f.ts.ctx());
-
-    abort
-}
-
-#[test, expected_failure(abort_code = EDeploymentOver)]
-fun test_deploy_after_time_limit_fail() {
-    let mut fixture = setup();
-    let f = &mut fixture;
-    let mut game = f.start();
-
-    f.clock.set_for_testing(DEPLOY_LIMIT_MS + 1);
-    deploy_squad(&mut game, &mut f.alice, &f.clock, vector[f.alice_recruit], f.ts.ctx());
-
-    abort
-}
-
-#[test, expected_failure(abort_code = EDeploymentOver)]
-fun test_deploy_after_both_deployed_fail() {
-    let mut fixture = setup();
-    let f = &mut fixture;
-    let mut game = f.start();
-    f.deploy(&mut game);
-
-    let id = hire(&mut f.alice, f.ts.ctx());
-    deploy_squad(&mut game, &mut f.alice, &f.clock, vector[id], f.ts.ctx());
-
-    abort
-}
-
-#[test, expected_failure(abort_code = EStillDeploying)]
-fun test_order_during_deployment_fail() {
-    let mut fixture = setup();
-    let f = &mut fixture;
-    let mut game = f.start();
-
-    deploy_squad(&mut game, &mut f.alice, &f.clock, vector[f.alice_recruit], f.ts.ctx());
-    perform_reload(&mut game, &f.alice, &f.clock, 0, 3, f.ts.ctx());
-
-    abort
-}
-
-#[test, expected_failure(abort_code = EStillDeploying)]
-fun test_next_turn_during_deployment_fail() {
-    let mut fixture = setup();
-    let f = &mut fixture;
-    let mut game = f.start();
-
-    f.clock.set_for_testing(DEPLOY_LIMIT_MS);
-    next_turn(&mut game, &f.alice, &f.clock, f.ts.ctx());
-
-    abort
-}
-
-#[test, expected_failure(abort_code = ENotYourTurn)]
-fun test_order_out_of_turn_fail() {
-    let mut fixture = setup();
-    let f = &mut fixture;
-    let mut game = f.start();
-    f.deploy(&mut game);
-
-    f.ts.next_tx(BOB);
-    perform_reload(&mut game, &f.bob, &f.clock, 6, 5, f.ts.ctx());
-
-    abort
-}
-
-#[test, expected_failure(abort_code = ENotYourUnit)]
-fun test_order_opponents_unit_fail() {
-    let mut fixture = setup();
-    let f = &mut fixture;
-    let mut game = f.start();
-    f.deploy(&mut game);
-
-    perform_reload(&mut game, &f.alice, &f.clock, 6, 5, f.ts.ctx());
-
-    abort
-}
-
-#[test, expected_failure(abort_code = ENotYourUnit)]
-fun test_order_empty_tile_fail() {
-    let mut fixture = setup();
-    let f = &mut fixture;
-    let mut game = f.start();
-    f.deploy(&mut game);
-
-    perform_reload(&mut game, &f.alice, &f.clock, 2, 2, f.ts.ctx());
-
-    abort
-}
-
-#[test, expected_failure(abort_code = account::ENotOwner)]
-fun test_act_with_foreign_account_fail() {
-    let mut fixture = setup();
-    let f = &mut fixture;
-    let mut game = f.start();
-
-    // Alice signs, Bob's `Account` is passed
-    next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());
-
-    abort
-}
-
-#[test, expected_failure(abort_code = ENotPlayer)]
-fun test_act_as_stranger_fail() {
-    let mut fixture = setup();
-    let f = &mut fixture;
-    let mut game = f.start();
-
-    f.ts.next_tx(CAROL);
-    f.registry.new_account(f.ts.ctx());
-    f.ts.next_tx(CAROL);
-    let carol = f.ts.take_shared_by_id<Account>(f.registry.account_of(CAROL));
-    next_turn(&mut game, &carol, &f.clock, f.ts.ctx());
-
-    abort
-}
-
-/// Whoever picks nobody in time has lost, and is suspended for it.
-#[test]
-fun test_no_show_loses() {
-    use std::unit_test::assert_eq;
-
-    let mut fixture = setup();
-    let f = &mut fixture;
-    let mut game = f.start();
-
-    // Alice never deploys; Bob does, and moves the game on when the time is up
-    f.ts.next_tx(BOB);
-    deploy_squad(&mut game, &mut f.bob, &f.clock, vector[f.bob_recruit], f.ts.ctx());
-    assert!(!game.is_over());
-
-    f.clock.set_for_testing(DEPLOY_LIMIT_MS + 1);
-    next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());
-    assert!(game.is_over());
-    assert_eq!(game.winner(), option::some(game.players[1]));
-
-    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
-    assert!(f.alice.is_idle() && f.bob.is_idle());
-    assert_eq!(f.alice.suspended_until(), DEPLOY_LIMIT_MS + 1 + SUSPENSION_MS);
-    assert_eq!(f.bob.suspended_until(), 0);
-    assert_eq!(f.alice.num_recruits(), 1);
-    assert_eq!(f.bob.num_recruits(), 1);
-
-    fixture.finish();
-}
-
-/// Nobody picks anyone: a draw, both are free of the game, and both are suspended.
-#[test]
-fun test_nobody_shows() {
-    use std::unit_test::assert_eq;
-
-    let mut fixture = setup();
-    let f = &mut fixture;
-    let mut game = f.start();
-
-    f.clock.set_for_testing(DEPLOY_LIMIT_MS + 1);
-    next_turn(&mut game, &f.alice, &f.clock, f.ts.ctx());
-    assert!(game.is_over());
-    assert!(game.winner().is_none());
-
-    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
-    assert!(f.alice.is_idle() && f.bob.is_idle());
-    assert_eq!(f.alice.suspended_until(), DEPLOY_LIMIT_MS + 1 + SUSPENSION_MS);
-    assert_eq!(f.bob.suspended_until(), DEPLOY_LIMIT_MS + 1 + SUSPENSION_MS);
-
-    fixture.finish();
-}
-
-/// Abandoning while the other side is still picking is not their fault.
-#[test]
-fun test_abandon_during_deployment() {
-    use std::unit_test::assert_eq;
-
-    let mut fixture = setup();
-    let f = &mut fixture;
-    let mut game = f.start();
-
-    abandon_game(&mut game, &f.alice, f.ts.ctx());
-    assert_eq!(game.winner(), option::some(object::id(&f.bob)));
-    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
-
-    assert_eq!(f.alice.suspended_until(), SUSPENSION_MS);
-    assert_eq!(f.bob.suspended_until(), 0);
-    assert!(f.alice.is_idle() && f.bob.is_idle());
-
-    fixture.finish();
-}
-
-/// Missing turns in a row abandons the game, whoever is keeping count.
-#[test]
-fun test_missed_turns_abandon_the_game() {
-    use std::unit_test::assert_eq;
-
-    let mut fixture = setup();
-    let f = &mut fixture;
-    let mut game = f.start();
-    f.deploy(&mut game);
-
-    // Alice has gone quiet: Bob moves past her turn and ends his own, three times
-    let mut now = 0u64;
-    MAX_MISSED_TURNS.do!(|_| {
-        now = now + TURN_LIMIT_MS + 1;
-        f.clock.set_for_testing(now);
-        f.ts.next_tx(BOB);
-        next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());
-        if (!game.is_over()) next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());
-    });
-
-    assert!(game.is_over());
-    assert_eq!(game.abandoned_by, option::some(object::id(&f.alice)));
-    assert_eq!(game.winner(), option::some(object::id(&f.bob)));
-
-    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
-    assert_eq!(f.alice.suspended_until(), now + SUSPENSION_MS);
-    assert_eq!(f.bob.suspended_until(), 0);
-    assert_eq!(f.alice.num_recruits(), 1);
-    assert_eq!(f.bob.num_recruits(), 1);
-
-    fixture.finish();
-}
-
-/// Coming back clears the count: only turns missed in a row add up.
-#[test]
-fun test_acting_resets_missed_turns() {
-    use std::unit_test::assert_eq;
-    use grid::direction::{down, up};
-
-    let mut fixture = setup();
-    let f = &mut fixture;
-    let mut game = f.start();
-    f.deploy(&mut game);
-
-    // Alice misses one, and is back for the next
-    let mut now = TURN_LIMIT_MS + 1;
-    f.clock.set_for_testing(now);
-    f.ts.next_tx(BOB);
-    next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());
-    assert_eq!(game.missed[0], 1);
-    next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());
-
-    f.ts.next_tx(ALICE);
-    move_unit(&mut game, &f.alice, &f.clock, vector[0, 3, down!()], f.ts.ctx());
-    assert_eq!(game.missed[0], 0);
-    next_turn(&mut game, &f.alice, &f.clock, f.ts.ctx());
-
-    // ending her own turn late counts as being there too
-    f.ts.next_tx(BOB);
-    next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());
-    now = now + TURN_LIMIT_MS + 1;
-    f.clock.set_for_testing(now);
-    f.ts.next_tx(ALICE);
-    next_turn(&mut game, &f.alice, &f.clock, f.ts.ctx());
-    assert_eq!(game.missed[0], 0);
-
-    f.ts.next_tx(BOB);
-    move_unit(&mut game, &f.bob, &f.clock, vector[6, 5, up!()], f.ts.ctx());
-
-    ts::return_shared(game);
-    fixture.finish();
-}
-
-/// A game going nowhere can't hold anyone hostage: a draw at the turn limit,
-/// without blame, and everyone goes home.
-#[test]
-fun test_stalemate_ends_in_a_draw() {
-    use std::unit_test::assert_eq;
-
-    let mut fixture = setup();
-    let f = &mut fixture;
-    let mut game = f.start();
-    f.deploy(&mut game);
-
-    while (!game.is_over()) {
-        f.ts.next_tx(if (game.active_side() == 0) ALICE else BOB);
-        let acc = if (game.active_side() == 0) &f.alice else &f.bob;
-        next_turn(&mut game, acc, &f.clock, f.ts.ctx());
-    };
-
-    assert_eq!(game.turn(), MAX_TURNS);
-    assert!(game.winner().is_none());
-
-    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
-    assert!(f.alice.is_idle() && f.bob.is_idle());
-    assert_eq!(f.alice.suspended_until(), 0);
-    assert_eq!(f.bob.suspended_until(), 0);
-    assert_eq!(f.alice.num_recruits(), 1);
-    assert_eq!(f.bob.num_recruits(), 1);
-
-    fixture.finish();
-}
-
-/// No wrapping up with a seat not yet accepted.
-#[test, expected_failure(abort_code = ESeatNotAccepted)]
-fun test_complete_with_a_seat_waiting_fail() {
-    let mut fixture = setup();
-    let f = &mut fixture;
-    f.match_up();
-    f.ts.next_tx(BOB);
-    let mut game = f.ts.take_shared<Game>();
-    f.clock.set_for_testing(DEPLOY_LIMIT_MS + 1);
-    next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());
-    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
-
-    abort
-}
-
-/// Alice never shows: Bob accepts her seat to wrap up, and she is back to `Idle`,
-/// suspended for not deploying.
-#[test]
-fun test_no_show_on_an_untaken_seat() {
-    use std::unit_test::assert_eq;
-
-    let mut fixture = setup();
-    let f = &mut fixture;
-    f.match_up();
-    f.ts.next_tx(BOB);
-    let mut game = f.ts.take_shared<Game>();
-    deploy_squad(&mut game, &mut f.bob, &f.clock, vector[f.bob_recruit], f.ts.ctx());
-
-    f.clock.set_for_testing(DEPLOY_LIMIT_MS + 1);
-    next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());
-    assert_eq!(game.winner(), option::some(game.players[1]));
-
-    let seat = f.seat();
-    accept_seat(&mut f.alice, seat);
-    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
-    assert!(f.alice.is_idle() && f.bob.is_idle());
-    assert_eq!(f.alice.suspended_until(), DEPLOY_LIMIT_MS + 1 + SUSPENSION_MS);
-
-    fixture.finish();
-}
-
-/// Nobody gets matched against a player with nobody to send.
-#[test, expected_failure(abort_code = ENoSquad)]
-fun test_search_without_recruits_fail() {
-    let mut fixture = setup();
-    let f = &mut fixture;
-
-    f.ts.next_tx(CAROL);
-    f.registry.new_account(f.ts.ctx());
-    f.ts.next_tx(CAROL);
-    let mut carol = f.ts.take_shared_by_id<Account>(f.registry.account_of(CAROL));
-    find_game(&mut f.mm, &mut carol, &f.preset, &f.rng, &f.clock, f.ts.ctx());
-
-    abort
-}
-
-#[test, expected_failure(abort_code = EGameOver)]
-fun test_next_turn_after_game_over_fail() {
-    let mut fixture = setup();
-    let f = &mut fixture;
-    let mut game = f.start();
-
-    f.clock.set_for_testing(DEPLOY_LIMIT_MS + 1);
-    next_turn(&mut game, &f.alice, &f.clock, f.ts.ctx());
-    next_turn(&mut game, &f.alice, &f.clock, f.ts.ctx());
-
-    abort
-}
-
-/// Abandoning ends the game for both: the recruits go home, the other side wins,
-/// and only the one who abandoned is suspended, for `SUSPENSION_MS` exactly.
-#[test]
-fun test_abandon() {
-    use std::unit_test::assert_eq;
-
-    let mut fixture = setup();
-    let f = &mut fixture;
-    let mut game = f.start();
-    f.deploy(&mut game);
-
-    f.clock.set_for_testing(1000);
-    abandon_game(&mut game, &f.alice, f.ts.ctx());
-    assert_eq!(game.abandoned_by, option::some(object::id(&f.alice)));
-    assert!(game.is_over());
-
-    assert_eq!(game.winner(), option::some(object::id(&f.bob)));
-
-    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
-    assert!(f.alice.is_idle() && f.bob.is_idle());
-    assert_eq!(f.alice.suspended_until(), 1000 + SUSPENSION_MS);
-    assert_eq!(f.alice.num_recruits(), 1);
-    assert_eq!(f.bob.num_recruits(), 1);
-    assert_eq!(f.bob.suspended_until(), 0);
-
-    // the suspension is over at the hour
-    f.clock.set_for_testing(1000 + SUSPENSION_MS);
-    find_game(&mut f.mm, &mut f.alice, &f.preset, &f.rng, &f.clock, f.ts.ctx());
-    assert!(f.alice.search_order().is_some());
-
-    fixture.finish();
-}
-
-/// A side with more than one recruit is only out when the last one falls, and
-/// the winner goes home with whoever is left.
-#[test]
-fun test_every_recruit_must_fall() {
-    use std::unit_test::assert_eq;
-
-    let mut fixture = setup_on_demo_2();
-    let f = &mut fixture;
-    let mut game = f.start();
-
-    let second = hire(&mut f.alice, f.ts.ctx());
-    let squad = vector[f.alice_recruit, second];
-    deploy_squad(&mut game, &mut f.alice, &f.clock, squad, f.ts.ctx());
-
-    f.ts.next_tx(BOB);
-    let (third, fourth) = (f.bob_recruit, hire(&mut f.bob, f.ts.ctx()));
-    deploy_squad(&mut game, &mut f.bob, &f.clock, vector[third, fourth], f.ts.ctx());
-    assert!(!game.is_over());
-
-    // Bob loses one: still in it
-    game.bury_fallen(f.bob_recruit, &vector[history::new_kia(third, 0, 0)], f.ts.ctx());
-    assert_eq!(game.squads[1], vector[fourth]);
-    assert_eq!(game.fallen[1].length(), 1);
-    assert!(!game.is_over());
-
-    // and the other: out
-    game.bury_fallen(f.bob_recruit, &vector[history::new_kia(fourth, 0, 0)], f.ts.ctx());
-    assert!(game.is_over());
-    assert_eq!(game.winner(), option::some(object::id(&f.alice)));
-
-    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
-    assert_eq!(f.alice.num_recruits(), 2);
-    assert_eq!(f.bob.num_recruits(), 0);
-    assert_eq!(f.bob.num_dog_tags(), 2);
-    assert_eq!(f.alice.num_dog_tags(), 0);
-
-    fixture.finish();
-}
-
-/// Both sides gone at once is a draw.
-#[test]
-fun test_draw() {
-    let mut fixture = setup();
-    let f = &mut fixture;
-    let mut game = f.start();
-    f.deploy(&mut game);
-
-    let (a, b) = (game.squads[0][0], game.squads[1][0]);
-    game.bury_fallen(
-        f.bob_recruit,
-        &vector[history::new_kia(a, 0, 0), history::new_kia(b, 0, 0)],
-        f.ts.ctx(),
-    );
-    assert!(game.is_over());
-    assert!(game.winner().is_none());
-
-    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
-    assert!(f.alice.is_idle() && f.bob.is_idle());
-
-    fixture.finish();
-}
-
-/// Every finished game goes on both scores, whatever ended it.
-#[test]
-fun test_scores() {
-    use std::unit_test::assert_eq;
-
-    let mut fixture = setup();
-    let f = &mut fixture;
-
-    // Alice abandons: a win for Bob
-    let mut game = f.start();
-    abandon_game(&mut game, &f.alice, f.ts.ctx());
-    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
-    assert_eq!(f.alice.games_played(), 1);
-    let (wins, losses, draws) = f.alice.score();
-    assert_eq!(vector[wins, losses, draws], vector[0, 1, 0]);
-    let (wins, losses, draws) = f.bob.score();
-    assert_eq!(vector[wins, losses, draws], vector[1, 0, 0]);
-
-    // nobody shows: that isn't a game, past Alice's suspension
-    let rating = f.alice.rating().rating();
-    f.clock.set_for_testing(SUSPENSION_MS);
-    let mut game = f.start();
-    f.clock.set_for_testing(SUSPENSION_MS + DEPLOY_LIMIT_MS + 1);
-    next_turn(&mut game, &f.alice, &f.clock, f.ts.ctx());
-    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
-    assert_eq!(f.alice.games_played(), 1);
-    assert_eq!(f.bob.games_played(), 1);
-    assert_eq!(f.alice.rating().rating(), rating);
-
-    fixture.finish();
-}
-
-/// Bob's recruit falls at the hands of Alice's, on the tile it stands on.
-#[test_only]
-fun alice_kills_bob(f: &mut Fixture, game: &mut Game) {
-    let records = vector[history::new_kia(f.bob_recruit, 6, 5)];
-    game.bury_fallen(f.alice_recruit, &records, f.ts.ctx());
-}
-
-/// A fight to the end: the winner is paid in full, the loser for showing up, each
-/// kill on top, and the survivor's experience makes them a Squaddie.
-#[test]
-fun test_a_finished_fight_pays() {
-    use std::unit_test::assert_eq;
-
-    let mut fixture = setup();
-    let f = &mut fixture;
-    let mut game = f.start();
-    f.deploy(&mut game);
-    let start = f.alice.credits();
-    let (rating_alice, rating_bob) = (f.alice.rating().rating(), f.bob.rating().rating());
-
-    f.alice_kills_bob(&mut game);
-    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
-
-    assert_eq!(f.alice.credits(), start + WIN_CREDITS + KILL_CREDITS);
-    assert_eq!(f.bob.credits(), start + LOSS_CREDITS);
-
-    let survivor = f.alice.recruit_for_testing(f.alice_recruit);
-    assert_eq!(survivor.xp(), SURVIVAL_XP + WIN_XP + KILL_XP);
-    assert!(survivor.rank().is_squaddie());
-
-    assert!(f.alice.rating().rating() > rating_alice);
-    assert!(f.bob.rating().rating() < rating_bob);
-    fixture.finish();
-}
-
-/// Both sides gone at once: a draw, paid as one, with no winner's experience and
-/// nobody left to earn any.
-#[test]
-fun test_a_draw_pays() {
-    use std::unit_test::assert_eq;
-
-    let mut fixture = setup();
-    let f = &mut fixture;
-    let mut game = f.start();
-    f.deploy(&mut game);
-    let start = f.alice.credits();
-
-    f.alice_kills_bob(&mut game);
-    let records = vector[history::new_kia(f.alice_recruit, 0, 3)];
-    game.bury_fallen(f.alice_recruit, &records, f.ts.ctx()); // no credit for your own
-    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
-
-    assert_eq!(f.alice.credits(), start + DRAW_CREDITS + KILL_CREDITS);
-    assert_eq!(f.bob.credits(), start + DRAW_CREDITS);
-    fixture.finish();
-}
-
-/// Walking out costs rating and earns nothing. The survivors still go home. The one
-/// left behind is paid a little, once the game has got somewhere.
-#[test]
-fun test_a_walkout_costs_rating_and_pays_little() {
-    use std::unit_test::assert_eq;
-
-    let mut fixture = setup();
-    let f = &mut fixture;
-    let mut game = f.start();
-    f.deploy(&mut game);
-    let start = f.alice.credits();
-    let rating = f.alice.rating().rating();
-
-    next_turn(&mut game, &f.alice, &f.clock, f.ts.ctx());
-    f.ts.next_tx(BOB);
-    next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());
-    f.ts.next_tx(ALICE);
-    abandon_game(&mut game, &f.alice, f.ts.ctx());
-    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
-
-    assert_eq!(f.alice.credits(), start);
-    assert!(f.alice.rating().rating() < rating);
-    assert_eq!(f.alice.recruit_for_testing(f.alice_recruit).xp(), 0);
-
-    assert_eq!(f.bob.credits(), start + WALKOVER_CREDITS);
-    assert_eq!(f.bob.recruit_for_testing(f.bob_recruit).xp(), SURVIVAL_XP);
-    fixture.finish();
-}
-
-/// Two accounts have nothing to farm by walking out on each other right away.
-#[test]
-fun test_an_early_walkout_pays_nobody() {
-    use std::unit_test::assert_eq;
-
-    let mut fixture = setup();
-    let f = &mut fixture;
-    let mut game = f.start();
-    f.deploy(&mut game);
-    let start = f.alice.credits();
-
-    abandon_game(&mut game, &f.alice, f.ts.ctx());
-    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
-
-    assert_eq!(f.alice.credits(), start);
-    assert_eq!(f.bob.credits(), start);
-    assert_eq!(f.bob.recruit_for_testing(f.bob_recruit).xp(), 0);
-    fixture.finish();
-}
-
-/// Not deploying pays nobody either, and costs the one who didn't their rating.
-#[test]
-fun test_a_no_show_pays_nobody() {
-    use std::unit_test::assert_eq;
-
-    let mut fixture = setup();
-    let f = &mut fixture;
-    let mut game = f.start();
-    deploy_squad(&mut game, &mut f.alice, &f.clock, vector[f.alice_recruit], f.ts.ctx());
-    let start = f.bob.credits();
-    let rating = f.bob.rating().rating();
-
-    f.clock.set_for_testing(DEPLOY_LIMIT_MS + 1);
-    next_turn(&mut game, &f.alice, &f.clock, f.ts.ctx());
-    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
-
-    assert_eq!(f.alice.credits(), start);
-    assert_eq!(f.bob.credits(), start);
-    assert!(f.bob.rating().rating() < rating);
-    fixture.finish();
-}
-
-/// The weapon a recruit stands to leave behind.
-#[test_only]
-fun weapon_of(acc: &Account, recruit: ID): ID {
-    object::id(acc.recruit_for_testing(recruit).weapon().borrow())
-}
-
-/// A game on Demo 2 with Alice's one recruit at (7, 6) against two of Bob's, so the
-/// fight goes on when one of his falls, on Alice's turn.
-#[test_only]
-fun fight_two_of_bob(f: &mut Fixture): Game {
-    f.ts.next_tx(BOB);
-    let second = hire(&mut f.bob, f.ts.ctx());
-    let mut game = f.start();
-
-    deploy_squad(&mut game, &mut f.alice, &f.clock, vector[f.alice_recruit], f.ts.ctx());
-    f.ts.next_tx(BOB);
-    let squad = vector[f.bob_recruit, second];
-    deploy_squad(&mut game, &mut f.bob, &f.clock, squad, f.ts.ctx());
-    f.ts.next_tx(ALICE);
-    game
-}
-
-/// Bob's first recruit falls on the tile Alice's unit stands on.
-#[test_only]
-fun bob_falls_on_alice(f: &mut Fixture, game: &mut Game) {
-    let records = vector[history::new_kia(f.bob_recruit, 7, 6)];
-    game.bury_fallen(f.alice_recruit, &records, f.ts.ctx());
-}
-
-/// A fallen recruit's weapon stays where they fell: a unit standing there can take
-/// it up, loaded, for an action, and carries it home, whatever their rank.
-#[test]
-fun test_pick_up_a_weapon_from_the_fallen() {
-    use std::unit_test::assert_eq;
-
-    let mut fixture = setup_on_demo_2();
-    let f = &mut fixture;
-    let weapon = weapon_of(&f.bob, f.bob_recruit);
-    // Alice's recruit goes on the standard issue rifle
-    f.alice.unequip_weapon(f.alice_recruit, f.ts.ctx());
-    let mut game = f.fight_two_of_bob();
-
-    f.bob_falls_on_alice(&mut game);
-    assert_eq!(game.dropped.length(), 1);
-
-    let crit = game.map.unit(7, 6).borrow().stats().crit_chance();
-    let ap = game.map.unit(7, 6).borrow().ap();
-    pick_up_weapon(&mut game, &f.alice, &f.clock, 7, 6, f.ts.ctx());
-
-    let unit = game.map.unit(7, 6).borrow();
-    assert!(unit.stats().crit_chance() > crit);
-    assert_eq!(unit.ammo(), unit.stats().ammo() as u16);
-    assert_eq!(unit.ap(), ap - 1);
-    // the standard issue rifle isn't a thing to leave behind
-    assert_eq!(game.dropped.length(), 0);
-
-    abandon_game(&mut game, &f.alice, f.ts.ctx());
-    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
-    let home = f.alice.recruit_for_testing(f.alice_recruit);
-    assert!(home.rank().is_rookie());
-    assert_eq!(weapon_of(&f.alice, f.alice_recruit), weapon);
-    fixture.finish();
-}
-
-/// Taking a weapon up leaves your own in its place, for anyone else to take, and
-/// what's still on the ground when the game ends goes with it.
-#[test]
-fun test_swapping_leaves_your_own() {
-    use std::unit_test::assert_eq;
-
-    let mut fixture = setup_on_demo_2();
-    let f = &mut fixture;
-    let own = weapon_of(&f.alice, f.alice_recruit);
-    let theirs = weapon_of(&f.bob, f.bob_recruit);
-    let mut game = f.fight_two_of_bob();
-
-    f.bob_falls_on_alice(&mut game);
-    pick_up_weapon(&mut game, &f.alice, &f.clock, 7, 6, f.ts.ctx());
-    assert_eq!(game.dropped.length(), 1);
-    assert_eq!(object::id(&game.dropped[0].weapon), own);
-
-    abandon_game(&mut game, &f.alice, f.ts.ctx());
-    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
-    assert_eq!(weapon_of(&f.alice, f.alice_recruit), theirs);
-    fixture.finish();
-}
-
-/// A recruit on the standard issue rifle leaves nothing behind to take.
-#[test, expected_failure(abort_code = ENoWeaponHere)]
-fun test_pick_up_with_nothing_there_fail() {
-    let mut fixture = setup_on_demo_2();
-    let f = &mut fixture;
-    f.ts.next_tx(BOB);
-    f.bob.unequip_weapon(f.bob_recruit, f.ts.ctx());
-    let mut game = f.fight_two_of_bob();
-
-    f.bob_falls_on_alice(&mut game);
-    pick_up_weapon(&mut game, &f.alice, &f.clock, 7, 6, f.ts.ctx());
-
-    abort
-}
-
-/// The weapon is on another tile.
-#[test, expected_failure(abort_code = ENoWeaponHere)]
-fun test_pick_up_from_another_tile_fail() {
-    let mut fixture = setup_on_demo_2();
-    let f = &mut fixture;
-    let mut game = f.fight_two_of_bob();
-
-    let records = vector[history::new_kia(f.bob_recruit, 1, 2)];
-    game.bury_fallen(f.alice_recruit, &records, f.ts.ctx());
-    pick_up_weapon(&mut game, &f.alice, &f.clock, 7, 6, f.ts.ctx());
-
-    abort
-}
-
-/// Only the side whose turn it is takes anything up.
-#[test, expected_failure(abort_code = ENotYourTurn)]
-fun test_pick_up_out_of_turn_fail() {
-    let mut fixture = setup_on_demo_2();
-    let f = &mut fixture;
-    let mut game = f.fight_two_of_bob();
-
-    f.bob_falls_on_alice(&mut game);
-    f.ts.next_tx(BOB);
-    pick_up_weapon(&mut game, &f.bob, &f.clock, 7, 6, f.ts.ctx());
-
-    abort
-}
-
-#[test, expected_failure(abort_code = ESuspended)]
-fun test_search_while_suspended_fail() {
-    let mut fixture = setup();
-    let f = &mut fixture;
-    let mut game = f.start();
-
-    abandon_game(&mut game, &f.alice, f.ts.ctx());
-    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
-    f.clock.set_for_testing(SUSPENSION_MS - 1);
-    find_game(&mut f.mm, &mut f.alice, &f.preset, &f.rng, &f.clock, f.ts.ctx());
-
-    abort
-}
-
-#[test, expected_failure(abort_code = EGameOver)]
-fun test_act_after_abandon_fail() {
-    let mut fixture = setup();
-    let f = &mut fixture;
-    let mut game = f.start();
-    f.deploy(&mut game);
-
-    abandon_game(&mut game, &f.alice, f.ts.ctx());
-    f.ts.next_tx(BOB);
-    next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());
-
-    abort
-}
-
-#[test, expected_failure(abort_code = EGameOver)]
-fun test_abandon_twice_fail() {
-    let mut fixture = setup();
-    let f = &mut fixture;
-    let mut game = f.start();
-
-    abandon_game(&mut game, &f.alice, f.ts.ctx());
-    f.ts.next_tx(BOB);
-    abandon_game(&mut game, &f.bob, f.ts.ctx());
-
-    abort
-}
-
-#[test, expected_failure(abort_code = EGameNotOver)]
-fun test_complete_running_game_fail() {
-    let mut fixture = setup();
-    let f = &mut fixture;
-    let mut game = f.start();
-    f.deploy(&mut game);
-
-    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
-
-    abort
-}
-
-#[test, expected_failure(abort_code = ENotPlayer)]
-fun test_complete_with_swapped_accounts_fail() {
-    let mut fixture = setup();
-    let f = &mut fixture;
-    let mut game = f.start();
-
-    abandon_game(&mut game, &f.alice, f.ts.ctx());
-    complete_game(game, &mut f.bob, &mut f.alice, &f.clock, f.ts.ctx());
-
-    abort
-}
+public fun init_for_testing(ctx: &mut TxContext) { init(ctx) }

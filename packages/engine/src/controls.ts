@@ -15,7 +15,7 @@ export interface ControlOptions {
   reverse?: boolean;
 }
 
-const ORDERS = new Set(["move", "fire", "grenade", "reload", "pick-up", "overwatch", "hunker", "secure"]);
+const ORDERS = new Set(["move", "fire", "grenade", "reload", "overwatch", "hunker", "secure"]);
 
 
 /**

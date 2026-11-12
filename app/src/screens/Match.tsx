@@ -31,12 +31,18 @@ import {
 } from "../chain/game";
 import {
     activeSide,
-    earningsFor,
+    deployUntil,
+    experienceFor,
+    fallenOf,
+    isDeploying,
     isOver,
     MAX_MISSED_TURNS,
+    missedTurns,
     outcomeFor,
     rankWith,
+    squadOf,
     squadSize,
+    turnStartedAt,
     TURN_LIMIT_MS,
     unitsOnMap,
     type Outcome,
@@ -121,9 +127,9 @@ function SquadPick({
     onAbandon: () => void;
 }) {
     const size = squadSize(game, side);
-    const remaining = useRemaining(Number(game.deployUntilMs));
-    const deployed = game.squads[side].length > 0;
-    const opponentDeployed = game.squads[1 - side].length > 0;
+    const remaining = useRemaining(deployUntil(game));
+    const deployed = squadOf(game, side).length > 0;
+    const opponentDeployed = squadOf(game, 1 - side).length > 0;
     const [picked, setPicked] = useState<string[] | null>(null);
     const squad = picked ?? recruits.slice(0, size).map((r) => r.objectId);
     const items = useMenuNav(!deployed);
@@ -235,9 +241,9 @@ function TurnClock({
     accountId: string;
     action: Action;
 }) {
-    const remaining = useRemaining(Number(game.turnStartedMs) + TURN_LIMIT_MS);
+    const remaining = useRemaining(turnStartedAt(game) + TURN_LIMIT_MS);
     const mine = activeSide(game) === side;
-    const [missed, theirMissed] = [game.missed[side], game.missed[1 - side]];
+    const [missed, theirMissed] = [missedTurns(game, side), missedTurns(game, 1 - side)];
     const lastChance = missed === MAX_MISSED_TURNS - 1;
 
     // Someone who stepped away is the one who misses turns: tell them it's on them.
@@ -306,10 +312,7 @@ function Field({
     // The encounter is built once, from the game as it stands when the field opens.
     const [setup] = useState(() => {
         const names = new Map(recruits.map((r) => [r.objectId, r.metadata.name]));
-        const mine = unitsOnMap(game)
-            .map(({ unit }) => unit.recruit)
-            .filter((id) => game.squads[side].includes(id))
-            .flatMap((id) => recruits.filter((r) => r.objectId === id));
+        const mine = squadOf(game, side).flatMap((id) => recruits.filter((r) => r.objectId === id));
         return {
             scenario: matchScenario(game, side, names),
             driver: chainDriver({
@@ -426,7 +429,6 @@ function Result({
     players: string[];
     action: Action;
     report?: {
-        credits: number;
         rating: [before: number, after: number] | null;
         squad: { name: string; xp: number; promotion: string | null }[];
         fallen: string[];
@@ -458,10 +460,6 @@ function Result({
             <p className="label normal-case text-secondary">{detail}</p>
             {report && (
                 <dl className="match-report">
-                    <div>
-                        <dt className="label">Credits</dt>
-                        <dd>+{report.credits}</dd>
-                    </div>
                     {report.rating && (
                         <div>
                             <dt className="label">Rating</dt>
@@ -525,15 +523,17 @@ export default function Match() {
     const gone = !!gameId && !!account.data && !playing;
     const game = useGame(gameId, gone ? undefined : POLL_MS);
     const inGame = useGameRecruits(game.data);
+    // every recruit seen in the game, the fallen too: the game lets go of them
+    const seen = useRef(new Map<string, ChainRecruit>());
+    for (const recruit of inGame.data ?? []) seen.current.set(recruit.objectId, recruit);
     const [confirming, setConfirming] = useState(false);
     const [abandoned, setAbandoned] = useState(false);
     const [played, setPlayed] = useState(false);
     // The `Account` going in, for what the game did to it once it is wrapped up.
-    const atStart = useRef<{ rating: number; credits: number; score: Score } | null>(null);
+    const atStart = useRef<{ rating: number; score: Score } | null>(null);
     if (playing && account.data && atStart.current === null)
         atStart.current = {
             rating: Number(account.data.rating.rating),
-            credits: Number(account.data.credits),
             score: account.data.score,
         };
     const ended = !!game.data && (isOver(game.data) || gone);
@@ -565,10 +565,11 @@ export default function Match() {
           : (settled ?? "ended");
     const fieldReady = (inGame.data?.length ?? 0) >= unitsOnMap(game.data).length;
     const abandon = () => setConfirming(true);
-    const showResult = finished && (played || abandoned || game.data.deploying || !fieldReady);
-    const mine = game.data.squads[side];
+    const deploying = isDeploying(game.data);
+    const showResult = finished && (played || abandoned || deploying || !fieldReady);
+    const mine = squadOf(game.data, side);
 
-    const earned = earningsFor(game.data, side);
+    const earned = experienceFor(game.data, side);
     const ratingNow = Number(account.data?.rating.rating ?? 0);
     const start = atStart.current;
     const rating =
@@ -577,12 +578,11 @@ export default function Match() {
             : null;
     const report = over
         ? {
-              credits: earned.credits,
               rating,
               squad: (inGame.data ?? [])
                   .filter((r) => mine.includes(r.objectId))
                   .map((r) => {
-                      const xp = earned.xpOf(r.objectId);
+                      const xp = earned;
                       const rank = rankWith(r.rank.$kind, r.xp + xp);
                       return {
                           name: r.metadata.name,
@@ -590,12 +590,11 @@ export default function Match() {
                           promotion: rank === r.rank.$kind ? null : `Promoted to ${rank}`,
                       };
                   }),
-              fallen: game.data.fallen[side].map((tag) => tag.metadata.name),
+              fallen: fallenOf(game.data, side, seen.current.values()).map((r) => r.metadata.name),
           }
         : settled && start
           ? {
-                // What the wrap-up paid, and what the squad came home with.
-                credits: Number(account.data?.credits ?? 0) - start.credits,
+                // What the squad came home with.
                 rating,
                 squad: (inGame.data ?? [])
                     .filter((r) => mine.includes(r.objectId))
@@ -613,13 +612,15 @@ export default function Match() {
                             },
                         ];
                     }),
-                fallen: game.data.fallen[side].map((tag) => tag.metadata.name),
+                fallen: fallenOf(game.data, side, seen.current.values()).map(
+                    (r) => r.metadata.name,
+                ),
             }
           : undefined;
 
     return (
         <>
-            {game.data.deploying ? (
+            {deploying ? (
                 !finished && (
                     <SquadPick
                         game={game.data}

@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Finding a match. The player's `Account` says where they stand: `search` is
- * `Idle`, `Searching` or `Playing`. Whoever finds someone waiting starts the game
+ * Finding a match. The player's `Account` says where they stand: its `state` is
+ * `Idle`, `Searching`, `Playing` or `Suspended`. Whoever finds someone waiting starts the game
  * in the same transaction and is `Playing` it. The player who waited can't be in
  * that transaction, so they are sent a `Seat` in the game, to their `Account`,
  * and accepting it puts them in: their one transaction, sent as soon as the seat
@@ -117,7 +117,7 @@ export async function fetchPendingSeats(
                 objectId: accountId,
                 include: { content: true },
             });
-            if (Account.parse(object.content).search.$kind !== "Searching") return [];
+            if (Account.parse(object.content).state.$kind !== "Searching") return [];
             const seats = await fetchSeats(client, accountId);
             return seats
                 .filter((seat) => seat.game === gameId)
@@ -150,7 +150,7 @@ function useSeats(accountId?: string | null, order?: string | null) {
  */
 export function useCurrentGame(): { gameId: string | null; seat: ChainSeat | null } {
     const accountId = useAccountId().data;
-    const search = useGhostsAccount(accountId).data?.search;
+    const search = useGhostsAccount(accountId).data?.state;
     const order = search?.$kind === "Searching" ? search.Searching.order : null;
     const seat = useSeats(accountId, order).data?.[0] ?? null;
     if (search?.$kind === "Playing") return { gameId: search.Playing, seat: null };
@@ -166,7 +166,7 @@ export function useMatchSearch() {
     const busy = useSaving();
     const [hiring, setHiring] = useState(false);
     const { gameId, seat } = useCurrentGame();
-    const search = account?.search;
+    const search = account?.state;
 
     const send = (build: (id: string) => Transaction) => {
         if (!accountId || busy) return;
@@ -182,13 +182,13 @@ export function useMatchSearch() {
         if (!owner || busy || hiring) return;
         const { client } = action;
         const known = accountId ?? (await fetchAccountId(client, owner));
-        let recruits = account?.recruits.size;
+        let recruits = account?.recruits;
         if (known && recruits === undefined) {
             const { object } = await client.core.getObject({
                 objectId: known,
                 include: { content: true },
             });
-            recruits = Account.parse(object.content).recruits.size;
+            recruits = Account.parse(object.content).recruits;
         }
         if (known && Number(recruits) >= FREE_RECRUITS) return send(findGameTx);
 
@@ -213,7 +213,7 @@ export function useMatchSearch() {
         searching: search?.$kind === "Searching" && !seat ? search.Searching : null,
         /** The game the player is in, or has a seat in. */
         playing: gameId,
-        suspendedUntilMs: Number(account?.suspendedUntilMs ?? 0),
+        suspendedUntilMs: search?.$kind === "Suspended" ? Number(search.Suspended.untilMs) : 0,
         busy,
         error: action.error,
         find: () => void find().catch(() => {}),
@@ -233,7 +233,7 @@ export function useMatchmakingDriver() {
     const { gameId, seat } = useCurrentGame();
     const { run } = useGhostsAction();
 
-    useGhostsAccount(accountId, account?.search.$kind === "Searching" ? POLL_MS : undefined);
+    useGhostsAccount(accountId, account?.state.$kind === "Searching" ? POLL_MS : undefined);
 
     // The seat is accepted as soon as it shows up: the player's one transaction
     // of the match, and nothing in the game can happen before it.

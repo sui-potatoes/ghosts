@@ -77,7 +77,7 @@ export function useHeadquarters() {
         slots,
         recruits,
         /** Recruits on file by the account's own count, never by what decoded. */
-        onFile: Number(account.data?.recruits.size ?? 0),
+        onFile: Number(account.data?.recruits ?? 0),
         gate,
     };
 }

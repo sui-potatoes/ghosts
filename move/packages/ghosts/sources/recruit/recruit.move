@@ -4,6 +4,10 @@
 /// Defines the Recruit - an ownable unit in the game. Recruit contains all the
 /// information about the unit, its rank, modifications, gear, stats and more.
 ///
+/// Everything that changes a Recruit is package-only: a player gets to one only
+/// through `ghosts::account`, which hands it out under a `Borrow` that settles by
+/// sending it back to its leader, and the game, which lets go of it by its death.
+///
 /// Traits:
 /// - default
 module ghosts::recruit;
@@ -76,27 +80,27 @@ public struct DogTag has key, store {
 }
 
 /// Add an armor to the Recruit.
-public fun add_armor(r: &mut Recruit, armor: Armor) {
+public(package) fun add_armor(r: &mut Recruit, armor: Armor) {
     assert!(r.armor.is_none(), EAlreadyHasArmor);
     r.armor.fill(armor);
 }
 
 /// Remove the armor from the Recruit.
-public fun remove_armor(r: &mut Recruit): Armor {
+public(package) fun remove_armor(r: &mut Recruit): Armor {
     assert!(r.armor.is_some(), ENoArmor);
     r.armor.extract()
 }
 
 /// Add a weapon to the Recruit.
 /// Aborts if the Recruit already has a weapon.
-public fun add_weapon(r: &mut Recruit, weapon: Weapon) {
+public(package) fun add_weapon(r: &mut Recruit, weapon: Weapon) {
     assert!(r.weapon.is_none(), EAlreadyHasWeapon);
     r.weapon.fill(weapon);
 }
 
 /// Remove the weapon from the Recruit.
 /// Aborts if the Recruit does not have a weapon.
-public fun remove_weapon(r: &mut Recruit): Weapon {
+public(package) fun remove_weapon(r: &mut Recruit): Weapon {
     assert!(r.weapon.is_some(), ENoWeapon);
     r.weapon.extract()
 }
@@ -188,7 +192,7 @@ public(package) fun new(name: String, ctx: &mut TxContext): Recruit {
 }
 
 /// Dismiss the Recruit, remove them forever from the game.
-public fun dismiss(recruit: Recruit): (Option<Weapon>, Option<Armor>) {
+public(package) fun dismiss(recruit: Recruit): (Option<Weapon>, Option<Armor>) {
     let Recruit { id, weapon, armor, .. } = recruit;
     id.delete();
     (weapon, armor)
@@ -200,14 +204,14 @@ public fun throw_away(dog_tag: DogTag) {
     id.delete();
 }
 
-/// Kills the Recruit and returns the DogTag, and the weapon they fell with. Armor
-/// goes down with them.
-public(package) fun kill(recruit: Recruit, ctx: &mut TxContext): (DogTag, Option<Weapon>) {
+/// Kills the Recruit and returns the DogTag. Their gear goes down with them.
+public(package) fun kill(recruit: Recruit, ctx: &mut TxContext): DogTag {
     let Recruit { id, rank, weapon, metadata, armor, .. } = recruit;
     id.delete();
+    weapon.destroy!(|w| w.destroy());
     armor.destroy!(|a| a.destroy());
 
-    (DogTag { id: object::new(ctx), rank, metadata }, weapon)
+    DogTag { id: object::new(ctx), rank, metadata }
 }
 
 /// Issue a `Permit` for the `Recruit` type. Package-only: used to create
@@ -217,65 +221,3 @@ public(package) fun permit(): internal::Permit<Recruit> { internal::permit() }
 /// Issue a `Permit` for the `DogTag` type. Package-only: used to create
 /// `Display<DogTag>` in the `display` module.
 public(package) fun dog_tag_permit(): internal::Permit<DogTag> { internal::permit() }
-
-#[test]
-fun test_rank_up_and_accessors() {
-    use std::unit_test::{assert_eq, assert_ref_eq};
-
-    let ctx = &mut tx_context::dummy();
-    let mut recruit = default(ctx);
-
-    assert_ref_eq!(recruit.rank(), &rank::rookie());
-
-    // tests reads on values to increase coverage
-    assert_eq!(recruit.leader(), ctx.sender());
-    assert_eq!(recruit.stats().aim(), 65); // default value
-
-    recruit.rank_up();
-
-    assert!(&recruit.rank != &rank::rookie());
-
-    let (dog_tag, weapon) = recruit.kill(ctx);
-    weapon.destroy!(|w| w.destroy());
-
-    assert!(dog_tag.rank.is_squaddie());
-
-    dog_tag.throw_away();
-}
-
-/// Experience turns into ranks at the set marks, each with its bonus, and stops
-/// promoting at the top.
-#[test]
-fun test_promotions() {
-    use std::unit_test::assert_eq;
-
-    let ctx = &mut tx_context::dummy();
-    let mut recruit = Self::new("Test", ctx);
-    assert_eq!(recruit.stats.aim(), 65);
-    assert_eq!(recruit.stats.health(), 10);
-
-    recruit.add_xp(2);
-    assert!(recruit.rank.is_rookie());
-
-    recruit.add_xp(1);
-    assert!(recruit.rank.is_squaddie());
-    assert_eq!(recruit.stats.aim(), 67);
-    assert_eq!(recruit.stats.health(), 10);
-
-    recruit.add_xp(5);
-    assert!(recruit.rank.is_corporal());
-    assert_eq!(recruit.stats.aim(), 69);
-    assert_eq!(recruit.stats.health(), 11);
-
-    // several ranks at once, and past the last one
-    recruit.add_xp(1000);
-    assert!(recruit.rank.is_colonel());
-    assert_eq!(recruit.stats.aim(), 79);
-    assert_eq!(recruit.stats.health(), 13);
-    assert_eq!(recruit.xp, 1008);
-
-    let (tag, weapon) = recruit.kill(ctx);
-    assert!(weapon.is_none());
-    weapon.destroy_none();
-    tag.throw_away();
-}

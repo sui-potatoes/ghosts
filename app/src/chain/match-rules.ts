@@ -15,9 +15,6 @@ import type { ChainGame, ChainRecord } from "./bcs";
 /** `TURN_LIMIT_MS` in `ghosts::ghosts`: past it, a turn only takes `next_turn`. */
 export const TURN_LIMIT_MS = 90_000;
 
-/** `MAX_TURNS` in `ghosts::ghosts`: a game that goes on this long ends in a draw. */
-const MAX_TURNS = 60;
-
 /** `MAX_MISSED_TURNS` in `ghosts::ghosts`: this many in a row abandon the game. */
 export const MAX_MISSED_TURNS = 3;
 
@@ -70,16 +67,34 @@ export function decodePath(bytes: readonly number[], bounds: Bounds): Cell[] {
     return path;
 }
 
-export const activeSide = (game: ChainGame) => game.map.turn % game.players.length;
+export const activeSide = (game: ChainGame) => game.turn % game.players.length;
+
+/** The squads are still being picked. */
+export const isDeploying = (game: ChainGame) => game.state.$kind === "Deploying";
+
+/** When the squad pick ends, while it runs. */
+export const deployUntil = (game: ChainGame) =>
+    game.state.$kind === "Deploying" ? Number(game.state.Deploying.untilMs) : 0;
+
+/** When the current turn started, while the sides take turns. */
+export const turnStartedAt = (game: ChainGame) =>
+    game.state.$kind === "Playing" ? Number(game.state.Playing.startedMs) : 0;
+
+/** How many turns in a row a side let run out, while the sides take turns. */
+export const missedTurns = (game: ChainGame, side: number) =>
+    game.state.$kind === "Playing" ? game.state.Playing.missed[side] : 0;
 
 /**
- * A game ends when someone abandons it, when a side has nobody on the map after
- * deployment, or when it has gone on for `MAX_TURNS`.
+ * A game is over once its state says so: someone abandoned or forfeited it, a side
+ * had nobody to show or has nobody left, or it went on for `MAX_TURNS`.
  */
-export const isOver = (game: ChainGame) =>
-    game.abandonedBy !== null ||
-    (!game.deploying &&
-        (game.map.turn >= MAX_TURNS || game.squads.some((squad) => squad.length === 0)));
+export const isOver = (game: ChainGame) => game.state.$kind === "Over";
+
+/** The recruits a side has on the map: its units, which say whose they are. */
+export const squadOf = (game: ChainGame, side: number) =>
+    unitsOnMap(game)
+        .filter(({ unit }) => unit.owner === game.players[side])
+        .map(({ unit }) => unit.recruit);
 
 export type Outcome =
     | "victory"
@@ -93,26 +108,29 @@ export type Outcome =
     | "no-show"
     | "opponent-no-show";
 
-/** Whether the deployment ended with this side having nobody to show, fallen or alive. */
-const noShow = (game: ChainGame, side: number) =>
-    game.squads[side].length === 0 && game.fallen[side].length === 0;
+/** How the game ended, once it is over. */
+const endingOf = (game: ChainGame) => (game.state.$kind === "Over" ? game.state.Over : null);
 
 /** How a game that is over ended for `side`. */
 export function outcomeFor(game: ChainGame, side: number): Outcome {
-    if (game.abandonedBy !== null) {
-        const mine = game.abandonedBy === game.players[side];
-        // the contract abandons for a player who ran out of missed turns
-        const absent = game.missed[mine ? side : 1 - side] >= MAX_MISSED_TURNS;
-        if (absent) return mine ? "forfeited" : "opponent-forfeited";
-        return mine ? "abandoned" : "opponent-abandoned";
+    const ending = endingOf(game);
+    const me = game.players[side];
+    switch (ending?.$kind) {
+        case "Won":
+            return ending.Won === me ? "victory" : "defeat";
+        case "Abandoned":
+            return ending.Abandoned === me ? "abandoned" : "opponent-abandoned";
+        case "Forfeited":
+            return ending.Forfeited === me ? "forfeited" : "opponent-forfeited";
+        case "NoShow":
+            return ending.NoShow === me ? "no-show" : "opponent-no-show";
+        case "NobodyShowed":
+            return "no-show";
+        case "Stalemate":
+            return "stalemate";
+        default:
+            return "draw";
     }
-    if (noShow(game, side)) return "no-show";
-    if (noShow(game, 1 - side)) return "opponent-no-show";
-
-    const mine = game.squads[side].length > 0;
-    const theirs = game.squads[1 - side].length > 0;
-    if (mine && theirs) return "stalemate";
-    return mine === theirs ? "draw" : mine ? "victory" : "defeat";
 }
 
 // === Odds, cover and ground, as `ghosts::map` and `ghosts::unit` work them out ===
@@ -286,39 +304,54 @@ export function rankWith(rank: string, xp: number): string {
     return RANKS[index];
 }
 
-const WIN_CREDITS = 100;
-const DRAW_CREDITS = 60;
-const LOSS_CREDITS = 40;
-const WALKOVER_CREDITS = 40;
-const KILL_CREDITS = 20;
 const SURVIVAL_XP = 1;
 const WIN_XP = 1;
-const KILL_XP = 2;
-const MIN_TURNS_TO_PAY = 2;
+const MIN_TURNS_TO_EARN = 2;
 
-/** What a side earns from a game that is over: `earnings` in `ghosts::ghosts`. */
-export function earningsFor(game: ChainGame, side: number) {
+/**
+ * The experience each recruit of a side coming home earns from a game that is over:
+ * `experience` in `ghosts::ghosts`.
+ */
+export function experienceFor(game: ChainGame, side: number): number {
     const other = 1 - side;
-    const kills = new Map(game.kills[side].contents.map(({ key, value }) => [key, value]));
-    const blamed = (s: number) =>
-        game.abandonedBy === game.players[s] || (!game.deploying && noShow(game, s));
-
-    const [base, survival] = ((): [number, number] => {
-        if (game.abandonedBy === game.players[other])
-            return game.map.turn < MIN_TURNS_TO_PAY ? [0, 0] : [WALKOVER_CREDITS, SURVIVAL_XP];
-        if (blamed(side) || blamed(other)) return [0, 0];
-        const mine = game.squads[side].length > 0;
-        const theirs = game.squads[other].length > 0;
-        if (mine === theirs) return [DRAW_CREDITS, SURVIVAL_XP];
-        return mine ? [WIN_CREDITS, SURVIVAL_XP + WIN_XP] : [LOSS_CREDITS, SURVIVAL_XP];
-    })();
-
-    const total = [...kills.values()].reduce((sum, n) => sum + n, 0);
-    return {
-        credits: base > 0 ? base + total * KILL_CREDITS : 0,
-        /** The experience a recruit coming home earns. */
-        xpOf: (recruit: string) => (base > 0 ? survival + (kills.get(recruit) ?? 0) * KILL_XP : 0),
+    const ending = game.state.$kind === "Over" ? game.state.Over : null;
+    // who is to blame for how it ended: `misbehaved` in the contract
+    const blamed = (s: number) => {
+        const player = game.players[s];
+        if (ending?.$kind === "NobodyShowed") return true;
+        if (ending?.$kind === "Abandoned") return ending.Abandoned === player;
+        if (ending?.$kind === "Forfeited") return ending.Forfeited === player;
+        if (ending?.$kind === "NoShow") return ending.NoShow === player;
+        return false;
     };
+    const walkover =
+        (ending?.$kind === "Abandoned" && ending.Abandoned === game.players[other]) ||
+        (ending?.$kind === "Forfeited" && ending.Forfeited === game.players[other]);
+
+    if (walkover) return game.turn < MIN_TURNS_TO_EARN ? 0 : SURVIVAL_XP;
+    if (blamed(side) || blamed(other)) return 0;
+    return ending?.$kind === "Won" && ending.Won === game.players[side]
+        ? SURVIVAL_XP + WIN_XP
+        : SURVIVAL_XP;
+}
+
+/**
+ * The recruits a side lost in a game, as its history has them fall, out of the
+ * recruits seen in it (`known`): the game lets go of the fallen, whose dog tags
+ * go home there and then. Each one's leader is the `Account` they fought for.
+ */
+export function fallenOf<R extends { objectId: string; leader: string }>(
+    game: ChainGame,
+    side: number,
+    known: Iterable<R>,
+): R[] {
+    const byId = new Map([...known].map((recruit) => [recruit.objectId, recruit]));
+    const player = game.players[side];
+    return game.history.flatMap((record) => {
+        if (record.$kind !== "UnitKIA") return [];
+        const recruit = byId.get(record.UnitKIA[0]);
+        return recruit?.leader === player ? [recruit] : [];
+    });
 }
 
 /** Where a game's blasts went off so far, oldest first. */
@@ -346,8 +379,6 @@ export interface FieldView {
     coverAt(cell: Cell): boolean;
     /** What a blast at a cell does to the props around it. */
     blast(cell: Cell): Extract<GameEvent, { type: "grenade" }>["environment"];
-    /** The name of a weapon lying on a cell, if there is one. */
-    weaponAt(cell: Cell): string | null;
 }
 
 /** The order `Map.explode` visits tiles in: its neighbors, then the center. */
@@ -440,13 +471,6 @@ export function* gameEvents(records: ChainRecord[], field: FieldView): Generator
                 i++;
                 const unit = field.unitAt(toCell(record.Reload, bounds));
                 if (unit) yield { type: "reload", unit };
-                break;
-            }
-            case "PickUp": {
-                i++;
-                const cell = toCell(record.PickUp, bounds);
-                const unit = field.unitAt(cell);
-                if (unit) yield { type: "pick-up", unit, weapon: field.weaponAt(cell) ?? "weapon" };
                 break;
             }
             case "Attack": {

@@ -175,12 +175,7 @@ export function LoadoutPanel(props: Props) {
                                         slot === "primary" ? "weapon" : "armor",
                                         g.objectId,
                                         null,
-                                        {
-                                            id: rid,
-                                            equipped: !!(slot === "primary"
-                                                ? recruit.weapon
-                                                : recruit.armor),
-                                        },
+                                        rid,
                                     ),
                                 )
                             }

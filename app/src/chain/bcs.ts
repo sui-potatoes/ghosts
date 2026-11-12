@@ -9,14 +9,11 @@
 
 import { bcs } from "@mysten/sui/bcs";
 
-/** `sui::table::Table` / `sui::object_table::ObjectTable`: its id and size. */
+/** `sui::table::Table`: its id and size. */
 export const Table = bcs.struct("Table", {
     id: bcs.Address,
     size: bcs.u64(),
 });
-
-/** `sui::table_vec::TableVec`. */
-export const TableVec = bcs.struct("TableVec", { contents: Table });
 
 /** `ghosts::stats::Stats`: 15 `u8` parameters packed into one `u128`. */
 export const Stats = bcs.struct("Stats", { value: bcs.u128() });
@@ -52,8 +49,9 @@ export const Rank = bcs.enum("Rank", {
     Colonel: null,
 });
 
-/** `ghosts::weapon_upgrade::WeaponUpgrade`. */
+/** `ghosts::weapon_upgrade::WeaponUpgrade`: an object, in the stock or fitted to a weapon. */
 export const WeaponUpgrade = bcs.struct("WeaponUpgrade", {
+    id: bcs.Address,
     name: bcs.string(),
     kind: bcs.u8(),
     tier: bcs.u8(),
@@ -104,11 +102,12 @@ export const Rating = bcs.struct("Rating", {
     lastPlayedMs: bcs.u64(),
 });
 
-/** `ghosts::account::Search`: an `Account`'s place in matchmaking. */
-export const Search = bcs.enum("Search", {
+/** `ghosts::account::State`: where an `Account` stands. */
+export const AccountState = bcs.enum("State", {
     Idle: null,
     Searching: bcs.struct("Searching", { order: bcs.Address, sinceMs: bcs.u64() }),
     Playing: bcs.Address,
+    Suspended: bcs.struct("Suspended", { untilMs: bcs.u64() }),
 });
 
 /** `ghosts::ghosts::Seat`: a place in `game`, sent to the `Account` a match found waiting. */
@@ -125,30 +124,25 @@ export const Score = bcs.struct("Score", {
 export const Account = bcs.struct("Account", {
     id: bcs.Address,
     owner: bcs.Address,
-    recruits: Table,
-    weapons: Table,
-    armors: Table,
-    upgrades: bcs.vector(WeaponUpgrade),
-    dogTags: TableVec,
+    state: AccountState,
+    /** How many recruits are at home; they, the armory, the stock and dog tags are owned by the `Account`. */
+    recruits: bcs.u64(),
     rating: Rating,
-    search: Search,
-    suspendedUntilMs: bcs.u64(),
     score: Score,
-    credits: bcs.u64(),
 });
 
 /** `ghosts::param::Param`. */
 const Param = bcs.struct("Param", { value: bcs.u16(), maxValue: bcs.u16() });
 
-/** `ghosts::unit::Unit`: a recruit as the map holds them. */
+/** `ghosts::unit::Unit`: a recruit as the map holds them, with the `Account` it belongs to. */
 export const MapUnit = bcs.struct("Unit", {
     recruit: bcs.Address,
+    owner: bcs.Address,
     ap: Param,
     hp: Param,
     ammo: Param,
     grenadeUsed: bcs.bool(),
     stats: Stats,
-    lastTurn: bcs.u16(),
 });
 
 /** `ghosts::map::TileType`. */
@@ -174,7 +168,6 @@ export const GameMap = bcs.struct("Map", {
         rows: bcs.u16(),
         cols: bcs.u16(),
     }),
-    turn: bcs.u16(),
 });
 
 /** `ghosts::history::Record`, variants in declaration order. */
@@ -197,33 +190,37 @@ const GameRecord = bcs.enum("Record", {
     }),
     UnitKIA: bcs.tuple([bcs.Address, bcs.u16(), bcs.u16()]),
     Dodged: null,
-    PickUp: bcs.tuple([bcs.u16(), bcs.u16()]),
 });
 
-/** `ghosts::recruit::DogTag`. */
-const DogTag = bcs.struct("DogTag", { id: bcs.Address, rank: Rank, metadata: Metadata });
+/** `ghosts::ghosts::Ending`: how a game ended; a player is their `Account` ID. */
+export const Ending = bcs.enum("Ending", {
+    Won: bcs.Address,
+    Draw: null,
+    Stalemate: null,
+    Abandoned: bcs.Address,
+    Forfeited: bcs.Address,
+    NoShow: bcs.Address,
+    NobodyShowed: null,
+});
+
+/** `ghosts::ghosts::State`: where a game stands. */
+export const GameState = bcs.enum("State", {
+    Deploying: bcs.struct("Deploying", { untilMs: bcs.u64() }),
+    Playing: bcs.struct("Playing", { startedMs: bcs.u64(), missed: bcs.vector(bcs.u8()) }),
+    Over: Ending,
+});
 
 /** `ghosts::ghosts::Game`. */
 export const Game = bcs.struct("Game", {
     id: bcs.Address,
     map: GameMap,
     players: bcs.vector(bcs.Address),
-    squads: bcs.vector(bcs.vector(bcs.Address)),
-    fallen: bcs.vector(bcs.vector(DogTag)),
+    state: GameState,
+    turn: bcs.u16(),
     positions: bcs.vector(bcs.vector(bcs.vector(bcs.u8()))),
     history: bcs.vector(GameRecord),
+    /** `Table<ID, Recruit>`: the recruits on the map, whose each is, its unit says. */
     recruits: Table,
-    deploying: bcs.bool(),
-    deployUntilMs: bcs.u64(),
-    turnStartedMs: bcs.u64(),
-    missed: bcs.vector(bcs.u8()),
-    abandonedBy: bcs.option(bcs.Address),
-    kills: bcs.vector(
-        bcs.struct("VecMap", {
-            contents: bcs.vector(bcs.struct("Entry", { key: bcs.Address, value: bcs.u8() })),
-        }),
-    ),
-    dropped: bcs.vector(bcs.struct("Dropped", { x: bcs.u16(), y: bcs.u16(), weapon: Weapon })),
 });
 
 export type ChainGame = typeof Game.$inferType;

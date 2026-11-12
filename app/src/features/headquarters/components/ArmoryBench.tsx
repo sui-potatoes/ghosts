@@ -5,7 +5,7 @@ import { ATTACHMENTS, ATTACHMENT_SLOTS, ATTACHMENT_SLOT_NAMES } from "@ghosts/sq
 import { formatStat, VISIBLE, type Stats, type StatRow } from "@ghosts/squad/stats";
 import type { AttachmentSlot } from "@ghosts/squad/types";
 
-import { priceOf, rankAllows, rankFor, type ChainRecruit, type Requisition } from "../../../chain";
+import { rankAllows, rankFor, type ChainRecruit, type Requisition } from "../../../chain";
 import {
     attachmentFor,
     fitCount,
@@ -355,7 +355,6 @@ export function RequisitionBench(props: {
     groups: { title: string; entries: CatalogEntry[] }[];
     preview: string | null;
     busy: boolean;
-    credits: number;
     onPreview(key: string): void;
     onRequisition(entry: CatalogEntry): void;
 }) {
@@ -368,8 +367,8 @@ export function RequisitionBench(props: {
                 </div>
             </div>
             <p className="sq-footnote">
-                Gear goes straight to the racks. You have {props.credits} credits. Better gear can
-                only be issued to recruits of high enough rank.
+                Gear goes straight to the racks. Better gear can only be issued to recruits of high
+                enough rank.
             </p>
             {props.groups.map((group) => (
                 <section key={group.title}>
@@ -390,18 +389,16 @@ export function RequisitionBench(props: {
                                         <strong>{entry.label}</strong>
                                         <small>{entry.detail}</small>
                                         <small>
-                                            {priceOf(entry.requisition)} credits
-                                            {rankFor(entry.requisition) !== "Rookie" &&
-                                                ` · ${rankFor(entry.requisition)} and above`}
+                                            {rankFor(entry.requisition) === "Rookie"
+                                                ? "Any rank"
+                                                : `${rankFor(entry.requisition)} and above`}
                                         </small>
                                     </span>
                                 </button>
                                 <button
                                     className="hq-catalog-mint"
-                                    disabled={
-                                        props.busy || props.credits < priceOf(entry.requisition)
-                                    }
-                                    aria-label={`Buy ${entry.label} for ${priceOf(entry.requisition)} credits`}
+                                    disabled={props.busy}
+                                    aria-label={`Requisition ${entry.label}`}
                                     onClick={() => props.onRequisition(entry)}
                                 >
                                     ＋
