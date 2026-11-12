@@ -423,3 +423,14 @@ html[data-reduce-motion="on"] *::after {
     font-size: 9px;
     color: var(--disabled-color);
 }
+
+/* Phones in landscape: the screen padding is the rem of the page (scaled with
+   the root font size); trim it, the rows need the height. The content root
+   carries .ui-zoom (index.css). */
+@media (orientation: landscape) and (max-height: 500px) {
+    .set-screen {
+        padding-block: 16px;
+        padding-inline: max(24px, env(safe-area-inset-left, 0px))
+            max(24px, env(safe-area-inset-right, 0px));
+    }
+}
