@@ -60,3 +60,42 @@ fun test_promotions() {
 
     recruit.kill(ctx).throw_away();
 }
+
+/// Utilities are capped by the slots, taken off by ID, and go down with the recruit.
+#[test]
+fun test_utilities() {
+    use std::unit_test::assert_eq;
+
+    let ctx = &mut tx_context::dummy();
+    let mut recruit = Self::new("Test", ctx);
+    assert_eq!(MAX_UTILITIES, 1);
+    assert!(recruit.utilities().is_empty());
+
+    let grenade = ghosts::items::frag_grenade(ctx);
+    let id = object::id(&grenade);
+    recruit.add_utility(grenade);
+    assert_eq!(recruit.utilities().length(), 1);
+    recruit.remove_utility(id).destroy();
+
+    // dismissed with the gear returned
+    recruit.add_utility(ghosts::items::frag_grenade(ctx));
+    let (weapon, armor, utilities) = recruit.dismiss();
+    assert_eq!(utilities.length(), 1);
+    weapon.destroy_none();
+    armor.destroy_none();
+    utilities.destroy!(|u| u.destroy());
+
+    // killed with the gear gone
+    let mut recruit = Self::new("Test", ctx);
+    recruit.add_utility(ghosts::items::frag_grenade(ctx));
+    recruit.kill(ctx).throw_away();
+}
+
+#[test, expected_failure(abort_code = EUtilitiesFull)]
+fun test_utilities_full_fail() {
+    let ctx = &mut tx_context::dummy();
+    let mut recruit = Self::new("Test", ctx);
+    recruit.add_utility(ghosts::items::frag_grenade(ctx));
+    recruit.add_utility(ghosts::items::frag_grenade(ctx));
+    abort
+}

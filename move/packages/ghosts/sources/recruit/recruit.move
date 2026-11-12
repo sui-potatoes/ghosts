@@ -16,6 +16,7 @@ use ghosts::{
     armor::Armor,
     rank::{Self, Rank},
     stats::{Self, Stats},
+    utility::Utility,
     visuals::{Self, Visuals},
     weapon::Weapon
 };
@@ -29,6 +30,13 @@ const ENoWeapon: u64 = 2;
 const EAlreadyHasArmor: u64 = 3;
 /// Trying to remove an `Armor` that does not exist.
 const ENoArmor: u64 = 4;
+/// Attempt to equip a `Utility` while all the slots of a Recruit are taken.
+const EUtilitiesFull: u64 = 5;
+/// Trying to remove a `Utility` the Recruit does not carry.
+const ENoUtility: u64 = 6;
+
+/// How many `Utility` items a Recruit carries: the number of utility slots.
+const MAX_UTILITIES: u64 = 1;
 
 /// What a promotion adds to the `aim` stat.
 const PROMOTION_AIM: u8 = 2;
@@ -65,6 +73,9 @@ public struct Recruit has key, store {
     weapon: Option<Weapon>,
     /// Armor of the Unit. When not set, the Recruit uses the default armor.
     armor: Option<Armor>,
+    /// Utilities of the Unit, in slot order, at most `MAX_UTILITIES`. They give it
+    /// its grenade and the like; none by default.
+    utilities: vector<Utility>,
     /// The address that hired the Recruit.
     leader: address,
 }
@@ -105,11 +116,33 @@ public(package) fun remove_weapon(r: &mut Recruit): Weapon {
     r.weapon.extract()
 }
 
+/// Add a utility to the Recruit.
+/// Aborts if all the utility slots are taken.
+public(package) fun add_utility(r: &mut Recruit, utility: Utility) {
+    assert!(r.utilities.length() < MAX_UTILITIES, EUtilitiesFull);
+    r.utilities.push_back(utility);
+}
+
+/// Remove the utility with the given ID from the Recruit. By ID, not by slot:
+/// the slots shift as items leave, and an ID stays right within a single PTB.
+/// Aborts if the Recruit does not carry it.
+public(package) fun remove_utility(r: &mut Recruit, id: ID): Utility {
+    let idx = r.utilities.find_index!(|u| object::id(u) == id);
+    assert!(idx.is_some(), ENoUtility);
+    r.utilities.remove(idx.destroy_some())
+}
+
 /// Get the armor of the Recruit.
 public fun armor(r: &Recruit): &Option<Armor> { &r.armor }
 
 /// Get the weapon of the Recruit.
 public fun weapon(r: &Recruit): &Option<Weapon> { &r.weapon }
+
+/// Get the utilities of the Recruit, in slot order.
+public fun utilities(r: &Recruit): &vector<Utility> { &r.utilities }
+
+/// How many utilities a Recruit can carry.
+public fun max_utilities(): u64 { MAX_UTILITIES }
 
 /// Get the stats of the Recruit.
 public fun stats(r: &Recruit): &Stats { &r.stats }
@@ -172,6 +205,7 @@ public(package) fun default(ctx: &mut TxContext): Recruit {
         stats: stats::default(),
         weapon: option::none(),
         armor: option::none(),
+        utilities: vector[],
         leader: ctx.sender(),
     }
 }
@@ -187,15 +221,16 @@ public(package) fun new(name: String, ctx: &mut TxContext): Recruit {
         stats: stats::default(),
         weapon: option::none(),
         armor: option::none(),
+        utilities: vector[],
         leader: ctx.sender(),
     }
 }
 
 /// Dismiss the Recruit, remove them forever from the game.
-public(package) fun dismiss(recruit: Recruit): (Option<Weapon>, Option<Armor>) {
-    let Recruit { id, weapon, armor, .. } = recruit;
+public(package) fun dismiss(recruit: Recruit): (Option<Weapon>, Option<Armor>, vector<Utility>) {
+    let Recruit { id, weapon, armor, utilities, .. } = recruit;
     id.delete();
-    (weapon, armor)
+    (weapon, armor, utilities)
 }
 
 /// Throw away the DogTag, destroy it and bury the memory.
@@ -206,10 +241,11 @@ public fun throw_away(dog_tag: DogTag) {
 
 /// Kills the Recruit and returns the DogTag. Their gear goes down with them.
 public(package) fun kill(recruit: Recruit, ctx: &mut TxContext): DogTag {
-    let Recruit { id, rank, weapon, metadata, armor, .. } = recruit;
+    let Recruit { id, rank, weapon, metadata, armor, utilities, .. } = recruit;
     id.delete();
     weapon.destroy!(|w| w.destroy());
     armor.destroy!(|a| a.destroy());
+    utilities.destroy!(|u| u.destroy());
 
     DogTag { id: object::new(ctx), rank, metadata }
 }

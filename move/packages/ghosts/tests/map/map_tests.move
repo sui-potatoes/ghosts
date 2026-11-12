@@ -4,8 +4,10 @@
 module ghosts::map_tests;
 
 use ghosts::{
+    action,
     armor,
     history,
+    items,
     map,
     recruit::{Self, Recruit},
     stats::{Self, Stats},
@@ -50,7 +52,8 @@ fun reset_ap() {
     map.move_unit(vector[0, 1, direction::left!()]); // spend 1 AP point
     assert!(map.unit(0, 0).is_some_and!(|unit| unit.ap() == 1));
 
-    let (w, a) = recruit.dismiss();
+    let (w, a, utilities) = recruit.dismiss();
+    utilities.destroy!(|u| u.destroy());
     w.destroy_none();
     a.destroy_none();
     map.destroy();
@@ -81,7 +84,8 @@ fun from_bcs_with_unit() {
     assert_eq!(bcs::to_bytes(&restored), bytes);
     assert_eq!(*restored.unit(1, 2).borrow().actions(), *map.unit(1, 2).borrow().actions());
 
-    let (weapon, armor) = recruit.dismiss();
+    let (weapon, armor, utilities) = recruit.dismiss();
+    utilities.destroy!(|u| u.destroy());
     weapon.destroy_none();
     armor.destroy_none();
     restored.destroy();
@@ -106,7 +110,8 @@ fun recruit_with_armor(armor_stats: Stats, ctx: &mut TxContext): Recruit {
 }
 
 fun dismiss(recruit: Recruit) {
-    let (weapon, armor) = recruit.dismiss();
+    let (weapon, armor, utilities) = recruit.dismiss();
+    utilities.destroy!(|u| u.destroy());
     weapon.do!(|w| w.destroy());
     armor.do!(|a| a.destroy());
 }
@@ -294,6 +299,13 @@ fun area_attack_miss_has_no_effect() {
     map.destroy();
 }
 
+/// A recruit carrying the frag grenade.
+fun grenadier(ctx: &mut TxContext): Recruit {
+    let mut recruit = recruit::default(ctx);
+    recruit.add_utility(items::frag_grenade(ctx));
+    recruit
+}
+
 #[test]
 /// A grenade records its origin and target, then the explosion; the thrower
 /// standing inside the radius is hit too.
@@ -301,7 +313,7 @@ fun grenade_records_origin() {
     let ctx = &mut tx_context::dummy();
     let mut rng = random::new_generator_from_seed_for_testing(vector[1]);
     let mut map = map::new(@1.to_id(), 6);
-    let recruit = recruit::default(ctx);
+    let recruit = grenadier(ctx);
 
     map.place_recruit(&recruit, 0, 0);
 
@@ -318,4 +330,80 @@ fun grenade_records_origin() {
 
     dismiss(recruit);
     map.destroy();
+}
+
+#[test]
+/// The frag grenade hurts every unit within 2 tiles of the target, the thrower's
+/// side included, and nobody beyond; it cannot be dodged.
+fun grenade_radius_and_no_dodge() {
+    let ctx = &mut tx_context::dummy();
+    let mut rng = random::new_generator_from_seed_for_testing(vector[1]);
+    let mut map = map::new(@1.to_id(), 8);
+    let thrower = grenadier(ctx);
+    let near = recruit_with_armor(stats::new(0, 0, 0, 0, 100), ctx); // dodges everything it can
+    let edge = recruit::default(ctx);
+    let far = recruit::default(ctx);
+
+    map.place_recruit(&thrower, 0, 0);
+    map.place_recruit(&near, 0, 4);
+    map.place_recruit(&edge, 0, 5); // 2 tiles from the target (0, 3)
+    map.place_recruit(&far, 0, 6); // 3 tiles
+
+    // target (0, 3), 3 tiles from the thrower: (0, 4) and (0, 5) are in the diamond
+    map.perform_grenade(&mut rng, 0, 0, 0, 3);
+    assert!(map.unit(0, 4).is_some_and!(|u| u.hp() == 6));
+    assert!(map.unit(0, 5).is_some_and!(|u| u.hp() == 6));
+    assert!(map.unit(0, 6).is_some_and!(|u| u.hp() == 10));
+    assert!(map.unit(0, 0).is_some_and!(|u| u.hp() == 10 && u.ap() == 1));
+
+    dismiss(thrower);
+    dismiss(near);
+    dismiss(edge);
+    dismiss(far);
+    map.destroy();
+}
+
+#[test, expected_failure(abort_code = map::EPathTooShort)]
+/// The throw range is the grenade's 5 tiles: 6 is too far.
+fun grenade_range_limit() {
+    let ctx = &mut tx_context::dummy();
+    let mut rng = random::new_generator_from_seed_for_testing(vector[1]);
+    let mut map = map::new(@1.to_id(), 8);
+    let thrower = grenadier(ctx);
+
+    map.place_recruit(&thrower, 0, 0);
+    // 5 tiles is fine
+    map.perform_grenade(&mut rng, 0, 0, 0, 5);
+    map.reset_ap(thrower.leader().to_id());
+    map.perform_grenade(&mut rng, 0, 0, 0, 6);
+    abort
+}
+
+#[test, expected_failure(abort_code = ghosts::unit::EActionNotAllowed)]
+/// A unit with no utility cannot throw.
+fun grenade_without_utility_fails() {
+    let ctx = &mut tx_context::dummy();
+    let mut rng = random::new_generator_from_seed_for_testing(vector[1]);
+    let mut map = map::new(@1.to_id(), 8);
+    let recruit = recruit::default(ctx);
+
+    map.place_recruit(&recruit, 0, 0);
+    assert!(!map.unit(0, 0).borrow().has_action(action::new_grenade()));
+    map.perform_grenade(&mut rng, 0, 0, 0, 2);
+    abort
+}
+
+#[test, expected_failure(abort_code = ghosts::unit::ENoUsesLeft)]
+/// One throw a match: the second aborts with the uses error.
+fun grenade_once_per_match() {
+    let ctx = &mut tx_context::dummy();
+    let mut rng = random::new_generator_from_seed_for_testing(vector[1]);
+    let mut map = map::new(@1.to_id(), 8);
+    let recruit = grenadier(ctx);
+
+    map.place_recruit(&recruit, 0, 0);
+    map.perform_grenade(&mut rng, 0, 0, 0, 5);
+    map.reset_ap(recruit.leader().to_id());
+    map.perform_grenade(&mut rng, 0, 0, 0, 5);
+    abort
 }

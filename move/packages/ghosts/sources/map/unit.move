@@ -11,7 +11,13 @@
 /// - to_string
 module ghosts::unit;
 
-use ghosts::{action::{Self, Action}, param::{Self, Param}, recruit::Recruit, stats::{Self, Stats}};
+use ghosts::{
+    action::{Self, Action, ActionKind},
+    param::{Self, Param},
+    recruit::Recruit,
+    stats::{Self, Stats},
+    utility::Utility
+};
 use std::string::String;
 use sui::{bcs::{Self, BCS}, random::RandomGenerator};
 
@@ -25,6 +31,8 @@ const ENoAP: u64 = 3;
 const EFullAmmo: u64 = 4;
 /// The `Unit` does not have the `Action` it is ordered to perform.
 const EActionNotAllowed: u64 = 5;
+/// Every `Action` of that kind has its uses spent.
+const ENoUsesLeft: u64 = 6;
 
 /// Weapon range can be exceeded by this value with aim penalty.
 const MAX_RANGE_OFFSET: u8 = 3;
@@ -47,11 +55,12 @@ public struct Unit has copy, store {
     hp: Param,
     /// The ammo of the `Unit`.
     ammo: Param,
-    /// If the `Unit` has used a grenade in the encounter.
-    grenade_used: bool,
     /// Stats of the `Recruit`.
     stats: Stats,
-    /// What the `Unit` can be ordered to do. Checked before anything else.
+    /// What the `Unit` can be ordered to do, in order: the base actions, the weapon's
+    /// (both unlimited), then those of each `Utility` in slot order, as they are
+    /// there with their `uses`. Two actions of a kind are two entries, each with
+    /// its own count. Checked before anything else.
     actions: vector<Action>,
 }
 
@@ -60,30 +69,43 @@ public fun reset_ap(unit: &mut Unit) { unit.ap.reset() }
 
 /// Spend 1 AP on movement; abort if distance exceeds mobility or AP is zero.
 public fun perform_move(unit: &mut Unit, distance: u8) {
-    assert!(unit.has_action(&action::new_move()), EActionNotAllowed);
+    assert!(unit.has_action(action::new_move()), EActionNotAllowed);
     assert!(unit.stats.mobility() >= distance, ERangeExceeded);
     assert!(unit.ap.value() > 0, ENoAP);
 
+    unit.spend_use(action::new_move());
     unit.ap.decrease(1);
 }
 
 /// Reload `Unit`'s weapon. It costs 1 AP.
 public fun perform_reload(unit: &mut Unit) {
-    assert!(unit.has_action(&action::new_reload()), EActionNotAllowed);
+    assert!(unit.has_action(action::new_reload()), EActionNotAllowed);
     assert!(unit.ap.value() > 0, ENoAP);
     assert!(!unit.ammo.is_full(), EFullAmmo);
+    unit.spend_use(action::new_reload());
     unit.ap.decrease(1);
     unit.ammo.reset();
 }
 
-/// Throw a grenade if there's one in the inventory. It costs 1 AP.
+/// Throw a grenade if the unit has one: a `Grenade` action, from a `Utility`. It
+/// costs 1 AP and 1 use of the first `Grenade` action that has one left.
 public fun perform_grenade(unit: &mut Unit) {
-    assert!(unit.has_action(&action::new_grenade()), EActionNotAllowed);
+    assert!(unit.has_action(action::new_grenade()), EActionNotAllowed);
     assert!(unit.ap.value() > 0, ENoAP);
-    assert!(!unit.grenade_used, EOutOfAmmo);
 
+    unit.spend_use(action::new_grenade());
+    // consumption would go here: a utility spent in a match could be lost with
+    // the recruit's gear; consumables need design
     unit.ap.decrease(1);
-    unit.grenade_used = true;
+}
+
+/// Spend one use of the first action of the `kind` that has one left; an unlimited
+/// action (`none`) always has, and is not touched. Aborts with `ENoUsesLeft` if
+/// every action of that kind is spent. The caller has checked `has_action`.
+fun spend_use(unit: &mut Unit, kind: ActionKind) {
+    let idx = unit.actions.find_index!(|a| a.kind() == kind && a.has_uses());
+    assert!(idx.is_some(), ENoUsesLeft);
+    unit.actions[idx.destroy_some()].spend();
 }
 
 #[allow(lint(public_random))]
@@ -103,10 +125,11 @@ public fun perform_attack(
     range: u8,
     target_defense: u8,
 ): (bool, bool, bool, u8, u8) {
-    assert!(unit.has_action(&action::new_attack()), EActionNotAllowed);
+    assert!(unit.has_action(action::new_attack()), EActionNotAllowed);
     assert!(unit.ap.value() > 0, ENoAP);
     assert!(unit.ammo.value() > 0, EOutOfAmmo);
 
+    unit.spend_use(action::new_attack());
     unit.ap.deplete();
     unit.ammo.decrease(1);
 
@@ -176,27 +199,32 @@ public fun apply_damage(
 
 /// Creates a new `Unit` - an in-game representation of a `Recruit`.
 ///
-/// Weapon and armor are applied to the `Recruit`'s own stats one after the
-/// other. `Stats::add` floors every field at zero against its base, so folding
-/// the armor into the weapon first would lose a negative armor modifier
-/// (heavy armor's mobility and dodge penalties) against the weapon's zero
-/// operative fields.
+/// Weapon, armor and utilities are applied to the `Recruit`'s own stats one after
+/// the other, in that order. `Stats::add` floors every field at zero against its
+/// base, so folding the armor into the weapon first would lose a negative armor
+/// modifier (heavy armor's mobility and dodge penalties) against the weapon's
+/// zero operative fields; utilities follow the armor for the same reason.
+///
+/// Actions come in order: `Move`; `Attack` and `Reload` with a weapon; then those
+/// of each utility in slot order, as they are on the item. None is merged with
+/// another of its kind.
 public fun from_recruit(recruit: &Recruit): Unit {
-    let stats = *recruit.stats();
+    let mut stats = *recruit.stats();
     let mut armor_stats = stats::default_armor();
     let mut weapon_stats = stats::default_weapon();
     recruit.weapon().do_ref!(|w| weapon_stats = *w.stats());
     recruit.armor().do_ref!(|a| armor_stats = *a.stats());
-    let stats = stats.add(&weapon_stats).add(&armor_stats);
+    stats = stats.add(&weapon_stats).add(&armor_stats);
+    recruit.utilities().do_ref!(|u| stats = stats.add(u.stats()));
 
-    // `Move` and `Grenade` are base actions; the weapon gives `Attack` and
-    // `Reload`, so an unarmed recruit cannot shoot. Gear will add actions here.
-    let mut actions = vector[action::new_move()];
+    // `Move` is the base action; the weapon gives `Attack` and `Reload`, so an
+    // unarmed recruit cannot shoot, and a utility gives what it gives.
+    let mut actions = vector[action::unlimited(action::new_move())];
     if (recruit.weapon().is_some()) {
-        actions.push_back(action::new_attack());
-        actions.push_back(action::new_reload());
+        actions.push_back(action::unlimited(action::new_attack()));
+        actions.push_back(action::unlimited(action::new_reload()));
     };
-    actions.push_back(action::new_grenade());
+    recruit.utilities().do_ref!(|u| actions.append(*u.actions()));
 
     Unit {
         recruit: object::id(recruit),
@@ -204,7 +232,6 @@ public fun from_recruit(recruit: &Recruit): Unit {
         ap: param::new(2),
         hp: param::new(stats.health() as u16),
         ammo: param::new(stats.ammo() as u16),
-        grenade_used: false,
         stats,
         actions,
     }
@@ -233,17 +260,16 @@ public fun ap(unit: &Unit): u16 { unit.ap.value() }
 /// Get the `Unit`'s ammo.
 public fun ammo(unit: &Unit): u16 { unit.ammo.value() }
 
-/// Get whether a grenade was used.
-public fun grenade_used(unit: &Unit): bool { unit.grenade_used }
-
 /// Get the `Unit`'s stats.
 public fun stats(unit: &Unit): &Stats { &unit.stats }
 
-/// Get the actions the `Unit` can perform.
+/// Get the actions the `Unit` can perform, with their uses left: see `Unit.actions`.
 public fun actions(unit: &Unit): &vector<Action> { &unit.actions }
 
-/// Get whether the `Unit` can perform the `Action`.
-public fun has_action(unit: &Unit, action: &Action): bool { unit.actions.contains(action) }
+/// Get whether the `Unit` has an action of the `kind`, whatever uses are left.
+public fun has_action(unit: &Unit, kind: ActionKind): bool {
+    unit.actions.any!(|a| a.kind() == kind)
+}
 
 // === Convenience and compatibility ===
 
@@ -260,7 +286,6 @@ public(package) fun from_bcs(bcs: &mut BCS): Unit {
         ap: param::from_bcs(bcs),
         hp: param::from_bcs(bcs),
         ammo: param::from_bcs(bcs),
-        grenade_used: bcs.peel_bool(),
         stats: stats::from_bcs(bcs),
         actions: bcs.peel_vec!(|bcs| action::from_bcs(bcs)),
     }

@@ -309,7 +309,7 @@ export function createSuiBackend(options: SuiBackendOptions): Backend {
         return owned;
     }
 
-    /** The recruits at home, armed or not. */
+    /** The recruits at home: what each carries, and what it still lacks. */
     async function homeRecruits() {
         const id = await requireAccount();
         const { recruits } = AccountBcs.parse((await content(id)).content);
@@ -318,7 +318,7 @@ export function createSuiBackend(options: SuiBackendOptions): Backend {
             `${deployment.package}::recruit::Recruit`,
             (bytes) => {
                 const recruit = RecruitBcs.parse(bytes);
-                return { armed: recruit.weapon !== null };
+                return { armed: recruit.weapon !== null, utilities: recruit.utilities.length };
             },
             Number(recruits),
         );
@@ -380,13 +380,16 @@ export function createSuiBackend(options: SuiBackendOptions): Backend {
         cancelSearch: async () => send(cancelSearchTx(deployment, await requireAccount())),
 
         async armSquad() {
-            const unarmed = (await homeRecruits()).filter((recruit) => !recruit.armed);
-            if (unarmed.length === 0) return null;
-            const tx = armSquadTx(
-                deployment,
-                await requireAccount(),
-                unarmed.map((recruit) => recruit.ref),
-            );
+            // a free utility slot too: the contract has one slot for now
+            const lacking = (await homeRecruits())
+                .map((recruit) => ({
+                    recruit: recruit.ref,
+                    rifle: !recruit.armed,
+                    grenade: recruit.utilities === 0,
+                }))
+                .filter((fitting) => fitting.rifle || fitting.grenade);
+            if (lacking.length === 0) return null;
+            const tx = armSquadTx(deployment, await requireAccount(), lacking);
             return send(tx, 150n);
         },
 

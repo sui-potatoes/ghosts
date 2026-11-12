@@ -17,6 +17,7 @@ import {
     type Stats,
     type Tile,
     type Unit,
+    type UnitAction,
 } from "./types.ts";
 
 export const UP = 1;
@@ -31,9 +32,21 @@ const MAX_RANGE_OFFSET = 3;
 const DISTANCE_BONUS = 5;
 const DISTANCE_PENALTY = 10;
 
+/** `map::perform_grenade`: the numbers of a throw are the grenade action's, not an item's. */
 export const GRENADE_RANGE = 5;
 export const GRENADE_RADIUS = 2;
 export const GRENADE_DAMAGE = 4;
+
+/** Whether the unit has an action of the kind, whatever uses are left. */
+export const hasAction = (unit: Unit, kind: UnitAction) =>
+    unit.actions.some((action) => action.kind === kind);
+
+/**
+ * Whether an action of the kind can still be spent: unlimited (`uses` of `null`) or with a use
+ * left. The unit-level functions take the first such entry of the kind.
+ */
+export const hasUsesLeft = (unit: Unit, kind: UnitAction) =>
+    unit.actions.some((action) => action.kind === kind && (action.uses === null || action.uses > 0));
 
 /** The most orders one transaction may carry. */
 export const MAX_BATCH = 8;
@@ -400,7 +413,7 @@ export function refusal(
     const unit = unitAt(state, action.x, action.y);
     if (!unit) return `No unit at (${action.x}, ${action.y}).`;
     if (unit.side !== side) return `The unit at (${action.x}, ${action.y}) is not yours.`;
-    if (!unit.actions.includes(action.kind)) return `That unit cannot ${action.kind}.`;
+    if (!hasAction(unit, action.kind)) return `That unit cannot ${action.kind}.`;
     if (unit.ap <= 0) return "That unit has no AP left this turn.";
 
     switch (action.kind) {
@@ -436,7 +449,7 @@ export function refusal(
             return chance === null ? "The target is out of range or out of sight." : null;
         }
         case "grenade": {
-            if (unit.grenadeUsed) return "This unit has used its grenade.";
+            if (!hasUsesLeft(unit, "grenade")) return "This unit has no grenade left.";
             if (!inBounds(state, action.tx, action.ty)) return "The target is off the map.";
             if (manhattan(action.x, action.y, action.tx, action.ty) > GRENADE_RANGE) {
                 return "The target is out of throwing range.";
@@ -538,7 +551,7 @@ function moveOption(
     path: number[],
 ): LegalAction {
     const enemies = state.units.filter((other) => other.side !== unit.side);
-    const canShootAfter = unit.actions.includes("attack") && unit.ap > 1 && unit.ammo > 0;
+    const canShootAfter = hasAction(unit, "attack") && unit.ap > 1 && unit.ammo > 0;
     let [threat, bestShot, enemyDistance] = [0, 0, Infinity];
     for (const enemy of enemies) {
         enemyDistance = Math.min(enemyDistance, manhattan(x, y, enemy.x, enemy.y));
@@ -590,7 +603,7 @@ export function legalActions(state: GameState, side: number, nowMs: number): Leg
     for (const unit of mine) {
         const { x, y, stats } = unit;
         const attacks: LegalAction[] = [];
-        if (unit.actions.includes("attack") && unit.ammo > 0) {
+        if (hasAction(unit, "attack") && unit.ammo > 0) {
             for (const enemy of enemies) {
                 const chance = shotChance(
                     state,
@@ -620,7 +633,7 @@ export function legalActions(state: GameState, side: number, nowMs: number): Leg
         }
         options.push(...attacks.sort((a, b) => b.hitChance! - a.hitChance!));
 
-        if (unit.actions.includes("grenade") && !unit.grenadeUsed) {
+        if (hasUsesLeft(unit, "grenade")) {
             const throws: LegalAction[] = [];
             for (
                 let tx = Math.max(0, x - GRENADE_RANGE);
@@ -651,7 +664,7 @@ export function legalActions(state: GameState, side: number, nowMs: number): Leg
             options.push(...throws.sort((a, b) => value(b) - value(a)));
         }
 
-        if (unit.actions.includes("reload") && unit.ammo < unit.ammoMax) {
+        if (hasAction(unit, "reload") && unit.ammo < unit.ammoMax) {
             options.push({
                 id: actionId({ kind: "reload", x, y }),
                 kind: "reload",
@@ -660,7 +673,7 @@ export function legalActions(state: GameState, side: number, nowMs: number): Leg
         }
 
         const moves: LegalAction[] = [];
-        for (const [key, path] of unit.actions.includes("move") ? reachable(state, unit) : []) {
+        for (const [key, path] of hasAction(unit, "move") ? reachable(state, unit) : []) {
             const [tx, ty] = key.split(",").map(Number);
             moves.push(moveOption(state, unit, tx, ty, path));
         }

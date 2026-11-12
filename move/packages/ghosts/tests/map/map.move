@@ -269,11 +269,13 @@ fun test_map_with_units() {
     // apply the damage to the second unit
     map.grid[5, 2].unit.borrow_mut().apply_damage(&mut rng, damage, false);
 
-    let (weapon, armor) = recruit_one.dismiss();
+    let (weapon, armor, utilities) = recruit_one.dismiss();
+    utilities.destroy!(|u| u.destroy());
     weapon.destroy!(|w| w.destroy());
     armor.destroy!(|a| a.destroy());
 
-    let (weapon, armor) = recruit_two.dismiss();
+    let (weapon, armor, utilities) = recruit_two.dismiss();
+    utilities.destroy!(|u| u.destroy());
     weapon.destroy!(|w| w.destroy());
     armor.destroy!(|a| a.destroy());
 
@@ -431,12 +433,35 @@ fun test_attack_without_line_of_sight_fails() {
     abort
 }
 
+/// The frag grenade destroys covers in its area and leaves walls alone.
+#[test]
+fun test_grenade_destroys_cover() {
+    let ctx = &mut tx_context::dummy();
+    let mut rng = sui::random::new_generator_from_seed_for_testing(vector[1]);
+    let (no, low, high) = (NO_COVER, LOW_COVER, HIGH_COVER);
+    let mut map = new(@0.to_id(), 6);
+    let mut recruit = ghosts::recruit::default(ctx);
+    recruit.add_utility(ghosts::items::frag_grenade(ctx));
+
+    *&mut map.grid[0, 3].tile_type = cover(no, no, high, no);
+    *&mut map.grid[2, 4].tile_type = cover(low, no, no, no); // 3 tiles from the target
+    map.place_recruit(&recruit, 0, 0);
+    map.perform_grenade(&mut rng, 0, 0, 0, 3);
+
+    assert!(!map.is_tile_cover(0, 3));
+    assert!(map.is_tile_cover(2, 4));
+
+    recruit.kill(ctx).throw_away();
+    map.destroy();
+}
+
 #[test, expected_failure(abort_code = ENoLineOfSight)]
 fun test_grenade_without_line_of_throw_fails() {
     let ctx = &mut tx_context::dummy();
     let mut rng = sui::random::new_generator_from_seed_for_testing(vector[1]);
     let mut map = new(@0.to_id(), 5);
-    let recruit = ghosts::recruit::default(ctx);
+    let mut recruit = ghosts::recruit::default(ctx);
+    recruit.add_utility(ghosts::items::frag_grenade(ctx));
 
     *&mut map.grid[0, 2].tile_type = TileType::Wall;
     map.place_recruit(&recruit, 0, 0);

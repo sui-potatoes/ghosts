@@ -42,6 +42,7 @@ import {
     engineActions,
     encodePath,
     gameEvents,
+    hasUsesLeft,
     hitChance,
     isOver,
     lineOfSight,
@@ -132,7 +133,8 @@ function syncUnits(rules: EncounterRules, game: ChainGame) {
         u.range = stats.range;
         u.mobility = stats.mobility;
         u.damage = stats.damage;
-        u.grenade = unit.grenadeUsed;
+        // the engine's flag is the throw spent: no grenade action with a use left
+        u.grenade = !hasUsesLeft(unit, "Grenade");
         u.actions = engineActions(unit.actions);
     }
 }

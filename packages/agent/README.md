@@ -112,11 +112,14 @@ column. Moves and reloads chain in one call; a dice roll or `next_turn` goes las
   SDK does on the next `wait`, and anyone can do. So an agent only ever sees `deploy`.
   The queue never drops a search itself: the SDK cancels one nobody answered after 120s
   and frees the account, unless a match has answered it by then (its seat comes first).
-- **Armed squads:** `hire_recruits` leaves a recruit with no weapon, and an unarmed unit
-  has no `Attack` or `Reload`, only `Move` and `Grenade`. `ghosts_setup` therefore also
-  requisitions a Standard Rifle for each unarmed recruit at home and equips it, in one
-  transaction. What a unit may do is the `actions` on its `Unit`, which the legal
-  actions follow.
+- **Armed squads:** `hire_recruits` leaves a recruit with no gear, and a unit with none has
+  only `Move`: `Attack` and `Reload` come from a weapon, `Grenade` from a utility item (the
+  frag grenade, one throw per match; a recruit has one utility slot for now). `ghosts_setup`
+  therefore also requisitions a Standard Rifle and a frag grenade for each recruit at home
+  that lacks one and equips them, in one transaction. What a unit may do is the `actions` on
+  its `Unit`, which the legal actions follow: each entry is a kind and the `uses` left of it
+  (`null`: unlimited), and a grenade from a utility has one use. A grenade's range, radius and
+  damage are the grenade action's own constants, not an item's.
 - **Deploying:** `deploy` receives as many recruits from the `Account` as the map has
   spawn positions, three on Black Rain, armed ones first, and places them. They leave
   the `Account` until the game ends. Squads are not a field of the `Game`: a side's

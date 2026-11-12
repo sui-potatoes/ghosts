@@ -19,7 +19,7 @@ chain (`chain/map/unit.move:187`), engine (`engine/game.ts:69`) and agent SDK (r
 | `Move` | chain `ghosts.move:378` `move_unit`, `map.move:172`, `unit.move:58`; engine `game.ts:367`; agent `rules.ts:402` | 1 AP, does not end the activation | AP > 0; path longer than 1 tile, at most `mobility` steps, no unit/wall/unwalkable/high-cover edge on it (`map.move:563`); engine also clears hunker and overwatch (`game.ts:187`) | none | moves the unit; the engine path may vault a cover tile (`game.ts:343`) | `Move(path)` | stat `mobility` |
 | `Attack` (engine `fire`) | chain `ghosts.move:424` `perform_attack`, `map.move:211`, `unit.move:93`; engine `game.ts:427`; agent `rules.ts:413` | chain: sets AP to 0 (`unit.move:102`). Engine: sets AP to 0, except the pistol, which costs 1 (`game.ts:194`). Both take 1 ammo | AP > 0; ammo > 0; line of sight (walls and high cover block, `map.move:596`); distance at most `range` + 3 (`unit.move:28`); single-target weapon needs a unit on the target tile, area weapon any non-wall tile; engine and agent: target on the other side | chain: hit roll (`aim`, +5 per tile under range, -10 per tile over, minus target defense = cover 25/50 + `defense`), crit roll, damage +/- `spread`, `plus_one`, target dodge. Engine: flat 10% crit, no dodge or spread, seeded LCG (`game.ts:141`) | damage minus target `armor` (min 1); crit adds half the damage; area weapon explodes with radius `area_size` | `Attack`, then `Miss`; or `Dodged` / `Damage` / `CriticalHit`, `[UnitKIA]`; or `Explosion` and its records | stats `aim`, `damage`, `spread`, `plus_one`, `crit_chance`, `can_be_dodged`, `area_size`, `env_damage`, `range`, `ammo` (all from weapon, `unit.move:179`) |
 | `Reload` | chain `ghosts.move:390`, `map.move:163`, `unit.move:66`; engine `game.ts:458`; agent `rules.ts:411` | 1 AP, does not end the activation | AP > 0; ammo below the maximum | none | ammo back to full | `Reload(x, y)` | stat `ammo` |
-| `Grenade` | chain `ghosts.move:403`, `map.move:382`, `unit.move:74`; engine `game.ts:463`; agent `rules.ts:435` | 1 AP, does not end the activation | AP > 0; once per match per unit (`grenade_used`); target within 5 tiles (Manhattan); target not a wall; no wall on the line of throw (covers do not block) | chain: none that matters (cannot be dodged; `apply_damage` still draws a number). Engine: none | every unit within 2 tiles (Manhattan, own units included) takes 4 minus `armor`, min 1 (engine: 6 minus `armor`); chain also destroys covers in the area | `Grenade`, `Explosion`, then `Damage` and `[UnitKIA]` per unit | nothing: constants `GRENADE_RANGE/RADIUS/DAMAGE` in `map.move:47`, flag in `Unit` |
+| `Grenade` | chain `ghosts.move:403`, `map.move:382`, `unit.move:74`; engine `game.ts:463`; agent `rules.ts:435` | 1 AP and 1 use, does not end the activation | AP > 0; a use left (the frag grenade has one per match); target within 5 tiles (Manhattan); target not a wall; no wall on the line of throw (covers do not block) | chain: none that matters (cannot be dodged; `apply_damage` still draws a number). Engine: none | every unit within 2 tiles (Manhattan, own units included) takes 4 minus `armor`, min 1 (engine: 6 minus `armor`); chain also destroys covers in the area | `Grenade`, `Explosion`, then `Damage` and `[UnitKIA]` per unit | constants `GRENADE_RANGE/RADIUS/DAMAGE` in `map.move`; the use count is on the `Action` from the unit's `Utility` (3.3) |
 | `Overwatch` | engine only: `game.ts:491`, reaction `game.ts:435`, hostile phase `ai.ts:31` | sets AP to 0 | AP > 0; ammo >= 1; HUD hides it in versus games (`actions.ts:244`) | as `Attack` | until the next own turn, one reaction shot at an enemy that moves within `range` + 3; spent even with no line | event `overwatch`, `shot` with `reaction`, `watch-spent` | a loaded weapon |
 | `Hunker` | engine only: `game.ts:486` | sets AP to 0 | AP > 0; hidden in versus games | none | defense against shots: 20 in the open, 50 behind a barrier, 60 behind a high wall (`game.ts:403`), until the next own turn or a move or shot | event `hunker` | nothing |
 | `Secure` (HUD: Extract) | engine only: `game.ts:475`, label `keys.ts:55` | 1 AP, does not end the activation | AP > 0; unit stands on the relay cell; not yet secured; hidden in versus games | none | marks the objective taken; victory then needs all hostiles down (`game.ts:135`) | event `secure` | position (scenario `relay`) |
@@ -45,12 +45,12 @@ match-level orders: chain 3 in a match (`next_turn`, `deploy_squad`, `abandon_ga
 `complete_game` after it; agent SDK the same four.
 
 Gear on chain: `Weapon` (stats, up to 3 upgrades), `WeaponUpgrade` (stats only), `Armor` (stats
-only). Weapons (`chain/recruit/items.move:46`): Standard Rifle (4 dmg, range 4, 3 ammo, 10% crit),
+only), `Utility` (a stats modifier and actions; one item, the frag grenade). Weapons (`chain/recruit/items.move:46`): Standard Rifle (4 dmg, range 4, 3 ammo, 10% crit),
 Sharpshooter Rifle (5 dmg, range 5, 20% crit, corporal), Plasma Rifle (6 dmg, range 5, 30% crit,
 lieutenant). None has `area_size` or `env_damage` above 0. Upgrades: scope (+aim), laser sight
 (+crit), stock (+range), expanded clip (+ammo). Armor: light (+1 armor, +10 dodge), medium (+2
-armor), heavy (-1 mobility, +1 health, +3 armor, -10 dodge). No gear adds, removes or changes an
-action. There is no grenade item.
+armor), heavy (-1 mobility, +1 health, +3 armor, -10 dodge). Of the gear only a `Utility` adds an
+action (`Grenade`); a weapon grants `Attack` and `Reload` implicitly.
 
 ## 2. Enum sketch
 
@@ -59,41 +59,53 @@ The four "on chain today" variants exist: `chain/map/action.move` (`ghosts::acti
 action's parameters (path, target tile) already travel in the entry function and the `Record`.
 
 ```move
-/// Something a `Unit` can be ordered to do. Variant order is the BCS tag.
-public enum Action has copy, drop, store {
+/// What an action does. Variant order is the BCS tag.
+public enum ActionKind has copy, drop, store {
     // === on chain today ===
     Move,
     Attack, // `perform_attack`; the engine calls it `fire`
     Reload,
     Grenade,
     // === not yet on chain: engine only ===
-    Overwatch,
-    Hunker,
-    Secure, // the HUD calls it Extract
-    SwitchWeapon, // payload (which weapon) would be needed; kept out, the order carries it
+    // Overwatch, Hunker, Secure, SwitchWeapon (payload kept out, the order carries it)
     // === not yet on chain: design note ===
-    PickUp, // grab the hard drive / intel (Mission Types, Concealment)
-    OpenDoor, // named in Concealment as an action that breaks concealment
+    // PickUp, OpenDoor
+}
+
+/// A kind and its budget: how many times it may still be performed in a match.
+public struct Action has copy, drop, store {
+    uses: Option<u8>, // `none` is unlimited, `some(n)` is `n` left
+    kind: ActionKind,
 }
 ```
 
-`Unit` carries it as `actions: vector<Action>`, its last field. `from_recruit` fills it: `Move` and
-`Grenade` as base actions, `Attack` and `Reload` only with a weapon (utility item and armor will add
-more). Each unit-level `perform_*` first asserts `has_action`, abort `EActionNotAllowed` (5). `Unit` is read from the object by BCS (`unit.move:232`, `agent/bcs.ts`), and
-variant order is the wire tag, so new variants are only appended, never reordered.
+The count is on the `Action`: `none` is unlimited (`Move`, `Attack`, `Reload`), `some(n)` is `n` left,
+so an action that can be done once a game (the frag grenade's `Grenade`, a quick shot) is an `Action`
+with `uses: some(n)`, not a kind of its own. `Unit` carries `actions: vector<Action>`, filled by
+`from_recruit` in this order: `Move` (base), `Attack` and `Reload` with a weapon, then the actions of
+each equipped utility in slot order, as they are on the item. Nothing is merged: two grants of a
+kind are two entries, each with its own count. Each unit-level `perform_*` first asserts `has_action`
+(some entry of that kind), abort `EActionNotAllowed` (5), and spends through one helper: the first
+entry of the kind with uses left (`none` counts as left), else `ENoUsesLeft` (6). `Unit` is read from
+the object by BCS (`agent/bcs.ts`): `uses` is an option tag then the value, then the kind tag, and
+variant order is the wire tag, so new kinds are only appended, never reordered.
 
 ### Action properties
 
 An action's properties are hard-coded in its own function, not stored as data: `Move`, `Reload` and
-`Grenade` each call `unit.ap.decrease(1)` (`unit.move:62`, `:69`, `:78`), `Attack` calls
+`Grenade` each call `unit.ap.decrease(1)` (`Grenade` also spends a use) (`unit.move:62`, `:69`, `:78`), `Attack` calls
 `unit.ap.deplete()` (`unit.move:102`), and the hit, crit and damage rules sit in the same function.
 
-So a variation of an action is a new action: its own enum variant, its own function, its own
-constants. Examples, for context only, none of them built:
+Two rules: a utility's `stats` are modifiers added to the unit that carries it, like an armor's, and
+an action's own numbers live in its function (and the item only says how often it can be used, with
+`uses`). So a variation of an action is a new action: its own `ActionKind` variant, its own
+function, its own constants. Examples, for context only, none of them built:
 
 | Variant | Differs from | AP | What changes |
 | --- | --- | --- | --- |
-| `QuickShot` | `Attack` | 1, does not end the activation | lower chance to hit |
+| `QuickShot` | `Attack` | 1, does not end the activation | lower chance to hit; if once a game, `uses: some(1)` |
+| ammo-type utility | none: no new action | as `Attack` | the utility's `stats` modify the weapon's (damage, crit, ...) like any modifier, `Attack` is unchanged |
+| stun grenade | `Grenade` | 1 AP and 1 use | a new `ActionKind` with its own function: applies an effect (a status on the hit units) rather than damage |
 
 A unit that has `QuickShot` in its `actions` may or may not also have `Attack`; the two are checked
 separately.
@@ -106,14 +118,14 @@ only / in the design note / proposed here.
 ### 3.1 Recruit, as on chain today
 
 A recruit without a weapon still gets the default weapon stats (`stats.move:69`) but no `Attack` or
-`Reload`: it can only `Move` and throw its `Grenade` (3.2). An armed recruit has all four.
+`Reload`; without a utility it has no `Grenade` either. Armed and carrying a frag grenade it has all four.
 
 | Action | Source | Requires | Status |
 | --- | --- | --- | --- |
 | `Move` | base | `mobility` stat, 1 AP | on chain today |
 | `Attack` | weapon | ammo, range, line of sight | on chain today |
 | `Reload` | weapon | ammo below max | on chain today |
-| `Grenade` | base for now (utility item in the note; once per match) | not yet used, range 5 | on chain today |
+| `Grenade` | utility item (frag grenade, `uses: some(1)`) | a use left, range 5 | on chain today |
 
 Weapon sub-cases: the standard rifle, the sharpshooter rifle (the "sniper" case: range 5, +20%
 crit) and the plasma rifle (6 damage, +30% crit) give the same four actions and differ only in
@@ -127,7 +139,7 @@ are engine-local weapons with no chain counterpart. Armor changes stats only.
 | `Move` | base | `mobility` | on chain today |
 | `Attack` | weapon | not available without a weapon | on chain today (refused) |
 | `Reload` | weapon | not available without a weapon | on chain today (refused) |
-| `Grenade` | utility item | not available without a grenade | in the design note (today a base action, so the runner can throw) |
+| `Grenade` | utility item | not available without a grenade | on chain today (refused: `EActionNotAllowed`) |
 | `PickUp` | mission | intel in reach (data extraction) | in the design note |
 | `Secure` | mission | on the extraction point | proposed here: a runner must be able to finish the mission it exists for |
 
@@ -140,10 +152,15 @@ closest existing one.
 | --- | --- | --- | --- |
 | `Move` | base | `mobility` | on chain today |
 | `Attack`, `Reload` | weapon | as 3.1, with a weapon | on chain today |
-| `Grenade` | utility item | grenade item equipped, not used up | in the design note |
+| `Grenade` | utility item | frag grenade equipped, a use left | on chain today |
 
-The note calls utilities also in-match consumables and says that needs design: today the use-up
-is the `grenade_used` flag on `Unit`, once per match, with range, radius and damage as constants.
+`Utility` (`chain/recruit/utility.move`) is an object like `Weapon` and `Armor`: `id`, `name`,
+`stats` and `actions`. Its stats are a modifier added to the unit (a grenade adds nothing: zero), its
+actions are added to the unit's `actions` with their `uses` (the frag grenade: `Grenade` with
+`uses: some(1)`, once per match). The grenade's range, radius and damage are constants of
+`Map.perform_grenade`. A recruit has a limited number of utility slots, `MAX_UTILITIES` in
+`recruit.move`: one now, two intended. The note calls utilities also in-match consumables and says
+that needs design: nothing is consumed by a match yet, uses refill each game like ammo.
 
 ### 3.4 Engine demo roles and enemies
 

@@ -6,9 +6,11 @@ module ghosts::items;
 
 use bit_field::bit_field as bf;
 use ghosts::{
+    action,
     armor::{Self, Armor},
     rank,
     stats,
+    utility::{Self, Utility},
     weapon::{Self, Weapon},
     weapon_upgrade::{Self as upgrade, WeaponUpgrade}
 };
@@ -40,6 +42,30 @@ public(package) fun armor(tier: u8, ctx: &mut TxContext): Armor {
         3 => armor.for_rank(rank::sergeant()),
         _ => armor,
     }
+}
+
+// === Utilities ===
+
+/// `Utility` kinds, as requisitioned.
+const FRAG_GRENADE: u8 = 0;
+
+/// Whether there is a utility of the given kind.
+public(package) fun is_utility(kind: u8): bool { kind == FRAG_GRENADE }
+
+/// Creates a utility of the given kind. Aborts on an unknown kind.
+public(package) fun utility(kind: u8, ctx: &mut TxContext): Utility {
+    match (kind) {
+        FRAG_GRENADE => frag_grenade(ctx),
+        _ => abort,
+    }
+}
+
+/// A frag grenade: a `Grenade` action usable once per match, the `uses` of the
+/// action being the only budget there is. It adds nothing to its carrier, so its
+/// stats are the zero modifier. The grenade's own numbers are in `map::perform_grenade`.
+public(package) fun frag_grenade(ctx: &mut TxContext): Utility {
+    let grenade = action::limited(action::new_grenade(), 1);
+    utility::new("Frag Grenade", stats::new(0, 0, 0, 0, 0), vector[grenade], ctx)
 }
 
 // === Weapons ===

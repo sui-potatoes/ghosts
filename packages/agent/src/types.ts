@@ -29,6 +29,15 @@ export type Tile =
 /** What a unit may be ordered to do: `ghosts::action::Action`, as the `kind` of the order. */
 export type UnitAction = "move" | "attack" | "reload" | "grenade";
 
+/**
+ * An action a unit has (`ghosts::action::Action`): its kind and how many times it may still be
+ * performed this match, `null` for unlimited.
+ */
+export interface UnitActionEntry {
+    kind: UnitAction;
+    uses: number | null;
+}
+
 /** `x` is the row and `y` the column, as in Move. */
 export interface Unit {
     recruit: string;
@@ -44,10 +53,13 @@ export interface Unit {
     hpMax: number;
     ammo: number;
     ammoMax: number;
-    grenadeUsed: boolean;
     stats: Stats;
-    /** The orders the unit may be given: an unarmed recruit has no `attack` or `reload`. */
-    actions: UnitAction[];
+    /**
+     * The orders the unit may be given, in this order: `move`, the weapon's `attack` and `reload`,
+     * then those of its utilities (a `grenade`), each with its uses left. Two of a kind are two
+     * entries with their own counts.
+     */
+    actions: UnitActionEntry[];
 }
 
 /**

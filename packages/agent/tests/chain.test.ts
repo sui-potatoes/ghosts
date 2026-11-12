@@ -33,7 +33,7 @@ const bytes = (hex: string) => Uint8Array.from(Buffer.from(hex, "hex"));
 
 const ALICE = "0x63d9a65220318469fb169034d8a011eae3f014fed2a1f8c006183e2ece3c3975";
 const BOB = "0xdba72804cc9504a82bbaa13ed4a83a0e2c6219d7e45125cf57fd10cbab957a97";
-const GAME = "0xcb0a5e512b8bcb66eb82210731b5f3e7a1f6e4429404943122491a649d710916";
+const GAME = "0x19d966d8856a28c89a061055fa1c3e2bcd332143429d45c4a4c80b48c2a5c862";
 const ALICE_RECRUIT = "0x75c3360eb19fd2c20fbba5e2da8cf1a39cdb1ee913af3802ba330b852e459e05";
 const BOB_RECRUIT = "0x1611edd9a9d42dbcd9ae773ffa22be0f6017b00590959dd5c767e4efcd34cd0b";
 
@@ -54,6 +54,7 @@ test("every Move-written value reserializes to the same bytes under the SDK's sc
         [SeatBcs, FIXTURES.seat],
         [RecruitBcs, FIXTURES.recruitUnarmed],
         [RecruitBcs, FIXTURES.recruitArmed],
+        [RecruitBcs, FIXTURES.recruitGrenadier],
         [GameStateBcs, FIXTURES.stateDeploying],
         [GameStateBcs, FIXTURES.statePlaying],
         [GameStateBcs, FIXTURES.stateOverWon],
@@ -101,11 +102,14 @@ test("units carry their owner, and squads come from the units on the map", () =>
         [ALICE_RECRUIT, ALICE, 0, 0, 3],
     );
     assert.deepEqual([bob.recruit, bob.owner, bob.side, bob.x, bob.y], [BOB_RECRUIT, BOB, 1, 6, 5]);
-    assert.deepEqual(alice.actions, ["move", "attack", "reload", "grenade"]);
-    assert.deepEqual(
-        [alice.ap, alice.apMax, alice.hp, alice.ammo, alice.grenadeUsed],
-        [2, 2, 10, 3, false],
-    );
+    // base, weapon, then the frag grenade's action with its one use
+    assert.deepEqual(alice.actions, [
+        { kind: "move", uses: null },
+        { kind: "attack", uses: null },
+        { kind: "reload", uses: null },
+        { kind: "grenade", uses: 1 },
+    ]);
+    assert.deepEqual([alice.ap, alice.apMax, alice.hp, alice.ammo], [2, 2, 10, 3]);
     // `Unit.stats` is the recruit with a Plasma rifle and Medium armor.
     assert.deepEqual(
         [alice.stats.armor, alice.stats.damage, alice.stats.range, alice.stats.critChance],
@@ -229,13 +233,22 @@ test("an Account's state decodes from Idle through Playing and Suspended", () =>
     assert.equal(suspended.suspendedUntilMs, 63_000);
 });
 
-test("a Seat names the game, and a Recruit shows whether it carries a weapon", () => {
+test("a Seat names the game, and a Recruit shows what it carries", () => {
     assert.equal(SeatBcs.parse(bytes(FIXTURES.seat)).game, GAME);
     const unarmed = RecruitBcs.parse(bytes(FIXTURES.recruitUnarmed));
     assert.equal(unarmed.weapon, null, "`hire_recruits` leaves a recruit with no weapon");
     const armed = RecruitBcs.parse(bytes(FIXTURES.recruitArmed));
     assert.equal(armed.weapon?.name, "Standard Rifle");
     assert.equal(armed.armor?.name, "Medium Armor");
+    assert.deepEqual(armed.utilities, [], "no utility until one is equipped");
+    const grenadier = RecruitBcs.parse(bytes(FIXTURES.recruitGrenadier));
+    assert.equal(grenadier.utilities.length, 1);
+    assert.equal(grenadier.utilities[0].name, "Frag Grenade");
+    assert.deepEqual(
+        grenadier.utilities[0].actions.map(({ kind, uses }) => [kind.$kind, uses]),
+        [["Grenade", 1]],
+    );
+    assert.equal(grenadier.utilities[0].stats, "0", "a grenade adds nothing to its carrier");
 });
 
 test("every history record decodes, in the contract's variant order", () => {

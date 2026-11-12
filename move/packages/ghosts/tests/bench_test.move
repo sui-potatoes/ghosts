@@ -62,6 +62,7 @@ fun recruit_one(ctx: &mut TxContext): Recruit {
     let mut recruit = recruit::new("Recruit 1", ctx);
     recruit.add_armor(items::armor(2, ctx));
     recruit.add_weapon(items::rifle(3, ctx));
+    recruit.add_utility(items::frag_grenade(ctx));
     recruit
 }
 
