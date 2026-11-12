@@ -89,6 +89,10 @@ public struct Map has store {
     id: ID,
     /// The grid of tiles.
     grid: Grid<Tile>,
+    /// The units killed since the last `bury`, taken off their tiles. They stay
+    /// in the `Map` until then so that a kill never frees storage in the call
+    /// that rolled it: an attacker cannot tell a kill from a hit by its gas.
+    fallen: vector<Unit>,
 }
 
 public fun new(id: ID, size: u16): Map {
@@ -102,6 +106,7 @@ public fun new(id: ID, size: u16): Map {
                 unit: option::none(),
             },
         ),
+        fallen: vector[],
     }
 }
 
@@ -110,8 +115,9 @@ public fun default(id: ID): Map { new(id, 30) }
 
 /// Destroy the `Map` struct, returning the IDs of the units on the map.
 public fun destroy(map: Map): vector<ID> {
-    let Map { grid, .. } = map;
+    let Map { grid, fallen, .. } = map;
     let mut units = vector[];
+    fallen.destroy!(|unit| { unit.destroy(); });
     grid.destroy!(|Tile { unit, .. }| unit.destroy!(|unit| units.push_back(unit.destroy())));
     units
 }
@@ -120,7 +126,7 @@ public fun destroy(map: Map): vector<ID> {
 public fun id(map: &Map): ID { map.id }
 
 /// Clone the `Map`.
-public(package) fun clone(map: &Map): Map { Map { id: map.id, grid: map.grid } }
+public(package) fun clone(map: &Map): Map { Map { id: map.id, grid: map.grid, fallen: map.fallen } }
 
 // === Actions ===
 
@@ -194,9 +200,14 @@ public fun move_unit(map: &mut Map, path: vector<u8>): Record {
 /// `can_be_dodged` stat decides whether the damage can be dodged. Either way
 /// the attacker needs a line of sight to the target (see `line_of_sight`).
 ///
-/// Records: `Attack`, then `Miss`; or for a single target `[Dodged]`,
+/// Records: `Attack`, then `Miss`; or for a single target `Dodged`, or
 /// `Damage` / `CriticalHit`, `[UnitKIA]`; or for an area weapon the records
 /// of `explode`.
+///
+/// What is worse for the attacker never takes more storage than what is better:
+/// a miss and a dodge are one record of the same size, a hit a larger one, a
+/// kill adds another and leaves the unit in `fallen`. A gas budget cannot be
+/// set to let through only the good outcomes.
 public fun perform_attack(
     map: &mut Map,
     rng: &mut RandomGenerator,
@@ -248,16 +259,26 @@ public fun perform_attack(
         target.apply_damage(rng, damage, can_dodge)
     } else (false, 0, false);
 
-    if (is_dodged) history.push_back(history::new_dodged());
     history.push_back({
-        if (is_crit) history::new_critical_hit(damage) // same cost
+        if (is_dodged) history::new_dodged()
+        else if (is_crit) history::new_critical_hit(damage) // same cost
         else history::new_damage(damage)
     });
 
-    if (is_kia) history.push_back(history::new_kia(target.destroy(), x1, y1))
-    else map.grid[x1, y1].unit.fill(target);
+    if (is_kia) {
+        history.push_back(history::new_kia(target.recruit_id(), x1, y1));
+        map.fallen.push_back(target);
+    } else map.grid[x1, y1].unit.fill(target);
 
     history
+}
+
+/// Take the units killed since the last call out of the `Map`. Returns the IDs
+/// of their recruits.
+public fun bury(map: &mut Map): vector<ID> {
+    let mut fallen = vector[];
+    while (!map.fallen.is_empty()) fallen.push_back(map.fallen.pop_back().destroy());
+    fallen
 }
 
 /// Calculate the cover bonus for the given tile. The cover bonus is calculated
@@ -386,7 +407,7 @@ public fun perform_grenade(
 /// armor and dodged only if `can_dodge`. With `env_damage`, covers in the area
 /// are destroyed (`Cover` -> `Empty`). Shared by grenades and area weapons.
 ///
-/// Records: `Explosion`, then `[Dodged]`, `Damage`, `[UnitKIA]` per unit in
+/// Records: `Explosion`, then `Dodged`, or `Damage`, `[UnitKIA]`, per unit in
 /// the area. Tiles are visited in the order of `Grid.von_neumann_neighbors`
 /// with the center tile last.
 fun explode(
@@ -411,11 +432,15 @@ fun explode(
             let mut unit = tile.unit.extract();
             let (is_dodged, dmg, is_kia) = unit.apply_damage(rng, damage, can_dodge);
 
-            if (is_dodged) history.push_back(history::new_dodged());
-            history.push_back(history::new_damage(dmg));
+            history.push_back({
+                if (is_dodged) history::new_dodged() else history::new_damage(dmg)
+            });
 
             if (!is_kia) tile.unit.fill(unit)
-            else history.push_back(history::new_kia(unit.destroy(), x, y));
+            else {
+                history.push_back(history::new_kia(unit.recruit_id(), x, y));
+                map.fallen.push_back(unit);
+            };
         };
 
         if (env_damage) {
@@ -667,7 +692,7 @@ fun step_blocks(from: &Tile, to: &Tile, direction: u8, inner: bool, high_cover_b
 /// The Kōra district of the first demo, three recruits a side.
 public fun black_rain(id: ID): Map {
     // prettier-ignore
-    let mut map = from_bytes(x"00000000000000000000000000000000000000000000000000000000000000000e1203000300030003000300000000000000000000000000000000000300030003000300030012030003000300030003000000000000000000000000000000000003000300030003000300120300030003000300030000000000000000000000000000000101010101000300030003000300030012030003000300030003000000000000000000010101010100000000000000030003000300030003001200000000000000000000010101010100000000000000000000000000000000000000000000000000120000000000000000000000000000000000000000000000000000000000000000000000001200000000000000000000000000000000000000000000000000000101010101000101010101000000000000001200000000000000000000000000000000000000000000000000000000000000000000000012000000000000000000000000000000000000000000000000000000000000000000000000120300030003000000000000000101010101000101010101000000000000000101010101000101010101000000000000000000000012030003000300000000000000000000000000000000000000000000000000000000000000120300030003000101010101000000000000000000000000000000000000000300030003000300000012030003000300000000000000000000000000000000000000000003000300030003000000120000000000000000000000000000000000000000000000000000030003000300030000000e001200");
+    let mut map = from_bytes(x"00000000000000000000000000000000000000000000000000000000000000000e1203000300030003000300000000000000000000000000000000000300030003000300030012030003000300030003000000000000000000000000000000000003000300030003000300120300030003000300030000000000000000000000000000000101010101000300030003000300030012030003000300030003000000000000000000010101010100000000000000030003000300030003001200000000000000000000010101010100000000000000000000000000000000000000000000000000120000000000000000000000000000000000000000000000000000000000000000000000001200000000000000000000000000000000000000000000000000000101010101000101010101000000000000001200000000000000000000000000000000000000000000000000000000000000000000000012000000000000000000000000000000000000000000000000000000000000000000000000120300030003000000000000000101010101000101010101000000000000000101010101000101010101000000000000000000000012030003000300000000000000000000000000000000000000000000000000000000000000120300030003000101010101000000000000000000000000000000000000000300030003000300000012030003000300000000000000000000000000000000000000000003000300030003000000120000000000000000000000000000000000000000000000000000030003000300030000000e00120000");
     map.id = id;
     map
 }
@@ -710,7 +735,9 @@ public(package) fun from_bcs(bcs: &mut BCS): Map {
         }
     });
 
-    Map { id, grid }
+    let fallen = bcs.peel_vec!(|bcs| unit::from_bcs(bcs));
+
+    Map { id, grid, fallen }
 }
 
 /// Implements the `Grid.to_string` method due to `Tile` implementing

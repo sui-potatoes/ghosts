@@ -597,3 +597,42 @@
         }
     }
 }
+
+/*
+ * UI scale for phones held in landscape. Everything sized in rem (Tailwind:
+ * menus, dialogs, the pause menu) follows the root font size; the encounter
+ * HUD in @ghosts/engine is px-based and applies the same `--ui-scale` with CSS
+ * `zoom` on its HUD roots (never on the WebGL canvas). Steps, not a formula,
+ * because dividing lengths in calc() is not yet universal. Tablets and desktops
+ * are above 500px of height and stay at 1.
+ */
+:root {
+    --ui-scale: 1;
+}
+
+@media (orientation: landscape) and (max-height: 500px) {
+    :root {
+        --ui-scale: 0.8;
+    }
+    html {
+        font-size: calc(16px * var(--ui-scale));
+    }
+}
+
+@media (orientation: landscape) and (max-height: 440px) {
+    :root {
+        --ui-scale: 0.72;
+    }
+}
+
+@media (orientation: landscape) and (max-height: 400px) {
+    :root {
+        --ui-scale: 0.66;
+    }
+}
+
+@media (orientation: landscape) and (max-height: 350px) {
+    :root {
+        --ui-scale: 0.6;
+    }
+}

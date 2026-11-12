@@ -11,6 +11,7 @@ import { TitleBackdrop } from "../components/TitleBackdrop";
 import { PadHints } from "../components/PadHints";
 import { NETWORK } from "../constants";
 import { useMenuNav } from "../hooks/useMenuNav";
+import { useInstall } from "../install";
 import { requestSignIn } from "../signIn";
 
 const SOURCE = "https://github.com/sui-potatoes/ghosts";
@@ -70,6 +71,8 @@ export default function MainMenu() {
                   onClick: account ? match.find : requestSignIn,
               };
 
+    const install = useInstall();
+
     // The local playtest is available with or without a connected account.
     const entries: Entry[] = [
         // The playable contracts, named like the briefings name them: the
@@ -85,6 +88,11 @@ export default function MainMenu() {
         { label: "Headquarters", onClick: () => navigate("/headquarters") },
         { label: "Level Editor", tag: "tool", onClick: () => navigate("/editor") },
         { label: "Leaderboard", tag: "soon", disabled: true },
+        ...(install.kind === "prompt"
+            ? [{ label: "Install App", onClick: () => void install.install() }]
+            : install.kind === "ios"
+              ? [{ label: "Install App", tag: "Share → Add to Home Screen", disabled: true }]
+              : []),
         { label: "Settings", onClick: () => navigate("/settings") },
     ];
 

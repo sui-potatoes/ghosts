@@ -206,7 +206,7 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
     function damage(state: GameState, unit: Unit, amount: number, canDodge: boolean): GameRecord[] {
         const dealt = unit.stats.armor >= amount ? 1 : amount - unit.stats.armor;
         if (canDodge && rng.inRange(0, 99) < unit.stats.dodge) {
-            return [{ kind: "dodged" }, { kind: "damage", amount: 0 }];
+            return [{ kind: "dodged" }];
         }
         unit.hp = Math.max(0, unit.hp - dealt);
         const records: GameRecord[] = [{ kind: "damage", amount: dealt }];

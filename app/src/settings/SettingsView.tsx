@@ -11,6 +11,7 @@ import { usePad } from "../components/PadHints";
 import { useBack } from "../hooks/useBack";
 import { onAction } from "../input";
 import { ControllerPanel } from "./ControllerPanel";
+import { NetworkPanel } from "./NetworkPanel";
 import { useLayoutMode } from "./layoutMode";
 import { AccountPanel, AudioPanel, ControlsPanel, DisplayPanel, PlayerPanel } from "./panels";
 import { dialogAbove, ResetHintContext, SettingsHints } from "./SettingList";
@@ -25,6 +26,7 @@ const CATEGORIES = [
     { id: "display", label: "Display" },
     { id: "controls", label: "Controls" },
     { id: "controller", label: "Controller" },
+    { id: "network", label: "Network" },
 ] as const;
 
 export type CategoryId = (typeof CATEGORIES)[number]["id"];
@@ -40,6 +42,7 @@ const PANELS: Record<CategoryId, () => ReactNode> = {
     display: DisplayPanel,
     controls: ControlsPanel,
     controller: ControllerPanel,
+    network: NetworkPanel,
 };
 
 /**

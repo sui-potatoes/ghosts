@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import * as T from "three";
-import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { createGLTFLoader } from "./gltf-loader";
 import { createFieldSupply } from "./field-supplies";
 import { ATTACHMENT_SLOTS, attachmentById } from "../catalog";
 import { createSidearm } from "./sidearm";
@@ -43,7 +43,7 @@ export class EquipmentAssets {
         return source.clone();
     }
     private async loadWeaponAsset(id: string): Promise<T.Group> {
-        const gltf = await new GLTFLoader().loadAsync(assetUrl(`weapons/${id}.glb?v=8`));
+        const gltf = await createGLTFLoader().loadAsync(assetUrl(`weapons/${id}.glb?v=8`));
         return gltf.scene;
     }
     private async create(type: Equipment["model"]) {
@@ -84,7 +84,7 @@ export class EquipmentAssets {
                 }[type] + "-male",
             ];
             for (const path of paths) {
-                const gltf = await new GLTFLoader().loadAsync(
+                const gltf = await createGLTFLoader().loadAsync(
                     assetUrl(`armor/${path}.glb?v=${type === "armor" ? 7 : 10}`),
                 );
                 gltf.scene.traverse((o) => {

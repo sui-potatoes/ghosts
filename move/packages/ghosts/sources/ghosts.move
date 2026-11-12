@@ -139,7 +139,7 @@ public struct Game has key {
     /// History of the game.
     history: History,
     /// The recruits on the map, for the duration of the game; whose each one is,
-    /// its unit says. The fallen are killed as they are taken out.
+    /// its unit says. The fallen are taken out and killed by `bury_fallen`.
     recruits: Table<ID, Recruit>,
 }
 
@@ -302,7 +302,7 @@ public fun complete_game(
     first: &mut Account,
     second: &mut Account,
     clock: &Clock,
-    _ctx: &mut TxContext,
+    ctx: &mut TxContext,
 ) {
     assert!(game.is_over(), EGameNotOver);
     assert!(
@@ -322,6 +322,7 @@ public fun complete_game(
         first.rate_game(second, winner, now);
     };
 
+    game.bury_fallen(ctx);
     let (xp_first, xp_second) = (game.experience(0, winner), game.experience(1, winner));
     game.send_home(first, 0, xp_first);
     game.send_home(second, 1, xp_second);
@@ -415,7 +416,7 @@ entry fun perform_grenade(
     let mut rng = rng.new_generator(ctx);
     let history = game.map.perform_grenade(&mut rng, x0, y0, x1, y1);
 
-    game.bury_fallen(&history, ctx);
+    game.count_losses(&history);
     game.history.append(history)
 }
 
@@ -436,7 +437,7 @@ entry fun perform_attack(
     let mut rng = rng.new_generator(ctx);
     let history = game.map.perform_attack(&mut rng, x0, y0, x1, y1);
 
-    game.bury_fallen(&history, ctx);
+    game.count_losses(&history);
     game.history.append(history)
 }
 
@@ -449,6 +450,7 @@ entry fun next_turn(game: &mut Game, acc: &Account, clock: &Clock, ctx: &mut TxC
     let side = game.side(acc, ctx);
     let now = clock.timestamp_ms();
     let active = game.active_side();
+    game.bury_fallen(ctx);
 
     let missed = match (&mut game.state) {
         State::Deploying { until_ms } => {
@@ -630,14 +632,23 @@ fun begin_unit_action(
     unit.borrow().recruit_id()
 }
 
-/// Take the fallen recruits out of the game, their gear going down with them and
-/// their dog tags sent to their `Account`s. A side with nobody left on the map
-/// loses; both at once, a draw.
-fun bury_fallen(game: &mut Game, records: &vector<Record>, ctx: &mut TxContext) {
-    let fallen = history::list_kia(records);
-    if (fallen.is_empty()) return;
+/// End the game if the kills among `records` left a side with nobody on the map:
+/// that side loses; both at once, a draw. The fallen stay in the game until
+/// `bury_fallen`: called from an attack, which rolls, this must not free storage.
+fun count_losses(game: &mut Game, records: &vector<Record>) {
+    if (history::list_kia(records).is_empty()) return;
 
-    fallen.do!(|id| {
+    let (first_left, second_left) = (!game.squad(0).is_empty(), !game.squad(1).is_empty());
+    if (!first_left && !second_left) game.state = State::Over(Ending::Draw)
+    else if (!first_left) game.state = State::Over(Ending::Won(game.players[1]))
+    else if (!second_left) game.state = State::Over(Ending::Won(game.players[0]));
+}
+
+/// Take the recruits killed since the last call out of the game, their gear going
+/// down with them and their dog tags sent to their `Account`s. Never called where
+/// `Random` is used: see `Map.fallen`.
+fun bury_fallen(game: &mut Game, ctx: &mut TxContext) {
+    game.map.bury().do!(|id| {
         // a unit the preset placed has no recruit behind it
         if (id.to_address() == @0 || !game.recruits.contains(id)) return;
 
@@ -645,11 +656,6 @@ fun bury_fallen(game: &mut Game, records: &vector<Record>, ctx: &mut TxContext) 
         let home = recruit.leader();
         transfer::public_transfer(recruit.kill(ctx), home);
     });
-
-    let (first_left, second_left) = (!game.squad(0).is_empty(), !game.squad(1).is_empty());
-    if (!first_left && !second_left) game.state = State::Over(Ending::Draw)
-    else if (!first_left) game.state = State::Over(Ending::Won(game.players[1]))
-    else if (!second_left) game.state = State::Over(Ending::Won(game.players[0]));
 }
 
 // === Init ===

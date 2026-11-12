@@ -9,6 +9,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter } from "react-router-dom";
 
 import { App } from "./App.tsx";
+// Listens for the browser's install offer from the start, before any screen mounts.
+import "./install.ts";
+import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
 import { registerServiceWorker } from "./serviceWorker.ts";
 import { initSettings } from "./settings/store.ts";
 import { dAppKit } from "./sui.ts";
@@ -22,11 +25,13 @@ registerServiceWorker();
 const queryClient = new QueryClient();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
-    <QueryClientProvider client={queryClient}>
-        <DAppKitProvider dAppKit={dAppKit}>
-            <BrowserRouter>
-                <App />
-            </BrowserRouter>
-        </DAppKitProvider>
-    </QueryClientProvider>,
+    <ErrorBoundary scope="app">
+        <QueryClientProvider client={queryClient}>
+            <DAppKitProvider dAppKit={dAppKit}>
+                <BrowserRouter>
+                    <App />
+                </BrowserRouter>
+            </DAppKitProvider>
+        </QueryClientProvider>
+    </ErrorBoundary>,
 );

@@ -7,7 +7,8 @@ import { nativeClip } from "../motion/clips";
 import { paintArmor } from "./armor-materials";
 import { officeIdle } from "./office-worker";
 import { BodyDeformation } from "../appearance/body-shape";
-import { GLTFLoader, type GLTF } from "three/addons/loaders/GLTFLoader.js";
+import type { GLTF } from "three/addons/loaders/GLTFLoader.js";
+import { createGLTFLoader } from "./gltf-loader";
 import { clone } from "three/addons/utils/SkeletonUtils.js";
 import { weights } from "../appearance/editor-state.js";
 import { frontSurface, shapeBrow } from "../appearance/brow-shape.js";
@@ -242,7 +243,7 @@ function deform(
  * are never disposed; a failed load is forgotten so the next request retries.
  */
 const shared = {
-    loader: new GLTFLoader(),
+    loader: createGLTFLoader(),
     // Bitmaps decode off the main thread; a plain image decodes on its first draw.
     bitmapLoader:
         typeof createImageBitmap === "function"
