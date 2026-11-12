@@ -13,10 +13,17 @@ import { isValidSuiAddress, normalizeSuiAddress } from "@mysten/sui/utils";
 import type { Backend } from "./backend.ts";
 import type { Policy } from "./bot.ts";
 import { nameProblem, normalizeName } from "./names.ts";
-import { legalActions, SEARCH_TIMEOUT_MS, validateBatch, type LegalAction } from "./rules.ts";
+import {
+    FREE_RECRUITS,
+    legalActions,
+    SEARCH_TIMEOUT_MS,
+    validateBatch,
+    type LegalAction,
+} from "./rules.ts";
 import {
     ActionError,
     type AccountView,
+    type Ending,
     type GameRecord,
     type GameState,
     type Receipt,
@@ -30,7 +37,6 @@ export type Phase =
     | "suspended"
     | "idle"
     | "searching"
-    | "game_found"
     | "deploy"
     | "deployment_over"
     | "your_turn"
@@ -50,6 +56,8 @@ export interface Situation {
     turnMsLeft?: number;
     /** Set in `game_over`: "won", "lost" or "draw". */
     result?: "won" | "lost" | "draw";
+    /** Set in `game_over`: how the game ended, as the contract names it. */
+    ending?: Ending["kind"];
 }
 
 export interface ObservedUnit {
@@ -180,9 +188,6 @@ export class GhostsAgent {
         if (account.search.kind === "searching") {
             return { phase: "searching", actionable: false, next: "Wait for an opponent." };
         }
-        if (account.search.kind === "found") {
-            return { phase: "game_found", actionable: false, next: "Wait: the game is starting." };
-        }
         if (this.now() < account.suspendedUntilMs) {
             return {
                 phase: "suspended",
@@ -190,7 +195,7 @@ export class GhostsAgent {
                 next: "Wait: this account left a game behind and can't search yet.",
             };
         }
-        const short = account.recruits < 4;
+        const short = account.recruits < FREE_RECRUITS;
         return todo(
             "idle",
             short ? "Run setup to replace the fallen, then find a game." : "Find a game.",
@@ -211,6 +216,7 @@ export class GhostsAgent {
                 ...shared,
                 ...todo("game_over", "Send the complete action to bring your squad home."),
                 result,
+                ending: game.status.ending.kind,
             };
         }
         if (game.status.kind === "deploying") {
@@ -259,8 +265,9 @@ export class GhostsAgent {
     }
 
     /**
-     * Sleep until the agent has something to do, or `timeoutMs` passes. A found
-     * game is started on the way, so an agent never has to know that step.
+     * Sleep until the agent has something to do, or `timeoutMs` passes. The seat a
+     * match sends while the agent waits is accepted on the way, so an agent never
+     * has to know that step.
      */
     async wait(options: { timeoutMs?: number; signal?: AbortSignal } = {}): Promise<Situation> {
         // Real time, not `now`: that clock says what turn deadlines read, not how long to sleep.
@@ -280,25 +287,28 @@ export class GhostsAgent {
         }
     }
 
-    /** The situation, after starting the game this account found an opponent for. */
+    /**
+     * The situation, after taking the seat a match sent this account. Whoever finds a
+     * waiting player starts the game and is in it at once; the player who waited stays
+     * on their search until their `Seat` is accepted, which anyone can do.
+     */
     private async advance(): Promise<Situation> {
-        const account = await this.backend.account();
-        if (account?.search.kind === "found") {
-            try {
-                await this.backend.startGame(account.search.opponent);
-            } catch (error) {
-                // The opponent moved on, which leaves this account holding nothing: let go.
-                // Not `cancelSearch`: that costs a suspension on a found game.
-                if (!(error instanceof ActionError) || error.code !== "rejected") throw error;
-                await this.backend.releaseGame(account.search.opponent);
-            }
+        let account = await this.backend.account();
+        if (account?.search.kind === "searching") {
+            if (await this.backend.acceptSeat()) account = await this.backend.account();
         }
         if (
             account?.search.kind === "searching" &&
             this.now() - account.search.sinceMs > SEARCH_TIMEOUT_MS
         ) {
-            // The ticket has expired, so nobody can find this account until it searches again.
-            await this.backend.cancelSearch();
+            // Nobody has answered in a while: leave the queue, so a stale ticket doesn't
+            // pair this account with someone who has long moved on.
+            try {
+                await this.backend.cancelSearch();
+            } catch (error) {
+                // A match answered it a moment ago: its seat is taken on the next poll.
+                if (!(error instanceof ActionError) || error.code !== "rejected") throw error;
+            }
         }
         return this.situation();
     }
@@ -316,16 +326,18 @@ export class GhostsAgent {
         return this.situation();
     }
 
-    /** Open the account and fill the squad, whichever of those is still missing. */
+    /** Open the account, fill the squad and arm it, whichever of those is still missing. */
     async setup(): Promise<Situation> {
         if (!(await this.backend.account())) await this.backend.createAccount();
         const account = await this.backend.account();
         if (account && this.recovery && !account.recovery) {
             await this.backend.setRecovery(this.recovery);
         }
-        if (account && account.recruits < 4 && account.search.kind === "idle") {
+        if (account && account.recruits < FREE_RECRUITS && account.search.kind === "idle") {
             await this.backend.hireSquad();
         }
+        // A recruit hired with no weapon can't attack or reload on the map.
+        if (account && account.search.kind !== "playing") await this.backend.armSquad();
         return this.situation();
     }
 

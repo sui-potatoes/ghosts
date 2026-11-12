@@ -3,7 +3,7 @@
 
 import { audio } from "./audio";
 import type { Command, GameEvent } from "./events";
-import { Encounter, type Cell } from "./game";
+import { allows, Encounter, type Cell, type UnitOrder } from "./game";
 import { applyDeploymentNames } from "./squad-bridge";
 // @ts-ignore Native editor adapter is shared JavaScript.
 import { deployment } from "./mpfb-characters.js";
@@ -37,7 +37,7 @@ function syncScene() {
     aimed ?? null,
     u && aimed && { chance: game.chance(u, aimed), ...damagePreview(u, aimed) },
   );
-  battlefield.showRange(u, s.mode === "move" && !s.busy);
+  battlefield.showRange(u, s.mode === "move" && !s.busy && !!u && allows(u, "move"));
   if (u && s.mode === "grenade" && !s.busy) battlefield.showGrenadeRange(u);
   battlefield.setHover(false);
   battlefield.showPath(undefined);
@@ -140,7 +140,8 @@ export function select(id: string) {
     }
     s.target = id;
     // With nobody selected there is no shooter: the hostile is only marked.
-    if (s.selected) s.mode = "fire";
+    const shooter = s.selectedUnit();
+    if (shooter && allows(shooter, "fire")) s.mode = "fire";
   } else {
     if (s.selected !== id) audio.speak("select", u);
     s.selected = id;
@@ -253,6 +254,8 @@ export async function action(name: string) {
   }
   if (!s.game.canAct(u)) return;
   if (s.game.scenario.versus && VERSUS_OFF.includes(name)) return;
+  // Never offered to this unit: no key, button or wheel entry gets past here.
+  if (!allows(u, name as UnitOrder)) return;
   audio.tone("click");
   if (name === "move" || name === "fire" || name === "grenade") {
     if (name === "fire" && s.mode === "fire") {

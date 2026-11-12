@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { action, cancelTargeting, deselect, endTurn, fire, pick, select, throwGrenade } from "./actions";
-import { distance } from "./game";
+import { allows, distance } from "./game";
 import { combatActionOf, isEditable as typing, type CombatAction } from "./keys";
 import { session } from "./session";
 import { engineSettings } from "./settings";
@@ -122,7 +122,7 @@ function bindField() {
     if (s.busy) return;
     const u = s.selectedUnit();
     if (!u) return;
-    if (s.mode === "move" && u.ap) {
+    if (s.mode === "move" && u.ap && allows(u, "move")) {
       const path = battlefield.previewPath(p);
       battlefield.setHover(!!path);
       battlefield.showPath(path);

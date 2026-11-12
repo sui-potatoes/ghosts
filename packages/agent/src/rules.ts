@@ -42,10 +42,12 @@ export const MAX_BATCH = 8;
 export const TURN_LIMIT_MS = 90_000;
 /** `ghosts::ghosts`: how long the players have to pick their squads once matched. */
 export const DEPLOY_LIMIT_MS = 120_000;
+/** `ghosts::account`: the squad an account can always hold for free. */
+export const FREE_RECRUITS = 3;
 /** `ghosts::ghosts`: how long a search stays in the queue. */
 export const SEARCH_TIMEOUT_MS = 120_000;
 /** `ghosts::ghosts`: how long an account can't search after misbehaving. */
-export const SUSPENSION_MS = 3_600_000;
+export const SUSPENSION_MS = 60_000;
 /** `ghosts::ghosts`: how many turns in a row a side can miss before it counts as abandoning. */
 export const MAX_MISSED_TURNS = 3;
 /** `ghosts::ghosts`: a game still going at this turn ends in a draw. */
@@ -398,6 +400,7 @@ export function refusal(
     const unit = unitAt(state, action.x, action.y);
     if (!unit) return `No unit at (${action.x}, ${action.y}).`;
     if (unit.side !== side) return `The unit at (${action.x}, ${action.y}) is not yours.`;
+    if (!unit.actions.includes(action.kind)) return `That unit cannot ${action.kind}.`;
     if (unit.ap <= 0) return "That unit has no AP left this turn.";
 
     switch (action.kind) {
@@ -462,9 +465,11 @@ export function applyDeterministic(state: GameState, action: Action): GameState 
         unit.ammo = unit.ammoMax;
         unit.ap -= 1;
     } else if (action.kind === "next_turn") {
+        // `bury_fallen`, then `reset_ap` for the side whose turn begins
+        next.fallen = [];
         next.turn += 1;
-        next.active = (next.active + 1) % next.players.length;
-        for (const unit of next.units) unit.ap = unit.apMax;
+        next.active = next.turn % next.players.length;
+        for (const unit of next.units) if (unit.side === next.active) unit.ap = unit.apMax;
     }
     return next;
 }
@@ -533,7 +538,7 @@ function moveOption(
     path: number[],
 ): LegalAction {
     const enemies = state.units.filter((other) => other.side !== unit.side);
-    const canShootAfter = unit.ap > 1 && unit.ammo > 0;
+    const canShootAfter = unit.actions.includes("attack") && unit.ap > 1 && unit.ammo > 0;
     let [threat, bestShot, enemyDistance] = [0, 0, Infinity];
     for (const enemy of enemies) {
         enemyDistance = Math.min(enemyDistance, manhattan(x, y, enemy.x, enemy.y));
@@ -585,7 +590,7 @@ export function legalActions(state: GameState, side: number, nowMs: number): Leg
     for (const unit of mine) {
         const { x, y, stats } = unit;
         const attacks: LegalAction[] = [];
-        if (unit.ammo > 0) {
+        if (unit.actions.includes("attack") && unit.ammo > 0) {
             for (const enemy of enemies) {
                 const chance = shotChance(
                     state,
@@ -615,7 +620,7 @@ export function legalActions(state: GameState, side: number, nowMs: number): Leg
         }
         options.push(...attacks.sort((a, b) => b.hitChance! - a.hitChance!));
 
-        if (!unit.grenadeUsed) {
+        if (unit.actions.includes("grenade") && !unit.grenadeUsed) {
             const throws: LegalAction[] = [];
             for (
                 let tx = Math.max(0, x - GRENADE_RANGE);
@@ -646,7 +651,7 @@ export function legalActions(state: GameState, side: number, nowMs: number): Leg
             options.push(...throws.sort((a, b) => value(b) - value(a)));
         }
 
-        if (unit.ammo < unit.ammoMax) {
+        if (unit.actions.includes("reload") && unit.ammo < unit.ammoMax) {
             options.push({
                 id: actionId({ kind: "reload", x, y }),
                 kind: "reload",
@@ -655,7 +660,7 @@ export function legalActions(state: GameState, side: number, nowMs: number): Leg
         }
 
         const moves: LegalAction[] = [];
-        for (const [key, path] of reachable(state, unit)) {
+        for (const [key, path] of unit.actions.includes("move") ? reachable(state, unit) : []) {
             const [tx, ty] = key.split(",").map(Number);
             moves.push(moveOption(state, unit, tx, ty, path));
         }

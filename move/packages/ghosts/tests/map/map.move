@@ -238,8 +238,11 @@ fun test_map_with_units() {
 
     let ctx = &mut tx_context::dummy();
     let mut rng = random::new_generator_from_seed_for_testing(vector[2]);
-    let recruit_one = recruit::default(ctx);
+    let mut recruit_one = recruit::default(ctx);
     let recruit_two = recruit::default(ctx);
+    recruit_one.add_weapon(
+        ghosts::weapon::new(b"Test".to_string(), ghosts::stats::default_weapon(), ctx),
+    );
 
     let mut map = Self::new(@1.to_id(), 6);
 

@@ -19,6 +19,8 @@ export const weapons = {
   pistol: { label: "K–12 SIDEARM", damage: 4, range: 5, clip: 6, aim: 82 },
 };
 export type Role = "ASSAULT" | "RECON" | "HEAVY" | "SPECIALIST";
+/** The orders the HUD offers a unit; chain `Attack` is `fire`. */
+export type UnitOrder = "move" | "fire" | "grenade" | "reload" | "overwatch" | "hunker" | "secure";
 export interface Unit {
   id: string;
   name: string;
@@ -42,7 +44,11 @@ export interface Unit {
   weapon: Weapon;
   magazines: Record<Weapon, number>;
   color: string;
+  /** What this unit may do; absent, everything the rules have. */
+  actions?: UnitOrder[];
 }
+/** Whether `u` may ever take `order`: its allow-list, when it has one, AP and ammo aside. */
+export const allows = (u: Unit, order: UnitOrder) => !u.actions || u.actions.includes(order);
 export const key = (p: Cell) => p.join(",");
 export const distance = (a: Cell, b: Cell) =>
   Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]);
@@ -356,6 +362,10 @@ export class Encounter {
     }
     return found;
   }
+  /** See `allows`. */
+  allows(u: Unit, order: UnitOrder) {
+    return allows(u, order);
+  }
   canAct(u: Unit) {
     return (
       u.hp > 0 &&
@@ -365,7 +375,7 @@ export class Encounter {
     );
   }
   move(u: Unit, p: Cell) {
-    if (!this.canAct(u)) return null;
+    if (!this.canAct(u) || !allows(u, "move")) return null;
     const path = this.paths(u).get(key(p));
     if (!path || path.length < 2) return null;
     this.emit({
@@ -425,7 +435,7 @@ export class Encounter {
     );
   }
   attack(a: Unit, b: Unit) {
-    if (!this.canAct(a) || !this.canShoot(a, b)) return null;
+    if (!this.canAct(a) || !allows(a, "fire") || !this.canShoot(a, b)) return null;
     return this.shoot(a, b, false);
   }
   /**
@@ -456,12 +466,12 @@ export class Encounter {
     return { hit, damage, crit };
   }
   reload(u: Unit) {
-    if (!this.canAct(u) || u.ammo === u.clip) return false;
+    if (!this.canAct(u) || !allows(u, "reload") || u.ammo === u.clip) return false;
     this.emit({ type: "reload", unit: u.id });
     return true;
   }
   throwGrenade(u: Unit, p: Cell) {
-    if (!this.canAct(u) || u.grenade || distance(u.pos, p) > 5) return false;
+    if (!this.canAct(u) || !allows(u, "grenade") || u.grenade || distance(u.pos, p) > 5) return false;
     const casualties = this.units
       .filter((t) => t.hp > 0 && distance(t.pos, p) <= 2)
       .map((t) => {
@@ -473,7 +483,7 @@ export class Encounter {
     return true;
   }
   secure(u: Unit) {
-    if (!this.canAct(u) || this.secured || distance(u.pos, this.relay) > 0)
+    if (!this.canAct(u) || !allows(u, "secure") || this.secured || distance(u.pos, this.relay) > 0)
       return false;
     this.emit({ type: "secure", unit: u.id });
     return true;
@@ -484,12 +494,12 @@ export class Encounter {
     return true;
   }
   hunker(u: Unit) {
-    if (!this.canAct(u)) return false;
+    if (!this.canAct(u) || !allows(u, "hunker")) return false;
     this.emit({ type: "hunker", unit: u.id });
     return true;
   }
   watch(u: Unit) {
-    if (!this.canAct(u) || u.ammo < 1) return false;
+    if (!this.canAct(u) || !allows(u, "overwatch") || u.ammo < 1) return false;
     this.emit({ type: "overwatch", unit: u.id });
     return true;
   }

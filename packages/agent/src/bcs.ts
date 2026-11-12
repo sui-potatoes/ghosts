@@ -9,9 +9,10 @@
 
 import { bcs } from "@mysten/sui/bcs";
 
-import { MAX_TURNS, TURN_LIMIT_MS } from "./rules.ts";
+import { TURN_LIMIT_MS } from "./rules.ts";
 import type {
     AccountView,
+    Ending,
     GameRecord,
     GameState,
     GameStatus,
@@ -19,21 +20,31 @@ import type {
     Stats,
     Tile,
     Unit,
+    UnitAction,
 } from "./types.ts";
 
 const Table = bcs.struct("Table", { id: bcs.Address, size: bcs.u64() });
-const TableVec = bcs.struct("TableVec", { contents: Table });
 const Param = bcs.struct("Param", { value: bcs.u16(), maxValue: bcs.u16() });
 const StatsBcs = bcs.u128();
 
+/** `ghosts::action::Action`: variant order is the tag, new variants are appended. */
+const ActionBcs = bcs.enum("Action", {
+    Move: null,
+    Attack: null,
+    Reload: null,
+    Grenade: null,
+});
+
+/** `ghosts::unit::Unit`: a recruit as the map holds them, with the `Account` it belongs to. */
 const UnitBcs = bcs.struct("Unit", {
     recruit: bcs.Address,
+    owner: bcs.Address,
     ap: Param,
     hp: Param,
     ammo: Param,
     grenadeUsed: bcs.bool(),
     stats: StatsBcs,
-    lastTurn: bcs.u16(),
+    actions: bcs.vector(ActionBcs),
 });
 
 const TileType = bcs.enum("TileType", {
@@ -60,11 +71,10 @@ export const MapBcs = bcs.struct("Map", {
     }),
     /** Units killed since the last turn change, off their tiles and not yet buried. */
     fallen: bcs.vector(UnitBcs),
-    turn: bcs.u16(),
 });
 
 /** `ghosts::history::Record`, variants in declaration order. */
-const RecordBcs = bcs.enum("Record", {
+export const RecordBcs = bcs.enum("Record", {
     Reload: bcs.vector(bcs.u16()),
     NextTurn: bcs.u16(),
     Move: bcs.vector(bcs.u8()),
@@ -78,9 +88,44 @@ const RecordBcs = bcs.enum("Record", {
         origin: bcs.vector(bcs.u16()),
         target: bcs.vector(bcs.u16()),
     }),
-    UnitKIA: bcs.Address,
+    /** The recruit and the tile it fell on. */
+    UnitKIA: bcs.tuple([bcs.Address, bcs.u16(), bcs.u16()]),
     Dodged: null,
 });
+
+/** `ghosts::ghosts::Ending`: how a game ended; a player is their `Account` ID. */
+export const EndingBcs = bcs.enum("Ending", {
+    Won: bcs.Address,
+    Draw: null,
+    Stalemate: null,
+    Abandoned: bcs.Address,
+    Forfeited: bcs.Address,
+    NoShow: bcs.Address,
+    NobodyShowed: null,
+});
+
+/** `ghosts::ghosts::State`: where a game stands. It only moves forward. */
+export const GameStateBcs = bcs.enum("State", {
+    Deploying: bcs.struct("Deploying", { untilMs: bcs.u64() }),
+    Playing: bcs.struct("Playing", { startedMs: bcs.u64(), missed: bcs.vector(bcs.u8()) }),
+    Over: EndingBcs,
+});
+
+/** `ghosts::ghosts::Game`. Squads and the fallen are not fields: the units say whose they are. */
+export const GameBcs = bcs.struct("Game", {
+    id: bcs.Address,
+    map: MapBcs,
+    players: bcs.vector(bcs.Address),
+    state: GameStateBcs,
+    turn: bcs.u16(),
+    positions: bcs.vector(bcs.vector(bcs.vector(bcs.u8()))),
+    history: bcs.vector(RecordBcs),
+    /** `Table<ID, Recruit>`: the recruits on the map. */
+    recruits: Table,
+});
+
+/** `ghosts::ghosts::Seat`: a place in `game`, sent to the `Account` a match found waiting. */
+export const SeatBcs = bcs.struct("Seat", { id: bcs.Address, game: bcs.Address });
 
 const Rank = bcs.enum("Rank", {
     Rookie: null,
@@ -105,57 +150,64 @@ const Metadata = bcs.struct("Metadata", {
     voice: bcs.u8(),
 });
 
-/** `ghosts::recruit::DogTag`. Only decoded to step over it: `fallen` sits inside `Game`. */
-const DogTag = bcs.struct("DogTag", { id: bcs.Address, rank: Rank, metadata: Metadata });
-
-/** `ghosts::ghosts::Game`. */
-export const GameBcs = bcs.struct("Game", {
-    id: bcs.Address,
-    map: MapBcs,
-    players: bcs.vector(bcs.Address),
-    squads: bcs.vector(bcs.vector(bcs.Address)),
-    fallen: bcs.vector(bcs.vector(DogTag)),
-    positions: bcs.vector(bcs.vector(bcs.vector(bcs.u8()))),
-    history: bcs.vector(RecordBcs),
-    recruits: Table,
-    deploying: bcs.bool(),
-    deployUntilMs: bcs.u64(),
-    turnStartedMs: bcs.u64(),
-    missed: bcs.vector(bcs.u8()),
-    abandonedBy: bcs.option(bcs.Address),
-});
-
 const WeaponUpgrade = bcs.struct("WeaponUpgrade", {
+    id: bcs.Address,
     name: bcs.string(),
     kind: bcs.u8(),
     tier: bcs.u8(),
     modifier: StatsBcs,
 });
 
-const SearchBcs = bcs.enum("Search", {
-    Idle: null,
-    Searching: bcs.struct("Searching", { order: bcs.Address, sinceMs: bcs.u64() }),
-    Matched: bcs.struct("Matched", { matchId: bcs.Address, opponent: bcs.Address }),
-    Playing: bcs.Address,
+const Weapon = bcs.struct("Weapon", {
+    id: bcs.Address,
+    name: bcs.string(),
+    stats: StatsBcs,
+    upgrades: bcs.vector(WeaponUpgrade),
+    requiredRank: Rank,
 });
 
-/** `ghosts::account::Account`. */
+const Armor = bcs.struct("Armor", {
+    id: bcs.Address,
+    name: bcs.string(),
+    stats: StatsBcs,
+    requiredRank: Rank,
+});
+
+/** `ghosts::recruit::Recruit`: an object the `Account` owns while the recruit is at home. */
+export const RecruitBcs = bcs.struct("Recruit", {
+    id: bcs.Address,
+    metadata: Metadata,
+    rank: Rank,
+    xp: bcs.u16(),
+    stats: StatsBcs,
+    weapon: bcs.option(Weapon),
+    armor: bcs.option(Armor),
+    leader: bcs.Address,
+});
+
+/** `ghosts::account::State`: where an `Account` stands. */
+export const AccountStateBcs = bcs.enum("State", {
+    Idle: null,
+    Searching: bcs.struct("Searching", { order: bcs.Address, sinceMs: bcs.u64() }),
+    Playing: bcs.Address,
+    Suspended: bcs.struct("Suspended", { untilMs: bcs.u64() }),
+});
+
+/**
+ * `ghosts::account::Account`. Recruits, gear and dog tags are objects it owns, not
+ * fields: `recruits` only counts the ones at home.
+ */
 export const AccountBcs = bcs.struct("Account", {
     id: bcs.Address,
     owner: bcs.Address,
-    recruits: Table,
-    weapons: Table,
-    armors: Table,
-    upgrades: bcs.vector(WeaponUpgrade),
-    dogTags: TableVec,
+    state: AccountStateBcs,
+    recruits: bcs.u64(),
     rating: bcs.struct("Rating", {
         rating: bcs.u64(),
         deviation: bcs.u64(),
         games: bcs.u64(),
         lastPlayedMs: bcs.u64(),
     }),
-    search: SearchBcs,
-    suspendedUntilMs: bcs.u64(),
     score: bcs.struct("Score", { wins: bcs.u64(), losses: bcs.u64(), draws: bcs.u64() }),
 });
 
@@ -230,35 +282,72 @@ export function decodeTiles(map: DecodedMap): Tile[][] {
     );
 }
 
-/** `is_over` and `winner` from `ghosts::ghosts`. Whoever did not abandon wins, or the side left. */
-function decodeStatus(game: DecodedGame): GameStatus {
-    const [first, second] = game.players;
-    if (game.abandonedBy !== null) {
-        return { kind: "finished", winner: game.abandonedBy === first ? second : first };
-    }
-    if (game.deploying) return { kind: "deploying" };
+type DecodedEnding = ReturnType<typeof EndingBcs.parse>;
 
-    const [firstOut, secondOut] = game.squads.map((squad) => squad.length === 0);
-    if (!firstOut && !secondOut && game.map.turn < MAX_TURNS) return { kind: "active" };
-    if (firstOut === secondOut) return { kind: "finished", winner: null };
-    return { kind: "finished", winner: secondOut ? first : second };
+/** `Ending`, as the plain view. */
+export function decodeEnding(ending: DecodedEnding): Ending {
+    switch (ending.$kind) {
+        case "Won":
+            return { kind: "won", by: ending.Won };
+        case "Abandoned":
+            return { kind: "abandoned", by: ending.Abandoned };
+        case "Forfeited":
+            return { kind: "forfeited", by: ending.Forfeited };
+        case "NoShow":
+            return { kind: "no_show", by: ending.NoShow };
+        case "Stalemate":
+            return { kind: "stalemate", by: null };
+        case "NobodyShowed":
+            return { kind: "nobody_showed", by: null };
+        default:
+            return { kind: "draw", by: null };
+    }
+}
+
+/**
+ * `winner` from `ghosts::ghosts`: the side with someone left, or whoever did not
+ * abandon, forfeit or miss the game. None for a draw.
+ */
+export function winnerOf(ending: Ending, players: string[]): string | null {
+    switch (ending.kind) {
+        case "won":
+            return ending.by;
+        case "abandoned":
+        case "forfeited":
+        case "no_show":
+            return players.find((player) => player !== ending.by) ?? null;
+        default:
+            return null;
+    }
+}
+
+function decodeStatus(game: DecodedGame): GameStatus {
+    const { state } = game;
+    if (state.$kind === "Deploying") return { kind: "deploying" };
+    if (state.$kind === "Playing") return { kind: "active" };
+    const ending = decodeEnding(state.Over);
+    return { kind: "finished", winner: winnerOf(ending, game.players), ending };
 }
 
 /** Decode a `Game` object's content into the plain state. */
 export function decodeGame(bytes: Uint8Array, version: string): GameState {
     const game = GameBcs.parse(bytes);
-    const turn = game.map.turn;
+    const { state } = game;
+    const status = decodeStatus(game);
+    // whose a unit is: its `owner` is an `Account` ID, and `players` are in turn order
+    const sideOf = (owner: string) => game.players.indexOf(owner);
+
     const units: Unit[] = [];
     game.map.grid.grid.forEach((row, x) =>
         row.forEach(({ unit }, y) => {
             if (!unit) return;
-            const stale = Number(unit.lastTurn) < turn;
             units.push({
                 recruit: unit.recruit,
-                side: game.squads.findIndex((squad) => squad.includes(unit.recruit)),
+                owner: unit.owner,
+                side: sideOf(unit.owner),
                 x,
                 y,
-                ap: stale ? unit.ap.maxValue : unit.ap.value,
+                ap: unit.ap.value,
                 apMax: unit.ap.maxValue,
                 hp: unit.hp.value,
                 hpMax: unit.hp.maxValue,
@@ -266,49 +355,60 @@ export function decodeGame(bytes: Uint8Array, version: string): GameState {
                 ammoMax: unit.ammo.maxValue,
                 grenadeUsed: unit.grenadeUsed,
                 stats: decodeStats(unit.stats),
+                actions: unit.actions.map(
+                    (action) => action.$kind.toLowerCase() as UnitAction,
+                ),
             });
         }),
     );
+
+    // `squad`: a side's recruits are its units on the map, the fallen aside
+    const squads = game.players.map(() => [] as string[]);
+    for (const unit of units) squads[unit.side]?.push(unit.recruit);
+
+    const blamed =
+        status.kind === "finished" &&
+        ["abandoned", "forfeited", "no_show"].includes(status.ending.kind)
+            ? status.ending.by
+            : null;
 
     return {
         id: game.id,
         version,
         ...gridSize(game.map),
-        turn,
-        active: turn % game.players.length,
+        turn: game.turn,
+        active: game.turn % game.players.length,
         players: game.players,
-        squads: game.squads,
-        fallen: game.fallen.map((tags) => tags.length),
+        squads,
+        fallen: game.map.fallen.map((unit) => unit.recruit),
         positions: game.positions,
         history: game.history.map(decodeRecord),
-        missed: game.missed,
-        abandonedBy: game.abandonedBy,
-        deadlineMs: game.deploying
-            ? Number(game.deployUntilMs)
-            : Number(game.turnStartedMs) + TURN_LIMIT_MS,
-        status: decodeStatus(game),
+        missed: state.$kind === "Playing" ? state.Playing.missed : game.players.map(() => 0),
+        abandonedBy: blamed,
+        deadlineMs:
+            state.$kind === "Deploying"
+                ? Number(state.Deploying.untilMs)
+                : state.$kind === "Playing"
+                  ? Number(state.Playing.startedMs) + TURN_LIMIT_MS
+                  : 0,
+        status,
         tiles: decodeTiles(game.map),
         units,
     };
 }
 
-export function decodeSearch(search: ReturnType<typeof SearchBcs.parse>): Search {
-    switch (search.$kind) {
+export function decodeSearch(state: ReturnType<typeof AccountStateBcs.parse>): Search {
+    switch (state.$kind) {
         case "Searching":
             return {
                 kind: "searching",
-                order: search.Searching.order,
-                sinceMs: Number(search.Searching.sinceMs),
-            };
-        case "Matched":
-            return {
-                kind: "found",
-                order: search.Matched.matchId,
-                opponent: search.Matched.opponent,
+                order: state.Searching.order,
+                sinceMs: Number(state.Searching.sinceMs),
             };
         case "Playing":
-            return { kind: "playing", game: search.Playing };
+            return { kind: "playing", game: state.Playing };
         default:
+            // `Suspended` is free to search again once its time has passed
             return { kind: "idle" };
     }
 }
@@ -325,9 +425,10 @@ export function decodeAccount(bytes: Uint8Array): AccountView {
             losses: Number(account.score.losses),
             draws: Number(account.score.draws),
         },
-        recruits: Number(account.recruits.size),
-        search: decodeSearch(account.search),
-        suspendedUntilMs: Number(account.suspendedUntilMs),
+        recruits: Number(account.recruits),
+        search: decodeSearch(account.state),
+        suspendedUntilMs:
+            account.state.$kind === "Suspended" ? Number(account.state.Suspended.untilMs) : 0,
         // Not in the Move package yet: see "Still assumed" in the README.
         recovery: null,
     };
@@ -361,7 +462,12 @@ export function decodeRecord(record: ReturnType<typeof RecordBcs.parse>): GameRe
         case "Grenade":
             return { kind: "grenade", from: record.Grenade.origin, to: record.Grenade.target };
         case "UnitKIA":
-            return { kind: "kia", recruit: record.UnitKIA };
+            return {
+                kind: "kia",
+                recruit: record.UnitKIA[0],
+                x: record.UnitKIA[1],
+                y: record.UnitKIA[2],
+            };
         default:
             return { kind: "dodged" };
     }

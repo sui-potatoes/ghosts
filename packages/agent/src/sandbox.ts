@@ -3,14 +3,16 @@
 
 /**
  * An in-memory `Backend`: a game on the match preset against a scripted opponent,
- * no key or gas needed. It follows `ghosts::ghosts` for the loop (the waiting
- * player goes first, the turn clock only passes a turn, `complete` sends everyone
- * home) and `unit::perform_attack`, `apply_damage` and `map::explode` for the dice,
- * so odds match the chain. You always find the opponent here, so you play second.
+ * no key or gas needed. It follows `ghosts::ghosts` for the loop (a match starts the
+ * game for the player who finds it, the waiting one is seated and goes first, the
+ * turn clock only passes a turn, kills wait for `bury_fallen`, `complete` sends
+ * everyone home) and `unit::perform_attack`, `apply_damage` and `map::explode` for the
+ * dice, so odds match the chain. By default you find the opponent, so you play second;
+ * with `seated` you wait and the opponent finds you.
  */
 
 import type { Backend } from "./backend.ts";
-import { decodeTiles, gridSize, MapBcs } from "./bcs.ts";
+import { decodeTiles, gridSize, MapBcs, winnerOf } from "./bcs.ts";
 import { referencePolicy, type Policy } from "./bot.ts";
 import { BLACK_RAIN, BLACK_RAIN_POSITIONS } from "./maps.ts";
 import {
@@ -18,6 +20,7 @@ import {
     blastUnits,
     coverBonus,
     DEPLOY_LIMIT_MS,
+    FREE_RECRUITS,
     GRENADE_DAMAGE,
     GRENADE_RADIUS,
     hitChance,
@@ -34,6 +37,7 @@ import {
     ActionError,
     type AccountView,
     type Action,
+    type Ending,
     type GameRecord,
     type GameState,
     type Stats,
@@ -46,31 +50,28 @@ export interface SandboxOptions {
     opponent?: Policy | null;
     /** Nobody is ever waiting, so a search only times out. */
     empty?: boolean;
-    /** The opponent found is already gone, so the game can't start. */
-    ghosted?: boolean;
+    /**
+     * You wait in the queue and the opponent finds you: the game starts with a `Seat`
+     * for you to accept, and you go first.
+     */
+    seated?: boolean;
     /** Time source, so tests can run the clock past a deadline. */
     now?: () => number;
     startingBalanceMist?: bigint;
 }
 
 const YOU = "0x0000000000000000000000000000000000000000000000000000000000000a01";
-const THEM = "0x0000000000000000000000000000000000000000000000000000000000000b01";
 const ACCOUNT = "0x0000000000000000000000000000000000000000000000000000000000000a02";
 const OPPONENT_ACCOUNT = "0x0000000000000000000000000000000000000000000000000000000000000b02";
-
-/** The waiting player goes first, and in the sandbox that is always the opponent. */
-const THEIR_SIDE = 0;
-const YOUR_SIDE = 1;
 
 /** The scripted opponent picked its own name too. */
 const OPPONENT_NAME = "sparring-partner";
 
-const FREE_RECRUITS = 4;
 const ACTION_GAS_MIST = 500_000n;
 const MAX_OPPONENT_ACTIONS = 32;
 
-/** `stats::default()` plus `stats::default_weapon()`. */
-const OPERATIVE: Stats = {
+/** `stats::default()` plus `stats::default_weapon()`: a recruit with no weapon. */
+const UNARMED: Stats = {
     mobility: 7,
     aim: 65,
     health: 10,
@@ -87,6 +88,19 @@ const OPERATIVE: Stats = {
     range: 4,
     ammo: 3,
 };
+
+/** The same with a standard rifle (`items::rifle`, tier 1): +10% plus-one and crit. */
+const ARMED: Stats = { ...UNARMED, plusOne: 10, critChance: 10 };
+
+/** `unit::from_recruit`: `Move` and `Grenade` for all, the weapon adds `Attack` and `Reload`. */
+const UNARMED_ACTIONS: Unit["actions"] = ["move", "grenade"];
+const ARMED_ACTIONS: Unit["actions"] = ["move", "attack", "reload", "grenade"];
+
+/** A recruit at home in the `Account`. */
+interface Recruit {
+    id: string;
+    armed: boolean;
+}
 
 /** mulberry32: small, seedable, good enough for dice in a sandbox. */
 function dice(seed: number) {
@@ -113,8 +127,15 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
     let balance = options.startingBalanceMist ?? 10_000_000_000n;
     let name: string | null = null;
     let account: AccountView | null = null;
+    let home: Recruit[] = [];
     let current: GameState | null = null;
-    let [digests, games, version] = [0, 0, 0];
+    /** The game a match started for this account while it waited: the seat's game. */
+    let seated: GameState | null = null;
+    /** The waiting player goes first; the one who finds them plays second. */
+    const yourSide = options.seated ? 0 : 1;
+    let [digests, games, version, recruits] = [0, 0, 0, 0];
+
+    const theirSide = () => 1 - yourSide;
 
     function receipt(records: GameRecord[], gas = ACTION_GAS_MIST) {
         balance -= gas;
@@ -126,8 +147,12 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
         return account;
     }
 
-    /** `start_game`: the first half of the spawn positions goes to the first player. */
-    function freshGame(): GameState {
+    function hire(armed: boolean): Recruit {
+        return { id: hexId("5", ++recruits), armed };
+    }
+
+    /** `new_game`: the first half of the spawn positions goes to the first player. */
+    function freshGame(waiting: string, finder: string): GameState {
         const map = MapBcs.parse(Uint8Array.from(Buffer.from(BLACK_RAIN, "hex")));
         const half = BLACK_RAIN_POSITIONS.length / 2;
         return {
@@ -136,9 +161,9 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
             ...gridSize(map),
             turn: 0,
             active: 0,
-            players: [OPPONENT_ACCOUNT, ACCOUNT],
+            players: [waiting, finder],
             squads: [[], []],
-            fallen: [0, 0],
+            fallen: [],
             positions: [BLACK_RAIN_POSITIONS.slice(0, half), BLACK_RAIN_POSITIONS.slice(half)],
             history: [],
             missed: [0, 0],
@@ -150,59 +175,84 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
         };
     }
 
-    /** `is_over` and `winner`, once deployment is over. */
-    function checkFinished(state: GameState): void {
-        if (state.status.kind !== "active") return;
-        const [firstOut, secondOut] = state.squads.map((squad) => squad.length === 0);
-        if (!firstOut && !secondOut && state.turn < MAX_TURNS) return;
-        const winner = firstOut === secondOut ? null : state.players[secondOut ? 0 : 1];
-        state.status = { kind: "finished", winner };
+    /** A side's recruits are its units on the map. */
+    function refreshSquads(state: GameState): void {
+        state.squads = state.players.map((player) =>
+            state.units.filter((unit) => unit.owner === player).map((unit) => unit.recruit),
+        );
     }
 
-    /** `abandoned_by`: whoever gave up or missed too many turns loses. */
-    function abandonedBy(state: GameState, side: number): void {
-        state.abandonedBy = state.players[side];
-        state.status = { kind: "finished", winner: state.players[1 - side] };
+    /** `State::Over`: the game waits for `complete_game`. */
+    function over(state: GameState, ending: Ending): void {
+        state.status = { kind: "finished", winner: winnerOf(ending, state.players), ending };
+        state.abandonedBy = ["abandoned", "forfeited", "no_show"].includes(ending.kind)
+            ? ending.by
+            : null;
+        state.deadlineMs = 0;
     }
 
-    /** `begin_match`: the first turn starts now. */
+    /** `count_losses`: a kill that leaves a side with nobody on the map ends the game. */
+    function countLosses(state: GameState, records: GameRecord[]): void {
+        if (!records.some((record) => record.kind === "kia")) return;
+        const [first, second] = state.squads.map((squad) => squad.length > 0);
+        if (!first && !second) over(state, { kind: "draw", by: null });
+        else if (!first) over(state, { kind: "won", by: state.players[1] });
+        else if (!second) over(state, { kind: "won", by: state.players[0] });
+    }
+
+    /** `begin_match`: the first turn starts now, unless a side has nobody to show. */
     function beginMatch(state: GameState): void {
-        state.status = { kind: "active" };
-        state.deadlineMs = now() + TURN_LIMIT_MS;
-        checkFinished(state);
+        const [first, second] = state.squads.map((squad) => squad.length > 0);
+        if (!first && !second) over(state, { kind: "nobody_showed", by: null });
+        else if (!first) over(state, { kind: "no_show", by: state.players[0] });
+        else if (!second) over(state, { kind: "no_show", by: state.players[1] });
+        else {
+            state.status = { kind: "active" };
+            state.missed = [0, 0];
+            state.deadlineMs = now() + TURN_LIMIT_MS;
+        }
     }
 
     /** `deploy_squad`: as many recruits as the side has spawn positions, used from the back. */
     function deploy(state: GameState, side: number): GameRecord[] {
         const records: GameRecord[] = [];
         const open = state.positions[side].length;
-        const size = side === YOUR_SIDE ? Math.min(open, requireAccount().recruits) : open;
-        for (let i = 0; i < size; i++) {
+        // our recruits come from the account, armed ones first; the opponent's are made up
+        const squad: Recruit[] =
+            side === yourSide
+                ? [...home].sort((a, b) => Number(b.armed) - Number(a.armed)).slice(0, open)
+                : Array.from({ length: open }, () => hire(true));
+        for (const recruit of squad) {
             const [x, y] = state.positions[side].pop()!;
-            const recruit = hexId(`${side + 1}`, games * 100 + i);
-            state.squads[side].push(recruit);
+            const stats = recruit.armed ? ARMED : UNARMED;
             state.units.push({
-                recruit,
+                recruit: recruit.id,
+                owner: state.players[side],
                 side,
                 x,
                 y,
                 ap: 2,
                 apMax: 2,
-                hp: OPERATIVE.health,
-                hpMax: OPERATIVE.health,
-                ammo: OPERATIVE.ammo,
-                ammoMax: OPERATIVE.ammo,
+                hp: stats.health,
+                hpMax: stats.health,
+                ammo: stats.ammo,
+                ammoMax: stats.ammo,
                 grenadeUsed: false,
-                stats: OPERATIVE,
+                stats,
+                actions: recruit.armed ? [...ARMED_ACTIONS] : [...UNARMED_ACTIONS],
             });
             records.push({ kind: "placed", x, y });
         }
-        if (side === YOUR_SIDE) requireAccount().recruits -= size;
+        if (side === yourSide) {
+            home = home.filter((recruit) => !squad.includes(recruit));
+            requireAccount().recruits = home.length;
+        }
+        refreshSquads(state);
         if (state.squads.every((squad) => squad.length > 0)) beginMatch(state);
         return records;
     }
 
-    /** `unit::apply_damage`, then `bury_fallen` on a kill. */
+    /** `unit::apply_damage`: a kill takes the unit off its tile, into `fallen` until `bury`. */
     function damage(state: GameState, unit: Unit, amount: number, canDodge: boolean): GameRecord[] {
         const dealt = unit.stats.armor >= amount ? 1 : amount - unit.stats.armor;
         if (canDodge && rng.inRange(0, 99) < unit.stats.dodge) {
@@ -212,9 +262,8 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
         const records: GameRecord[] = [{ kind: "damage", amount: dealt }];
         if (unit.hp === 0) {
             state.units = state.units.filter((other) => other !== unit);
-            state.squads[unit.side] = state.squads[unit.side].filter((id) => id !== unit.recruit);
-            state.fallen[unit.side] += 1;
-            records.push({ kind: "kia", recruit: unit.recruit });
+            state.fallen.push(unit.recruit);
+            records.push({ kind: "kia", recruit: unit.recruit, x: unit.x, y: unit.y });
         }
         return records;
     }
@@ -299,44 +348,58 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
         return [...records, ...applied];
     }
 
-    /** `next_turn`: past the time to deploy it ends deployment instead. */
+    /**
+     * `next_turn`: the fallen are buried first. Past the time to deploy it ends deployment
+     * instead; otherwise the turn passes, a miss counts against a side that let it run out,
+     * and the side whose turn begins gets its AP back.
+     */
     function nextTurn(state: GameState, side: number): GameRecord[] {
+        state.fallen = [];
         if (state.status.kind === "deploying") {
             beginMatch(state);
             return [];
         }
         const { active } = state;
-        if (side === active) {
-            state.missed[active] = 0;
-        } else {
-            state.missed[active] += 1;
-            if (state.missed[active] === MAX_MISSED_TURNS) {
-                abandonedBy(state, active);
-                return [];
-            }
+        if (side === active) state.missed[active] = 0;
+        else state.missed[active] += 1;
+        if (state.missed[active] === MAX_MISSED_TURNS) {
+            over(state, { kind: "forfeited", by: state.players[active] });
+            return [];
         }
+
         const ended = applyDeterministic(state, { kind: "next_turn" });
         state.turn = ended.turn;
         state.active = ended.active;
         state.units = ended.units;
-        state.deadlineMs = now() + TURN_LIMIT_MS;
-        return [{ kind: "next_turn", turn: state.turn }];
+        const records: GameRecord[] = [{ kind: "next_turn", turn: state.turn }];
+        if (state.turn >= MAX_TURNS) over(state, { kind: "stalemate", by: null });
+        else state.deadlineMs = now() + TURN_LIMIT_MS;
+        return records;
     }
 
-    /** `complete_game`: the survivors go home, the result goes on the score, and `Idle` again. */
+    /**
+     * `complete_game`: the survivors go home, the result goes on the score, `Idle` again,
+     * and whoever is to blame for how it ended is suspended.
+     */
     function complete(state: GameState): void {
         const me = requireAccount();
-        const { status } = state;
-        const winner = status.kind === "finished" ? status.winner : null;
-        if (winner === null) me.score.draws += 1;
-        else if (winner === me.id) me.score.wins += 1;
-        else me.score.losses += 1;
+        if (state.status.kind !== "finished") return;
+        const { winner, ending } = state.status;
+        // nobody showing up isn't a game: it goes on no score
+        if (ending.kind !== "nobody_showed") {
+            if (winner === null) me.score.draws += 1;
+            else if (winner === me.id) me.score.wins += 1;
+            else me.score.losses += 1;
+        }
+        // `misbehaved`
+        if (state.abandonedBy === me.id || ending.kind === "nobody_showed") {
+            me.suspendedUntilMs = now() + SUSPENSION_MS;
+        }
 
-        // `misbehaved`: it gave up, or deployment ended with nobody to show, fallen or alive.
-        const absent = state.squads[YOUR_SIDE].length === 0 && state.fallen[YOUR_SIDE] === 0;
-        if (state.abandonedBy === me.id || absent) me.suspendedUntilMs = now() + SUSPENSION_MS;
-
-        me.recruits += state.squads[YOUR_SIDE].length;
+        for (const unit of state.units.filter((unit) => unit.owner === me.id)) {
+            home.push({ id: unit.recruit, armed: unit.actions.includes("attack") });
+        }
+        me.recruits = home.length;
         me.search = { kind: "idle" };
         current = null;
     }
@@ -382,7 +445,7 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
                 records = nextTurn(state, side);
                 break;
             case "abandon":
-                abandonedBy(state, side);
+                over(state, { kind: "abandoned", by: state.players[side] });
                 complete(state);
                 break;
             case "complete":
@@ -390,21 +453,23 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
                 break;
         }
         state.history.push(...records);
-        checkFinished(state);
+        refreshSquads(state);
+        countLosses(state, records);
         return records;
     }
 
     async function opponentTurn(state: GameState): Promise<void> {
         if (!opponent) return;
+        const side = theirSide();
         for (let i = 0; i < MAX_OPPONENT_ACTIONS; i++) {
-            if (state.status.kind !== "active" || state.active !== THEIR_SIDE) return;
-            const legal = legalActions(state, THEIR_SIDE, now());
-            const ids = await opponent({ state, side: THEIR_SIDE, legal, nowMs: now() });
-            for (const id of ids) apply(state, THEIR_SIDE, parseAction(id));
+            if (state.status.kind !== "active" || state.active !== side) return;
+            const legal = legalActions(state, side, now());
+            const ids = await opponent({ state, side, legal, nowMs: now() });
+            for (const id of ids) apply(state, side, parseAction(id));
         }
         // A policy that never ends its turn must not hang the sandbox.
-        if (state.status.kind === "active" && state.active === THEIR_SIDE) {
-            apply(state, THEIR_SIDE, { kind: "next_turn" });
+        if (state.status.kind === "active" && state.active === side) {
+            apply(state, side, { kind: "next_turn" });
         }
     }
 
@@ -461,10 +526,20 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
             if (me.search.kind === "playing") {
                 throw new ActionError("rejected", "The squad is in a game.");
             }
-            if (me.recruits >= FREE_RECRUITS) {
+            if (home.length >= FREE_RECRUITS) {
                 throw new ActionError("rejected", "The squad is already full.");
             }
-            me.recruits = FREE_RECRUITS;
+            // `hire_recruits`: no weapon yet, so no `Attack` or `Reload` on the map
+            while (home.length < FREE_RECRUITS) home.push(hire(false));
+            me.recruits = home.length;
+            return receipt([]);
+        },
+
+        async armSquad() {
+            requireAccount();
+            const unarmed = home.filter((recruit) => !recruit.armed);
+            if (unarmed.length === 0) return null;
+            for (const recruit of unarmed) recruit.armed = true;
             return receipt([]);
         },
 
@@ -483,49 +558,45 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
                 throw new ActionError("rejected", "This account has no recruits to play with.");
             }
             const order = hexId("7", digests + 1);
-            me.search = options.empty
-                ? { kind: "searching", order, sinceMs: now() }
-                : { kind: "found", order, opponent: THEM };
-            return receipt([]);
+            if (options.empty) {
+                me.search = { kind: "searching", order, sinceMs: now() };
+                return receipt([]);
+            }
+            if (options.seated) {
+                // the opponent found us later: it started the game and has deployed
+                seated = freshGame(ACCOUNT, OPPONENT_ACCOUNT);
+                apply(seated, theirSide(), { kind: "deploy" });
+                me.search = { kind: "searching", order, sinceMs: now() };
+                return receipt([]);
+            }
+            // someone was waiting: the game starts in this call, and they are seated
+            current = freshGame(OPPONENT_ACCOUNT, ACCOUNT);
+            me.search = { kind: "playing", game: current.id };
+            return receipt(apply(current, theirSide(), { kind: "deploy" }));
         },
 
         async cancelSearch() {
             const me = requireAccount();
-            if (me.search.kind === "idle" || me.search.kind === "playing") {
+            if (me.search.kind !== "searching") {
                 throw new ActionError("rejected", "This account is not searching.");
             }
-            // Walking away from a found game leaves the other player with nothing.
-            if (me.search.kind === "found") me.suspendedUntilMs = now() + SUSPENSION_MS;
-            me.search = { kind: "idle" };
-            return receipt([]);
-        },
-
-        async releaseGame() {
-            const me = requireAccount();
-            if (me.search.kind !== "found") {
-                throw new ActionError("rejected", "This account has not found a game.");
-            }
-            if (!options.ghosted) {
-                throw new ActionError("rejected", "The opponent is still waiting on this game.");
-            }
-            me.search = { kind: "idle" };
-            return receipt([]);
-        },
-
-        async startGame() {
-            const me = requireAccount();
-            if (me.search.kind !== "found") {
-                throw new ActionError("rejected", "This account has not found a game.");
-            }
-            if (options.ghosted) {
+            if (seated) {
                 throw new ActionError(
                     "rejected",
-                    "The opponent is no longer waiting on this game.",
+                    "A match found this search: accept its seat first.",
                 );
             }
-            current = freshGame();
+            me.search = { kind: "idle" };
+            return receipt([]);
+        },
+
+        async acceptSeat() {
+            const me = requireAccount();
+            if (!seated || me.search.kind !== "searching") return null;
+            current = seated;
+            seated = null;
             me.search = { kind: "playing", game: current.id };
-            return receipt(apply(current, THEIR_SIDE, { kind: "deploy" }));
+            return receipt([]);
         },
 
         async submit(game, actions) {
@@ -533,7 +604,7 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
                 throw new ActionError("no_game", "That game is not running.");
             }
             const state = current;
-            const records = actions.flatMap((action) => apply(state, YOUR_SIDE, action));
+            const records = actions.flatMap((action) => apply(state, yourSide, action));
             if (current) {
                 await opponentTurn(state);
                 state.version = String(++version);

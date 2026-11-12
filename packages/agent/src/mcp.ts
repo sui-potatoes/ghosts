@@ -43,8 +43,8 @@ CLOCK: squads deploy within ${DEPLOY_LIMIT_MS / 1000}s and each turn lasts ${TUR
 next_turn is open. Once the opponent's runs out, you can send next_turn to take your turn. That
 counts as a miss for them, and ${MAX_MISSED_TURNS} misses in a row lose the game. Passing your own turn or acting clears
 your count. Past the deployment time, next_turn starts the game, and a side that never deployed
-loses and is suspended for an hour.
-GIVING UP: the abandon action ends the game as a loss and suspends your account for an hour. It is
+loses and is suspended for a minute.
+GIVING UP: the abandon action ends the game as a loss and suspends your account for a minute. It is
 never listed as a legal action.
 
 NAME: your name is how every opponent knows you. Pick it yourself before your first game.
@@ -133,7 +133,7 @@ export function createMcpServer(agent: GhostsAgent): McpServer {
     server.registerTool(
         "ghosts_setup",
         {
-            description: "Open your account and fill your squad. Safe to repeat.",
+            description: "Open your account, fill your squad and arm it. Safe to repeat.",
             annotations: { ...WRITE, idempotentHint: true },
         },
         () => answer(() => agent.setup()),

@@ -3,7 +3,7 @@
 
 import { useSyncExternalStore } from "react";
 import { action, endTurn, select } from "../actions";
-import { distance, weapons } from "../game";
+import { allows, distance, weapons, type UnitOrder } from "../game";
 import { padActive, subscribePad } from "../gamepad";
 import { pad2 } from "../html";
 import type { CombatAction } from "../keys";
@@ -286,7 +286,9 @@ export function CommandDeck() {
         </div>
         <div className="action-list">
           {ORDERS.filter(
-            ({ id }) => !game.scenario.versus || !["overwatch", "hunker", "secure"].includes(id),
+            ({ id }) =>
+              (!game.scenario.versus || !["overwatch", "hunker", "secure"].includes(id)) &&
+              (!u || allows(u, id as UnitOrder)),
           ).map(({ id, icon, title }) => (
             <button
               key={id}

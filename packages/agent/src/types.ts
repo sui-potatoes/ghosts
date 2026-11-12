@@ -26,13 +26,18 @@ export type Tile =
     | { kind: "empty" | "unwalkable" | "wall" }
     | { kind: "cover"; left: number; top: number; right: number; bottom: number };
 
+/** What a unit may be ordered to do: `ghosts::action::Action`, as the `kind` of the order. */
+export type UnitAction = "move" | "attack" | "reload" | "grenade";
+
 /** `x` is the row and `y` the column, as in Move. */
 export interface Unit {
     recruit: string;
+    /** The `Account` the recruit fights for: `Unit.owner`, one of the game's `players`. */
+    owner: string;
     side: number;
     x: number;
     y: number;
-    /** Usable AP this turn: Move resets AP lazily, so this is already normalized. */
+    /** AP left this turn: `next_turn` gives a side its units' AP back as its turn begins. */
     ap: number;
     apMax: number;
     hp: number;
@@ -41,10 +46,24 @@ export interface Unit {
     ammoMax: number;
     grenadeUsed: boolean;
     stats: Stats;
+    /** The orders the unit may be given: an unarmed recruit has no `attack` or `reload`. */
+    actions: UnitAction[];
 }
 
+/**
+ * How a game ended: `ghosts::ghosts::Ending`. `by` is the `Account` it is pinned on
+ * (`abandoned`, `forfeited`, `no_show`) or the winner (`won`); none for the rest.
+ */
+export type Ending =
+    | { kind: "won"; by: string }
+    | { kind: "draw" | "stalemate" | "nobody_showed"; by: null }
+    | { kind: "abandoned" | "forfeited" | "no_show"; by: string };
+
+/** `ghosts::ghosts::State`: `deploying`, `active` (Playing) or `finished` (Over). */
 export type GameStatus =
-    { kind: "deploying" } | { kind: "active" } | { kind: "finished"; winner: string | null };
+    | { kind: "deploying" }
+    | { kind: "active" }
+    | { kind: "finished"; winner: string | null; ending: Ending };
 
 export interface GameState {
     id: string;
@@ -57,29 +76,35 @@ export interface GameState {
     active: number;
     /** `Account` ids, in turn order; the index is the player's side. */
     players: string[];
-    /** Recruit ids each side has on the map; the fallen are taken out. */
+    /** Recruit ids each side has on the map, from the units' owners; the fallen are off it. */
     squads: string[][];
-    /** How many recruits each side has lost. */
-    fallen: number[];
+    /**
+     * Recruits killed since the last turn change, off their tiles but not yet buried
+     * (`Map.fallen`). A kill never frees storage in the call that rolled it.
+     */
+    fallen: string[];
     /** Spawn positions each side has left, used from the back. Sets the squad size. */
     positions: number[][][];
     /** Everything that happened, in order. This is the only record: there are no events. */
     history: GameRecord[];
-    /** Turns each side let run out in a row. Three lose the game. */
+    /** Turns each side let run out in a row, from `State::Playing`. Three lose the game. */
     missed: number[];
-    /** The `Account` that gave up or missed too many turns. */
+    /** The `Account` the ending is pinned on (abandoned, forfeited or never deployed). */
     abandonedBy: string | null;
-    /** When deployment or the current turn runs out. */
+    /** When deployment or the current turn runs out; 0 once the game is over. */
     deadlineMs: number;
     status: GameStatus;
     tiles: Tile[][];
     units: Unit[];
 }
 
+/**
+ * `ghosts::account::State`. `Suspended` reads as `idle` with `suspendedUntilMs` set. A
+ * search a match found stays `searching` until its `Seat` is accepted.
+ */
 export type Search =
     | { kind: "idle" }
     | { kind: "searching"; order: string; sinceMs: number }
-    | { kind: "found"; order: string; opponent: string }
     | { kind: "playing"; game: string };
 
 export interface AccountView {
@@ -90,13 +115,13 @@ export interface AccountView {
     score: { wins: number; losses: number; draws: number };
     recruits: number;
     search: Search;
-    /** The account can't search for a game before this time, after misbehaving. */
+    /** From `State::Suspended`: the account can't search for a game before this time. 0 if not. */
     suspendedUntilMs: number;
     /** The wallet that can take this account over, if the owner named one. */
     recovery: string | null;
 }
 
-/** What one order resolved into: the decoded `ghosts::history::Record`s. */
+/** What one order resolved into: the decoded `ghosts::history::Record`s. A dodge is one record. */
 export type GameRecord =
     | { kind: "reload"; x: number; y: number }
     | { kind: "next_turn"; turn: number }
@@ -108,7 +133,7 @@ export type GameRecord =
     | { kind: "explosion"; x: number; y: number; radius: number }
     | { kind: "critical_hit"; amount: number }
     | { kind: "grenade"; from: number[]; to: number[] }
-    | { kind: "kia"; recruit: string }
+    | { kind: "kia"; recruit: string; x: number; y: number }
     | { kind: "dodged" };
 
 export interface Receipt {
@@ -118,9 +143,16 @@ export interface Receipt {
     records: GameRecord[];
 }
 
+/** An object by reference, as `Receiving` takes it: at the version the account holds. */
+export interface ObjectRef {
+    objectId: string;
+    version: string;
+    digest: string;
+}
+
 export type Action =
-    /** `recruits` are filled in by the backend, which knows the account's squad. */
-    | { kind: "deploy"; recruits?: string[] }
+    /** `recruits` are filled in by the backend, which knows what the account holds at home. */
+    | { kind: "deploy"; recruits?: ObjectRef[] }
     | { kind: "move"; x: number; y: number; path: number[] }
     | { kind: "reload"; x: number; y: number }
     | { kind: "attack"; x: number; y: number; tx: number; ty: number }
@@ -128,7 +160,7 @@ export type Action =
     | { kind: "next_turn" }
     /** Wrap up a finished game. Anyone can, so the opponent may get there first. */
     | { kind: "complete" }
-    /** Give up: the opponent wins and the account is suspended for an hour. Completes the game. */
+    /** Give up: the opponent wins and the account is suspended for a minute. Completes the game. */
     | { kind: "abandon" };
 
 export type ActionErrorCode =

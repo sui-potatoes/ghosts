@@ -38,6 +38,8 @@ import {
 import {
     activeSide,
     blastCells,
+    canDo,
+    engineActions,
     encodePath,
     gameEvents,
     hitChance,
@@ -131,6 +133,7 @@ function syncUnits(rules: EncounterRules, game: ChainGame) {
         u.mobility = stats.mobility;
         u.damage = stats.damage;
         u.grenade = unit.grenadeUsed;
+        u.actions = engineActions(unit.actions);
     }
 }
 
@@ -323,6 +326,15 @@ export function chainDriver({
             const unit = rules.unit(command.unit);
             if (!unit) return Promise.resolve([]);
             const from = toTile(unit.pos as Cell, MATCH_BOUNDS);
+            // the chain refuses what the unit's actions do not list: not even sent
+            const needs = {
+                move: "Move",
+                reload: "Reload",
+                fire: "Attack",
+                grenade: "Grenade",
+            } as const;
+            const need = needs[command.type as keyof typeof needs];
+            if (need && !canDo(latest, unit.id, need)) return Promise.resolve([]);
             switch (command.type) {
                 case "move": {
                     const path = rules.paths(unit).get(`${command.to[0]},${command.to[1]}`);

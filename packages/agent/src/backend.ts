@@ -30,13 +30,25 @@ export interface Backend {
     game(id: string): Promise<GameState | null>;
 
     createAccount(): Promise<Receipt>;
+    /** Hire the free squad: tops the account up to its free recruits, unarmed. */
     hireSquad(): Promise<Receipt>;
+    /**
+     * Arm the recruits at home who carry no weapon, so they can shoot once on the map.
+     * Null when everyone at home is armed already: no transaction is sent.
+     */
+    armSquad(): Promise<Receipt | null>;
+    /**
+     * Find a game. A waiting player makes it start at once with this account in it,
+     * playing second; otherwise the account is left on a search.
+     */
     findGame(): Promise<Receipt>;
+    /** Leave the queue. A search a match answered is left through its game instead. */
     cancelSearch(): Promise<Receipt>;
-    /** Whoever found the opponent opens the game for both players. */
-    startGame(opponent: string): Promise<Receipt>;
-    /** Let go of a found game the opponent is no longer waiting on, with no penalty. */
-    releaseGame(opponent: string): Promise<Receipt>;
+    /**
+     * Accept the `Seat` a match sent to this account while it was searching, which puts
+     * it into the game. Null when there is none (yet): no transaction is sent.
+     */
+    acceptSeat(): Promise<Receipt | null>;
     /** Send a validated batch as one transaction. Throws `ActionError` on a refusal. */
     submit(game: GameState, actions: Action[]): Promise<Receipt>;
 }

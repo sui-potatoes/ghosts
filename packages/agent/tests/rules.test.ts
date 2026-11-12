@@ -4,17 +4,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import {
-    decodeGame,
-    decodeStats,
-    decodeTiles,
-    encodeStats,
-    GameBcs,
-    gridSize,
-    MapBcs,
-} from "../src/bcs.ts";
+import { decodeStats, decodeTiles, encodeStats, gridSize, MapBcs } from "../src/bcs.ts";
 import { BLACK_RAIN, BLACK_RAIN_POSITIONS, DEMO_1, DEMO_2 } from "../src/maps.ts";
 import {
+    applyDeterministic,
     checkPath,
     coverBonus,
     DOWN,
@@ -44,7 +37,7 @@ function board(hex: string): GameState {
         active: 0,
         players: ["0xa", "0xb"],
         squads: [["0x11"], ["0x22"]],
-        fallen: [0, 0],
+        fallen: [],
         positions: [[], []],
         history: [],
         missed: [0, 0],
@@ -70,6 +63,7 @@ function open(rows: number, cols: number): GameState {
 function place(state: GameState, side: number, x: number, y: number, ap = 2) {
     state.units.push({
         recruit: `0x${side}${x}${y}`,
+        owner: state.players[side],
         side,
         x,
         y,
@@ -81,6 +75,7 @@ function place(state: GameState, side: number, x: number, y: number, ap = 2) {
         ammoMax: 3,
         grenadeUsed: false,
         stats: OPERATIVE,
+        actions: ["move", "attack", "reload", "grenade"],
     });
 }
 
@@ -174,81 +169,21 @@ test("cover counts on the side facing the shooter only", () => {
     assert.equal(coverBonus(state, 4, 3, 2, 3), 25);
 });
 
-test("a game object round-trips through BCS and normalizes stale AP", () => {
-    const map = MapBcs.parse(bytes(DEMO_1));
-    const recruit = `0x${"11".repeat(32)}`;
-    map.grid.grid[6][5].unit = {
-        recruit,
-        ap: { value: 0, maxValue: 2 },
-        hp: { value: 7, maxValue: 10 },
-        ammo: { value: 1, maxValue: 3 },
-        grenadeUsed: true,
-        stats: encodeStats(OPERATIVE).toString(),
-        lastTurn: 2,
-    };
-    map.turn = 3;
-    const [first, second] = [`0x${"0a".repeat(32)}`, `0x${"0b".repeat(32)}`];
-    const tag = {
-        id: `0x${"03".repeat(32)}`,
-        rank: { Corporal: true },
-        metadata: {
-            name: "Jane Doe",
-            visuals: { head: 1, face: 2, eyes: 3, body: 4, outfit: 5 },
-            voice: 1,
-        },
-    };
-    const encode = (overrides: object) =>
-        GameBcs.serialize({
-            id: `0x${"01".repeat(32)}`,
-            map,
-            players: [first, second],
-            squads: [[recruit], [`0x${"22".repeat(32)}`]],
-            // A dog tag sits ahead of the fields below, so reading them proves its layout.
-            fallen: [[tag], []],
-            positions: [[[8, 2]], []],
-            history: [{ Miss: true }, { Damage: 3 }, { NextTurn: 3 }],
-            recruits: { id: `0x${"02".repeat(32)}`, size: 1n },
-            deploying: false,
-            deployUntilMs: 2000n,
-            turnStartedMs: 5000n,
-            missed: [2, 0],
-            abandonedBy: null,
-            ...overrides,
-        }).toBytes();
-
-    const game = decodeGame(encode({}), "42");
-    assert.equal(game.version, "42");
-    assert.equal(game.turn, 3);
-    assert.equal(game.active, 1, "the turn decides who acts");
-    assert.equal(game.deadlineMs, 95_000, "a turn lasts 90s from when it started");
-    assert.deepEqual(game.status, { kind: "active" });
-    assert.deepEqual(game.positions, [[[8, 2]], []]);
-    assert.deepEqual(game.missed, [2, 0]);
-    assert.deepEqual(game.fallen, [1, 0]);
+test("next_turn gives only the side whose turn begins its AP back, and buries the fallen", () => {
+    const state = open(8, 8);
+    place(state, 0, 1, 1, 0);
+    place(state, 1, 5, 5, 1);
+    state.fallen = ["0xdead"];
+    const next = applyDeterministic(state, { kind: "next_turn" });
+    assert.equal(next.turn, 1);
+    assert.equal(next.active, 1);
     assert.deepEqual(
-        game.history.map((r) => r.kind),
-        ["miss", "damage", "next_turn"],
+        next.units.map((unit) => unit.ap),
+        [0, 2],
+        "side 1 begins: its units are refilled, the other side's stay as they were",
     );
-
-    // The endings of `ghosts::winner`.
-    const status = (overrides: object) => decodeGame(encode(overrides), "1").status;
-    assert.deepEqual(status({ squads: [[recruit], []] }), { kind: "finished", winner: first });
-    assert.deepEqual(status({ squads: [[], [recruit]] }), { kind: "finished", winner: second });
-    assert.deepEqual(status({ squads: [[], []] }), { kind: "finished", winner: null });
-    assert.deepEqual(status({ abandonedBy: first }), { kind: "finished", winner: second });
-    assert.deepEqual(status({ abandonedBy: second }), { kind: "finished", winner: first });
-    assert.deepEqual(status({ map: { ...map, turn: 59 } }), { kind: "active" });
-    assert.deepEqual(status({ map: { ...map, turn: 60 } }), { kind: "finished", winner: null });
-
-    const deploying = decodeGame(encode({ deploying: true, squads: [[], []] }), "1");
-    assert.deepEqual(deploying.status, { kind: "deploying" }, "empty squads don't count yet");
-    assert.equal(deploying.deadlineMs, 2000);
-
-    const [unit] = game.units;
-    assert.deepEqual([unit.x, unit.y, unit.side], [6, 5, 0]);
-    assert.equal(unit.ap, 2, "AP resets lazily: a unit that last acted on an old turn has full AP");
-    assert.equal(unit.hp, 7);
-    assert.equal(unit.stats.aim, 65);
+    assert.deepEqual(next.fallen, [], "`bury_fallen` runs on every turn change");
+    assert.equal(state.turn, 0, "the state it was given is untouched");
 });
 
 test("action ids round-trip", () => {
@@ -297,7 +232,10 @@ test("the clock decides who may act, as in `ghosts::next_turn`", () => {
     assert.equal(refusal(deploying, 1, nextTurn, 1001), null);
 
     // Over: only wrapping up is left.
-    const over: typeof state = { ...state, status: { kind: "finished", winner: "0xa" } };
+    const over: typeof state = {
+        ...state,
+        status: { kind: "finished", winner: "0xa", ending: { kind: "won", by: "0xa" } },
+    };
     assert.equal(refusal(over, 1, { kind: "complete" }, 0), null);
     assert.match(refusal(over, 0, nextTurn, 0)!, /send complete/);
     assert.match(refusal(over, 0, { kind: "abandon" }, 0)!, /send complete/);
@@ -315,6 +253,26 @@ test("every listed action passes validation, and each is listed once", () => {
     for (const { id } of legal) assert.deepEqual(validateBatch(state, 0, [id], 0).length, 1);
     assert.ok(legal.some((a) => a.kind === "attack"));
     assert.ok(legal.some((a) => a.kind === "grenade"));
+});
+
+test("a unit is only offered and allowed what is in its actions", () => {
+    const state = open(8, 8);
+    place(state, 0, 1, 1);
+    place(state, 1, 3, 1);
+    const runner = state.units[0];
+    runner.actions = ["move", "grenade"];
+    runner.ammo = 0;
+    const attack = { kind: "attack", x: 1, y: 1, tx: 3, ty: 1 } as const;
+    assert.match(refusal(state, 0, attack, 0)!, /cannot attack/);
+    assert.match(refusal(state, 0, { kind: "reload", x: 1, y: 1 }, 0)!, /cannot reload/);
+    const kinds = new Set(legalActions(state, 0, 0).map((a) => a.kind));
+    assert.ok(kinds.has("move") && kinds.has("grenade"));
+    assert.ok(!kinds.has("attack") && !kinds.has("reload"));
+
+    runner.actions = ["attack", "reload"];
+    assert.match(refusal(state, 0, { kind: "move", x: 1, y: 1, path: [DOWN] }, 0)!, /cannot move/);
+    assert.match(refusal(state, 0, { kind: "grenade", x: 1, y: 1, tx: 3, ty: 1 }, 0)!, /cannot/);
+    assert.ok(!legalActions(state, 0, 0).some((a) => a.kind === "move" || a.kind === "grenade"));
 });
 
 test("a batch is checked against the state each order would find", () => {

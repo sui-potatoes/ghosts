@@ -8,17 +8,22 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
+import type { Transaction } from "@mysten/sui/transactions";
 
 import { GhostsAgent, playGames } from "../src/agent.ts";
 import { referencePolicy } from "../src/bot.ts";
 import {
+    acceptSeatsTx,
     actionsTx,
+    armSquadTx,
+    cancelSearchTx,
+    findGameTx,
+    hireRecruitsTx,
     nameChangeTx,
     newAccountTx,
-    releaseGameTx,
-    startGameTx,
     TESTNET_NAMES,
     type Deployment,
+    type PendingSeat,
 } from "../src/contract.ts";
 import { loadOrCreateKey } from "../src/key.ts";
 import { createSandbox } from "../src/sandbox.ts";
@@ -208,7 +213,7 @@ test("three missed turns in a row lose the game", async () => {
     assert.equal((await agent.act(["complete"])).situation.phase, "idle");
     const { account } = await agent.status();
     assert.deepEqual(account?.score, { wins: 1, losses: 0, draws: 0 });
-    assert.equal(account?.recruits, 4, "the squad came home");
+    assert.equal(account?.recruits, 3, "the squad came home");
     assert.equal(account?.rating, 1500, "only the score moves: nothing writes the rating");
 });
 
@@ -228,12 +233,63 @@ test("a side that never deploys loses and is suspended", async () => {
     assert.equal((await agent.act(["complete"])).situation.phase, "suspended");
 });
 
-test("a found game the opponent left is released without a suspension", async () => {
-    const agent = new GhostsAgent(createSandbox({ ghosted: true }), fast);
-    await agent.setName("left-behind");
+test("a match that finds you seats you: accept the seat and you go first", async () => {
+    const backend = createSandbox({ seed: 5, seated: true });
+    const agent = new GhostsAgent(backend, fast);
+    await agent.setName("waiting-player");
     await agent.setup();
-    assert.equal((await agent.findGame()).phase, "idle");
-    assert.equal((await agent.backend.account())?.suspendedUntilMs, 0);
+
+    // `find_game` finds nobody: the account is on its search, and the game isn't its own yet.
+    assert.equal((await agent.findGame()).phase, "deploy", "the seat is taken on the way");
+    const { state, side } = await agent.current();
+    assert.equal(side, 0, "the player who waited goes first");
+    assert.equal(state.players[0], (await agent.backend.account())?.id);
+    assert.equal(state.squads[1].length, 3, "the finder deployed in the call that started it");
+
+    assert.equal((await agent.act(["deploy"])).situation.phase, "your_turn");
+    assert.equal(await backend.acceptSeat(), null, "nothing left to accept");
+});
+
+test("a search a match answered can't be cancelled before its seat is accepted", async () => {
+    const backend = createSandbox({ seed: 5, seated: true });
+    await backend.createAccount();
+    await backend.hireSquad();
+    await backend.findGame();
+    const searching = await backend.account();
+    assert.equal(searching?.search.kind, "searching");
+    await assert.rejects(backend.cancelSearch(), /accept its seat first/);
+
+    assert.ok(await backend.acceptSeat());
+    assert.equal((await backend.account())?.search.kind, "playing");
+});
+
+test("a recruit with no weapon can move and throw, but not shoot", async () => {
+    const backend = createSandbox({ seed: 7 });
+    const agent = new GhostsAgent(backend, fast);
+    await agent.setName("unarmed-one");
+    await backend.createAccount();
+    await backend.hireSquad();
+    await agent.findGame();
+    await agent.act(["deploy"]);
+
+    const kinds = new Set((await agent.legal()).actions.map((a) => a.kind));
+    assert.ok(kinds.has("move") && kinds.has("grenade"));
+    assert.ok(!kinds.has("attack") && !kinds.has("reload"));
+
+    // Arming takes one transaction, and only while someone at home is unarmed.
+    assert.equal(await backend.armSquad(), null, "everyone at home is armed or deployed");
+});
+
+test("setup arms a hired squad, once", async () => {
+    const backend = createSandbox({ seed: 7 });
+    const agent = new GhostsAgent(backend, fast);
+    await agent.setName("armorer");
+    await agent.setup();
+    assert.equal(await backend.armSquad(), null, "setup armed them");
+    await agent.findGame();
+    await agent.act(["deploy"]);
+    const kinds = new Set((await agent.legal()).actions.map((a) => a.kind));
+    assert.ok(kinds.has("attack") || kinds.has("reload"));
 });
 
 test("the clock passes a turn: it doesn't end the game", async () => {
@@ -282,13 +338,13 @@ test("abandoning loses the game, brings the squad home and suspends the account"
     await agent.act(["deploy"]);
     assert.equal(
         (await agent.status()).account?.recruits,
-        1,
+        0,
         "deployed recruits leave the account",
     );
     assert.ok(!(await agent.legal()).actions.some((a) => a.id === "abandon"), "never suggested");
 
     assert.equal((await agent.act(["abandon"])).situation.phase, "suspended");
-    assert.equal((await agent.status()).account?.recruits, 4, "the squad came home");
+    assert.equal((await agent.status()).account?.recruits, 3, "the squad came home");
     await assert.rejects(agent.findGame(), /suspended/);
 
     clock += 3_600_001;
@@ -303,9 +359,65 @@ test("recruits who fall stay gone, and setup replaces them", async () => {
         signal: AbortSignal.timeout(20_000),
     });
     const after = (await agent.status()).account!;
-    assert.ok(after.recruits <= 4);
+    assert.ok(after.recruits <= 3);
     await agent.setup();
-    assert.equal((await agent.status()).account?.recruits, 4);
+    assert.equal((await agent.status()).account?.recruits, 3);
+});
+
+test("two sides that only pass end in a stalemate at turn 60, a draw", async () => {
+    const backend = createSandbox({ seed: 3, opponent: () => ["next_turn"] });
+    const agent = new GhostsAgent(backend, fast);
+    await agent.setName("pacifist");
+    await agent.setup();
+    await agent.findGame();
+    let situation = (await agent.act(["deploy"])).situation;
+    for (let step = 0; step < 100 && situation.phase === "your_turn"; step++) {
+        situation = (await agent.act(["next_turn"])).situation;
+    }
+    assert.equal(situation.phase, "game_over");
+    assert.equal(situation.result, "draw");
+    assert.equal(situation.ending, "stalemate");
+    assert.equal((await agent.current()).state.turn, 60);
+
+    await agent.act(["complete"]);
+    const { account } = await agent.status();
+    assert.deepEqual(account?.score, { wins: 0, losses: 0, draws: 1 });
+    assert.equal(account?.recruits, 3);
+    assert.equal(await agent.backend.account().then((a) => a?.suspendedUntilMs), 0, "no blame");
+});
+
+test("a kill takes the unit off the map but buries it only at the next turn change", async () => {
+    let seen = false;
+    for (let seed = 1; seed <= 30 && !seen; seed++) {
+        const agent = new GhostsAgent(createSandbox({ seed }), fast);
+        await agent.setName("sniper");
+        await agent.setup();
+        await agent.findGame();
+        let situation = (await agent.act(["deploy"])).situation;
+        for (let step = 0; step < 400 && situation.phase === "your_turn" && !seen; step++) {
+            const { state, side } = await agent.current();
+            const legal = await agent.legal({ limit: 2 });
+            const shot = legal.actions.find((a) => a.kind === "attack");
+            const id = shot?.id ?? legal.actions.find((a) => a.kind === "move")?.id ?? "next_turn";
+            const before = state.squads.flat().length;
+            situation = (await agent.act([id])).situation;
+            const after = await agent.current().catch(() => null);
+            if (!after || after.state.fallen.length === 0) continue;
+
+            seen = true;
+            const fallen = after.state.fallen[0];
+            assert.equal(after.state.squads.flat().length, before - 1, "off the map at once");
+            assert.ok(!after.state.squads.flat().includes(fallen));
+            assert.ok(!after.state.units.some((unit) => unit.recruit === fallen));
+            assert.ok(after.state.history.some((r) => r.kind === "kia" && r.recruit === fallen));
+            if (after.state.status.kind === "active" && after.state.active === side) {
+                await agent.act(["next_turn"]);
+                const buried = (await agent.current()).state.fallen;
+                assert.deepEqual(buried, [], "buried on the turn change");
+            }
+        }
+    }
+    assert.ok(seen, "some seed in the range kills someone");
 });
 
 test("a search that nobody answers times out and frees the account", async () => {
@@ -339,49 +451,110 @@ test("waiting ends on time and on abort", async () => {
     assert.equal(situation.phase, "opponent_turn");
 });
 
-test("a batch compiles to one transaction of the package's calls, in order", () => {
-    const deployment: Deployment = {
-        package: "0x1",
-        registry: "0x2",
-        matchmaker: "0x3",
-        preset: "0x4",
-        names: { package: "0x6", suins: "0x7", instance: "0x8", domain: "demo.ghosts.sui" },
+/**
+ * Each Move call of a transaction with its arguments' kinds, so the builders are pinned
+ * to the entry functions' signatures in `ghosts::ghosts` and `ghosts::account`: how many
+ * arguments, in which order, and whether each is an object, a `Receiving`, a pure value,
+ * the `Random` (0x8), the `Clock` (0x6) or another call's result.
+ */
+function calls(tx: Transaction): string[] {
+    const data = tx.getData();
+    const kind = (argument: { $kind: string; Input?: number }) => {
+        if (argument.$kind === "Input") {
+            const input = data.inputs[argument.Input!];
+            if (input.$kind === "Pure") return "pure";
+            if (input.$kind === "Object") return "receiving";
+            const id = input.UnresolvedObject?.objectId ?? "";
+            return id.endsWith("08") ? "random" : id.endsWith("06") ? "clock" : "object";
+        }
+        return "result";
     };
+    return data.commands.map((command) => {
+        if (command.MakeMoveVec) return `vec<${command.MakeMoveVec.type}>`;
+        const call = command.MoveCall!;
+        const args = call.arguments.map(kind).join(", ");
+        return `${call.module}::${call.function}(${args})`;
+    });
+}
+
+const DEPLOYMENT: Deployment = {
+    package: "0x1",
+    registry: "0x2",
+    matchmaker: "0x3",
+    preset: "0x4",
+    names: { package: "0x6", suins: "0x7", instance: "0x8", domain: "demo.ghosts.sui" },
+};
+const REF = { objectId: `0x${"cc".repeat(32)}`, version: "5", digest: "1".repeat(32) };
+
+test("the orders compile to the calls and argument kinds of the package's entry functions", () => {
     const game = { id: `0x${"09".repeat(32)}`, players: ["0xa", "0xb"] } as GameState;
-    const functions = (actions: Action[]) =>
-        actionsTx(deployment, game, "0x5", actions)
-            .getData()
-            .commands.map((command) => command.MoveCall?.function);
+    const build = (actions: Action[], seats: PendingSeat[] = []) =>
+        calls(actionsTx(DEPLOYMENT, game, "0x5", actions, seats));
 
     const batch: Action[] = [
         { kind: "move", x: 6, y: 5, path: [1, 8] },
         { kind: "reload", x: 5, y: 4 },
         { kind: "attack", x: 5, y: 4, tx: 0, ty: 3 },
     ];
-    assert.deepEqual(functions(batch), ["move_unit", "perform_reload", "perform_attack"]);
-    const data = actionsTx(deployment, game, "0x5", batch).getData();
-    assert.equal(data.commands[0].MoveCall?.module, "ghosts");
+    assert.deepEqual(build(batch), [
+        "ghosts::move_unit(object, object, clock, pure)",
+        "ghosts::perform_reload(object, object, clock, pure, pure)",
+        "ghosts::perform_attack(object, object, random, clock, pure, pure, pure, pure)",
+    ]);
+    assert.deepEqual(build([{ kind: "grenade", x: 1, y: 1, tx: 2, ty: 2 }]), [
+        "ghosts::perform_grenade(object, object, random, clock, pure, pure, pure, pure)",
+    ]);
+    assert.deepEqual(build([{ kind: "next_turn" }]), ["ghosts::next_turn(object, object, clock)"]);
 
-    // Argument counts follow the `entry fun` signatures, without the `TxContext`.
-    assert.equal(data.commands[0].MoveCall?.arguments.length, 4);
-    assert.equal(data.commands[1].MoveCall?.arguments.length, 5);
-    assert.equal(data.commands[2].MoveCall?.arguments.length, 8);
+    // `deploy_squad` takes the recruits as `Receiving` tickets, taken off the `Account`.
+    assert.deepEqual(build([{ kind: "deploy", recruits: [REF] }]), [
+        `vec<0x2::transfer::Receiving<0x1::recruit::Recruit>>`,
+        "ghosts::deploy_squad(object, object, clock, result)",
+    ]);
+    assert.throws(() => build([{ kind: "deploy" }]), /no recruits/);
 
-    assert.deepEqual(functions([{ kind: "next_turn" }]), ["next_turn"]);
-    assert.deepEqual(functions([{ kind: "complete" }]), ["complete_game"]);
-    assert.deepEqual(functions([{ kind: "abandon" }]), ["abandon_game", "complete_game"]);
-    assert.deepEqual(functions([{ kind: "deploy", recruits: ["0xc"] }]), ["deploy_squad"]);
-    assert.throws(() => functions([{ kind: "deploy" }]), /no recruits/);
+    // `complete_game` takes the game and both accounts, by value and by reference.
+    assert.deepEqual(build([{ kind: "complete" }]), [
+        "ghosts::complete_game(object, object, object, clock)",
+    ]);
+    // `abandon_game` takes no clock, and `complete_game` follows in the same transaction.
+    assert.deepEqual(build([{ kind: "abandon" }]), [
+        "ghosts::abandon_game(object, object)",
+        "ghosts::complete_game(object, object, object, clock)",
+    ]);
+    // A seat the other player never accepted comes first: wrapping up needs both in.
+    assert.deepEqual(build([{ kind: "complete" }], [{ account: "0xb", seat: REF }]), [
+        "ghosts::accept_seat(object, receiving)",
+        "ghosts::complete_game(object, object, object, clock)",
+    ]);
+});
 
-    const start = startGameTx(deployment, "0x5", "0x6").getData().commands[0].MoveCall;
-    assert.equal(start?.function, "start_game");
-    assert.equal(start?.arguments.length, 4);
-    const release = releaseGameTx(deployment, "0x5", "0x6").getData().commands[0].MoveCall;
-    assert.equal(release?.function, "release_match");
-    assert.equal(release?.arguments.length, 3);
-    const completed = actionsTx(deployment, game, "0x5", [{ kind: "complete" }]).getData();
-    assert.equal(completed.commands[0].MoveCall?.arguments.length, 4, "game, both accounts, clock");
-    assert.equal(newAccountTx(deployment).getData().commands[0].MoveCall?.module, "account");
+test("matchmaking, seats, hiring and arming follow the package's signatures", () => {
+    assert.deepEqual(calls(newAccountTx(DEPLOYMENT)), ["account::new_account(object)"]);
+    assert.deepEqual(calls(hireRecruitsTx(DEPLOYMENT, "0x5")), [
+        "account::hire_recruits(object, object, random)",
+    ]);
+    // `find_game` takes the queue, the account, the frozen preset, `Random` and the `Clock`.
+    assert.deepEqual(calls(findGameTx(DEPLOYMENT, "0x5")), [
+        "ghosts::find_game(object, object, object, random, clock)",
+    ]);
+    assert.deepEqual(calls(cancelSearchTx(DEPLOYMENT, "0x5")), [
+        "ghosts::cancel_search(object, object, clock)",
+    ]);
+    assert.deepEqual(calls(acceptSeatsTx(DEPLOYMENT, [{ account: "0x5", seat: REF }])), [
+        "ghosts::accept_seat(object, receiving)",
+    ]);
+    // A rifle for each recruit: requisitioned, equipped while borrowed, and handed back.
+    assert.deepEqual(calls(armSquadTx(DEPLOYMENT, "0x5", [REF, REF])), [
+        "account::requisition_rifle(object, pure)",
+        "account::borrow_recruit(object, receiving)",
+        "account::equip_weapon(result, result)",
+        "account::return_recruit(result, result)",
+        "account::requisition_rifle(object, pure)",
+        "account::borrow_recruit(object, receiving)",
+        "account::equip_weapon(result, result)",
+        "account::return_recruit(result, result)",
+    ]);
 });
 
 test("a name change takes the shape the registry state calls for", () => {
