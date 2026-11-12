@@ -7,9 +7,9 @@ place the UI text for each entry lives.
 | File | What |
 | --- | --- |
 | `actions.json` | In-match actions |
+| `items.json` | Weapons, armor, weapon upgrades and utilities |
 
-Items (weapons, armor, weapon upgrades, utilities) and recruit skills get their own files in the
-same shape when they are added.
+Recruit skills get their own file in the same shape when they are added.
 
 ## `actions.json`
 
@@ -33,3 +33,24 @@ One entry per action.
 The numbers behind an action (range, damage, chances) are constants of its function on chain and
 are not repeated here beyond what the description says. `docs/design/actions.md` has the design
 notes and the per-unit tables.
+
+## `items.json`
+
+One entry per item a recruit can carry.
+
+| Field | Meaning |
+| --- | --- |
+| `id` | Stable name of the item in this catalog |
+| `type` | `weapon`, `armor`, `upgrade` (fits a weapon) or `utility` |
+| `status` | `chain`: created by `move/packages/ghosts/sources/recruit/items.move`. `app`: shown in the app's squad screens only, with no on-chain item behind it |
+| `name` | The item's name: for `chain` items, exactly the name the contract gives the object |
+| `description` | One or two sentences for the UI |
+| `tier` | Tier 1 to 3 where the item has tiers |
+| `kind`, `slot` | For upgrades, the kind id on chain and the slot it takes on a weapon (one of each per weapon). For utilities, the kind id |
+| `rank` | Lowest recruit rank that can equip it. Upgrades and the frag grenade have no gate in the code and say `Rookie` |
+| `stats` | What the item adds to the unit that carries it, by `Stats` field name. A negative number takes away. A weapon's entry holds the weapon's own stats |
+| `actions` | Actions the item gives the unit, as `kind` and `uses` (`null` is unlimited). A weapon gives `Attack` and `Reload` by being equipped; a utility lists them on the object |
+| `chain` | The account function that requisitions it, with its arguments, and the one that equips it on a recruit. Upgrades are fitted to a weapon with `weapon::add_upgrade` rather than equipped on a recruit |
+| `clientIds` | Ids of the looks and models that stand for the item in `packages/squad/src/catalog.ts` |
+
+Stat fields and how modifiers combine are described in `docs/design/mechanics.md`, section 8.

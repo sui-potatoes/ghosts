@@ -1,0 +1,565 @@
+{
+    "version": 1,
+    "items": [
+        {
+            "id": "rifle-1",
+            "type": "weapon",
+            "status": "chain",
+            "name": "Standard Rifle",
+            "description": "Compact, dependable. The weapon you reach for when the contract gets complicated.",
+            "tier": 1,
+            "rank": "Rookie",
+            "stats": {
+                "damage": 4,
+                "spread": 2,
+                "plus_one": 10,
+                "crit_chance": 10,
+                "can_be_dodged": 1,
+                "area_size": 0,
+                "env_damage": 0,
+                "range": 4,
+                "ammo": 3
+            },
+            "actions": [
+                {
+                    "kind": "Attack",
+                    "uses": null
+                },
+                {
+                    "kind": "Reload",
+                    "uses": null
+                }
+            ],
+            "chain": {
+                "requisition": "requisition_rifle",
+                "args": {
+                    "tier": 1
+                },
+                "equip": "equip_weapon"
+            },
+            "clientIds": [
+                "mx4"
+            ]
+        },
+        {
+            "id": "rifle-2",
+            "type": "weapon",
+            "status": "chain",
+            "name": "Sharpshooter Rifle",
+            "description": "A long sightline and a steady hand. Built for deliberate engagements.",
+            "tier": 2,
+            "rank": "Corporal",
+            "stats": {
+                "damage": 5,
+                "spread": 1,
+                "plus_one": 20,
+                "crit_chance": 20,
+                "can_be_dodged": 1,
+                "area_size": 0,
+                "env_damage": 0,
+                "range": 5,
+                "ammo": 3
+            },
+            "actions": [
+                {
+                    "kind": "Attack",
+                    "uses": null
+                },
+                {
+                    "kind": "Reload",
+                    "uses": null
+                }
+            ],
+            "chain": {
+                "requisition": "requisition_rifle",
+                "args": {
+                    "tier": 2
+                },
+                "equip": "equip_weapon"
+            },
+            "clientIds": [
+                "srs9"
+            ]
+        },
+        {
+            "id": "rifle-3",
+            "type": "weapon",
+            "status": "chain",
+            "name": "Plasma Rifle",
+            "description": "High damage and critical potential for precise engagements.",
+            "tier": 3,
+            "rank": "Lieutenant",
+            "stats": {
+                "damage": 6,
+                "spread": 1,
+                "plus_one": 30,
+                "crit_chance": 30,
+                "can_be_dodged": 1,
+                "area_size": 0,
+                "env_damage": 0,
+                "range": 5,
+                "ammo": 3
+            },
+            "actions": [
+                {
+                    "kind": "Attack",
+                    "uses": null
+                },
+                {
+                    "kind": "Reload",
+                    "uses": null
+                }
+            ],
+            "chain": {
+                "requisition": "requisition_rifle",
+                "args": {
+                    "tier": 3
+                },
+                "equip": "equip_weapon"
+            },
+            "clientIds": [
+                "plasma"
+            ]
+        },
+        {
+            "id": "armor-1",
+            "type": "armor",
+            "status": "chain",
+            "name": "Light Armor",
+            "description": "Flexible coverage that keeps a recruit quick on their feet and harder to hit.",
+            "tier": 1,
+            "rank": "Rookie",
+            "stats": {
+                "armor": 1,
+                "dodge": 10
+            },
+            "actions": [],
+            "chain": {
+                "requisition": "requisition_armor",
+                "args": {
+                    "tier": 1
+                },
+                "equip": "equip_armor"
+            },
+            "clientIds": [
+                "spectre",
+                "nyx"
+            ]
+        },
+        {
+            "id": "armor-2",
+            "type": "armor",
+            "status": "chain",
+            "name": "Medium Armor",
+            "description": "Reinforced plates for contested ground, with no cost to movement.",
+            "tier": 2,
+            "rank": "Squaddie",
+            "stats": {
+                "armor": 2
+            },
+            "actions": [],
+            "chain": {
+                "requisition": "requisition_armor",
+                "args": {
+                    "tier": 2
+                },
+                "equip": "equip_armor"
+            },
+            "clientIds": [
+                "nyx-mid"
+            ]
+        },
+        {
+            "id": "armor-3",
+            "type": "armor",
+            "status": "chain",
+            "name": "Heavy Armor",
+            "description": "The most protection a recruit can carry. Slower, and too bulky to dodge in.",
+            "tier": 3,
+            "rank": "Sergeant",
+            "stats": {
+                "mobility": -1,
+                "health": 1,
+                "armor": 3,
+                "dodge": -10
+            },
+            "actions": [],
+            "chain": {
+                "requisition": "requisition_armor",
+                "args": {
+                    "tier": 3
+                },
+                "equip": "equip_armor"
+            },
+            "clientIds": [
+                "nyx-heavy"
+            ]
+        },
+        {
+            "id": "scope-1",
+            "type": "upgrade",
+            "status": "chain",
+            "name": "Basic Scope",
+            "description": "Steadier aim: +5 to the chance to hit.",
+            "slot": "Scope",
+            "kind": 0,
+            "tier": 1,
+            "rank": "Rookie",
+            "stats": {
+                "aim": 5
+            },
+            "actions": [],
+            "chain": {
+                "requisition": "requisition_upgrade",
+                "args": {
+                    "kind": 0,
+                    "tier": 1
+                },
+                "equip": "weapon::add_upgrade"
+            },
+            "clientIds": [
+                "scope-1"
+            ]
+        },
+        {
+            "id": "scope-2",
+            "type": "upgrade",
+            "status": "chain",
+            "name": "Advanced Scope",
+            "description": "Steadier aim: +10 to the chance to hit.",
+            "slot": "Scope",
+            "kind": 0,
+            "tier": 2,
+            "rank": "Rookie",
+            "stats": {
+                "aim": 10
+            },
+            "actions": [],
+            "chain": {
+                "requisition": "requisition_upgrade",
+                "args": {
+                    "kind": 0,
+                    "tier": 2
+                },
+                "equip": "weapon::add_upgrade"
+            },
+            "clientIds": [
+                "scope-2"
+            ]
+        },
+        {
+            "id": "scope-3",
+            "type": "upgrade",
+            "status": "chain",
+            "name": "Superior Scope",
+            "description": "Steadier aim: +15 to the chance to hit.",
+            "slot": "Scope",
+            "kind": 0,
+            "tier": 3,
+            "rank": "Rookie",
+            "stats": {
+                "aim": 15
+            },
+            "actions": [],
+            "chain": {
+                "requisition": "requisition_upgrade",
+                "args": {
+                    "kind": 0,
+                    "tier": 3
+                },
+                "equip": "weapon::add_upgrade"
+            },
+            "clientIds": [
+                "scope-3"
+            ]
+        },
+        {
+            "id": "laser-1",
+            "type": "upgrade",
+            "status": "chain",
+            "name": "Basic Laser Sight",
+            "description": "Picks out weak points: +5 to the chance of a critical hit.",
+            "slot": "Laser Sight",
+            "kind": 1,
+            "tier": 1,
+            "rank": "Rookie",
+            "stats": {
+                "crit_chance": 5
+            },
+            "actions": [],
+            "chain": {
+                "requisition": "requisition_upgrade",
+                "args": {
+                    "kind": 1,
+                    "tier": 1
+                },
+                "equip": "weapon::add_upgrade"
+            },
+            "clientIds": [
+                "laser-1"
+            ]
+        },
+        {
+            "id": "laser-2",
+            "type": "upgrade",
+            "status": "chain",
+            "name": "Advanced Laser Sight",
+            "description": "Picks out weak points: +10 to the chance of a critical hit.",
+            "slot": "Laser Sight",
+            "kind": 1,
+            "tier": 2,
+            "rank": "Rookie",
+            "stats": {
+                "crit_chance": 10
+            },
+            "actions": [],
+            "chain": {
+                "requisition": "requisition_upgrade",
+                "args": {
+                    "kind": 1,
+                    "tier": 2
+                },
+                "equip": "weapon::add_upgrade"
+            },
+            "clientIds": [
+                "laser-2"
+            ]
+        },
+        {
+            "id": "laser-3",
+            "type": "upgrade",
+            "status": "chain",
+            "name": "Sniper Laser Sight",
+            "description": "Picks out weak points: +15 to the chance of a critical hit.",
+            "slot": "Laser Sight",
+            "kind": 1,
+            "tier": 3,
+            "rank": "Rookie",
+            "stats": {
+                "crit_chance": 15
+            },
+            "actions": [],
+            "chain": {
+                "requisition": "requisition_upgrade",
+                "args": {
+                    "kind": 1,
+                    "tier": 3
+                },
+                "equip": "weapon::add_upgrade"
+            },
+            "clientIds": [
+                "laser-3"
+            ]
+        },
+        {
+            "id": "stock-1",
+            "type": "upgrade",
+            "status": "chain",
+            "name": "Basic Stock",
+            "description": "A steadier shoulder: +1 to the weapon's ideal range.",
+            "slot": "Stock",
+            "kind": 2,
+            "tier": 1,
+            "rank": "Rookie",
+            "stats": {
+                "range": 1
+            },
+            "actions": [],
+            "chain": {
+                "requisition": "requisition_upgrade",
+                "args": {
+                    "kind": 2,
+                    "tier": 1
+                },
+                "equip": "weapon::add_upgrade"
+            },
+            "clientIds": [
+                "stock-1"
+            ]
+        },
+        {
+            "id": "stock-2",
+            "type": "upgrade",
+            "status": "chain",
+            "name": "Advanced Stock",
+            "description": "A steadier shoulder: +2 to the weapon's ideal range.",
+            "slot": "Stock",
+            "kind": 2,
+            "tier": 2,
+            "rank": "Rookie",
+            "stats": {
+                "range": 2
+            },
+            "actions": [],
+            "chain": {
+                "requisition": "requisition_upgrade",
+                "args": {
+                    "kind": 2,
+                    "tier": 2
+                },
+                "equip": "weapon::add_upgrade"
+            },
+            "clientIds": [
+                "stock-2"
+            ]
+        },
+        {
+            "id": "stock-3",
+            "type": "upgrade",
+            "status": "chain",
+            "name": "Sniper Stock",
+            "description": "A steadier shoulder: +3 to the weapon's ideal range.",
+            "slot": "Stock",
+            "kind": 2,
+            "tier": 3,
+            "rank": "Rookie",
+            "stats": {
+                "range": 3
+            },
+            "actions": [],
+            "chain": {
+                "requisition": "requisition_upgrade",
+                "args": {
+                    "kind": 2,
+                    "tier": 3
+                },
+                "equip": "weapon::add_upgrade"
+            },
+            "clientIds": [
+                "stock-3"
+            ]
+        },
+        {
+            "id": "clip-1",
+            "type": "upgrade",
+            "status": "chain",
+            "name": "Basic Expanded Clip",
+            "description": "A larger magazine: +1 rounds before a reload.",
+            "slot": "Expanded Clip",
+            "kind": 3,
+            "tier": 1,
+            "rank": "Rookie",
+            "stats": {
+                "ammo": 1
+            },
+            "actions": [],
+            "chain": {
+                "requisition": "requisition_upgrade",
+                "args": {
+                    "kind": 3,
+                    "tier": 1
+                },
+                "equip": "weapon::add_upgrade"
+            },
+            "clientIds": [
+                "clip-1"
+            ]
+        },
+        {
+            "id": "clip-2",
+            "type": "upgrade",
+            "status": "chain",
+            "name": "Advanced Expanded Clip",
+            "description": "A larger magazine: +2 rounds before a reload.",
+            "slot": "Expanded Clip",
+            "kind": 3,
+            "tier": 2,
+            "rank": "Rookie",
+            "stats": {
+                "ammo": 2
+            },
+            "actions": [],
+            "chain": {
+                "requisition": "requisition_upgrade",
+                "args": {
+                    "kind": 3,
+                    "tier": 2
+                },
+                "equip": "weapon::add_upgrade"
+            },
+            "clientIds": [
+                "clip-2"
+            ]
+        },
+        {
+            "id": "clip-3",
+            "type": "upgrade",
+            "status": "chain",
+            "name": "Superior Expanded Clip",
+            "description": "A larger magazine: +3 rounds before a reload.",
+            "slot": "Expanded Clip",
+            "kind": 3,
+            "tier": 3,
+            "rank": "Rookie",
+            "stats": {
+                "ammo": 3
+            },
+            "actions": [],
+            "chain": {
+                "requisition": "requisition_upgrade",
+                "args": {
+                    "kind": 3,
+                    "tier": 3
+                },
+                "equip": "weapon::add_upgrade"
+            },
+            "clientIds": [
+                "clip-3"
+            ]
+        },
+        {
+            "id": "frag-grenade",
+            "type": "utility",
+            "status": "chain",
+            "name": "Frag Grenade",
+            "description": "One grenade, one opportunity to move a stubborn target.",
+            "kind": 0,
+            "rank": "Rookie",
+            "stats": {},
+            "actions": [
+                {
+                    "kind": "Grenade",
+                    "uses": 1
+                }
+            ],
+            "chain": {
+                "requisition": "requisition_utility",
+                "args": {
+                    "kind": 0
+                },
+                "equip": "equip_utility"
+            },
+            "clientIds": [
+                "frag"
+            ]
+        },
+        {
+            "id": "sidearm",
+            "type": "weapon",
+            "status": "app",
+            "name": "K–12 Sidearm",
+            "description": "A lightweight fallback for close encounters and depleted magazines.",
+            "rank": null,
+            "stats": null,
+            "actions": [],
+            "chain": null,
+            "clientIds": [
+                "k12"
+            ]
+        },
+        {
+            "id": "trauma-kit",
+            "type": "utility",
+            "status": "app",
+            "name": "Field Trauma Kit",
+            "description": "Compact dressings and emergency supplies. Get your people home.",
+            "rank": null,
+            "stats": null,
+            "actions": [],
+            "chain": null,
+            "clientIds": [
+                "trauma"
+            ]
+        }
+    ]
+}

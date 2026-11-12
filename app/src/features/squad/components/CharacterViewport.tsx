@@ -8,6 +8,7 @@ import type { Appearance, Recruit } from "@ghosts/squad/types";
 import type { Focus, RecruitStudio } from "@ghosts/squad/studio/recruit-studio";
 import type { CharacterLook } from "@ghosts/squad/studio/character-assets";
 import { loadPortrait, savePortrait } from "../imageStore";
+import { useWireframe, useWireframeShortcut, wireframeColors } from "../useWireframe";
 
 interface Props {
     recruit: Recruit;
@@ -29,6 +30,8 @@ export function CharacterViewport(props: Props) {
     const [motion, setMotion] = useState<MotionState>(STOPPED);
     const [drills, setDrills] = useState(false);
     const [look, setLook] = useState<CharacterLook>("operative");
+    const [wireframe, setWireframe] = useWireframe();
+    useWireframeShortcut();
     const [ready, setReady] = useState(false),
         [error, setError] = useState(""),
         [attempt, setAttempt] = useState(0);
@@ -77,6 +80,10 @@ export function CharacterViewport(props: Props) {
             window.clearTimeout(timer);
         };
     }, [ready, props.recruit, props.appearance, look]);
+    useEffect(() => {
+        if (!ready || !host.current) return;
+        studio.current?.wireframe(wireframe, wireframeColors(host.current).line);
+    }, [ready, wireframe]);
     useEffect(() => {
         studio.current?.focus(props.focus);
     }, [props.focus]);
@@ -194,6 +201,13 @@ export function CharacterViewport(props: Props) {
                         onClick={() => props.onFocus("face")}
                     >
                         Face
+                    </button>
+                    <button
+                        aria-pressed={wireframe}
+                        title="Wireframe (Z)"
+                        onClick={() => setWireframe(!wireframe)}
+                    >
+                        Wireframe
                     </button>
                     <button onClick={() => studio.current?.view(0)}>Front</button>
                     <button onClick={() => studio.current?.view(Math.PI / 2)}>Profile</button>

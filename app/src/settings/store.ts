@@ -38,6 +38,8 @@ export type Settings = {
         vignette: boolean;
         reduceMotion: boolean;
         batterySaver: boolean;
+        /** Gear and recruit stages draw wireframes (a development aid). */
+        wireframe: boolean;
     };
     controls: {
         bindings: Bindings;
@@ -55,7 +57,13 @@ export type Settings = {
 
 export const DEFAULTS: Settings = {
     audio: { master: 50, music: 50, sfx: 80, voice: 80, ui: 80, muted: false },
-    display: { scanlines: true, vignette: true, reduceMotion: false, batterySaver: true },
+    display: {
+        scanlines: true,
+        vignette: true,
+        reduceMotion: false,
+        batterySaver: true,
+        wireframe: false,
+    },
     controls: {
         bindings: DEFAULT_BINDINGS,
         combat: DEFAULT_COMBAT_BINDINGS,
@@ -117,6 +125,7 @@ function sanitize(raw: unknown): Settings {
             vignette: flag(d.vignette, DEFAULTS.display.vignette),
             reduceMotion: flag(d.reduceMotion, DEFAULTS.display.reduceMotion),
             batterySaver: flag(d.batterySaver, DEFAULTS.display.batterySaver),
+            wireframe: flag(d.wireframe, DEFAULTS.display.wireframe),
         },
         controls: {
             bindings: bindings(),
