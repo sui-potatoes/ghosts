@@ -321,7 +321,7 @@ export default function Headquarters() {
     const showDeck = !gate && (onFile === 0 || deck);
 
     return (
-        <main className="squad-screen hq-screen">
+        <main className="squad-screen hq-screen ui-zoom">
             <HqHeader
                 guard={guard}
                 status={

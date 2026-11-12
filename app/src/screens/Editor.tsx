@@ -563,7 +563,7 @@ export default function Editor() {
     );
 
     return (
-        <main className="flex h-screen select-none flex-col bg-surface text-foreground">
+        <main className="flex h-dvh select-none flex-col bg-surface text-foreground">
             <header className="flex items-center gap-3 border-b border-line px-3 py-2">
                 <Link to="/" className="ed-chip hover:text-foreground">
                     ← Menu

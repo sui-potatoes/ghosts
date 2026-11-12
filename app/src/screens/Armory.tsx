@@ -305,7 +305,7 @@ export function ArmoryView({
     const stageDraft = !!weapon && !sameFit(fit, draft);
 
     return (
-        <main className="squad-screen hq-screen">
+        <main className="squad-screen hq-screen ui-zoom">
             <HqHeader
                 status={`${weapons.length} weapons · ${armors.length} armor · ${Object.values(stock).reduce((n, c) => n + c, 0)} mods`}
             />

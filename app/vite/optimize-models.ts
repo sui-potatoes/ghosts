@@ -1,8 +1,10 @@
 import { ALL_EXTENSIONS, EXTMeshoptCompression } from "@gltf-transform/extensions";
-import { NodeIO } from "@gltf-transform/core";
+import { type Document, NodeIO, PropertyType } from "@gltf-transform/core";
+import { dedup } from "@gltf-transform/functions";
 import { MeshoptEncoder } from "meshoptimizer";
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
+import sharp from "sharp";
 import type { Plugin } from "vite";
 
 const CONCURRENCY = 4;
@@ -14,6 +16,30 @@ function declaresMeshopt(glb: Buffer) {
     return Boolean(json.extensionsUsed?.includes("EXT_meshopt_compression"));
 }
 
+/**
+ * Lossless WebP for every PNG, kept only when smaller; the loader reads it
+ * through EXT_texture_webp, as it already does for the armor and body models.
+ * `exact` keeps the colour under transparent pixels, so decoded RGBA matches
+ * the PNG's bit for bit.
+ */
+async function recompressTextures(document: Document) {
+    for (const texture of document.getRoot().listTextures()) {
+        if (texture.getMimeType() !== "image/png") continue;
+        const image = texture.getImage();
+        if (!image) continue;
+        const webp = await sharp(image).webp({ lossless: true, exact: true, effort: 6 }).toBuffer();
+        if (webp.length >= image.length) continue;
+        texture.setImage(new Uint8Array(webp)).setMimeType("image/webp");
+    }
+}
+
+function textureBytes(document: Document) {
+    return document
+        .getRoot()
+        .listTextures()
+        .reduce((sum, texture) => sum + (texture.getImage()?.length ?? 0), 0);
+}
+
 function glbFiles(dir: string): string[] {
     return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
         const path = join(dir, entry.name);
@@ -23,7 +49,8 @@ function glbFiles(dir: string): string[] {
 }
 
 /**
- * Meshopt-compresses every `.glb` in the build output, geometry only; the
+ * Optimizes every `.glb` in the build output: meshopt geometry and lighter
+ * textures. The
  * sources in `public/` stay raw, and the loaders register the decoder
  * unconditionally (`@ghosts/squad/studio/gltf-loader`), so dev loads the raw
  * files and production the compressed ones.
@@ -34,15 +61,18 @@ function glbFiles(dir: string): string[] {
  * array, `_RIGID_FIT` groups and skin weights are per vertex, and the squad
  * code rewrites `position.array` as a Float32Array and adds morph deltas in
  * absolute model units (KHR_mesh_quantization would move that scale into node
- * transforms and inverse bind matrices). Textures and animations are copied
- * untouched. Set `GHOSTS_RAW_MODELS=1` to ship the raw files.
+ * transforms and inverse bind matrices). Animations are copied untouched.
+ *
+ * Textures: byte-identical images inside one file are merged (`dedup` on
+ * textures only, never accessors or meshes), then PNGs become lossless WebP.
+ * Pixels, sizes, channels, samplers and UV transforms are unchanged. Set `GHOSTS_RAW_MODELS=1` to ship the raw files.
  *
  * Runs before `ghosts-asset-manifest` hashes the output.
  */
-export function meshoptModels(): Plugin {
+export function optimizeModels(): Plugin {
     let outDir = "";
     return {
-        name: "ghosts-meshopt-models",
+        name: "ghosts-optimize-models",
         apply: "build",
         configResolved(config) {
             outDir = resolve(config.root, config.build.outDir);
@@ -59,7 +89,9 @@ export function meshoptModels(): Plugin {
                     .registerDependencies({ "meshopt.encoder": MeshoptEncoder });
                 let before = 0,
                     after = 0,
-                    converted = 0;
+                    converted = 0,
+                    texturesBefore = 0,
+                    texturesAfter = 0;
                 const queue = [...files];
                 const worker = async () => {
                     for (let path = queue.shift(); path; path = queue.shift()) {
@@ -67,6 +99,12 @@ export function meshoptModels(): Plugin {
                         if (declaresMeshopt(raw)) continue;
                         try {
                             const document = await io.readBinary(new Uint8Array(raw));
+                            texturesBefore += textureBytes(document);
+                            await document.transform(
+                                dedup({ propertyTypes: [PropertyType.TEXTURE] }),
+                            );
+                            await recompressTextures(document);
+                            texturesAfter += textureBytes(document);
                             document
                                 .createExtension(EXTMeshoptCompression)
                                 .setRequired(true)
@@ -80,7 +118,7 @@ export function meshoptModels(): Plugin {
                             converted++;
                         } catch (error) {
                             throw new Error(
-                                `meshopt compression failed for ${relative(outDir, path)}: ${error}`,
+                                `model optimization failed for ${relative(outDir, path)}: ${error}`,
                             );
                         }
                     }
@@ -88,7 +126,8 @@ export function meshoptModels(): Plugin {
                 await Promise.all(Array.from({ length: CONCURRENCY }, worker));
                 const mb = (n: number) => (n / 1e6).toFixed(1);
                 console.log(
-                    `meshopt: ${converted}/${files.length} glb, ${mb(before)} -> ${mb(after)} MB`,
+                    `models: ${converted}/${files.length} glb, ${mb(before)} -> ${mb(after)} MB ` +
+                        `(textures ${mb(texturesBefore)} -> ${mb(texturesAfter)} MB)`,
                 );
             },
         },

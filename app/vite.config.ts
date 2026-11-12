@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 import { defineConfig, type Plugin } from "vite";
-import { meshoptModels } from "./vite/meshopt-models.ts";
+import { optimizeModels } from "./vite/optimize-models.ts";
 
 /** The checked-out commit, read once when the config loads; null outside a git checkout. */
 function lastCommit() {
@@ -68,7 +68,7 @@ export default defineConfig({
     define: {
         __COMMIT__: JSON.stringify(lastCommit()),
     },
-    plugins: [tailwindcss(), react(), meshoptModels(), assetManifest()],
+    plugins: [tailwindcss(), react(), optimizeModels(), assetManifest()],
     // The Sui Potatoes app takes 5173; keep both dev servers runnable side by side.
     server: { port: 5174 },
 });

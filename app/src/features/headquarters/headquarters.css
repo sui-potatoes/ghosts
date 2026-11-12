@@ -364,9 +364,9 @@
     display: flex;
     flex-direction: column;
     gap: 14px;
-    max-width: 30rem;
+    max-width: 480px;
     margin: 18vh auto 0;
-    padding: 0 1.5rem;
+    padding: 0 24px;
 }
 .hq-gate .sq-eyebrow {
     border: 0;
@@ -1158,4 +1158,20 @@
 .roster-hire {
     width: 100%;
     margin-top: 12px;
+}
+
+/* Phones in landscape: see the matching block at the end of squad.css. The
+   zoom does not rescale viewport units, so the deck's height budget and the
+   gate's top margin are divided by the scale. */
+@media (orientation: landscape) and (max-height: 500px) {
+    .hq-deck-cards {
+        --hq-deck-card: min(
+            320px,
+            calc((100dvh / var(--ui-scale) - var(--squad-header-height) - 264px) * 0.68)
+        );
+        grid-template-columns: repeat(3, minmax(0, max(210px, var(--hq-deck-card))));
+    }
+    .hq-gate {
+        margin-top: calc(18vh / var(--ui-scale));
+    }
 }

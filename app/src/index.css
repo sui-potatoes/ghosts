@@ -619,6 +619,28 @@
     }
 }
 
+/*
+ * `.ui-zoom` marks the root of a px-based screen (settings, headquarters,
+ * armory). It is zoomed by --ui-scale like the engine HUD, so the px CSS
+ * shrinks once. Tailwind's rem lengths inside it are already shrunk by the
+ * html font size, so the spacing and container tokens are divided by the scale
+ * here: they come out scaled exactly once (rem * scale / scale * zoom). Viewport
+ * units are not rescaled by zoom, so a zoomed root's own vh/dvh caps are divided
+ * by the scale. A WebGL canvas host inside counter-zooms by 1 / scale (its
+ * insets and fixed heights are then multiplied by the scale by hand), which
+ * keeps it at full resolution with rect and client sizes in true pixels.
+ */
+@media (orientation: landscape) and (max-height: 500px) {
+    .ui-zoom {
+        zoom: var(--ui-scale);
+        --spacing: calc(0.25rem / var(--ui-scale));
+        --container-sm: calc(24rem / var(--ui-scale));
+        --container-md: calc(28rem / var(--ui-scale));
+        --container-5xl: calc(64rem / var(--ui-scale));
+        --container-6xl: calc(72rem / var(--ui-scale));
+    }
+}
+
 @media (orientation: landscape) and (max-height: 440px) {
     :root {
         --ui-scale: 0.72;

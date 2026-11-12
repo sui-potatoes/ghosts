@@ -1349,3 +1349,83 @@
     border: 1px solid #40535b;
     font-size: 11px;
 }
+
+/*
+ * Phones in landscape (--ui-scale, index.css): the screen is zoomed as a whole
+ * (.ui-zoom), so its viewport is as wide as a laptop's, but the width media
+ * queries above still see the phone's real 844px and pick the stacked
+ * tablet layout. Put the three-column layout of the 1100px step back, filling
+ * the zoomed height. The canvas hosts counter-zoom (1 / scale) to stay at
+ * full resolution; their offsets and fixed heights are multiplied by the scale.
+ */
+@media (orientation: landscape) and (max-height: 500px) {
+    .squad-screen {
+        min-height: calc(100svh / var(--ui-scale));
+        padding-inline: max(24px, env(safe-area-inset-left, 0px) / var(--ui-scale))
+            max(24px, env(safe-area-inset-right, 0px) / var(--ui-scale));
+    }
+    .squad-header {
+        min-height: var(--squad-header-height);
+    }
+    .squad-save {
+        max-width: 250px;
+    }
+    .squad-save small {
+        font-size: 11px;
+    }
+    .squad-workspace {
+        grid-template-columns: 180px minmax(240px, 1fr) 320px;
+        grid-template-rows: none;
+        height: calc(100svh / var(--ui-scale) - var(--squad-header-height));
+        min-height: 0;
+        max-height: 1100px;
+    }
+    .squad-roster {
+        grid-column: auto;
+        display: flex;
+        padding: 28px 12px 20px 0;
+        border-right: 1px solid var(--border-color);
+        border-bottom: 0;
+    }
+    .roster-heading {
+        grid-column: auto;
+        margin-bottom: 20px;
+    }
+    .roster-list {
+        display: block;
+    }
+    .roster-card {
+        min-width: 0;
+        max-width: none;
+        padding: 14px 6px 14px 0;
+    }
+    .squad-inspector {
+        max-height: none;
+    }
+    .stage-toolbar {
+        flex-direction: row;
+        align-items: center;
+    }
+    .sq-dialog {
+        width: min(440px, calc((100vw - 48px) / var(--ui-scale)));
+        max-height: calc(90svh / var(--ui-scale));
+    }
+    .weapon-inspect {
+        max-height: calc(95vh / var(--ui-scale));
+        width: min(1100px, calc(94vw / var(--ui-scale)));
+        max-width: calc(94vw / var(--ui-scale));
+    }
+    .recruit-canvas,
+    .weapon-canvas {
+        zoom: calc(1 / var(--ui-scale));
+    }
+    .weapon-canvas {
+        height: calc(235px * var(--ui-scale));
+    }
+    .weapon-inspect .weapon-canvas {
+        height: min(65vh, 660px);
+    }
+    .drills-open .recruit-canvas {
+        bottom: calc(210px * var(--ui-scale));
+    }
+}

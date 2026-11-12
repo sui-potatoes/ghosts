@@ -55,8 +55,9 @@ documents). It is served by Cloudflare as a Worker with static assets:
 `wrangler.jsonc` names the Worker `ghosts`, points at `dist/` and serves
 `index.html` for unknown paths so the React router works on direct loads.
 
-The build meshopt-compresses every `.glb` in `dist/` (lossless: vertex order,
-count and Float32 data are kept, see `vite/meshopt-models.ts`); `public/` keeps
+The build optimizes every `.glb` in `dist/` (lossless: vertex order, count and
+Float32 data are kept; duplicate textures merged, PNGs as lossless WebP, see
+`vite/optimize-models.ts`); `public/` keeps
 the raw sources and dev serves them. `GHOSTS_RAW_MODELS=1 pnpm build` ships raw models.
 
 Cloudflare builds and deploys from GitHub (Workers & Pages → Create →

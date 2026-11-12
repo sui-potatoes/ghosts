@@ -97,7 +97,7 @@ export default function MainMenu() {
     ];
 
     return (
-        <main className="main-menu flex min-h-screen flex-col px-6 md:px-16">
+        <main className="main-menu flex min-h-dvh flex-col px-6 md:px-16">
             <TitleBackdrop />
             <div className="relative z-10 flex w-full max-w-xl flex-1 flex-col justify-center gap-12 py-16">
                 <header className="flex flex-col gap-5">

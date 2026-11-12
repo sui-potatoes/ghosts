@@ -3193,4 +3193,57 @@
   .encounter dialog.briefing-modal #modal-content {
     max-height: calc(94dvh / var(--ui-scale, 1) - 84px);
   }
+  /*
+   * The zoomed viewport is as wide as a laptop's, so the deck keeps its
+   * desktop arrangement (the compact 1250px one): the action bar left, End Turn
+   * to its right in the same row. The narrow-screen stack (End Turn above a
+   * second grid row) only works while the deck is taller than this.
+   */
+  .encounter .command-deck {
+    left: 30px;
+    right: 205px;
+    bottom: calc(21px + env(safe-area-inset-bottom, 0px) / var(--ui-scale, 1));
+    height: 85px;
+    padding: 14px 0 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .encounter .action-list {
+    height: 66px;
+    gap: 3px;
+  }
+  .encounter .action-list button {
+    height: 66px;
+    padding: 5px;
+    gap: 6px;
+  }
+  .encounter .action-list button > span {
+    font-size: 9px;
+  }
+  .encounter .action-list button > small {
+    font-size: 8px;
+  }
+  .encounter .action-list button > kbd {
+    display: block;
+  }
+  .encounter .workspace > .end-turn {
+    right: 30px;
+    bottom: calc(29px + env(safe-area-inset-bottom, 0px) / var(--ui-scale, 1));
+    width: auto;
+    min-width: 150px;
+    height: auto;
+    min-height: 57px;
+    padding: 14px 17px;
+    font-size: 12px;
+  }
+  .encounter .end-turn svg {
+    display: block;
+  }
+  .encounter .field-bottom {
+    bottom: calc(125px + env(safe-area-inset-bottom, 0px) / var(--ui-scale, 1));
+  }
+  .encounter #targeting-hud {
+    bottom: calc(127px + env(safe-area-inset-bottom, 0px) / var(--ui-scale, 1));
+  }
 }

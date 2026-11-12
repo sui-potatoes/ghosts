@@ -281,10 +281,10 @@ export function SettingsOverlay({ onBack }: { onBack: () => void }) {
     return (
         // The screen padding lives on the smoke root (like the route), so the
         // smoke canvas spans the whole screen instead of the padded box.
-        <div className="relative isolate flex h-full min-h-0 flex-col px-6 py-10 md:px-16 md:py-16">
+        <div className="set-screen relative isolate flex h-full min-h-0 flex-col px-6 py-10 md:px-16 md:py-16">
             <SettingsSmoke />
             <div
-                className={`mx-auto flex min-h-0 w-full flex-1 flex-col gap-10 ${
+                className={`ui-zoom mx-auto flex min-h-0 w-full flex-1 flex-col gap-10 ${
                     mode === "controller" ? "" : "max-w-6xl"
                 }`}
             >
