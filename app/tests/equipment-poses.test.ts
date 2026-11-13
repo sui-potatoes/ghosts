@@ -8,18 +8,22 @@ import { gunzipSync } from "node:zlib";
 import * as T from "three";
 import { motions } from "@ghosts/squad/motion/catalog";
 import { nativeClip, captureClip } from "@ghosts/squad/motion/clips";
-import { equipmentPose, type EquipmentPoses } from "@ghosts/squad/motion/equipment-poses";
+import {
+    equipmentPose,
+    poseSuffix,
+    type EquipmentPoses,
+} from "@ghosts/squad/motion/equipment-poses";
 import { motionSkeleton } from "@ghosts/squad/motion/clearance";
 import { mountHandEquipment } from "@ghosts/squad/studio/held-equipment";
 import { WeaponCarry } from "@ghosts/squad/motion/weapon-carry";
 import { MAX_AIM_LEAN, relaxAimPosture } from "../scripts/equipment-fit/aim-posture.ts";
 const unpack = (path: string) => JSON.parse(gunzipSync(readFileSync(path)).toString());
 const configurations = ["female", "male"].flatMap((sex) =>
-    ["rifle", "sniper"].map((model) => ({ sex, model })),
+    ["rifle", "sniper", "plasma"].map((model) => ({ sex, model })),
 );
 for (const { sex, model } of configurations) {
     const poses: EquipmentPoses = unpack(
-        `public/squad/motions/${sex}${model === "sniper" ? "-sniper" : ""}-equipment.bin`,
+        `public/squad/motions/${sex}${poseSuffix(model)}-equipment.bin`,
     );
     const clips = unpack(`public/squad/motions/${sex}.bin`).map(
         (c: Parameters<typeof T.AnimationClip.parse>[0]) => nativeClip(T.AnimationClip.parse(c)),

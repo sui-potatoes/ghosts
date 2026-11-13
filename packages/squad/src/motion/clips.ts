@@ -2,7 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import * as T from "three";
-import { equipmentPose, loadEquipmentPoses } from "./equipment-poses.ts";
+import {
+  equipmentPose,
+  loadEquipmentPoses,
+  poseSet,
+} from "./equipment-poses.ts";
 import type { Sex } from "../types";
 
 /** Captures use centimetres and Z-up; the native Squad rig uses metres and Y-up. */
@@ -38,7 +42,7 @@ export function nativeClip(source: T.AnimationClip, inPlace = false) {
 }
 const cache = new Map<string, Promise<Map<string, T.AnimationClip>>>();
 export function loadMotions(sex: Sex, model = "rifle") {
-  const key = `${sex}/${model === "sniper" ? "sniper" : "rifle"}`;
+  const key = `${sex}/${poseSet(model)}`;
   if (!cache.has(key)) {
     const request = (async () => {
       const base = `${import.meta.env.BASE_URL}squad/`;

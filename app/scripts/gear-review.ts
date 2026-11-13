@@ -1,7 +1,7 @@
 // Silent, local visual regression bench. Uses the same assets and poses as the game.
 import * as T from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { createLongGun, type LongGunKind } from "@ghosts/squad/studio/long-guns";
+import { createHeldWeapon, type HeldGun } from "@ghosts/squad/studio/held-weapons";
 import { EquipmentAssets } from "@ghosts/squad/studio/equipment-assets";
 import { CharacterAssets } from "@ghosts/squad/studio/character-assets";
 import { mountHandEquipment } from "@ghosts/squad/studio/held-equipment";
@@ -90,7 +90,7 @@ async function build() {
     if (view.value === "weapon-detail") {
         let model: T.Group;
         if (new URLSearchParams(location.search).has("source")) {
-            model = createLongGun(weapon.value as LongGunKind);
+            model = createHeldWeapon(weapon.value as HeldGun);
             model.quaternion.setFromRotationMatrix(
                 new T.Matrix4().makeBasis(
                     new T.Vector3(0, 0, -1),
@@ -98,7 +98,7 @@ async function build() {
                     new T.Vector3(0, -1, 0),
                 ),
             );
-        } else model = await gear.get(weapon.value as LongGunKind);
+        } else model = await gear.get(weapon.value as HeldGun);
         content.add(model);
         const center = new T.Box3().setFromObject(model).getCenter(new T.Vector3());
         controls.target.copy(center);
@@ -251,7 +251,7 @@ async function build() {
                 gear.get("pistol"),
             ]);
         if (new URLSearchParams(location.search).has("source")) {
-            const source = createLongGun(weapon.value as LongGunKind, {
+            const source = createHeldWeapon(weapon.value as HeldGun, {
                 laser: "laser-3",
                 scope: "scope-1",
                 clip: "clip-3",

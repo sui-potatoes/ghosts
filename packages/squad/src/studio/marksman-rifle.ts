@@ -16,11 +16,14 @@ import {
   breech,
   fillet,
   inAuthoringFrame,
+  isLow,
   latheAlong,
+  lowSegments,
   pistolGrip,
   plate,
   prism,
   shell,
+  simplifyProfile,
   slab,
   smooth,
   superRing,
@@ -44,7 +47,7 @@ const RAIL_TOP = B + UPPER_SECTION.top + 0.0095;
 const RAIL_BASE = B + 0.0195;
 const UPPER = [-0.136, 0.078] as const;
 const RECEIVER_FACE = UPPER[1];
-const HANDGUARD = [0.0845, 0.4645] as const;
+export const HANDGUARD = [0.0845, 0.4645] as const;
 const TUBE = { R: 0.021, r: 0.0186 };
 const BARREL = [RECEIVER_FACE - 0.004, 0.5315] as const;
 const GAS_BLOCK = [0.402, 0.426] as const;
@@ -90,9 +93,15 @@ function lathe(
   z = 0,
   segments = 24,
 ) {
+  // Low detail: fewer revolution segments and small steps dropped, as on
+  // the service rifle; the bake carries the rest.
   const geo = new T.LatheGeometry(
-    profile.map(([x, r]) => new T.Vector2(Math.max(r, 1e-5), x)),
-    segments,
+    simplifyProfile(profile).map(
+      ([x, r]) => new T.Vector2(Math.max(r, 1e-5), x),
+    ),
+    isLow()
+      ? Math.min(segments, lowSegments(Math.max(...profile.map((p) => p[1]))))
+      : segments,
   );
   geo.rotateZ(-Math.PI / 2);
   g.add(geo, m, [0, y, z]);

@@ -5,6 +5,7 @@
 // proxy volumes: these checks use the shipped mesh and its actual skin weights.
 import { readFileSync } from "node:fs";
 import * as T from "three";
+import { createHeldWeapon, isHeldGun } from "@ghosts/squad/studio/held-weapons";
 export function skinMeshes(path: string, root: T.Group) {
     const file = readFileSync(path),
         length = file.readUInt32LE(12);
@@ -410,27 +411,32 @@ export function rigidAsset(path: string): T.Group {
     return root;
 }
 
-export function rifleAsset(kind: string, tier = 0) {
-    const gun = rigidAsset(`public/squad/weapons/${kind}.glb`);
-    const sockets: T.Object3D[] = [];
-    gun.traverse((o) => {
-        if (o.name.startsWith("mount_")) sockets.push(o);
-    });
-    if (sockets.length !== 4) throw Error(`${kind}: expected four exported sockets`);
-    if (tier)
-        for (const socket of sockets) {
-            const slot = socket.userData.interface.match(/^ghosts:(.+):v1$/)[1];
-            socket.clear();
-            socket.add(rigidAsset(`public/squad/weapons/${slot}-${tier}.glb`));
-        }
-    return gun;
+/** The long gun as characters carry it (`createHeldWeapon`, hand socket),
+ * with every fitting at `tier` (0: standard furniture only). */
+export function rifleAsset(kind: string, tier = 0, detail: "high" | "low" = "high") {
+    if (!isHeldGun(kind)) throw Error(`${kind}: not a long gun`);
+    return createHeldWeapon(
+        kind,
+        tier
+            ? {
+                  clip: `clip-${tier}`,
+                  stock: `stock-${tier}`,
+                  scope: `scope-${tier}`,
+                  laser: `laser-${tier}`,
+              }
+            : {},
+        detail,
+    );
 }
 
-/** Closest support contact on the shipped fore-end, measured against skinned triangles. */
+/** Closest support contact on the held fore-end, measured against skinned triangles. */
 export function supportContact(
     gun: T.Object3D,
     holder: T.Object3D,
     surface: ReturnType<typeof posedSurface>,
+    /** Holder-frame fore-end window: x from..to, y below `top`. The old
+     * fore-end's window by default; callers with a gun's seat pass its own. */
+    window = { from: 0.04, to: 0.16, top: 0.04 },
 ) {
     let palm = Infinity,
         fingers = Infinity,
@@ -443,7 +449,7 @@ export function supportContact(
         for (let i = 0; i < pos.count; i++) {
             const world = new T.Vector3().fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
             const p = holder.worldToLocal(world.clone());
-            if (p.x < 0.04 || p.x > 0.16 || p.y > 0.04) continue;
+            if (p.x < window.from || p.x > window.to || p.y > window.top) continue;
             const key = p
                 .toArray()
                 .map((v) => Math.round(v * 2000))

@@ -21,7 +21,8 @@ import { ATTACHMENTS } from "../../packages/squad/src/catalog.ts";
 import { createFieldSupply } from "../../packages/squad/src/studio/field-supplies.ts";
 import { motionSkeleton } from "@ghosts/squad/motion/clearance";
 import { skinMeshes, posedSurface, rigidAsset } from "./gear-collision.ts";
-import { equipmentPose } from "@ghosts/squad/motion/equipment-poses";
+import { equipmentPose, poseSuffix } from "@ghosts/squad/motion/equipment-poses";
+import { createHeldWeapon } from "@ghosts/squad/studio/held-weapons";
 import { nativeClip } from "@ghosts/squad/motion/clips";
 import { mountHandEquipment } from "@ghosts/squad/studio/held-equipment";
 
@@ -88,9 +89,12 @@ for (const kind of ["rifle", "sniper", "plasma"] as const) {
             const hand = root.getObjectByName("mixamorigRightHand") as T.Bone;
             const skin = skinMeshes(`public/squad/body/${sex}/skin.glb`, root);
             const poses = JSON.parse(
-                gunzipSync(readFileSync(`public/squad/motions/${sex}-equipment.bin`)).toString(),
+                gunzipSync(
+                    readFileSync(`public/squad/motions/${sex}${poseSuffix(kind)}-equipment.bin`),
+                ).toString(),
             );
-            const gun = createLongGun(kind),
+            // The redesigned gun as characters carry it, on its own baked hold.
+            const gun = createHeldWeapon(kind),
                 group = new T.Group();
             gun.quaternion.setFromRotationMatrix(
                 new T.Matrix4().makeBasis(

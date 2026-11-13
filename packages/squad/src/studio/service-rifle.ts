@@ -45,7 +45,7 @@ export const RIFLE_BORE = 0.025;
 const B = RIFLE_BORE;
 const RAIL_TOP = B + 0.03;
 const RECEIVER_FACE = 0.055;
-const HANDGUARD = [0.0605, 0.3255] as const;
+export const HANDGUARD = [0.0605, 0.3255] as const;
 export const RIFLE_MUZZLE = 0.391;
 const WELL = { top: 0.0085, bottom: -0.05, rake: 0.087, center: -0.01225 };
 const wellShift = (y: number) => (WELL.top - y) * WELL.rake;

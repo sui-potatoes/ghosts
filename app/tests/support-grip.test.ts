@@ -7,7 +7,8 @@ import { gunzipSync } from "node:zlib";
 import * as T from "three";
 import { motionSkeleton } from "@ghosts/squad/motion/clearance";
 import { nativeClip } from "@ghosts/squad/motion/clips";
-import { equipmentPose } from "@ghosts/squad/motion/equipment-poses";
+import { equipmentPose, poseSuffix } from "@ghosts/squad/motion/equipment-poses";
+import { seatOf } from "../scripts/equipment-fit/support-grip.ts";
 import { mountHandEquipment } from "@ghosts/squad/studio/held-equipment";
 import {
     skinMeshes,
@@ -89,7 +90,7 @@ function wristRings(root: T.Group, skin: T.SkinnedMesh[]) {
 }
 
 const configurations = ["female", "male"].flatMap((sex) =>
-    ["rifle", "sniper", "plasma"].map((kind) => ({ sex, kind })),
+    (["rifle", "sniper", "plasma"] as const).map((kind) => ({ sex, kind })),
 );
 for (const { sex, kind } of configurations) {
     test(`${sex}/${kind}: both hands clear all rifles and retain wrist thickness`, () => {
@@ -108,9 +109,9 @@ for (const { sex, kind } of configurations) {
             JSON.parse(fs.readFileSync(`public/squad/body/${sex}/weapon-mount.json`, "utf8")),
         );
         const read = (path: string) => JSON.parse(gunzipSync(fs.readFileSync(path)).toString());
-        const poses = read(
-            `public/squad/motions/${sex}${kind === "sniper" ? "-sniper" : ""}-equipment.bin`,
-        );
+        const poses = read(`public/squad/motions/${sex}${poseSuffix(kind)}-equipment.bin`);
+        // The palm closes on the gun's own handguard (or forend) seat.
+        const seat = seatOf(kind);
         const clips = read(`public/squad/motions/${sex}.bin`).map(
             (c: Parameters<typeof T.AnimationClip.parse>[0]) =>
                 equipmentPose(nativeClip(T.AnimationClip.parse(c)), poses),
@@ -196,7 +197,13 @@ for (const { sex, kind } of configurations) {
                     ) {
                         group.add(gun);
                         root.updateMatrixWorld(true);
-                        const contact = supportContact(gun, group, surface);
+                        // The fore-end around the gun's own seat (the old window was
+                        // 0.04-0.16 by 0.04 around the old rifle's, at 0.097 / 0.0005).
+                        const contact = supportContact(gun, group, surface, {
+                            from: seat.contact.x - 0.06,
+                            to: seat.contact.x + 0.06,
+                            top: seat.contact.y + 0.04,
+                        });
                         group.remove(gun);
                         assert.ok(
                             Math.min(contact.palm, contact.thumb) < 0.005 &&
@@ -210,13 +217,20 @@ for (const { sex, kind } of configurations) {
                         `${kind}/attachments-${tier}/${name}@${fraction}: ${JSON.stringify(hits.slice(0, 2))}`,
                     );
                 }
-                // Prevent a collision-free but detached hand: the palm still cups the fore-end.
-                const palm = group.worldToLocal(
-                    root
-                        .getObjectByName("mixamorigLeftHandMiddle1")!
-                        .getWorldPosition(new T.Vector3()),
+                // Prevent a collision-free but detached hand: the palm still cups the
+                // fore-end. The window is the one the old fore-end had, taken relative to
+                // the seat: 32 mm behind to 53 mm ahead of the station, 16-51 mm under it.
+                const palm = group
+                    .worldToLocal(
+                        root
+                            .getObjectByName("mixamorigLeftHandMiddle1")!
+                            .getWorldPosition(new T.Vector3()),
+                    )
+                    .sub(seat.contact);
+                assert.ok(
+                    palm.x > -0.032 && palm.x < 0.053 && palm.y > -0.051 && palm.y < -0.016,
+                    `${kind}/${name}@${fraction}: palm ${palm.toArray().map((v) => v.toFixed(3))} off the seat`,
                 );
-                assert.ok(palm.x > 0.065 && palm.x < 0.15 && palm.y > -0.06 && palm.y < -0.025);
             }
         }
         mixer.stopAllAction();
