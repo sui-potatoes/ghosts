@@ -382,7 +382,7 @@ Weapon upgrades (`items.move:94-152`; one of each kind per weapon, three at most
 
 Utility (`items.move:63-69`): Frag Grenade (kind 0), stats modifier all zero (`stats::new(0,0,0,0,0)`), one action `Grenade` with `uses: some(1)`; no rank requirement. Its numbers (range 5, radius 2, damage 4) are constants of `perform_grenade`, not stats (section 6).
 
-Hiring (`S/account.move:152-214`): recruits are made by `recruit::new` (`S/recruit/recruit.move:215-227`): Rookie, `xp` 0, default stats, no weapon, no armor, no utility. `FREE_RECRUITS` 3 (free top-up to 3), `MAX_RECRUITS` 8 (`account.move:56-58`).
+Hiring (`S/account.move:152-214`): recruits are made by `recruit::new` (`S/recruit/recruit.move:215-227`): Rookie, `xp` 0, default stats, no weapon, no armor, no utility. `FREE_RECRUITS` 4 (free top-up to 4), `MAX_RECRUITS` 8 (`account.move:56-58`).
 
 ## 9. Turn structure and match flow
 

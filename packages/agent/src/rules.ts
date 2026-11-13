@@ -56,7 +56,7 @@ export const TURN_LIMIT_MS = 90_000;
 /** `ghosts::ghosts`: how long the players have to pick their squads once matched. */
 export const DEPLOY_LIMIT_MS = 120_000;
 /** `ghosts::account`: the squad an account can always hold for free. */
-export const FREE_RECRUITS = 3;
+export const FREE_RECRUITS = 4;
 /** `ghosts::ghosts`: how long a search stays in the queue. */
 export const SEARCH_TIMEOUT_MS = 120_000;
 /** `ghosts::ghosts`: how long an account can't search after misbehaving. */

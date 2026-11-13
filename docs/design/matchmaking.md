@@ -208,7 +208,7 @@ What it costs to replace one, from the code:
 
 | Item | Rule | Ref | Price in the code |
 | --- | --- | --- | --- |
-| `hire_recruits` | tops the at-home count up to `FREE_RECRUITS` 3; aborts if already >= 3 (`ERecruitLimitReached`) or the account is `Playing` (`EInGame`) | `account.move:155-162` | none (no payment argument); Sui gas only |
+| `hire_recruits` | tops the at-home count up to `FREE_RECRUITS` 4; aborts if already >= 4 (`ERecruitLimitReached`) or the account is `Playing` (`EInGame`) | `account.move:155-162` | none (no payment argument); Sui gas only |
 | `hire_recruit` | one more, up to `MAX_RECRUITS` 8 at home | `:165-171` | none; Sui gas only |
 | fresh recruit | Rookie, `xp` 0, default stats (mobility 7, aim 65, health 10, armor 0, dodge 0), no weapon, no armor, no utility, random name and looks | `recruit.move:215-227`, `account.move:174-214` | |
 | `requisition_rifle/armor/utility/upgrade` | any tier, any kind, any number; the rank is checked only when equipping | `account.move:291-320`, `:338-357` | none |
@@ -293,7 +293,7 @@ Forfeit by going silent costs the same for the leaver, but takes the opponent at
 
 ### 9.4 The new player against the default rating and deviation
 
-A new account is `1500 / 350` (`GL/:68-71`, `:101-103`), window 350 at its first search; it is compatible at once with anything within `350 + window_other`, including an established account at 1500 / 50 (limit 400), whose recruits can be Colonels. Rating swing in the first game: 162 against a default opponent, 175 against an established one that moves 5 (3.4). The window stays above 100 for about 15 games of mirror play (3.5), so the newcomer keeps meeting a wide band of ratings while their rating is still moving most. From the app path a new account gets three unarmed Rookies (`APP/chain/matchmaking.ts:181-207` hires, does not requisition): unarmed units have no `Attack` (mechanics.md 1.5). Whether the Headquarters screen arms them before the first search is outside what I read. Newcomers have 0 XP on every recruit (rank 0) at the start, so the power gap to an established opponent is the table's full spread. Not determined: how many games a typical new player has before they hold recruits of rank 2 or more (depends on survival rate, which no code or run here gives).
+A new account is `1500 / 350` (`GL/:68-71`, `:101-103`), window 350 at its first search; it is compatible at once with anything within `350 + window_other`, including an established account at 1500 / 50 (limit 400), whose recruits can be Colonels. Rating swing in the first game: 162 against a default opponent, 175 against an established one that moves 5 (3.4). The window stays above 100 for about 15 games of mirror play (3.5), so the newcomer keeps meeting a wide band of ratings while their rating is still moving most. From the app path a new account gets four unarmed Rookies (`APP/chain/matchmaking.ts:181-207` hires, does not requisition): unarmed units have no `Attack` (mechanics.md 1.5). Whether the Headquarters screen arms them before the first search is outside what I read. Newcomers have 0 XP on every recruit (rank 0) at the start, so the power gap to an established opponent is the table's full spread. Not determined: how many games a typical new player has before they hold recruits of rank 2 or more (depends on survival rate, which no code or run here gives).
 
 ### 9.5 What a leaderboard would rank today
 

@@ -54,7 +54,7 @@ type Client = ReturnType<typeof useCurrentClient>;
 export const ghostsEnabled = !!GHOSTS.package && !!GHOSTS.registry;
 
 /** The squad an `Account` can always hold for free (`FREE_RECRUITS`). */
-export const FREE_RECRUITS = 3;
+export const FREE_RECRUITS = 4;
 /** How many recruits an `Account` can hold, hired one at a time past the free squad. */
 export const MAX_RECRUITS = 8;
 
