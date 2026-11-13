@@ -538,12 +538,25 @@ export function unequipUtilityTx(
 
 /**
  * Fit a recruit with a utility out of the armory. The chain aborts if their
- * utility slots are full: take one off first (`unequipUtilityTx`).
+ * utility slots are full: take one off first (`unequipUtilityTx`), or pass the
+ * carried one as `replaceId` to swap in the same transaction (it goes to the armory).
  */
-export function equipUtilityTx(accountId: string, recruitId: string, utilityId: string) {
+export function equipUtilityTx(
+    accountId: string,
+    recruitId: string,
+    utilityId: string,
+    replaceId?: string,
+) {
     const tx = new Transaction();
     const acc = tx.object(accountId);
     withRecruit(tx, acc, recruitId, (recruit) => {
+        if (replaceId) {
+            const [old] = tx.moveCall({
+                target: target("unequip_utility"),
+                arguments: [recruit, tx.pure.id(replaceId)],
+            });
+            tx.transferObjects([old], accountId);
+        }
         const [item] = tx.moveCall({
             target: target("take_utility"),
             arguments: [acc, tx.object(utilityId)],

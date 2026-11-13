@@ -10,10 +10,17 @@
  */
 
 import { ATTACHMENTS, ATTACHMENT_SLOTS } from "@ghosts/squad/catalog";
-import { add, EMPTY, ITEM_STATS, unpack, type Stats } from "@ghosts/squad/stats";
+import { EMPTY, ITEM_STATS, unpack, type Stats } from "@ghosts/squad/stats";
 import type { Attachment, AttachmentSlot, WeaponAttachments } from "@ghosts/squad/types";
 
 import type { ChainRecruit, Fitting } from "../../chain";
+import {
+    modifierParts,
+    weaponProfile,
+    baseFromTotal,
+    type ModFitting,
+    type WeaponProfile,
+} from "./fittings";
 import { armorModel, upgradeModel, weaponModel } from "./mapping";
 
 /** Fittings a weapon takes (`weapon::add_upgrade`): one per kind, three in all. */
@@ -22,12 +29,20 @@ export const MAX_FITTINGS = 3;
 /** A weapon's fittings: tier by attachment family. */
 export type Fit = Partial<Record<AttachmentSlot, number>>;
 
+/** A packed `ghosts::stats::Stats`, as the BCS decoder returns it. */
+export interface PackedStats {
+    value: string | bigint;
+}
 export interface GearUpgrade {
     name: string;
+    /** The modifier the upgrade carries. */
+    modifier?: PackedStats;
 }
 export interface Gear {
     id: string;
     name: string;
+    /** The item's stats as the chain holds them: a weapon's include its upgrades. */
+    stats?: PackedStats;
     upgrades?: GearUpgrade[];
     requiredRank?: { $kind: string };
 }
@@ -73,18 +88,59 @@ export function fittingsOf(fit: Fit): Fitting[] {
     });
 }
 
-/** A weapon's stats with a fit: the base model, then each fitting's modifier. */
-export function weaponStats(weapon: { name: string }, fit: Fit): Stats {
-    let stats = ITEM_STATS[weaponModel(weapon)] ?? EMPTY;
-    for (const slot of ATTACHMENT_SLOTS) {
-        const a = fit[slot] ? attachmentFor(slot, fit[slot]!) : undefined;
-        if (a) stats = add(stats, unpack(a.packed));
-    }
-    return stats;
+const statsOf = (packed: PackedStats): Stats => unpack(BigInt(packed.value));
+
+/** What an upgrade does: the chain object's modifier, else its catalog entry's. */
+export const upgradeModifier = (u: GearUpgrade): Stats => {
+    if (u.modifier) return statsOf(u.modifier);
+    const model = upgradeModel(u);
+    return model ? unpack(model.packed) : EMPTY;
+};
+
+/** A catalog attachment as a fitting, with the modifier the mint functions give it. */
+export const attachmentFitting = (a: Attachment): ModFitting<AttachmentSlot> => ({
+    slot: a.slot,
+    name: a.name,
+    modifier: unpack(a.packed),
+});
+
+/** The mod's modifier as text: "+2 Range", "−5% Aim". */
+export const modifierSummary = (modifier: Stats): string =>
+    modifierParts(modifier)
+        .map((m) => `${m.text} ${m.label}`)
+        .join(" · ");
+
+/**
+ * A weapon's stats: the base weapon, what its fitted upgrades make of it, and
+ * what the draft would. The chain's `Weapon.stats` already include the fitted
+ * upgrades (`add_upgrade`), so the base is that total with their modifiers taken
+ * off again; a weapon without chain stats starts from the catalog preset.
+ */
+export function weaponView(weapon: Gear, draft: Fit): WeaponProfile<AttachmentSlot> {
+    const upgrades = weapon.upgrades ?? [];
+    const fitted: ModFitting<AttachmentSlot>[] = upgrades.map((u) => ({
+        slot: upgradeModel(u)?.slot ?? null,
+        name: u.name,
+        modifier: upgradeModifier(u),
+    }));
+    const preset = ITEM_STATS[weaponModel(weapon)];
+    const base = weapon.stats
+        ? baseFromTotal(
+              statsOf(weapon.stats),
+              fitted.map((f) => f.modifier),
+              preset,
+          )
+        : (preset ?? EMPTY);
+    const wanted = ATTACHMENT_SLOTS.flatMap((slot) => {
+        const a = draft[slot] ? attachmentFor(slot, draft[slot]!) : undefined;
+        return a ? [attachmentFitting(a)] : [];
+    });
+    return weaponProfile({ base, fitted, draft: wanted, slots: ATTACHMENT_SLOTS });
 }
 
-export const armorStats = (armor: { name: string }): Stats =>
-    ITEM_STATS[armorModel(armor)] ?? EMPTY;
+/** An armor's modifier: the chain's stats, else the catalog preset. */
+export const armorStats = (armor: Gear): Stats =>
+    armor.stats ? statsOf(armor.stats) : (ITEM_STATS[armorModel(armor)] ?? EMPTY);
 
 /** Every weapon the account holds: issued ones first, then the armory's. */
 export function weaponInventory<T extends Gear>(

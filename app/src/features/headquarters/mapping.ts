@@ -42,6 +42,10 @@ const ARMOR_MODELS: Record<string, string> = {
     "Heavy Armor": "nyx-heavy",
 };
 
+/** Catalog models by the utility names `ghosts::items` mints. */
+const UTILITY_MODELS: Record<string, string> = { "Frag Grenade": "frag" };
+
+export const utilityModel = (u: { name: string }): string | undefined => UTILITY_MODELS[u.name];
 export const weaponModel = (w: { name: string }) => WEAPON_MODELS[w.name] ?? DEFAULT_PRIMARY;
 export const armorModel = (a: { name: string }) => ARMOR_MODELS[a.name] ?? "spectre";
 export const upgradeModel = (u: { name: string }) => ATTACHMENTS.find((a) => a.name === u.name);
@@ -101,7 +105,7 @@ export function toLocalRecruits(recruits: ChainRecruit[]): LocalRecruit[] {
                 primary: r.weapon ? weaponModel(r.weapon) : DEFAULT_PRIMARY,
                 sidearm: null,
                 armor: r.armor ? armorModel(r.armor) : null,
-                utility: null,
+                utility: r.utilities[0] ? (utilityModel(r.utilities[0]) ?? null) : null,
             },
             attachments: attachmentsOf(r.weapon),
         };
@@ -110,8 +114,9 @@ export function toLocalRecruits(recruits: ChainRecruit[]): LocalRecruit[] {
 
 /**
  * Hand the on-chain squad to the local playtest: `/demo` reads its roster
- * from the squad storage key. The demo keeps its own sidearm and grenade,
- * which the chain does not mint yet. Invalid rosters are not written.
+ * from the squad storage key. The utility follows what each recruit carries;
+ * the demo keeps its own sidearm, which the chain does not mint yet. Invalid
+ * rosters are not written.
  */
 export function syncDemoRoster(recruits: LocalRecruit[]) {
     if (!recruits.length) return;
@@ -120,7 +125,7 @@ export function syncDemoRoster(recruits: LocalRecruit[]) {
         stock: { ...INITIAL_STOCK },
         recruits: recruits.map((r) => ({
             ...r,
-            equipment: { ...r.equipment, sidearm: "k12", utility: "frag" },
+            equipment: { ...r.equipment, sidearm: "k12" },
         })),
     };
     try {

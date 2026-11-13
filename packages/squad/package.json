@@ -25,6 +25,8 @@
     "./stats": "./src/stats.ts",
     "./studio/armor-materials": "./src/studio/armor-materials.ts",
     "./studio/character-assets": "./src/studio/character-assets.ts",
+    "./studio/armory-weapons": "./src/studio/armory-weapons.ts",
+    "./studio/armory-skins": "./src/studio/armory-skins.ts",
     "./studio/equipment-assets": "./src/studio/equipment-assets.ts",
     "./studio/gltf-loader": "./src/studio/gltf-loader.ts",
     "./studio/held-equipment": "./src/studio/held-equipment.ts",
@@ -33,6 +35,7 @@
     "./studio/long-guns": "./src/studio/long-guns.ts",
     "./studio/sidearm": "./src/studio/sidearm.ts",
     "./types": "./src/types.ts",
+    "./weapon-skins": "./src/weapon-skins.ts",
     "./motion/equipment-poses": "./src/motion/equipment-poses.ts",
     "./motion/smoking": "./src/motion/smoking.ts"
   },

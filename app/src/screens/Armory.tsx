@@ -14,17 +14,22 @@ import { useMemo, useState, type ReactNode } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { ATTACHMENTS, itemById } from "@ghosts/squad/catalog";
+import { unpack } from "@ghosts/squad/stats";
 import type { Equipment, WeaponAttachments } from "@ghosts/squad/types";
+import { FACTORY_SKIN, skinsFor, validSkin } from "@ghosts/squad/weapon-skins";
 
 import {
     fittingsTx,
     issueTx,
     requisitionTx,
+    requisitionUtilityTx,
     unequipArmorTx,
+    unequipUtilityTx,
     unequipWeaponTx,
     type ChainArmor,
     type ChainRecruit,
     type ChainUpgrade,
+    type ChainUtility,
     type ChainWeapon,
     type Step,
 } from "../chain";
@@ -37,10 +42,12 @@ import {
     fitOf,
     fittingsOf,
     MAX_FITTINGS,
+    modifierSummary,
     sameFit,
     stockCounts,
+    upgradeModifier,
     weaponInventory,
-    weaponStats,
+    weaponView,
     type Fit,
     type Gear,
     type Held,
@@ -49,6 +56,7 @@ import {
     ArmorBench,
     RequisitionBench,
     UpgradeBench,
+    UtilityBench,
     WeaponBench,
     type CatalogEntry,
 } from "../features/headquarters/components/ArmoryBench";
@@ -60,6 +68,12 @@ import {
 import { Gate, HqHeader } from "../features/headquarters/components/Chrome";
 import { useEquipmentImages } from "../features/headquarters/equipmentImages";
 import { armorModel, weaponModel } from "../features/headquarters/mapping";
+import {
+    issueUtilitySteps,
+    REQUISITIONABLE,
+    utilityInventory,
+} from "../features/headquarters/utilities";
+import { readWeaponSkins, saveWeaponSkin } from "../features/headquarters/skins";
 import { useHeadquarters } from "../features/headquarters/useHeadquarters";
 import { WeaponPreview } from "../features/squad/components/WeaponPreview";
 import "../features/squad/squad.css";
@@ -97,7 +111,7 @@ export interface ArmoryViewProps {
     /** The account id; null when the address has none, undefined while unknown. */
     accountId: string | null | undefined;
     upgrades: ChainUpgrade[] | undefined;
-    armory: { weapons: ChainWeapon[]; armors: ChainArmor[] };
+    armory: { weapons: ChainWeapon[]; armors: ChainArmor[]; utilities: ChainUtility[] };
     recruits: ChainRecruit[];
     action: { busy: boolean; error: string; run(steps: Step[]): Promise<boolean> };
     /** A notice to show instead of the workspace (deployment, sign-in, reading). */
@@ -125,6 +139,8 @@ export function ArmoryView({
     );
     const [drafts, setDrafts] = useState<Record<string, Fit>>({});
     const [preview, setPreview] = useState<string | null>(null);
+    // Finishes are kept on this device per weapon object.
+    const [skins, setSkins] = useState(() => readWeaponSkins());
 
     const weapons = useMemo(
         () => weaponInventory(armory.weapons, recruits),
@@ -133,6 +149,10 @@ export function ArmoryView({
     const armors = useMemo(
         () => armorInventory(armory.armors, recruits),
         [armory.armors, recruits],
+    );
+    const utilities = useMemo(
+        () => utilityInventory(armory.utilities, recruits),
+        [armory.utilities, recruits],
     );
     const upgrades = useMemo(() => held ?? [], [held]);
     const stock = useMemo(() => stockCounts(upgrades), [upgrades]);
@@ -151,17 +171,22 @@ export function ArmoryView({
             ? { kind: "weapon", id: weapons[0].item.id }
             : category === "armor" && armors[0]
               ? { kind: "armor", id: armors[0].item.id }
-              : category === "mods" && ATTACHMENTS.find((a) => stock[a.id] || fitted[a.id])
-                ? {
-                      kind: "upgrade",
-                      attachment: ATTACHMENTS.find((a) => stock[a.id] || fitted[a.id])!.id,
-                  }
-                : null;
+              : category === "utilities" && utilities[0]
+                ? { kind: "utility", id: utilities[0].item.id }
+                : category === "mods" && ATTACHMENTS.find((a) => stock[a.id] || fitted[a.id])
+                  ? {
+                        kind: "upgrade",
+                        attachment: ATTACHMENTS.find((a) => stock[a.id] || fitted[a.id])!.id,
+                    }
+                  : null;
     let current: Selection | null = selection ?? fallback;
     // A deep link may name armor; an issued item may have vanished after a write.
     if (current?.kind === "weapon" && !byId(weapons, current.id))
         current = byId(armors, current.id) ? { kind: "armor", id: current.id } : fallback;
     if (current?.kind === "armor" && !byId(armors, current.id)) current = fallback;
+    const utilityId = current?.kind === "utility" ? current.id : null;
+    const utility = utilityId ? utilities.find((h) => h.item.id === utilityId) : undefined;
+    if (current?.kind === "utility" && !utility) current = fallback;
 
     const weapon = current?.kind === "weapon" ? byId(weapons, current.id) : undefined;
     const armor = current?.kind === "armor" ? byId(armors, current.id) : undefined;
@@ -178,6 +203,15 @@ export function ArmoryView({
             })
             .map(([id]) => id),
     );
+
+    /** What a mod does: an object in stock or fitted somewhere, else its catalog preset. */
+    const modInfo = (id: string) => {
+        const a = ATTACHMENTS.find((x) => x.id === id)!;
+        const object =
+            upgrades.find((u) => u.name === a.name) ??
+            weapons.flatMap((w) => w.item.upgrades ?? []).find((u) => u.name === a.name);
+        return upgradeModifier(object ?? a);
+    };
 
     const catalog = useMemo<{ title: string; entries: CatalogEntry[] }[]>(
         () => [
@@ -208,11 +242,20 @@ export function ArmoryView({
                 }),
             },
             {
+                title: "Utilities",
+                entries: REQUISITIONABLE.map((u) => ({
+                    key: `utility-${u.kind}`,
+                    label: u.name,
+                    detail: u.description,
+                    requisition: { utility: u },
+                })),
+            },
+            {
                 title: "Mods",
                 entries: ATTACHMENTS.map((a) => ({
                     key: a.id,
                     label: a.name,
-                    detail: a.stat,
+                    detail: modifierSummary(unpack(a.packed)),
                     image: images[a.id],
                     requisition: { kind: a.slot, tier: a.tier },
                 })),
@@ -229,6 +272,7 @@ export function ArmoryView({
     } | null>(() => {
         if (current?.kind === "requisition") {
             const key = preview ?? "rifle-1";
+            if (key.startsWith("utility-")) return null;
             if (key.startsWith("rifle-")) {
                 const name = RIFLES[+key.slice(6) - 1].name;
                 return { item: itemById(weaponModel({ name }))!, title: name };
@@ -279,6 +323,16 @@ export function ArmoryView({
             });
     }
 
+    function issueUtility(held: Held<ChainUtility>, to: ChainRecruit) {
+        if (acc) void action.run(issueUtilitySteps(acc, held, to));
+    }
+
+    function returnUtility(held: Held<ChainUtility>) {
+        if (!acc || !held.carrier) return;
+        const from = held.carrier.objectId;
+        void run(() => unequipUtilityTx(acc, from, held.item.id));
+    }
+
     function issue(kind: "weapon" | "armor", held: Held<Gear>, to: ChainRecruit) {
         if (!acc) return;
         void run(() =>
@@ -295,19 +349,29 @@ export function ArmoryView({
     }
 
     const noAccount = !gate && accountId === null;
-    const stageItem = weapon
-        ? itemById(weaponModel(weapon.item))
-        : armor
-          ? itemById(armorModel(armor.item))
-          : stage?.item;
+    // Utilities have no model: the stage says so rather than showing something else.
+    const placeholder =
+        utility?.item.name ??
+        (current?.kind === "requisition" && preview?.startsWith("utility-")
+            ? REQUISITIONABLE.find((u) => `utility-${u.kind}` === preview)?.name
+            : undefined);
+    const stageItem = placeholder
+        ? undefined
+        : weapon
+          ? itemById(weaponModel(weapon.item))
+          : armor
+            ? itemById(armorModel(armor.item))
+            : stage?.item;
     const stageAttachments = weapon ? draftAttachments : stage?.attachments;
     const stageTitle = weapon?.item.name ?? armor?.item.name ?? stage?.title;
     const stageDraft = !!weapon && !sameFit(fit, draft);
+    const weaponModelOf = weapon && itemById(weaponModel(weapon.item))?.model;
+    const skin = weaponModelOf ? validSkin(weaponModelOf, skins[weapon.item.id]) : undefined;
 
     return (
         <main className="squad-screen hq-screen ui-zoom">
             <HqHeader
-                status={`${weapons.length} weapons · ${armors.length} armor · ${Object.values(stock).reduce((n, c) => n + c, 0)} mods`}
+                status={`${weapons.length} weapons · ${armors.length} armor · ${utilities.length} utilities · ${Object.values(stock).reduce((n, c) => n + c, 0)} mods`}
             />
             {gate ??
                 (noAccount ? (
@@ -328,6 +392,7 @@ export function ArmoryView({
                             }}
                             weapons={weapons}
                             armors={armors}
+                            utilities={utilities}
                             stock={stock}
                             fitted={fitted}
                             selection={current}
@@ -336,7 +401,25 @@ export function ArmoryView({
                             images={images}
                         />
                         <section className="hq-stage hq-armory-stage" aria-label="Inspection stage">
-                            {stageItem ? (
+                            {placeholder ? (
+                                <>
+                                    <div className="stage-identity">
+                                        <span>UTILITY</span>
+                                        <h2>{placeholder}</h2>
+                                        <p>
+                                            {utility
+                                                ? utility.carrier
+                                                    ? `Carried by ${utility.carrier.metadata.name}`
+                                                    : "In armory"
+                                                : "Supply catalog"}
+                                        </p>
+                                    </div>
+                                    <div className="hq-armory-empty hq-stage-placeholder">
+                                        <span className="sq-eyebrow">NO MODEL YET</span>
+                                        <p>This item has no 3D model on the stage yet.</p>
+                                    </div>
+                                </>
+                            ) : stageItem ? (
                                 <>
                                     <div className="stage-identity">
                                         <span>
@@ -361,6 +444,7 @@ export function ArmoryView({
                                     <WeaponPreview
                                         item={stageItem}
                                         attachments={stageAttachments}
+                                        skin={skin}
                                     />
                                 </>
                             ) : (
@@ -391,8 +475,7 @@ export function ArmoryView({
                                         held={weapon}
                                         fit={fit}
                                         draft={draft}
-                                        now={weaponStats(weapon.item, fit)}
-                                        next={weaponStats(weapon.item, draft)}
+                                        profile={weaponView(weapon.item, draft)}
                                         stock={stock}
                                         images={images}
                                         recruits={recruits}
@@ -402,12 +485,25 @@ export function ArmoryView({
                                                 ? "Three mods is the limit — clear a type to fit another."
                                                 : ""
                                         }
+                                        skins={weaponModelOf ? skinsFor(weaponModelOf) : []}
+                                        skin={skin ?? FACTORY_SKIN}
+                                        onSkin={(next) =>
+                                            setSkins(saveWeaponSkin(weapon.item.id, next))
+                                        }
                                         onDraft={(next) =>
                                             setDrafts((d) => ({ ...d, [weapon.item.id]: next }))
                                         }
                                         onApply={() => void apply()}
                                         onIssue={(to) => issue("weapon", weapon, to)}
                                         onReturn={() => store("weapon", weapon)}
+                                    />
+                                ) : utility ? (
+                                    <UtilityBench
+                                        held={utility}
+                                        recruits={recruits}
+                                        busy={busy}
+                                        onIssue={(to) => issueUtility(utility, to)}
+                                        onReturn={() => returnUtility(utility)}
                                     />
                                 ) : armor ? (
                                     <ArmorBench
@@ -421,6 +517,7 @@ export function ArmoryView({
                                 ) : current?.kind === "upgrade" ? (
                                     <UpgradeBench
                                         attachment={current.attachment}
+                                        modifier={modInfo(current.attachment)}
                                         stock={stock[current.attachment] ?? 0}
                                         fittedOn={weapons.filter(
                                             ({ item }) =>
@@ -464,10 +561,15 @@ export function ArmoryView({
                                         preview={preview}
                                         busy={busy}
                                         onPreview={setPreview}
-                                        onRequisition={(entry) =>
-                                            acc &&
-                                            void run(() => requisitionTx(acc, entry.requisition))
-                                        }
+                                        onRequisition={(entry) => {
+                                            const r = entry.requisition;
+                                            if (!acc) return;
+                                            void run(() =>
+                                                "utility" in r
+                                                    ? requisitionUtilityTx(acc, r.utility.kind)
+                                                    : requisitionTx(acc, r),
+                                            );
+                                        }}
                                     />
                                 )}
                             </div>

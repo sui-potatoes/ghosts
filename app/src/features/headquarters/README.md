@@ -38,8 +38,17 @@ Every weapon and armor the account holds — on the racks or issued — in an
 inventory (Weapons / Armor / Mods), a full-size 3D stage and a bench.
 `ArmoryView` takes its data as props; `Armory` feeds it from the chain.
 
-- **Weapon bench**: stats side by side (now → with the draft) and a fitting
-  grid, one row per attachment type with tiers 1–3. A fit is tier by type, so
+- **Weapon bench**: stats in the Stats tab's look (`StatLine`: bar, total, and
+  the delta fitted mods add or take, with a tooltip per mod), a "draft → value"
+  line and striped bar segment for what the draft would change, a per-mod list
+  (fitted / draft / off, with each mod's signed modifiers) and a fitting
+  grid. Numbers come from the decoded objects (`weaponView` in `armory.ts`,
+  maths in `fittings.ts`): the chain's `Weapon.stats` already include fitted
+  upgrades, so the base is that total minus their modifiers (the catalog preset
+  wins where flooring made that ambiguous); drafted mods use their catalog
+  modifier. Armor shows its modifiers on a standard recruit the same way,
+  nerfs in amber. Mod and supply entries list their modifiers too.
+  The fitting grid is one row per attachment type with tiers 1–3. A fit is tier by type, so
   one-per-type holds by construction; three in all is enforced as the draft
   changes ("Slots full"). Chips say fitted / in stock (×n) / mint. The stage
   previews the draft live. **Apply fittings** is one `fittingsTx`: take the
@@ -49,6 +58,18 @@ inventory (Weapons / Armor / Mods), a full-size 3D stage and a bench.
   carrier or out of the racks, onto the target, whose own piece goes back to
   the racks) or
   return it to the racks. Blocked while fittings are drafted.
+- **Utilities** (`utilities.ts`): what the account holds and who carries it, with
+  the actions each grants and its uses per match, read from the decoded object;
+  copy from `packages/catalog`. Issue and return like armor; a full slot
+  (`MAX_UTILITIES`) shows "Swap for …" and the swap runs as ordered steps.
+  There is no model, so the stage shows a placeholder.
+- **Finish** (weapon skins, device only): Factory plus the gun's baked skins
+  (`@ghosts/squad/weapon-skins`; only the Standard Rifle has any yet), applied
+  to the stage at once and remembered per weapon object id in localStorage
+  (`skins.ts`, key `ghosts:weapon-skins`). The skinned model is the gun's game
+  mesh from `public/squad/weapons/skins/` (`@ghosts/squad/studio/armory-skins`),
+  fetched the first time a skin is shown; upgraded clips and stocks, scopes and
+  lasers stay in their own finish. Nothing about a skin is on chain.
 - **Mods** (weapon upgrades on chain): stock and where each is fitted; "Try it on" opens a rifle's
   bench with the upgrade drafted.
 - **Requisition** (testnet, free): the supply catalog — rifles, armor, all

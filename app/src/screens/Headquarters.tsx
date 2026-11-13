@@ -444,6 +444,7 @@ export default function Headquarters() {
                                         onColors={(armorColors) => patch({ armorColors })}
                                         weapons={armory.weapons}
                                         armors={armory.armors}
+                                        utilities={armory.utilities}
                                         images={images}
                                         busy={pending}
                                         act={act}
