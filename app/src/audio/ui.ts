@@ -71,6 +71,17 @@ export function uiConfirm() {
     play(0.6);
 }
 
+/** A step back out of a menu or prompt: the knock, a touch higher and lighter than confirm. */
+export function uiBack() {
+    play(0.85);
+}
+
+/** A refused action: two low knocks close together, read as "no" without words. */
+export function uiDeny() {
+    play(0.45);
+    setTimeout(() => play(0.4), 70);
+}
+
 /** The house menu controls; `.set-row` is deliberately absent (see above). */
 const INTERACTIVE = ".menu-item, .set-nav-item, .btn";
 let hovered: Element | null = null;

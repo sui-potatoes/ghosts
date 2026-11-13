@@ -19,6 +19,8 @@ const Demo = lazy(() => import("./screens/Demo"));
 const Match = lazy(() => import("./screens/Match"));
 // The level editor brings three.js and the full asset catalog.
 const Editor = lazy(() => import("./screens/Editor"));
+// A design sample of the shared menu language; no menu entry, no account.
+const UiSample = lazy(() => import("./features/ui-sample/UiSample"));
 import { SquadPreload, TransactionSender } from "./chain";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { LoadingSpinner } from "./components/LoadingSpinner";
@@ -125,6 +127,14 @@ export function App() {
                     element={
                         <Suspense fallback={<LoadingSpinner />}>
                             <Armory />
+                        </Suspense>
+                    }
+                />
+                <Route
+                    path="/ui-sample"
+                    element={
+                        <Suspense fallback={<LoadingSpinner />}>
+                            <UiSample />
                         </Suspense>
                     }
                 />
