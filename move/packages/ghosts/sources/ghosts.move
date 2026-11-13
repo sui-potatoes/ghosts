@@ -324,8 +324,9 @@ public fun complete_game(
 
     game.bury_fallen(ctx);
     let (xp_first, xp_second) = (game.experience(0, winner), game.experience(1, winner));
-    game.send_home(first, 0, xp_first);
-    game.send_home(second, 1, xp_second);
+    let (squad_first, squad_second) = game.squads();
+    game.send_home(first, squad_first, xp_first);
+    game.send_home(second, squad_second, xp_second);
     game.release(first);
     game.release(second);
     if (game.misbehaved(0)) first.suspend(now + SUSPENSION_MS);
@@ -371,7 +372,8 @@ public fun deploy_squad(
         game.history.add(record);
     });
 
-    if (!game.squad(0).is_empty() && !game.squad(1).is_empty()) game.begin_match(now);
+    let (first, second) = game.squads();
+    if (!first.is_empty() && !second.is_empty()) game.begin_match(now, true, true);
 }
 
 /// Move a unit along the path, the first point is the current position of the unit.
@@ -455,7 +457,8 @@ entry fun next_turn(game: &mut Game, acc: &Account, clock: &Clock, ctx: &mut TxC
     let missed = match (&mut game.state) {
         State::Deploying { until_ms } => {
             assert!(now > *until_ms, EStillDeploying);
-            return game.begin_match(now)
+            let (first, second) = game.squads();
+            return game.begin_match(now, !first.is_empty(), !second.is_empty())
         },
         State::Playing { started_ms, missed } => {
             if (side == active) {
@@ -523,6 +526,15 @@ fun squad(game: &Game, side: u64): vector<ID> {
     game.map.units_of(game.players[side]).filter!(|id| game.recruits.contains(*id))
 }
 
+/// The `squad` of each side, in a single walk of the map.
+fun squads(game: &Game): (vector<ID>, vector<ID>) {
+    let (first, second) = game.map.units_of_both(game.players[0], game.players[1]);
+    (
+        first.filter!(|id| game.recruits.contains(*id)),
+        second.filter!(|id| game.recruits.contains(*id)),
+    )
+}
+
 /// The player who isn't `player`.
 fun other(game: &Game, player: ID): ID {
     if (game.players[0] == player) game.players[1] else game.players[0]
@@ -560,10 +572,9 @@ fun misbehaved(game: &Game, side: u64): bool {
 }
 
 /// The deployment is over: the first turn begins, unless a side has nobody to
-/// show, which ends the game there.
-fun begin_match(game: &mut Game, now: u64) {
+/// show, which ends the game there. Whether each side shows comes from `squads`.
+fun begin_match(game: &mut Game, now: u64, first_shows: bool, second_shows: bool) {
     let (first, second) = (game.players[0], game.players[1]);
-    let (first_shows, second_shows) = (!game.squad(0).is_empty(), !game.squad(1).is_empty());
     game.state = if (!first_shows && !second_shows) State::Over(Ending::NobodyShowed)
     else if (!first_shows) State::Over(Ending::NoShow(first))
     else if (!second_shows) State::Over(Ending::NoShow(second))
@@ -593,9 +604,9 @@ fun experience(game: &Game, side: u64, winner: Option<ID>): u16 {
     if (winner == option::some(game.players[side])) SURVIVAL_XP + WIN_XP else SURVIVAL_XP
 }
 
-/// Send a side's survivors, with the experience they earned, home to its `Account`.
-fun send_home(game: &mut Game, acc: &mut Account, side: u64, xp: u16) {
-    let survivors = game.squad(side);
+/// Send a side's survivors, its `squad`, with the experience they earned, home to
+/// its `Account`.
+fun send_home(game: &mut Game, acc: &mut Account, survivors: vector<ID>, xp: u16) {
     if (xp > 0) survivors.do_ref!(|id| game.recruits[*id].add_xp(xp));
     survivors.do!(|id| acc.add_recruit(game.recruits.remove(id)));
 }
@@ -638,7 +649,8 @@ fun begin_unit_action(
 fun count_losses(game: &mut Game, records: &vector<Record>) {
     if (history::list_kia(records).is_empty()) return;
 
-    let (first_left, second_left) = (!game.squad(0).is_empty(), !game.squad(1).is_empty());
+    let (first, second) = game.squads();
+    let (first_left, second_left) = (!first.is_empty(), !second.is_empty());
     if (!first_left && !second_left) game.state = State::Over(Ending::Draw)
     else if (!first_left) game.state = State::Over(Ending::Won(game.players[1]))
     else if (!second_left) game.state = State::Over(Ending::Won(game.players[0]));

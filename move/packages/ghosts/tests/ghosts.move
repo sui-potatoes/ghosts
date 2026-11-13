@@ -1464,3 +1464,124 @@ fun test_complete_with_swapped_accounts_fail() {
 
     abort
 }
+
+// === Benchmarks ===
+//
+// Read with `sui move test -s bench_`: each one plays a game on the published
+// preset, Black Rain with three recruits a side, up to one more step than the
+// one before it, so the difference between two is what that step costs.
+
+/// `setup` on Black Rain, with three armed grenadiers a side.
+fun setup_black_rain(): Fixture {
+    setup_on!(|id| map::black_rain(id), map::black_rain_positions(), |acc, ctx| {
+        hire_with(acc, true, true, ctx);
+        hire_with(acc, true, true, ctx);
+        hire_with(acc, true, true, ctx)
+    })
+}
+
+/// Both sides deploy their three recruits. Alice stands at (11, 10), (12, 8)
+/// and (11, 6), Bob at (3, 6), (5, 14) and (4, 11). Alice is next.
+fun deploy_black_rain(f: &mut Fixture, game: &mut Game) {
+    f.ts.next_tx(ALICE);
+    let squad = ts::ids_for_address<Recruit>(object::id_address(&f.alice));
+    deploy_squad(game, &mut f.alice, &f.clock, tickets(squad), f.ts.ctx());
+
+    f.ts.next_tx(BOB);
+    let squad = ts::ids_for_address<Recruit>(object::id_address(&f.bob));
+    deploy_squad(game, &mut f.bob, &f.clock, tickets(squad), f.ts.ctx());
+
+    f.ts.next_tx(ALICE);
+}
+
+/// Alice walks from (11, 10) five tiles up to (6, 10), within reach of Bob's
+/// recruit at (4, 11).
+fun advance_black_rain(f: &mut Fixture, game: &mut Game) {
+    use grid::direction::up;
+    let path = vector[11, 10, up!(), up!(), up!(), up!(), up!()];
+    move_unit(game, &f.alice, &f.clock, path, f.ts.ctx());
+}
+
+#[test]
+fun bench_a_setup() {
+    let fixture = setup_black_rain();
+    fixture.finish();
+}
+
+#[test]
+fun bench_b_match() {
+    let mut fixture = setup_black_rain();
+    let game = fixture.start();
+    transfer::share_object(game);
+    fixture.finish();
+}
+
+#[test]
+fun bench_c_deploy() {
+    let mut fixture = setup_black_rain();
+    let mut game = fixture.start();
+    fixture.deploy_black_rain(&mut game);
+    transfer::share_object(game);
+    fixture.finish();
+}
+
+#[test]
+fun bench_d_next_turn_x10() {
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    let mut game = f.start();
+    f.deploy_black_rain(&mut game);
+    10u64.do!(|i| {
+        f.ts.next_tx(if (i % 2 == 0) ALICE else BOB);
+        let acc = if (i % 2 == 0) &f.alice else &f.bob;
+        next_turn(&mut game, acc, &f.clock, f.ts.ctx());
+    });
+    transfer::share_object(game);
+    fixture.finish();
+}
+
+#[test]
+fun bench_e_move() {
+    let mut fixture = setup_black_rain();
+    let mut game = fixture.start();
+    fixture.deploy_black_rain(&mut game);
+    fixture.advance_black_rain(&mut game);
+    transfer::share_object(game);
+    fixture.finish();
+}
+
+#[test]
+fun bench_f_attack() {
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    let mut game = f.start();
+    f.deploy_black_rain(&mut game);
+    f.advance_black_rain(&mut game);
+    perform_attack(&mut game, &f.alice, &f.rng, &f.clock, 6, 10, 4, 11, f.ts.ctx());
+    transfer::share_object(game);
+    fixture.finish();
+}
+
+#[test]
+fun bench_g_grenade() {
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    let mut game = f.start();
+    f.deploy_black_rain(&mut game);
+    f.advance_black_rain(&mut game);
+    perform_grenade(&mut game, &f.alice, &f.rng, &f.clock, 6, 10, 4, 11, f.ts.ctx());
+    transfer::share_object(game);
+    fixture.finish();
+}
+
+#[test]
+fun bench_h_complete() {
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    let mut game = f.start();
+    f.deploy_black_rain(&mut game);
+    f.ts.next_tx(BOB);
+    abandon_game(&mut game, &f.bob, f.ts.ctx());
+    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    fixture.finish();
+}

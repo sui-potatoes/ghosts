@@ -30,7 +30,6 @@ fun default() {
     let mut unit = recruit.to_unit();
 
     // make sure the conversion is correct
-    // assert_eq!(unit.stats, *recruit.stats());
     assert_eq!(unit.hp(), recruit.stats().health() as u16);
     assert_eq!(unit.ap(), 2);
 

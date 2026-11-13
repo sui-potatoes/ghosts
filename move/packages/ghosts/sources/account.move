@@ -51,9 +51,9 @@ const ERankTooLow: u64 = 8;
 /// Requisitioning a kind of utility there is none of.
 const EUnknownUtility: u64 = 9;
 
-/// The squad an `Account` can always hold for free, so that nobody is ever out of
-/// the game for having lost one.
-const FREE_RECRUITS: u64 = 3;
+/// The squad an `Account` can always hold for free: four recruits, so that nobody
+/// is ever out of the game for having lost one.
+const FREE_RECRUITS: u64 = 4;
 /// How many `Recruit`s an `Account` can hold, hired one at a time past the free squad.
 const MAX_RECRUITS: u64 = 8;
 /// Number of visual presets per gender in the `Registry`.
