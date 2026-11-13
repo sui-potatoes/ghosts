@@ -18,6 +18,8 @@ use sui::bcs::{Self, BCS};
 const SIGN_VALUE: u8 = 0x80;
 /// Number of bitmap encoded parameters.
 const NUM_PARAMS: u8 = 15;
+/// The bits of the `NUM_PARAMS` values, all bytes but the unused top one.
+const PARAMS_MASK: u128 = 0x00FF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF;
 
 /// The `Stats` struct is a single uint value that stores all the stats of
 /// a `Recruit` in a single value. It uses bit manipulation to store the values
@@ -136,21 +138,22 @@ public fun inner(stats: &Stats): u128 { stats.0 }
 /// The result can never overflow the base stats, and the values are capped at
 /// the maximum values for each stat.
 public fun add(stats: &Stats, modifier: &Stats): Stats {
-    let stats = stats.0;
-    let modifier = modifier.0;
+    let (stats, modifier) = (stats.0, modifier.0);
     let sign = SIGN_VALUE;
 
-    let mut stat_values = bf::unpack_u8!(stats, NUM_PARAMS);
-    let modifier_values = bf::unpack_u8!(modifier, NUM_PARAMS);
-
-    // version is not modified, the rest of the values are modified
-    // based on the signed values of the modifier
-    (NUM_PARAMS as u64).do!(|i| {
-        let modifier = modifier_values[i];
-        let value = stat_values[i];
+    // the `NUM_PARAMS` values are kept, the unused top byte is cleared; values
+    // are modified in place based on the signed values of the modifier, until
+    // the modifier has none left
+    let mut result = stats & PARAMS_MASK;
+    let mut i = 0;
+    while (i < NUM_PARAMS && modifier >> (8 * i) != 0) {
+        let shift = 8 * i;
+        let modifier = (modifier >> shift & 0xFF) as u8;
+        i = i + 1;
 
         // skip 0 and -0 values
-        if (modifier == 0 || modifier == sign) return;
+        if (modifier == 0 || modifier == sign) continue;
+        let value = (stats >> shift & 0xFF) as u8;
         let new_value = if (modifier > sign) {
             value - (modifier - sign).min(value)
         } else {
@@ -158,10 +161,11 @@ public fun add(stats: &Stats, modifier: &Stats): Stats {
             value + modifier
         };
 
-        *&mut stat_values[i] = new_value.min(SIGN_VALUE - 1);
-    });
+        let new_value = new_value.min(SIGN_VALUE - 1) as u128;
+        result = result & (0xFFu128 << shift).bitwise_not() | new_value << shift;
+    };
 
-    Stats(bf::pack_u8!(stat_values))
+    Stats(result)
 }
 
 // === Convenience and compatibility ===

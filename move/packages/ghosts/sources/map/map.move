@@ -151,12 +151,32 @@ public fun units_of(map: &Map, owner: ID): vector<ID> {
     units
 }
 
-/// Give the units of the `Account` `owner` their action points back: their turn
-/// begins.
-public fun reset_ap(map: &mut Map, owner: ID) {
-    map.grid.do_mut!(|tile| tile.unit.do_mut!(|unit| {
-        if (unit.owner() == owner) unit.reset_ap();
+/// The recruits of the `Account`s `first` and `second` still on the map, as
+/// `units_of` gives them for each, in a single walk of the grid.
+public(package) fun units_of_both(map: &Map, first: ID, second: ID): (vector<ID>, vector<ID>) {
+    let (mut a, mut b) = (vector[], vector[]);
+    map.grid.do_ref!(|tile| tile.unit.do_ref!(|unit| {
+        let owner = unit.owner();
+        if (owner == first) a.push_back(unit.recruit_id());
+        if (owner == second) b.push_back(unit.recruit_id());
     }));
+    (a, b)
+}
+
+/// Give the units of the `Account` `owner` their action points back: their turn
+/// begins. The grid is read to find them, and borrowed mutably only where they
+/// stand.
+public fun reset_ap(map: &mut Map, owner: ID) {
+    let (mut xs, mut ys) = (vector[], vector[]);
+    let rows = map.grid.inner();
+    rows.length().do!(|x| {
+        let row = &rows[x];
+        row.length().do!(|y| row[y].unit.do_ref!(|unit| if (unit.owner() == owner) {
+            xs.push_back(x as u16);
+            ys.push_back(y as u16);
+        }));
+    });
+    xs.zip_do!(ys, |x, y| map.grid[x, y].unit.borrow_mut().reset_ap());
 }
 
 /// Reload the unit's weapon. It costs 1 AP.

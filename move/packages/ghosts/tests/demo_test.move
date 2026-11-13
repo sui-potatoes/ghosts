@@ -100,18 +100,6 @@ fun run_simulation_demo_1(seed: vector<u8>): vector<u16> {
     map.reset_ap(owner);
     };
 
-    // print the result (uncomment if results are needed)
-    // {
-    //     let mut res = b"seed: ".to_string();
-    //     res.append(seed.to_string());
-    //     res.append_utf8(b"; crossfire over at turn ");
-    //     res.append(result[0].to_string());
-    //     res.append_utf8(b"; Unit ");
-    //     res.append(result[1].to_string());
-    //     res.append_utf8(b" is dead");
-    //     std::debug::print(&res);
-    // };
-
     destroy(vector[r1, r3]);
     let _ = map.destroy();
     result

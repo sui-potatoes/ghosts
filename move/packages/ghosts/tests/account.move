@@ -327,7 +327,7 @@ fun close_account(ts: ts::Scenario, registry: Registry, acc: Account, rng: Rando
     ts.end();
 }
 
-/// Three come as a squad, and the rest one at a time, up to the limit.
+/// Four come as a squad, and the rest one at a time, up to the limit.
 #[test]
 fun test_hire_past_the_free_squad() {
     use std::unit_test::assert_eq;
