@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import ReactDOM from "react-dom/client";
+import "./styles/fonts.css";
 import "./index.css";
 
 import { DAppKitProvider } from "@mysten/dapp-kit-react";
