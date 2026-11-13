@@ -18,7 +18,7 @@ export { callPlayerBack } from "./alert";
 export { audioFocused, subscribeAudioFocus } from "./focus";
 export { previewDialogue, previewEffect, previewVoice, stopPreview } from "./preview";
 export { playTheme, stopTheme } from "./theme";
-export { uiConfirm, uiTick } from "./ui";
+export { uiBack, uiConfirm, uiDeny, uiTick } from "./ui";
 
 /**
  * The audio levels as the encounter engine reads them, on every play — so a
