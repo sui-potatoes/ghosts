@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { useCurrentAccount } from "@mysten/dapp-kit-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { useMatchSearch } from "../chain";
@@ -10,6 +10,7 @@ import { SearchClock } from "../components/MatchStatus";
 import { TitleBackdrop } from "../components/TitleBackdrop";
 import { PadHints } from "../components/PadHints";
 import { NETWORK } from "../constants";
+import { useFitScale } from "../hooks/useFitScale";
 import { useMenuNav } from "../hooks/useMenuNav";
 import { useInstall } from "../install";
 import { requestSignIn } from "../signIn";
@@ -36,6 +37,9 @@ export default function MainMenu() {
     // Up/Down and Confirm come off the input bus, whatever produced them.
     const items = useMenuNav(true);
     const match = useMatchSearch();
+    // A phone in landscape sees this same screen, scaled to fit.
+    const screen = useRef<HTMLElement | null>(null);
+    useFitScale(screen, { extraHeight: 8 });
 
     // A suspension lifts on its own, while the menu is up.
     const [now, setNow] = useState(() => Date.now());
@@ -97,20 +101,23 @@ export default function MainMenu() {
     ];
 
     return (
-        <main className="main-menu flex min-h-dvh flex-col px-6 md:px-16">
+        <main ref={screen} className="main-menu fit-root flex min-h-dvh flex-col px-6 md:px-16">
             <TitleBackdrop />
-            <div className="relative z-10 flex w-full max-w-xl flex-1 flex-col justify-center gap-12 py-16">
-                <header className="flex flex-col gap-5">
+            <div className="main-menu-body relative z-10 flex w-full max-w-xl flex-1 flex-col justify-center gap-12 py-16">
+                <header className="main-menu-head flex flex-col gap-5">
                     <h1 className="font-mono text-6xl font-light tracking-[0.3em] text-foreground md:text-7xl">
                         GHOSTS
                     </h1>
-                    <p className="max-w-sm text-sm leading-relaxed text-secondary">
+                    <p className="main-menu-tagline max-w-sm text-sm leading-relaxed text-secondary">
                         You run a mercenary squad. The corporations run everything else. Take the
                         contract, bring your people home, bill the client.
                     </p>
                 </header>
 
-                <nav aria-label="Main menu" className="flex flex-col border-t border-line">
+                <nav
+                    aria-label="Main menu"
+                    className="main-menu-nav flex flex-col border-t border-line"
+                >
                     {entries.map((e, i) => (
                         <button
                             key={e.id ?? e.label}
@@ -127,7 +134,11 @@ export default function MainMenu() {
                         </button>
                     ))}
                 </nav>
-                {match.error && <p className="label -mt-8 normal-case text-warn">{match.error}</p>}
+                {match.error && (
+                    <p className="main-menu-error label -mt-8 normal-case text-warn">
+                        {match.error}
+                    </p>
+                )}
 
                 <PadHints
                     entries={[
@@ -137,7 +148,7 @@ export default function MainMenu() {
                 />
             </div>
 
-            <footer className="label relative z-10 flex flex-wrap items-baseline gap-x-6 gap-y-2 pb-8 text-muted">
+            <footer className="main-menu-foot label relative z-10 flex flex-wrap items-baseline gap-x-6 gap-y-2 pb-8 text-muted">
                 <span>Sui · {NETWORK}</span>
                 {__COMMIT__ ? (
                     <a

@@ -461,7 +461,7 @@ export function ControllerPanel() {
         // Everywhere else (desktop layout, narrow screens): the stack,
         // diagram first.
         <div
-            className={`flex min-h-0 min-w-0 flex-1 flex-col gap-6 ${
+            className={`ctl-panel flex min-h-0 min-w-0 flex-1 flex-col gap-6 ${
                 side ? "xl:flex-row xl:items-stretch xl:gap-12" : ""
             }`}
             data-side={side || undefined}
