@@ -8,7 +8,6 @@ use bit_field::bit_field as bf;
 use ghosts::{
     action,
     armor::{Self, Armor},
-    rank,
     stats,
     utility::{Self, Utility},
     weapon::{Self, Weapon},
@@ -36,12 +35,7 @@ public(package) fun armor(tier: u8, ctx: &mut TxContext): Armor {
         _ => abort,
     };
 
-    let armor = armor::new(name, stats::new_unchecked(bf::pack_u8!(stats)), ctx);
-    match (tier) {
-        2 => armor.for_rank(rank::squaddie()),
-        3 => armor.for_rank(rank::sergeant()),
-        _ => armor,
-    }
+    armor::new(name, stats::new_unchecked(bf::pack_u8!(stats)), ctx)
 }
 
 // === Utilities ===
@@ -81,12 +75,7 @@ public(package) fun rifle(tier: u8, ctx: &mut TxContext): Weapon {
         3 => ("Plasma Rifle", 0x03_05_00_00_01_1E_1E_01_06 << (6 * 8)),
         _ => abort,
     };
-    let rifle = weapon::new(name, stats::new_unchecked(stats), ctx);
-    match (tier) {
-        2 => rifle.for_rank(rank::corporal()),
-        3 => rifle.for_rank(rank::lieutenant()),
-        _ => rifle,
-    }
+    weapon::new(name, stats::new_unchecked(stats), ctx)
 }
 
 // === Weapon Upgrades ===

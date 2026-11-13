@@ -5,7 +5,7 @@
 /// Weapons have different stats and can be upgraded with additional modules.
 module ghosts::weapon;
 
-use ghosts::{rank::{Self, Rank}, stats::{Self, Stats}, weapon_upgrade::WeaponUpgrade};
+use ghosts::{stats::{Self, Stats}, weapon_upgrade::WeaponUpgrade};
 use std::string::String;
 
 /// Attempt to attach too many upgrades to a weapon.
@@ -27,23 +27,12 @@ public struct Weapon has key, store {
     stats: Stats,
     /// The list of upgrades that the weapon has.
     upgrades: vector<WeaponUpgrade>,
-    /// The rank a recruit needs to be issued this weapon at headquarters.
-    required_rank: Rank,
 }
 
 /// Create a new `Weapon` with the provided parameters.
 public(package) fun new(name: String, stats: Stats, ctx: &mut TxContext): Weapon {
-    Weapon { id: object::new(ctx), name, stats, upgrades: vector[], required_rank: rank::default() }
+    Weapon { id: object::new(ctx), name, stats, upgrades: vector[] }
 }
-
-/// The same weapon, for recruits of at least this rank.
-public(package) fun for_rank(mut w: Weapon, rank: Rank): Weapon {
-    w.required_rank = rank;
-    w
-}
-
-/// The rank a recruit needs to be issued this weapon.
-public fun required_rank(w: &Weapon): &Rank { &w.required_rank }
 
 /// Create a new default `Weapon`.
 public(package) fun default(ctx: &mut TxContext): Weapon {

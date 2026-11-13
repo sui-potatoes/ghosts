@@ -4,7 +4,7 @@
 /// Defines the Armor - an equipment that Recruits can wear in battle.
 module ghosts::armor;
 
-use ghosts::{rank::{Self, Rank}, stats::{Self, Stats}};
+use ghosts::stats::{Self, Stats};
 use std::string::String;
 
 /// Armor is a piece of equipment that Recruits can use in battle. Each armor has
@@ -17,23 +17,12 @@ public struct Armor has key, store {
     name: String,
     /// The `Stats` of the armor.
     stats: Stats,
-    /// The rank a recruit needs to be issued this armor at headquarters.
-    required_rank: Rank,
 }
 
 /// Create a new `Armor` with the provided parameters.
 public(package) fun new(name: String, stats: Stats, ctx: &mut TxContext): Armor {
-    Armor { id: object::new(ctx), name, stats, required_rank: rank::default() }
+    Armor { id: object::new(ctx), name, stats }
 }
-
-/// The same armor, for recruits of at least this rank.
-public(package) fun for_rank(mut a: Armor, rank: Rank): Armor {
-    a.required_rank = rank;
-    a
-}
-
-/// The rank a recruit needs to be issued this armor.
-public fun required_rank(a: &Armor): &Rank { &a.required_rank }
 
 /// Create a new default `Armor`.
 public(package) fun default(ctx: &mut TxContext): Armor {

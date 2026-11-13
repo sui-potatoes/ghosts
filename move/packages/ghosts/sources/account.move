@@ -37,7 +37,7 @@ use sui::{random::Random, table::{Self, Table}, transfer::Receiving};
 const EAccountExists: u64 = 0;
 /// Trying to modify an `Account` not owned by the sender.
 const ENotOwner: u64 = 1;
-/// Trying to hire a free `Recruit` while the squad is already full.
+/// Trying to hire while the squad is already full.
 const ERecruitLimitReached: u64 = 2;
 /// Invalid voice configuration passed to the recruit editor.
 const EInvalidVoice: u64 = 3;
@@ -46,16 +46,13 @@ const EInGame: u64 = 6;
 /// Returning a `Recruit` for another one's `Borrow`.
 const EWrongRecruit: u64 = 7;
 
-/// The `Recruit`'s rank is below what the gear asks for.
-const ERankTooLow: u64 = 8;
+// Code 8 is retired: it was the rank requirement on gear, which is gone.
 /// Requisitioning a kind of utility there is none of.
 const EUnknownUtility: u64 = 9;
 
-/// The squad an `Account` can always hold for free: four recruits, so that nobody
-/// is ever out of the game for having lost one.
+/// The squad an `Account` holds: four recruits, hired for free, so that nobody is
+/// ever out of the game for having lost one. It is also the most it can hold.
 const FREE_RECRUITS: u64 = 4;
-/// How many `Recruit`s an `Account` can hold, hired one at a time past the free squad.
-const MAX_RECRUITS: u64 = 8;
 /// Number of visual presets per gender in the `Registry`.
 const PRESETS_PER_GENDER: u64 = 16;
 /// Independent preset draws per recruit: identity (head and eyes), face, body
@@ -159,15 +156,6 @@ entry fun hire_recruits(acc: &mut Account, registry: &Registry, rng: &Random, ct
 
     let count = FREE_RECRUITS - acc.recruits;
     acc.hire(registry, rng, count, ctx);
-}
-
-/// Hire one more `Recruit` past the free squad, up to `MAX_RECRUITS`.
-entry fun hire_recruit(acc: &mut Account, registry: &Registry, rng: &Random, ctx: &mut TxContext) {
-    acc.authorize(ctx);
-    assert!(acc.playing().is_none(), EInGame);
-    assert!(acc.recruits < MAX_RECRUITS, ERecruitLimitReached);
-
-    acc.hire(registry, rng, 1, ctx);
 }
 
 /// Hire `count` recruits with random names, looks and voices.
@@ -333,10 +321,9 @@ public fun take_armor(acc: &mut Account, armor: Receiving<Armor>, ctx: &mut TxCo
     transfer::public_receive(&mut acc.id, armor)
 }
 
-/// Arm a borrowed `Recruit` with a `Weapon` their rank allows: from the armory, or
-/// off another recruit. The one they carried goes to the armory.
+/// Arm a borrowed `Recruit` with any `Weapon`: from the armory, or off another
+/// recruit. The one they carried goes to the armory.
 public fun equip_weapon(recruit: &mut Recruit, weapon: Weapon) {
-    assert!(recruit.rank().at_least(weapon.required_rank()), ERankTooLow);
     if (recruit.weapon().is_some()) {
         transfer::public_transfer(recruit.remove_weapon(), recruit.leader());
     };
@@ -346,10 +333,9 @@ public fun equip_weapon(recruit: &mut Recruit, weapon: Weapon) {
 /// Take the `Weapon` off a borrowed `Recruit`: for the armory, or another recruit.
 public fun unequip_weapon(recruit: &mut Recruit): Weapon { recruit.remove_weapon() }
 
-/// Fit a borrowed `Recruit` with an `Armor` their rank allows: from the armory, or
-/// off another recruit. The one they wore goes to the armory.
+/// Fit a borrowed `Recruit` with any `Armor`: from the armory, or off another
+/// recruit. The one they wore goes to the armory.
 public fun equip_armor(recruit: &mut Recruit, armor: Armor) {
-    assert!(recruit.rank().at_least(armor.required_rank()), ERankTooLow);
     if (recruit.armor().is_some()) {
         transfer::public_transfer(recruit.remove_armor(), recruit.leader());
     };

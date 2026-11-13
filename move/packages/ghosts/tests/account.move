@@ -327,32 +327,6 @@ fun close_account(ts: ts::Scenario, registry: Registry, acc: Account, rng: Rando
     ts.end();
 }
 
-/// Four come as a squad, and the rest one at a time, up to the limit.
-#[test]
-fun test_hire_past_the_free_squad() {
-    use std::unit_test::assert_eq;
-
-    let mut ts = ts::begin(@0);
-    let (registry, mut acc, rng) = open_account(&mut ts);
-
-    acc.hire_recruits(&registry, &rng, ts.ctx());
-    assert_eq!(acc.num_recruits(), FREE_RECRUITS);
-
-    (MAX_RECRUITS - FREE_RECRUITS).do!(|_| acc.hire_recruit(&registry, &rng, ts.ctx()));
-    assert_eq!(acc.num_recruits(), MAX_RECRUITS);
-
-    close_account(ts, registry, acc, rng);
-}
-
-#[test, expected_failure(abort_code = ERecruitLimitReached)]
-fun test_hire_past_the_limit_fail() {
-    let mut ts = ts::begin(@0);
-    let (registry, mut acc, rng) = open_account(&mut ts);
-    (MAX_RECRUITS + 1).do!(|_| acc.hire_recruit(&registry, &rng, ts.ctx()));
-
-    abort
-}
-
 /// Requisitioned gear is the player's, for a recruit or the armory.
 #[test]
 fun test_requisition_gear() {
@@ -362,9 +336,7 @@ fun test_requisition_gear() {
     let (registry, acc, rng) = open_account(&mut ts);
 
     let rifle = acc.requisition_rifle(2, ts.ctx());
-    assert!(rifle.required_rank().is_corporal());
     let armor = acc.requisition_armor(1, ts.ctx());
-    assert!(armor.required_rank().is_rookie());
     let scope = acc.requisition_upgrade(0, 3, ts.ctx());
     assert_eq!(scope.tier(), 3);
 
@@ -416,49 +388,32 @@ fun test_hand_gear_over() {
     close_account(ts, registry, acc, rng);
 }
 
-/// A rookie can't be issued a Plasma Rifle until they've earned the rank for it.
+/// Any recruit takes any gear: a Rookie is armed with the Plasma Rifle and fitted
+/// with Heavy Armor.
 #[test]
-fun test_equip_needs_the_rank() {
+fun test_rookie_equips_top_gear() {
     use std::unit_test::assert_eq;
 
     let mut ts = ts::begin(@0);
     let mut recruit = recruit::new("Test", ts.ctx());
+    assert!(recruit.rank().is_rookie());
 
-    // standard gear is for anyone
-    equip_weapon(&mut recruit, items::rifle(1, ts.ctx()));
-    unequip_weapon(&mut recruit).destroy();
-
-    // enough experience for a Lieutenant, and the Plasma Rifle goes on
     let rifle = items::rifle(3, ts.ctx());
     let plasma = object::id(&rifle);
-    recruit.add_xp(25);
-    assert!(recruit.rank().is_lieutenant());
     equip_weapon(&mut recruit, rifle);
     assert_eq!(object::id(recruit.weapon().borrow()), plasma);
+
+    let armor = items::armor(3, ts.ctx());
+    let heavy = object::id(&armor);
+    equip_armor(&mut recruit, armor);
+    assert_eq!(object::id(recruit.armor().borrow()), heavy);
+    assert!(recruit.rank().is_rookie());
 
     let (weapon, armor, utilities) = recruit.dismiss();
     utilities.destroy!(|u| u.destroy());
     weapon.destroy!(|w| w.destroy());
-    armor.destroy_none();
+    armor.destroy!(|a| a.destroy());
     ts.end();
-}
-
-#[test, expected_failure(abort_code = ERankTooLow)]
-fun test_equip_weapon_below_rank_fail() {
-    let mut ts = ts::begin(@0);
-    let mut recruit = recruit::new("Test", ts.ctx());
-    equip_weapon(&mut recruit, items::rifle(2, ts.ctx()));
-
-    abort
-}
-
-#[test, expected_failure(abort_code = ERankTooLow)]
-fun test_equip_armor_below_rank_fail() {
-    let mut ts = ts::begin(@0);
-    let mut recruit = recruit::new("Test", ts.ctx());
-    equip_armor(&mut recruit, items::armor(3, ts.ctx()));
-
-    abort
 }
 
 /// A utility is requisitioned, fitted to a recruit, taken off by its ID and sent
