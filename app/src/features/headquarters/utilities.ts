@@ -30,7 +30,6 @@ export interface UtilityCatalogEntry {
     description: string;
     /** The kind id `requisition_utility` takes. */
     kind: number;
-    rank: string;
 }
 
 interface RawItem {
@@ -40,7 +39,6 @@ interface RawItem {
     name: string;
     description: string;
     kind?: number;
-    rank: string | null;
 }
 
 /** Utilities the contracts create, from the catalog (the requisition list). */
@@ -51,7 +49,6 @@ export const UTILITY_CATALOG: UtilityCatalogEntry[] = (itemsCatalog.items as Raw
         name: i.name,
         description: i.description,
         kind: i.kind!,
-        rank: i.rank ?? "Rookie",
     }));
 
 // The tx builder knows the same kinds; the catalog must not offer one it lacks.

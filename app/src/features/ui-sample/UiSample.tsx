@@ -183,7 +183,6 @@ export default function UiSample() {
                     tab={armoryTab}
                     onTab={setArmoryTab}
                     wearer={squad.roster[0]}
-                    wearerRank={squad.rank(squad.roster[0]?.id ?? "").rank}
                     glyphs={glyphs}
                     frame={frame}
                     save={save}

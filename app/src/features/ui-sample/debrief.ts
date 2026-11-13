@@ -103,15 +103,11 @@ export type Plate =
     /** Nobody stood here: the side deployed fewer than three. */
     | { kind: "vacant" };
 
-/** `FREE_RECRUITS` and `MAX_RECRUITS` in `ghosts::account`. */
+/** `FREE_RECRUITS` in `ghosts::account`: the squad, and the most an `Account` holds. */
 export const FREE_RECRUITS = 4;
-export const MAX_RECRUITS = 8;
 
 /** What hiring after the match would call, or why it can't yet. */
-export type Replacement =
-    | { call: "hire_recruits"; count: number }
-    | { call: "hire_recruit"; count: 1 }
-    | { deny: string };
+export type Replacement = { call: "hire_recruits"; count: number } | { deny: string };
 
 export type Debrief = {
     title: string;
@@ -172,18 +168,16 @@ export function fallTurns(history: readonly ResultRecord[]): Map<string, number>
 }
 
 /**
- * Hiring after the match: the free squad tops the roster up to
- * `FREE_RECRUITS` (`hire_recruits`), past it one at a time up to
- * `MAX_RECRUITS` (`hire_recruit`). Both refuse while the `Account` is in a
- * game, so neither works before the wrap-up. A hire is a new random recruit
+ * Hiring after the match: `hire_recruits` tops the roster up to
+ * `FREE_RECRUITS`, the most it holds. It refuses while the `Account` is in a
+ * game, so it never works before the wrap-up. A hire is a new random recruit
  * for the roster, never the fallen one back.
  */
 export function replacementFor(recruitsHome: number | null): Replacement {
     if (recruitsHome === null) return { deny: "Hiring opens once the match is wrapped up" };
     if (recruitsHome < FREE_RECRUITS)
         return { call: "hire_recruits", count: FREE_RECRUITS - recruitsHome };
-    if (recruitsHome < MAX_RECRUITS) return { call: "hire_recruit", count: 1 };
-    return { deny: `The roster is full at ${MAX_RECRUITS}` };
+    return { deny: `The squad is full at ${FREE_RECRUITS}` };
 }
 
 /** A match result as the debrief shows it: one plate per podium, left to right. */

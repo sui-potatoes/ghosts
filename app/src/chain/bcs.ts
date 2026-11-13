@@ -64,7 +64,6 @@ export const Weapon = bcs.struct("Weapon", {
     name: bcs.string(),
     stats: Stats,
     upgrades: bcs.vector(WeaponUpgrade),
-    requiredRank: Rank,
 });
 
 /** `ghosts::armor::Armor`. */
@@ -72,7 +71,6 @@ export const Armor = bcs.struct("Armor", {
     id: bcs.Address,
     name: bcs.string(),
     stats: Stats,
-    requiredRank: Rank,
 });
 
 /** `ghosts::param::Param`. */

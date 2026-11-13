@@ -6,9 +6,9 @@
  * list on the left, the focused item on the 3D stage in the centre (the
  * Armory's own gun builds, armor worn by the first operative, a mod fitted on
  * the Standard Rifle), and its specification on the right. Only the game's
- * items (`data.ts`); requisition is free, as it is on testnet; the refusals
- * are the game's own rules: rank requirements, and one upgrade of each kind,
- * three at most, per rifle.
+ * items (`data.ts`); requisition is free, as it is on testnet, and any
+ * operative takes any item; the one refusal is the game's own rule: one
+ * upgrade of each kind, three at most, per rifle.
  */
 
 import { ATTACHMENT_SLOT_NAMES, attachmentById } from "@ghosts/squad/catalog";
@@ -19,7 +19,6 @@ import { useEquipmentImages } from "../headquarters/equipmentImages";
 import {
     Eyebrow,
     FocusCommandBar,
-    Icon,
     List,
     ListRow,
     Panel,
@@ -37,15 +36,14 @@ import {
     type GlyphSet,
     type IconName,
 } from "../../ui";
-import { CharacterCanvas, GearCanvas, useWireframeAction } from "./canvases";
+import { CharacterCanvas, useWireframeAction } from "../headquarters/squad/CharacterCanvas";
+import { GearCanvas } from "./canvases";
 import {
     FITTED,
     ISSUED,
     ITEMS,
     MAX_FITTINGS,
     OWNED,
-    rankAllows,
-    rankIcon,
     SECTIONS,
     STOCK,
     type Item,
@@ -78,8 +76,6 @@ type Props = {
     onTab: (tab: Section) => void;
     /** Who the armory issues to and dresses on the stage: the squad's first operative. */
     wearer?: Recruit;
-    /** Their rank, for the rank requirements. */
-    wearerRank: string;
     glyphs: GlyphSet;
     frame: {
         siblings: ComponentProps<typeof ScreenFrame>["siblings"];
@@ -95,7 +91,7 @@ function fittedOn(fitted: Fitted, mod: string): string | undefined {
     return Object.entries(fitted).find(([, slots]) => Object.values(slots).includes(mod))?.[0];
 }
 
-export function Armory({ armory, tab, onTab, wearer, wearerRank, glyphs, frame, save }: Props) {
+export function Armory({ armory, tab, onTab, wearer, glyphs, frame, save }: Props) {
     const store = useFocusState();
     const wire = useWireframeAction();
     const [stage, setStage] = useState<{ loading: boolean; error?: string }>({ loading: false });
@@ -120,11 +116,6 @@ export function Armory({ armory, tab, onTab, wearer, wearerRank, glyphs, frame, 
         label: "Requisition list",
         run: () => store.focusGroup("list", true, true),
     };
-
-    const rankDeny = (item: Item) =>
-        rankAllows(wearerRank, item)
-            ? undefined
-            : `Needs ${item.rank}. ${whoName} is ${wearerRank}`;
 
     const rowCommands = (item: Item): Command[] => {
         if (item.id === issued[tab]) {
@@ -154,7 +145,6 @@ export function Armory({ armory, tab, onTab, wearer, wearerRank, glyphs, frame, 
                     label: `Issue to ${whoName}`,
                     short: "Issue",
                     tone: "primary",
-                    deny: rankDeny(item),
                     run: () => {
                         setIssued((s) => ({ ...s, [tab]: item.id }));
                         save();
@@ -180,7 +170,6 @@ export function Armory({ armory, tab, onTab, wearer, wearerRank, glyphs, frame, 
             if (on) return ["Fitted", "accent"];
             return owned.has(item.id) ? ["In rack", "default"] : ["", "default"];
         }
-        if (!rankAllows(wearerRank, item)) return [item.rank, "dim"];
         if (owned.has(item.id)) return ["In rack", "default"];
         return ["", "default"];
     };
@@ -291,7 +280,6 @@ export function Armory({ armory, tab, onTab, wearer, wearerRank, glyphs, frame, 
                                 tag={tag || undefined}
                                 tagTone={tone}
                                 selected={item.id === issued[tab]}
-                                locked={item.section !== "mods" && !rankAllows(wearerRank, item)}
                                 title={item.name}
                                 hint={rowHint(item)}
                                 commands={rowCommands(item)}
@@ -314,7 +302,6 @@ export function Armory({ armory, tab, onTab, wearer, wearerRank, glyphs, frame, 
                     preview && (
                         <>
                             <span className="gui-stage-eyebrow">
-                                <Icon name={rankIcon(preview.rank)} size={14} />
                                 {preview.kind}
                                 {dressed ? ` · worn by ${who}` : ""}
                             </span>
@@ -325,14 +312,10 @@ export function Armory({ armory, tab, onTab, wearer, wearerRank, glyphs, frame, 
                                 <span
                                     className="gui-stage-tag"
                                     data-state={
-                                        tag === "Issued" || tag === "Fitted"
-                                            ? "issued"
-                                            : !rankAllows(wearerRank, preview)
-                                              ? "locked"
-                                              : undefined
+                                        tag === "Issued" || tag === "Fitted" ? "issued" : undefined
                                     }
                                 >
-                                    {tag === preview.rank ? `Needs ${preview.rank}` : tag}
+                                    {tag}
                                 </span>
                             )}
                         </>

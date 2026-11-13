@@ -4,7 +4,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { FocusStore, nearest, type Command, type FocusElement } from "../src/ui/focus-store.ts";
+import {
+    clickCommand,
+    FocusStore,
+    nearest,
+    secondaryCommands,
+    type Command,
+    type FocusElement,
+} from "../src/ui/focus-store.ts";
 
 /** A laid-out box standing in for an element; `order` is its document position. */
 let order = 0;
@@ -177,4 +184,36 @@ test("back falls through to the scope when the node has none", () => {
     add(s, "x", "g", box(0, 0));
     assert.equal(s.invoke("back"), true);
     assert.equal(left, 1);
+});
+
+const primary: Command = { action: "confirm", label: "Inspect", tone: "primary" };
+const remove: Command = { action: "reset", label: "Remove" };
+const toList: Command = { action: "back", label: "Roster" };
+const turn: Command = { action: "nav", label: "Change", glyph: "lr" };
+
+test("chips carry the secondary commands only, never the primary", () => {
+    assert.deepEqual(secondaryCommands([primary, toList, turn]), []);
+    assert.deepEqual(secondaryCommands([remove, primary, toList]), [remove]);
+});
+
+test("an instant target runs its primary on the first click", () => {
+    const opts = { again: false, instant: true, clickConfirm: true };
+    assert.equal(clickCommand([primary, toList], opts), primary);
+});
+
+test("other targets select first and run the primary on a second click", () => {
+    const base = { instant: false, clickConfirm: true };
+    assert.equal(clickCommand([primary], { ...base, again: false }), undefined);
+    assert.equal(clickCommand([primary], { ...base, again: true }), primary);
+});
+
+test("choosers never confirm on a click, and nothing runs without a primary", () => {
+    assert.equal(
+        clickCommand([primary], { again: true, instant: true, clickConfirm: false }),
+        undefined,
+    );
+    assert.equal(
+        clickCommand([remove, toList], { again: true, instant: true, clickConfirm: true }),
+        undefined,
+    );
 });

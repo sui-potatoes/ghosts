@@ -31,9 +31,9 @@ import { uiBack, uiConfirm, uiDeny, uiTick } from "../audio";
 import { onAction } from "../input";
 import type { Action } from "../settings/keys";
 import { claimScreenBack } from "./back";
-import { FocusStore, type Command, type Dir } from "./focus-store";
+import { clickCommand, FocusStore, secondaryCommands, type Command, type Dir } from "./focus-store";
 
-export { FocusStore } from "./focus-store";
+export { clickCommand, FocusStore, secondaryCommands } from "./focus-store";
 export type { Command, CommandAction, Dir, Pulse } from "./focus-store";
 
 const SOUNDS = {
@@ -193,6 +193,12 @@ type FocusableOptions = {
      * for choosers, whose clicks belong to their arrows and swatches.
      */
     clickConfirm?: boolean;
+    /**
+     * The first click or tap runs the primary too, for a cheap, undoable one
+     * (select an operative, open a picker). Off, a click selects and a second
+     * click on the selected target runs it (a purchase, an issue, a hire).
+     */
+    instant?: boolean;
 };
 
 /**
@@ -209,6 +215,7 @@ export function useFocusable<T extends HTMLElement>({
     directions,
     pointer = true,
     clickConfirm = true,
+    instant = false,
 }: FocusableOptions) {
     const store = useFocusState();
     const scope = useContext(ScopeContext);
@@ -233,7 +240,9 @@ export function useFocusable<T extends HTMLElement>({
     const pulse = store.pulse?.id === id ? store.pulse : null;
     // The panel's own place-keeper: where its cursor was, once the cursor left it.
     const current = !focused && store.remembered(group) === id;
-    const listable = commands.some((c) => c.action !== "nav");
+    // Chips and the command list carry the secondaries only; the primary is the click.
+    const secondary = secondaryCommands(commands);
+    const listable = secondary.length > 0;
 
     const openList = (x: number, y: number) => {
         store.pointerInput();
@@ -248,8 +257,11 @@ export function useFocusable<T extends HTMLElement>({
 
     return {
         focused,
-        /** Show the commands inline at the trailing edge: focused, and the mouse or touch in use. */
-        inline: focused && store.pointer,
+        /**
+         * Show the secondary commands inline at the trailing edge: focused, the
+         * mouse or touch in use, and something besides the primary to offer.
+         */
+        inline: focused && store.pointer && listable,
         commands,
         props: {
             ref,
@@ -283,17 +295,16 @@ export function useFocusable<T extends HTMLElement>({
             },
             onPointerUp: cancelPress,
             onPointerCancel: cancelPress,
-            // Hover only pre-highlights (CSS); a click or tap selects, a second
-            // one on the selected target runs its primary.
+            // Hover only pre-highlights (CSS); a click or tap selects, and runs
+            // the primary at once (`instant`) or on a second click.
             onClick: () => {
                 if (performance.now() - swallow.current < 800) return;
                 if (!pointer) return;
                 const again = store.focused === id;
                 store.pointerInput();
                 store.focus(id);
-                if (!again || !clickConfirm) return;
-                const confirm = commands.find((c) => c.action === "confirm");
-                if (confirm) store.run(confirm);
+                const command = clickCommand(commands, { again, instant, clickConfirm });
+                if (command) store.run(command);
             },
             // Right-click: every command of the target, as a list at the pointer.
             // Works on the stage too: the one way a mouse reaches its extra commands.

@@ -62,7 +62,11 @@ inventory (Weapons / Armor / Mods), a full-size 3D stage and a bench.
   the actions each grants and its uses per match, read from the decoded object;
   copy from `packages/catalog`. Issue and return like armor; a full slot
   (`MAX_UTILITIES`) shows "Swap for …" and the swap runs as ordered steps.
-  There is no model, so the stage shows a placeholder.
+  The Frag Grenade shows on the stage (`utilityModel` in `mapping.ts` names its
+  catalog model, `@ghosts/squad/studio/armory-utilities` builds it once, shared
+  by reference count like the rifles; the stage frames it by its own bounds and
+  scales the zoom limits to it). The band is plain: the builder only exports
+  where the stencils go. A utility without a model shows a short placeholder.
 - **Finish** (weapon skins, device only): Factory plus the gun's baked skins
   (`@ghosts/squad/weapon-skins`; only the Standard Rifle has any yet), applied
   to the stage at once and remembered per weapon object id in localStorage
@@ -124,3 +128,22 @@ cancelled signature, lost connection) read in plain words.
 - Card slots are stable: recruits keep the slot they were first seen in.
 - The squad is mirrored into the local roster key so `/demo` plays with it
   (plus the demo's own sidearm and grenade, which the chain does not mint).
+
+## Squad in the shared interface language (`squad/`)
+
+`/headquarters` is `src/screens/Headquarters.tsx` feeding `squad/HeadquartersView.tsx`
+(FocusRoot + ScreenFrame, see `src/ui/README.md`); the screen above survives as
+`/headquarters-classic` (`HeadquartersClassic.tsx`) until the new one is signed off.
+The view takes `HqData` and `HqOps` (`squad/types.ts`), so fixtures can drive it;
+the screen maps every op onto the same transaction builders as before.
+
+- Pieces shared with `/ui-sample`: `AppearanceEditor`, `CharacterCanvas` (+ the
+  stage's Wireframe action), `parts.tsx` (portrait with rank insignia, rank and
+  XP, the stat block, "if issued" lines, the off-screen portrait host), `ranks.ts`.
+- Pure rules, tested in `tests/hq-squad.test.ts`: `drafts.ts` (unsaved looks per
+  recruit, kept on the device under the classic key) and `rules.ts` (issue or
+  swap, the free top-up to four, the dismissal note).
+- A recruit without a weapon object is shown unarmed (no attack in the field,
+  `unit::from_recruit`); the demo mirror keeps its own default rifle.
+- Every slot is symmetric: Remove (Reset) on a filled slot and a None row at the
+  top of its picker send the item back to the armory.

@@ -145,6 +145,8 @@ export function Podium({
         hint,
         commands,
         directions,
+        // A podium's primary opens the operative picker: one click does it.
+        instant: true,
     });
     const style = anchor
         ? {

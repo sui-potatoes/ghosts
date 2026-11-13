@@ -3,14 +3,15 @@
 
 /**
  * The mouse's own reach to a target's commands, so nothing needs a trip to
- * the command bar across rows: the selected row carries its commands inline
- * at its trailing edge, and a right-click lists them at the pointer. Both
+ * the command bar across rows: the selected row carries its secondary
+ * commands inline at its trailing edge (the primary is the click itself), and
+ * a right-click lists them all at the pointer when there is a secondary. Both
  * run the same commands as the bar and the pad; the keyboard never sees them.
  */
 
 import type { MouseEvent, RefObject } from "react";
 
-import { FocusScope, useFocusable, useFocusState, type Command } from "./focus";
+import { FocusScope, secondaryCommands, useFocusable, useFocusState, type Command } from "./focus";
 import { Glyph, useGlyphSet, type GlyphSet } from "./glyphs";
 
 const ORDER = ["confirm", "reset"] as const;
@@ -22,11 +23,11 @@ function reachable(commands: Command[]): Command[] {
     );
 }
 
-/** Small glyph + label chips at a selected row's trailing edge. */
+/** Small glyph + label chips at a selected row's trailing edge: its secondary commands. */
 export function InlineCommands({ commands }: { commands: Command[] }) {
     const store = useFocusState();
     const glyphs = useGlyphSet();
-    const list = reachable(commands);
+    const list = secondaryCommands(commands);
     if (!list.length) return null;
     return (
         <span className="gui-inline">

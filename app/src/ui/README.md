@@ -98,7 +98,8 @@ A node's `back` command overrides the scope's Back (e.g. "Roster" returns to
 the list). For a custom element use `useFocusable({ id, group, … })` and
 spread `props` on it; `directions` lets a target consume arrows (steppers),
 `pointer: false` keeps the mouse from moving the cursor (the stage),
-`clickConfirm: false` stops a second click confirming (choosers).
+`clickConfirm: false` stops a click confirming (choosers), `instant: true`
+runs the primary on the first click (see Mouse and touch).
 
 | Part          | Props (besides the focus ones)                                                                                                      |
 | ------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
@@ -189,11 +190,19 @@ changed; never run an idle loop.
 ## Mouse and touch
 
 - Hover only pre-highlights (CSS, `(hover: hover)` devices).
-- A click or a tap selects; the selected row then shows its commands inline
-  (`InlineCommands`). A second click or tap on it runs its confirm.
+- A click or a tap selects. The primary (confirm) is the click itself:
+    - `instant` targets run it on that same click — for a cheap, undoable
+      primary: select an operative, open a picker, walk into a section;
+    - the others run it on a second click or tap on the selected target — for
+      a primary that commits something (issue, hire, requisition) or that the
+      stage previews first (a picker row). Danger primaries are never instant.
+- Inline chips (`InlineCommands`) are for **secondary** commands only (Reset:
+  Remove, Manage). A target whose only command is its primary shows no chip
+  and does not change height when selected; the command bar still names the
+  primary with its glyph for keys and pad.
 - Right-click, or a touch held still for 450 ms, opens the command list at
-  the pointer (a focus scope: keys work in it, Back or a press outside
-  closes it).
+  the pointer when the target has a secondary (a focus scope: keys work in
+  it, Back or a press outside closes it).
 - The command bar's commands are click targets too.
 - Any key or pad action returns to the console presentation (no inline chips).
 

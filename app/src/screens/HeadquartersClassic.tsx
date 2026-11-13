@@ -29,8 +29,6 @@ import {
     fetchAccountId,
     FREE_RECRUITS,
     hireRecruitsTx,
-    hireRecruitTx,
-    MAX_RECRUITS,
     type RecruitEdit,
     type Step,
 } from "../chain";
@@ -341,7 +339,7 @@ export default function Headquarters() {
                                 <h2>OPERATIVES</h2>
                                 <span>
                                     {String(recruits.length).padStart(2, "0")} /{" "}
-                                    {String(MAX_RECRUITS).padStart(2, "0")}
+                                    {String(FREE_RECRUITS).padStart(2, "0")}
                                 </span>
                             </div>
                             <div className="roster-list">
@@ -361,19 +359,6 @@ export default function Headquarters() {
                                     />
                                 ))}
                             </div>
-                            {recruits.length >= FREE_RECRUITS &&
-                                recruits.length < MAX_RECRUITS &&
-                                accountId.data && (
-                                    <button
-                                        className="btn roster-hire"
-                                        disabled={pending}
-                                        onClick={() =>
-                                            void action.run([() => hireRecruitTx(accountId.data!)])
-                                        }
-                                    >
-                                        Hire
-                                    </button>
-                                )}
                             {action.error && <p className="sq-footnote">{action.error}</p>}
                         </aside>
                     )}

@@ -43,7 +43,6 @@ import {
     WeaponUpgrade,
 } from "./bcs";
 import { movedOn, noteOwned, type ExecutedOrder } from "./fast-lane";
-import { RANKS } from "./match-rules";
 import { absorbWrites, current, useBcsObject } from "./objects";
 import { trackSaving } from "./saving";
 import { sendOrder } from "./sender";
@@ -53,10 +52,8 @@ type Client = ReturnType<typeof useCurrentClient>;
 /** Whether the package ids are configured (set after publish). */
 export const ghostsEnabled = !!GHOSTS.package && !!GHOSTS.registry;
 
-/** The squad an `Account` can always hold for free (`FREE_RECRUITS`). */
+/** The squad an `Account` holds, hired for free (`FREE_RECRUITS`): also the most it can hold. */
 export const FREE_RECRUITS = 4;
-/** How many recruits an `Account` can hold, hired one at a time past the free squad. */
-export const MAX_RECRUITS = 8;
 
 /** Voice configurations: the four on chain, all recorded. */
 export const VOICES = [
@@ -69,26 +66,6 @@ export const VOICES = [
 /** A weapon upgrade's mint function in `ghosts::items`, by catalog family. */
 /** The upgrade kinds of `ghosts::items`. */
 export const UPGRADE_KINDS = { scope: 0, laser: 1, stock: 2, clip: 3 } as const;
-
-/** The rank needed to be issued gear from `ghosts::items`, by tier. */
-const REQUIRED_RANKS = {
-    rifle: ["Rookie", "Corporal", "Lieutenant"],
-    armor: ["Rookie", "Squaddie", "Sergeant"],
-} as const;
-
-/** The rank needed to be issued a piece of gear from the catalog. */
-export function rankFor({ kind, tier }: Requisition): string {
-    return kind === "rifle" || kind === "armor" ? REQUIRED_RANKS[kind][tier - 1] : "Rookie";
-}
-
-/** Whether a recruit's rank allows being issued the gear. */
-export function rankAllows(
-    recruit: { rank: { $kind: string } },
-    gear: { requiredRank?: { $kind: string } },
-): boolean {
-    const order = RANKS as readonly string[];
-    return order.indexOf(recruit.rank.$kind) >= order.indexOf(gear.requiredRank?.$kind ?? "Rookie");
-}
 
 export type ChainRecruit = ReturnType<typeof Recruit.parse> & { objectId: string };
 export type ChainWeapon = ReturnType<typeof Weapon.parse> & { objectId: string };
@@ -404,8 +381,6 @@ export function friendlyError(e: unknown): string {
     if (/reject|cancel|abort(ed)? by user|NotAllowedError/i.test(message)) return "Cancelled.";
     if (/Failed to fetch|NetworkError|timed? ?out/i.test(message))
         return "Connection lost. Try again.";
-    if (/function_name: Some\("equip_\w+"\).*, 8\)/.test(message))
-        return "That recruit's rank is too low for this gear.";
     if (/function_name: Some\("cancel_search"\).*, 25\)/.test(message))
         return "A match was just found: joining it.";
     return message;
@@ -417,16 +392,6 @@ const target = (fn: string) => `${GHOSTS.package}::account::${fn}`;
 export function createAccountTx(): Transaction {
     const tx = new Transaction();
     tx.moveCall({ target: target("new_account"), arguments: [tx.object(GHOSTS.registry)] });
-    return tx;
-}
-
-/** One more recruit past the free squad, up to `MAX_RECRUITS`. */
-export function hireRecruitTx(accountId: string): Transaction {
-    const tx = new Transaction();
-    tx.moveCall({
-        target: target("hire_recruit"),
-        arguments: [tx.object(accountId), tx.object(GHOSTS.registry), tx.object.random()],
-    });
     return tx;
 }
 

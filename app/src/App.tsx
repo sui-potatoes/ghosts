@@ -10,6 +10,8 @@ import Settings from "./screens/Settings";
 // Headquarters brings the squad's three.js studio; load it with the route,
 // or ahead of it once a player is signed in (see `useHeadquartersAhead`).
 const loadHeadquarters = () => import("./screens/Headquarters");
+// The screen before the shared interface language, kept until the new one is signed off.
+const HeadquartersClassic = lazy(() => import("./screens/HeadquartersClassic"));
 const loadArmory = () => import("./screens/Armory");
 const Headquarters = lazy(loadHeadquarters);
 const Armory = lazy(loadArmory);
@@ -119,6 +121,14 @@ export function App() {
                     element={
                         <Suspense fallback={<LoadingSpinner />}>
                             <Headquarters />
+                        </Suspense>
+                    }
+                />
+                <Route
+                    path="/headquarters-classic"
+                    element={
+                        <Suspense fallback={<LoadingSpinner />}>
+                            <HeadquartersClassic />
                         </Suspense>
                     }
                 />

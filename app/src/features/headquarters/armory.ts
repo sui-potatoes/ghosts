@@ -44,7 +44,6 @@ export interface Gear {
     /** The item's stats as the chain holds them: a weapon's include its upgrades. */
     stats?: PackedStats;
     upgrades?: GearUpgrade[];
-    requiredRank?: { $kind: string };
 }
 /** A weapon or armor with where it is: the armory, or a recruit. */
 export interface Held<T extends Gear> {

@@ -30,6 +30,7 @@ import {
     type Command,
     type GlyphSet,
 } from "../../ui";
+import { Offstage, Portrait } from "../headquarters/squad/parts";
 import { gearName, ITEMS, rankIcon } from "./data";
 import type { Anchor } from "./podium-scene";
 import { Podium, PodiumCanvas } from "./podiums";
@@ -576,7 +577,7 @@ export function Deploy({
                     />
                 )}
             </section>
-            <div ref={studioHost} className="uis-offstage" aria-hidden />
+            <Offstage ref={studioHost} />
         </ScreenFrame>
     );
 }
@@ -665,17 +666,7 @@ function RecruitPicker({ index, roster, podiums, portraits, rank, onPick, onClos
                                     key={r.id}
                                     id={`pick-${r.id}`}
                                     group="deploy-picker"
-                                    thumb={
-                                        <span className="uis-portrait">
-                                            {portraits[r.id] && (
-                                                <img
-                                                    src={portraits[r.id]}
-                                                    alt=""
-                                                    draggable={false}
-                                                />
-                                            )}
-                                        </span>
-                                    }
+                                    thumb={<Portrait src={portraits[r.id]} />}
                                     name={r.callsign}
                                     kind={`${rank(r.id).rank} · ${r.role}`}
                                     tag={
