@@ -33,7 +33,6 @@ export {
     useChainRecruits,
     useGhostsAccount,
     useGhostsAction,
-    useRegistry,
     VOICES,
     type ChainAccount,
     type ChainArmor,

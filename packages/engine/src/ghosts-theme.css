@@ -25,8 +25,7 @@
 .encounter::-webkit-scrollbar, .encounter *::-webkit-scrollbar { display: none; }
 .encounter { min-height: 100dvh; }
 .encounter .view-tools button,
-.encounter .view-tools summary,
-.encounter .camera-hint { font-family: var(--mono); }
+.encounter .view-tools summary { font-family: var(--mono); }
 .encounter button:not(:disabled):hover,
 .encounter a:hover { color: var(--accent-color); }
 /* The legacy sheet draws amber outlines on focus; nothing in Ghosts does. */

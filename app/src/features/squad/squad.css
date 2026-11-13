@@ -84,8 +84,6 @@
 .stage-identity > span,
 .stage-toolbar > span,
 .inventory-heading,
-.equipment-stock,
-.equipment-stats,
 .personnel-stamp > span,
 .personnel-stamp small {
     font-family: var(--font-mono);
@@ -103,84 +101,6 @@
 .roster-list {
     overflow: auto;
     min-height: 0;
-}
-.roster-card {
-    border: 1px solid transparent;
-    border-bottom-color: var(--border-color);
-    width: 100%;
-    display: flex;
-    align-items: center;
-    position: relative;
-    text-align: left;
-    padding: 14px 6px 14px 0;
-    gap: 12px;
-    color: var(--text-secondary);
-}
-.roster-card.selected {
-    background: transparent;
-    border-color: var(--accent-color);
-}
-.roster-portrait {
-    width: 54px;
-    height: 72px;
-    flex-shrink: 0;
-    position: relative;
-    overflow: hidden;
-    background: var(--squad-studio-background);
-    display: grid;
-    place-items: center;
-}
-.roster-portrait img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-}
-.roster-portrait > span {
-    font: 24px var(--font-mono);
-    color: var(--disabled-color);
-}
-.roster-portrait small {
-    position: absolute;
-    bottom: 3px;
-    left: 4px;
-    font: 8px var(--font-mono);
-    color: var(--text-secondary);
-    background: var(--surface-color);
-    padding: 1px 3px;
-}
-.roster-person {
-    min-width: 0;
-}
-.roster-person > span {
-    display: block;
-    font: 9px var(--font-mono);
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--disabled-color);
-}
-.roster-person strong {
-    display: block;
-    font: 14px var(--font-mono);
-    letter-spacing: 0.16em;
-    margin: 6px 0;
-    color: var(--text-color);
-}
-.roster-card.selected strong {
-    color: var(--accent-color);
-}
-.roster-person p {
-    font: 11px var(--font-sans);
-    margin: 0;
-    color: var(--text-secondary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-.roster-person small {
-    display: block;
-    font: 9px var(--font-mono);
-    color: var(--disabled-color);
-    margin-top: 7px;
 }
 .recruit-stage {
     position: relative;
@@ -415,63 +335,6 @@
     color: var(--disabled-color);
     font-size: 8px;
 }
-.equipment-list {
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
-}
-.equipment-card {
-    border-top: 1px solid var(--border-color);
-}
-.equipment-image {
-    height: 132px;
-    position: relative;
-    overflow: hidden;
-    background: var(--squad-studio-background);
-    display: grid;
-    place-items: center;
-}
-.equipment-image > img {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-}
-.equipment-image > span:not(.equipment-stock) {
-    font-size: 10px;
-    color: var(--disabled-color);
-}
-.equipment-stock {
-    position: absolute;
-    top: 12px;
-    right: 10px;
-    font-size: 8px;
-    color: var(--text-secondary);
-}
-.equipment-description {
-    padding: 16px 0 0;
-}
-.equipment-description h4 {
-    font: 400 14px var(--font-mono);
-    letter-spacing: 0.08em;
-    margin: 8px 0 12px;
-}
-.equipment-description p,
-.sq-panel-copy {
-    font-size: 13px;
-    line-height: 1.65;
-    color: var(--text-secondary);
-    margin: 0 0 18px;
-}
-.equipment-stats {
-    display: flex;
-    justify-content: space-between;
-    gap: 8px;
-    font-size: 9px;
-    letter-spacing: 0.06em;
-    padding: 14px 0;
-    border-top: 1px solid var(--border-color);
-    color: var(--text-secondary);
-}
 .sq-primary,
 .sq-equipped {
     display: flex;
@@ -643,14 +506,6 @@
 .appearance-footer > .sq-text-button {
     text-align: center;
 }
-.personnel-form {
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
-}
-.callsign-input {
-    text-transform: uppercase;
-}
 .personnel-stamp {
     display: flex;
     flex-direction: column;
@@ -782,50 +637,6 @@
     font-size: 12px;
     line-height: 1.6;
 }
-.sq-dialog {
-    position: fixed;
-    inset: 0;
-    margin: auto;
-    padding: 28px;
-    width: min(440px, calc(100vw - 48px));
-    max-height: 90svh;
-    overflow: auto;
-    background: var(--surface-color);
-    color: var(--text-color);
-    border: 1px solid var(--border-color);
-}
-.sq-dialog::backdrop {
-    background: color-mix(in srgb, var(--background-color) 85%, transparent);
-    backdrop-filter: blur(4px);
-}
-.sq-dialog h2 {
-    font: 400 11px var(--font-mono);
-    letter-spacing: 0.22em;
-    text-transform: uppercase;
-    margin: 12px 0;
-}
-.sq-dialog p {
-    font-size: 13px;
-    line-height: 1.7;
-    color: var(--text-secondary);
-    margin-bottom: 24px;
-}
-.sq-dialog > .sq-field {
-    margin-bottom: 24px;
-}
-.sq-dialog-actions {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
-.sq-dialog-actions > button:not(.sq-primary) {
-    padding: 10px 14px;
-    border: 1px solid var(--border-color);
-    color: var(--text-secondary);
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
-}
 .inspector-appearance {
     overflow: hidden;
     flex: 1;
@@ -860,10 +671,6 @@
     .squad-workspace {
         grid-template-columns: 250px minmax(400px, 1fr) 410px;
     }
-    .roster-portrait {
-        width: 68px;
-        height: 86px;
-    }
     .inspector-content {
         padding: 32px;
     }
@@ -877,19 +684,6 @@
     }
     .squad-roster {
         padding-right: 12px;
-    }
-    .roster-card {
-        gap: 8px;
-    }
-    .roster-portrait {
-        width: 44px;
-        height: 64px;
-    }
-    .roster-person strong {
-        font-size: 12px;
-    }
-    .roster-person small {
-        font-size: 8px;
     }
     .inspector-content {
         padding: 24px 16px;
@@ -936,11 +730,6 @@
     .roster-list {
         display: flex;
         gap: 8px;
-    }
-    .roster-card {
-        min-width: 160px;
-        max-width: 180px;
-        padding: 6px;
     }
     .squad-inspector {
         max-height: 820px;
@@ -1171,24 +960,6 @@
 }
 
 /* Actual assembled weapon, under product lighting; the same GLBs are held by the operative. */
-.weapon-workbench {
-    margin: 24px 0;
-    border: 1px solid #303b40;
-    background: #141c20;
-}
-.weapon-workbench-heading {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 12px;
-    padding: 18px 16px 0;
-}
-.weapon-workbench-heading h4 {
-    margin: 5px 0 0;
-    font-size: 18px;
-    font-weight: 500;
-    color: #d7dfdf;
-}
 .weapon-preview {
     position: relative;
     background: radial-gradient(ellipse at 50% 45%, #303d43, #11191e 75%);
@@ -1218,121 +989,6 @@
     background: #1d2b32;
     color: #d7e6e7;
     cursor: pointer;
-}
-.weapon-live-stats {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 14px;
-    border-top: 1px solid #303b40;
-    font-size: 9px;
-    letter-spacing: 0.08em;
-    color: #929fa5;
-}
-.weapon-live-stats b {
-    display: block;
-    color: #e2e9e6;
-    font-size: 17px;
-    font-weight: 500;
-    margin-bottom: 4px;
-}
-.attachment-tabs {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    border-block: 1px solid #303b40;
-}
-.attachment-tabs button {
-    position: relative;
-    padding: 12px 3px;
-    background: transparent;
-    border: 0;
-    border-bottom: 2px solid transparent;
-    color: #9aabad;
-    font-size: 10px;
-    cursor: pointer;
-}
-.attachment-tabs button[aria-pressed="true"] {
-    color: #d7ece7;
-    background: #203034;
-    border-bottom-color: #91bcb3;
-}
-.attachment-tabs i {
-    display: inline-block;
-    width: 4px;
-    height: 4px;
-    margin-left: 5px;
-    border-radius: 50%;
-    background: #91bcb3;
-}
-.attachment-options {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 7px;
-    padding: 12px;
-}
-.attachment-options button {
-    cursor: pointer;
-    color: #c5d1d2;
-    border: 1px solid #344348;
-    background: #1a252a;
-    text-align: left;
-}
-.attachment-options button[aria-pressed="true"] {
-    border-color: #9dbdb5;
-    background: #263a3c;
-}
-.attachment-options button:disabled {
-    opacity: 0.4;
-    cursor: default;
-}
-.attachment-default {
-    grid-column: 1 / -1;
-    display: flex;
-    justify-content: space-between;
-    padding: 9px;
-    font-size: 11px;
-}
-.attachment-default span {
-    font-size: 10px;
-    color: #95a5a7;
-}
-.attachment-option {
-    padding: 8px;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 7px;
-}
-.attachment-option img {
-    width: 100%;
-    aspect-ratio: 2;
-    object-fit: contain;
-}
-.attachment-tier {
-    color: #8ea1a5;
-    font-size: 8px;
-    letter-spacing: 0.14em;
-}
-.attachment-option strong {
-    font-size: 11px;
-    font-weight: 500;
-    min-height: 28px;
-    line-height: 1.4;
-}
-.attachment-bonus {
-    color: #a2cbc1;
-    font-size: 11px;
-}
-.attachment-option small {
-    margin-top: auto;
-    font-size: 9px;
-    color: #8fa6aa;
-}
-.weapon-workbench > .sq-footnote {
-    margin: 0;
-    padding: 0 14px 14px;
-    line-height: 1.5;
 }
 .weapon-inspect {
     margin: auto;
@@ -1369,24 +1025,6 @@
     margin: 0;
     padding: 15px 24px;
     color: #93a4ab;
-    font-size: 11px;
-}
-
-.weapon-type-select {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 8px;
-    margin: 14px 16px;
-    color: #92a3a9;
-    font-size: 10px;
-}
-.weapon-type-select select {
-    min-width: 0;
-    background: #18262c;
-    color: #d6e2e2;
-    padding: 8px;
-    border: 1px solid #40535b;
     font-size: 11px;
 }
 
@@ -1434,21 +1072,12 @@
     .roster-list {
         display: block;
     }
-    .roster-card {
-        min-width: 0;
-        max-width: none;
-        padding: 14px 6px 14px 0;
-    }
     .squad-inspector {
         max-height: none;
     }
     .stage-toolbar {
         flex-direction: row;
         align-items: center;
-    }
-    .sq-dialog {
-        width: min(440px, calc((100vw - 48px) / var(--ui-scale)));
-        max-height: calc(90svh / var(--ui-scale));
     }
     .weapon-inspect {
         max-height: calc(95vh / var(--ui-scale));

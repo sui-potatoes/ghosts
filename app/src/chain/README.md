@@ -6,16 +6,10 @@ is what the screens and the future encounter driver import.
 
 ## Today
 
-- `executor.ts` — `useTransactionExecutor()`: a `SerialTransactionExecutor`
-  over the connected account with measured (simulated) gas budgets, for rapid
-  sequential transactions — one combat order after another. Ported from the
-  Sui Potatoes `app`; nothing calls it until the encounter driver lands with
-  the Move package.
-- `objects.ts` — `useBcsObject` / `useOwnedBcsObjects`: object reads decoded
+- `objects.ts` — `useBcsObject`: object reads decoded
   straight from BCS content with a schema, returned with their
   `objectId`/`version`/`digest` so the next transaction can reference them.
-  `useBcsObject` reads the alias set today; `useOwnedBcsObjects` waits for
-  the Move package's owned objects. It notes the newest version of each object
+  `useBcsObject` reads the alias set today. It notes the newest version of each object
   seen: a read from a node a moment behind keeps what is on screen, and
   `absorbWrites` puts what a write left into the reads without one.
 - `sender.tsx` — the one sign-and-send path: `<TransactionSender />` (mounted

@@ -9,7 +9,7 @@
   --amber-dark: #9a8054;
   --red: #d67c73;
   --mono: "IBM Plex Mono", monospace;
-  --condensed: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --condensed: var(--mono);
   --panel: #171e1f;
 }
 .encounter, .encounter * {
@@ -421,19 +421,6 @@
 .encounter .squad-card.kia {
   filter: grayscale(1);
   opacity: 0.35;
-}
-.encounter .camera-hint {
-  display: flex;
-  gap: 20px;
-  font: 6px var(--mono);
-  letter-spacing: 0.5px;
-  color: #787c85;
-  padding: 13px 0 14px;
-}
-.encounter .camera-hint b {
-  font-weight: 400;
-  color: #a6aab3;
-  margin-left: 4px;
 }
 .encounter .intel-panel {
   grid-column: 2;
@@ -1148,9 +1135,6 @@
   .encounter .action-list button > small {
     font-size: 6px;
   }
-  .encounter .camera-hint {
-    font-size: 7px;
-  }
   .encounter #selected-info {
     min-width: 230px;
   }
@@ -1251,10 +1235,6 @@
   .encounter .squad-details {
     padding-right: 8px;
   }
-  .encounter .camera-hint {
-    gap: 13px;
-    font-size: 5px;
-  }
   .encounter .command-deck {
     gap: 12px;
     padding: 11px;
@@ -1341,12 +1321,6 @@
   }
   .encounter .squad-card img {
     width: 58px;
-  }
-  .encounter .camera-hint {
-    flex-wrap: wrap;
-    gap: 5px 12px;
-    font-size: 5px;
-    padding: 9px 0;
   }
   .encounter .north {
     display: none;
@@ -1466,10 +1440,6 @@
   }
   .encounter .squad-meta {
     font-size: 6px;
-  }
-  .encounter .camera-hint {
-    justify-content: center;
-    font-size: 5px;
   }
   .encounter .end-turn {
     margin: 12px 16px 0;
@@ -2019,17 +1989,6 @@
   height: 4px;
   width: 4px;
 }
-.encounter .camera-hint {
-  font-size: 8px;
-  letter-spacing: 0;
-  gap: 19px;
-  color: #737780;
-  padding: 12px 0 0;
-}
-.encounter .camera-hint b {
-  color: #9ca0a9;
-  margin-left: 4px;
-}
 .encounter .command-deck {
   position: absolute;
   bottom: 21px;
@@ -2306,9 +2265,6 @@
   .encounter .squad-card img {
     width: 67px;
   }
-  .encounter .camera-hint {
-    font-size: 7px;
-  }
 }
 @media (max-width: 950px) {
   .encounter {
@@ -2477,15 +2433,6 @@
   .encounter .squad-index {
     font-size: 7px;
     z-index: 2;
-  }
-  .encounter .camera-hint {
-    font-size: 6px;
-    gap: 8px;
-    padding: 10px 0 0;
-    justify-content: flex-start;
-  }
-  .encounter .camera-hint > span:nth-child(n + 4) {
-    display: none;
   }
   .encounter .command-deck {
     left: 17px;
@@ -2749,9 +2696,6 @@
   }
 }
 @media (max-height: 680px) {
-  .encounter .camera-hint {
-    display: none;
-  }
   .encounter #field-objectives {
     top: 85px;
   }
@@ -2805,11 +2749,6 @@
 }
 
 /* Combat HUD stays compact; aiming affordances appear only after the camera settles. */
-.encounter .camera-moving #aim-reticle,
-.encounter .camera-moving #confirm-fire {
-  visibility: hidden;
-  pointer-events: none;
-}
 .encounter #squad-cards {
   max-width: 780px;
   gap: 10px;
@@ -2879,11 +2818,6 @@
   top: 80px;
 }
 
-.encounter .workspace:has(.camera-moving) .command-deck [data-action="fire"] {
-  visibility: hidden;
-  pointer-events: none;
-}
-
 /* Scene controls and squad portraits. */
 .encounter #scene-controls { flex-shrink: 0; }
 .encounter #scene-controls summary {
@@ -2904,7 +2838,6 @@
   width: 100%; margin: 9px 0 15px; padding: 9px;
   color: #eee9dd; background: #252b34; border: 1px solid #bcc0c940;
 }
-.encounter #scene-controls .scene-rain { display: flex; align-items: center; gap: 9px; }
 .encounter #scene-controls input { accent-color: #c8ae76; width: 16px; height: 16px; }
 .encounter #scene-controls small { display: block; margin-top: 13px; font-size: 10px; color: #a5aab4; }
 .encounter #scene-controls :focus-visible { outline: 2px solid #d8c498; outline-offset: 3px; }
@@ -3165,7 +3098,6 @@
   .encounter #pad-hints,
   .encounter #feedback,
   .encounter #targeting-hud,
-  .encounter .camera-hint,
   .encounter .wheel-ring {
     zoom: var(--ui-scale, 1);
   }

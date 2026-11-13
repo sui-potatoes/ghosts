@@ -409,32 +409,6 @@
 .hq-unsaved .sq-primary {
     width: auto;
 }
-.hq-requisition {
-    margin-top: 28px;
-}
-.hq-requisition-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 6px;
-}
-.hq-requisition-grid button {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    padding: 9px 10px;
-    border: 1px solid var(--border-color);
-    font-size: 10px;
-    text-align: left;
-    color: var(--text-secondary);
-}
-.hq-requisition-grid button:hover:not(:disabled) {
-    border-color: var(--accent-color);
-    color: var(--accent-color);
-}
-.hq-requisition-grid small {
-    font-size: 9px;
-    color: var(--disabled-color);
-}
 .hq-dossier {
     margin: 0 0 24px;
 }
@@ -985,11 +959,6 @@
 .hq-fitting-lines li.removed .hq-fitting-label strong,
 .hq-fitting-lines li.removed .hq-chips b {
     text-decoration: line-through;
-}
-.hq-upgrade-stat {
-    margin: 0 0 24px;
-    font: 14px var(--font-mono);
-    color: var(--accent-color);
 }
 .hq-issue {
     margin-top: 8px;

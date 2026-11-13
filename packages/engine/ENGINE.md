@@ -91,8 +91,7 @@ with the tests, the build, lint and a play-through green.
 ## Next
 
 - **Chain driver.** The app side of the seam: BCS schemas for the ghosts Move
-  package, object reads (`app/src/chain/objects.ts`), the transaction executor
-  (`app/src/chain/executor.ts`), and an `EncounterDriver` that maps
+  package, object reads (`app/src/chain/objects.ts`), and an `EncounterDriver` that maps
   transaction effects to `GameEvent`s (see `app/src/chain/README.md`).
 - **One encounter at a time.** The session, audio and settings provider are
   module singletons; a second mounted encounter needs them per instance.
