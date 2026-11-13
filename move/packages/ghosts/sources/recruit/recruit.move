@@ -69,7 +69,8 @@ public struct Recruit has key, store {
     xp: u16,
     /// `Stats` of the Unit.
     stats: Stats,
-    /// Weapon of the Unit. When not set, the Recruit uses the default weapon.
+    /// Weapon of the Unit: a Standard Rifle on hire. When taken off, the Recruit
+    /// has no `Attack` or `Reload` in a match.
     weapon: Option<Weapon>,
     /// Armor of the Unit. When not set, the Recruit uses the default armor.
     armor: Option<Armor>,

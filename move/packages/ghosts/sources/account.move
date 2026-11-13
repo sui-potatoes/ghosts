@@ -53,6 +53,8 @@ const EUnknownUtility: u64 = 9;
 /// The squad an `Account` holds: four recruits, hired for free, so that nobody is
 /// ever out of the game for having lost one. It is also the most it can hold.
 const FREE_RECRUITS: u64 = 4;
+/// Tier of the rifle every hire is armed with: the Standard Rifle.
+const HIRE_RIFLE_TIER: u8 = 1;
 /// Number of visual presets per gender in the `Registry`.
 const PRESETS_PER_GENDER: u64 = 16;
 /// Independent preset draws per recruit: identity (head and eyes), face, body
@@ -147,8 +149,9 @@ public fun new_account(registry: &mut Registry, ctx: &mut TxContext) {
 // === Recruits ===
 
 /// Hire the free squad: tops the `Account` up to `FREE_RECRUITS` recruits
-/// with random names, looks and voices. Covers the initial set and
-/// replacements for the fallen - hiring is free while the squad is not full.
+/// with random names, looks and voices, each armed with a Standard Rifle. Covers
+/// the initial set and replacements for the fallen - hiring is free while the
+/// squad is not full.
 entry fun hire_recruits(acc: &mut Account, registry: &Registry, rng: &Random, ctx: &mut TxContext) {
     acc.authorize(ctx);
     assert!(acc.playing().is_none(), EInGame);
@@ -158,7 +161,11 @@ entry fun hire_recruits(acc: &mut Account, registry: &Registry, rng: &Random, ct
     acc.hire(registry, rng, count, ctx);
 }
 
-/// Hire `count` recruits with random names, looks and voices.
+/// Hire `count` recruits with random names, looks and voices, each armed with
+/// a Standard Rifle: the same `Weapon` `requisition_rifle` gives for `HIRE_RIFLE_TIER`,
+/// to unequip, swap or fit upgrades to like any other. Armor and utilities stay
+/// empty. The rifle is the same for every outcome of the draws, so it adds no
+/// outcome-dependent cost to this `Random` entry.
 fun hire(acc: &mut Account, registry: &Registry, rng: &Random, count: u64, ctx: &mut TxContext) {
     let mut rng = rng.new_generator(ctx);
     // Presets are drawn without replacement within a batch: one pool of
@@ -197,6 +204,7 @@ fun hire(acc: &mut Account, registry: &Registry, rng: &Random, count: u64, ctx: 
         let mut recruit = recruit::new(name, ctx);
         recruit.set_visuals(visuals);
         recruit.set_voice(if (is_female) 1 else 0);
+        recruit.add_weapon(items::rifle(HIRE_RIFLE_TIER, ctx));
         acc.add_recruit(recruit);
     });
 }

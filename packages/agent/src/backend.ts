@@ -30,7 +30,7 @@ export interface Backend {
     game(id: string): Promise<GameState | null>;
 
     createAccount(): Promise<Receipt>;
-    /** Hire the free squad: tops the account up to its free recruits, with no gear. */
+    /** Hire the free squad: tops the account up to its free recruits, each armed with a rifle. */
     hireSquad(): Promise<Receipt>;
     /**
      * Arm the recruits at home who carry no weapon, and give those with a free utility slot

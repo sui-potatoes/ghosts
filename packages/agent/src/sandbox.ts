@@ -567,8 +567,8 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
             if (home.length >= FREE_RECRUITS) {
                 throw new ActionError("rejected", "The squad is already full.");
             }
-            // `hire_recruits`: no gear yet, so no `Attack`, `Reload` or `Grenade` on the map
-            while (home.length < FREE_RECRUITS) home.push(hire(false));
+            // `hire_recruits`: a Standard Rifle each, so `Attack` and `Reload` but no `Grenade`
+            while (home.length < FREE_RECRUITS) home.push(hire(true));
             me.recruits = home.length;
             return receipt([]);
         },

@@ -4,7 +4,7 @@
 #[test_only]
 extend module ghosts::ghosts;
 
-use ghosts::{account::{Self, Registry}, items, recruit as recruit_module};
+use ghosts::{account::{Self, Registry}, action, items, recruit as recruit_module};
 use sui::{clock, random, test_scenario::{Self as ts, Scenario}};
 
 /// The recruits fall, the way they do to an attack: off the map, the game over if
@@ -710,6 +710,52 @@ fun test_pick_squad_on_match_preset() {
     assert!(game.map.unit(11, 10).is_some() && game.map.unit(12, 8).is_some());
     assert!(!game.squad(0).contains(&benched));
     assert!(f.look_at!(benched, |r| r.leader() == object::id_address(&f.alice)));
+
+    ts::return_shared(game);
+    fixture.finish();
+}
+
+/// A squad fresh from `hire_recruits` goes into a match on the match preset
+/// ready to shoot: every unit has `Attack` and `Reload`, and Alice opens fire.
+#[test]
+fun test_hired_squad_shoots() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup_on!(
+        |id| map::black_rain(id),
+        map::black_rain_positions(),
+        |acc, ctx| hire(acc, ctx),
+    );
+    let f = &mut fixture;
+    f.alice.hire_recruits(&f.registry, &f.rng, f.ts.ctx());
+    f.ts.next_tx(BOB);
+    f.bob.hire_recruits(&f.registry, &f.rng, f.ts.ctx());
+    let mut game = f.start();
+
+    // the three each side hired, not the recruit the fixture gave it
+    let (alice, bob) = (object::id_address(&f.alice), object::id_address(&f.bob));
+    let alice_recruit = f.alice_recruit;
+    let bob_recruit = f.bob_recruit;
+    let alice_hires = ts::ids_for_address<Recruit>(alice).filter!(|id| id != &alice_recruit);
+    let bob_hires = ts::ids_for_address<Recruit>(bob).filter!(|id| id != &bob_recruit);
+    assert_eq!(alice_hires.length(), 3);
+    deploy_squad(&mut game, &mut f.alice, &f.clock, tickets(alice_hires), f.ts.ctx());
+    f.ts.next_tx(BOB);
+    deploy_squad(&mut game, &mut f.bob, &f.clock, tickets(bob_hires), f.ts.ctx());
+    assert!(!game.is_deploying());
+
+    map::black_rain_positions().do!(|p| {
+        let unit = game.map.unit(p[0] as u16, p[1] as u16).borrow();
+        assert!(unit.has_action(action::new_attack()));
+        assert!(unit.has_action(action::new_reload()));
+        assert_eq!(unit.ammo(), 3);
+    });
+
+    // Alice goes first: the enemy is out of range, so (11, 10) fires at her own
+    // recruit at (12, 8), which spends a round all the same
+    f.ts.next_tx(ALICE);
+    perform_attack(&mut game, &f.alice, &f.rng, &f.clock, 11, 10, 12, 8, f.ts.ctx());
+    assert_eq!(game.map.unit(11, 10).borrow().ammo(), 2);
 
     ts::return_shared(game);
     fixture.finish();
