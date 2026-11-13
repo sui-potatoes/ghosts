@@ -1,0 +1,2256 @@
+/*
+ * The game's interface language (src/ui, see its README): the scale, the
+ * screen frame, panels, rows, the cursor, the command bar, prompts, motion.
+ *
+ * Unlayered and scoped under .gui on purpose: app/reset.css has an
+ * unlayered `input, button, textarea, select { font: inherit }` that beats
+ * every layered house class, so each part here states its own type. Built on
+ * theme-tokens.css; every colour beyond the tokens is a color-mix of them.
+ */
+
+/* === Scale ========================================================== */
+
+.gui {
+    /* One spacing unit; everything is a multiple of it. */
+    --u: 4px;
+
+    /* Four type sizes; emphasis is weight and colour, not size. */
+    --t-micro: 10px; /* stencil captions, eyebrows, tags */
+    --t-label: 11px; /* labels, tabs, commands, chips */
+    --t-body: 13px; /* row names, values, body copy */
+    --t-title: 22px; /* the one name on the stage, a prompt's question */
+
+    /* Three control heights. */
+    --h-s: 20px; /* glyphs, tags */
+    --h-m: 40px; /* rows, slots, commands */
+    --h-l: 56px; /* the header and command strips */
+
+    --track: 0.18em; /* uppercase tracking */
+
+    /* Derived tints, no new hues. */
+    --line: var(--border-color);
+    --line-strong: color-mix(in srgb, var(--text-color) 20%, transparent);
+    --fill: color-mix(in srgb, var(--surface-color) 88%, transparent);
+    --band: var(--text-color);
+    --on-band: var(--background-color);
+    --band-locked: color-mix(in srgb, var(--text-color) 38%, var(--background-color));
+    --on-band-soft: color-mix(in srgb, var(--background-color) 62%, var(--text-color));
+    --buff: var(--accent-color);
+    --nerf: var(--warn-color);
+    --buff-on-band: color-mix(in srgb, var(--accent-color) 38%, var(--background-color));
+    --nerf-on-band: color-mix(in srgb, var(--warn-color) 52%, var(--background-color));
+    --snap: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+    /* Zoom: phone landscape follows --ui-scale (index.css). Large displays are
+     * not scaled up: the screen stays at its native size, like the other menus. */
+    --gui-zoom: var(--ui-scale);
+}
+
+/* === Frame ========================================================== */
+
+.gui {
+    -webkit-touch-callout: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    zoom: var(--gui-zoom);
+    width: calc(100vw / var(--gui-zoom));
+    height: calc(100dvh / var(--gui-zoom));
+    display: grid;
+    grid-template-rows: var(--h-l) minmax(0, 1fr) var(--h-l);
+    overflow: hidden;
+    color: var(--text-color);
+    font: 400 var(--t-body) / 1.4 var(--font-mono);
+    letter-spacing: 0.02em;
+    user-select: none;
+    -webkit-user-select: none;
+    cursor: default;
+    -webkit-tap-highlight-color: transparent;
+    background:
+        radial-gradient(
+            ellipse 80% 70% at 50% 40%,
+            transparent,
+            color-mix(in srgb, var(--background-color) 70%, transparent)
+        ),
+        linear-gradient(
+                color-mix(in srgb, var(--text-color) 2.5%, transparent) 1px,
+                transparent 1px
+            )
+            0 0 / 100% calc(var(--u) * 12),
+        linear-gradient(
+                90deg,
+                color-mix(in srgb, var(--text-color) 2.5%, transparent) 1px,
+                transparent 1px
+            )
+            0 0 / calc(var(--u) * 12) 100%,
+        var(--background-color);
+}
+
+/* Neutralise the global control styles once; every part sets its own type below. */
+.gui :where(button, kbd, h1, h2, p, dl, dd) {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    text-align: inherit;
+    outline: none;
+}
+
+.gui :where(button) {
+    cursor: pointer;
+}
+
+/* Viewport corner brackets: the screen as a display, drawn once. */
+.gui-corner {
+    position: absolute;
+    width: calc(var(--u) * 3);
+    height: calc(var(--u) * 3);
+    border: 0 solid var(--line-strong);
+    pointer-events: none;
+    z-index: 1;
+}
+.gui-corner[data-at="tl"] {
+    top: calc(var(--u) * 2);
+    left: calc(var(--u) * 2);
+    border-width: 1px 0 0 1px;
+}
+.gui-corner[data-at="tr"] {
+    top: calc(var(--u) * 2);
+    right: calc(var(--u) * 2);
+    border-width: 1px 1px 0 0;
+}
+.gui-corner[data-at="bl"] {
+    bottom: calc(var(--u) * 2);
+    left: calc(var(--u) * 2);
+    border-width: 0 0 1px 1px;
+}
+.gui-corner[data-at="br"] {
+    bottom: calc(var(--u) * 2);
+    right: calc(var(--u) * 2);
+    border-width: 0 1px 1px 0;
+}
+
+/* --- Header strip --- */
+
+.gui-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: stretch;
+    padding: 0 calc(var(--u) * 6);
+    border-bottom: 1px solid var(--line);
+    transition: opacity 160ms ease;
+}
+
+.gui[data-overlay] .gui-header,
+.gui[data-overlay] .gui-body {
+    opacity: 0.4;
+}
+
+.gui-where {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: calc(var(--u) * 1);
+    min-width: 0;
+}
+
+.gui-crumbs {
+    display: flex;
+    align-items: baseline;
+    font: 500 var(--t-label) / 1 var(--font-mono);
+    letter-spacing: var(--track);
+    text-transform: uppercase;
+    width: max-content;
+}
+
+.gui-crumb {
+    color: var(--text-secondary);
+}
+
+.gui-crumb[data-here] {
+    color: var(--text-color);
+}
+
+.gui-crumb-sep {
+    color: var(--disabled-color);
+    padding: 0 calc(var(--u) * 2);
+}
+
+.gui-sections {
+    display: flex;
+    align-items: stretch;
+}
+
+.gui-tabs {
+    display: flex;
+    align-items: center;
+    gap: calc(var(--u) * 1);
+}
+
+.gui-tabs > .gui-glyph:first-child {
+    margin-right: calc(var(--u) * 3);
+}
+.gui-tabs > .gui-glyph:last-child {
+    margin-left: calc(var(--u) * 3);
+}
+
+.gui-tab {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: calc(var(--u) * 1.5);
+    height: var(--h-l);
+    padding: 0 calc(var(--u) * 4);
+    font: 500 var(--t-label) / 1 var(--font-mono);
+    letter-spacing: var(--track);
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+
+.gui-tab-count {
+    font-size: var(--t-micro);
+    color: var(--disabled-color);
+    letter-spacing: 0.1em;
+}
+
+.gui-tab[data-active] {
+    color: var(--text-color);
+}
+
+.gui-tab[data-active]::after {
+    content: "";
+    position: absolute;
+    left: calc(var(--u) * 4);
+    right: calc(var(--u) * 4);
+    bottom: -1px;
+    height: 2px;
+    background: var(--text-color);
+    animation: gui-tab-in 160ms var(--snap);
+}
+
+@keyframes gui-tab-in {
+    from {
+        transform: scaleX(0.2);
+        opacity: 0;
+    }
+}
+
+.gui-status {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: calc(var(--u) * 6);
+}
+
+.gui-chip {
+    display: grid;
+    grid-template-columns: auto auto;
+    grid-template-rows: auto auto;
+    column-gap: calc(var(--u) * 2);
+    row-gap: calc(var(--u) * 1);
+    align-items: center;
+}
+
+.gui-chip-label {
+    grid-column: 2;
+    font: 400 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--disabled-color);
+}
+
+.gui-chip-value {
+    grid-column: 2;
+    font: 500 var(--t-label) / 1 var(--font-mono);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-color);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.gui-chip[data-state="idle"] .gui-chip-value {
+    color: var(--text-secondary);
+}
+
+.gui-chip-dot,
+.gui-chip-ticks {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+}
+
+.gui-chip-dot {
+    width: 6px;
+    height: 6px;
+    background: var(--accent-color);
+    animation: gui-live 1.6s steps(2, jump-none) infinite;
+}
+
+@keyframes gui-live {
+    50% {
+        opacity: 0.25;
+    }
+}
+
+.gui-chip-ticks {
+    display: flex;
+    gap: 2px;
+}
+
+.gui-chip-ticks b {
+    width: 2px;
+    height: 10px;
+    background: var(--text-color);
+    animation: gui-tick 0.6s linear infinite;
+}
+.gui-chip-ticks b:nth-child(2) {
+    animation-delay: 0.2s;
+}
+.gui-chip-ticks b:nth-child(3) {
+    animation-delay: 0.4s;
+}
+
+@keyframes gui-tick {
+    0%,
+    100% {
+        opacity: 0.2;
+    }
+    30% {
+        opacity: 1;
+    }
+}
+
+/* --- Body --- */
+
+.gui-body {
+    display: grid;
+    gap: calc(var(--u) * 3);
+    padding: calc(var(--u) * 4) calc(var(--u) * 6);
+    min-height: 0;
+    transition: opacity 160ms ease;
+}
+
+/* === Panel ========================================================== */
+
+.gui-panel {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+    border: 1px solid var(--line);
+    background: var(--fill);
+}
+
+/* Corner ticks, top-left and bottom-right: a frame read as hardware. */
+.gui-panel::before,
+.gui-panel::after {
+    content: "";
+    position: absolute;
+    width: calc(var(--u) * 2);
+    height: calc(var(--u) * 2);
+    border: 0 solid var(--line-strong);
+    pointer-events: none;
+}
+.gui-panel::before {
+    top: -1px;
+    left: -1px;
+    border-width: 1px 0 0 1px;
+}
+.gui-panel::after {
+    bottom: -1px;
+    right: -1px;
+    border-width: 0 1px 1px 0;
+}
+
+.gui-panel[data-variant="ghost"] {
+    background: none;
+    border-color: transparent;
+    border-left-color: var(--line);
+}
+
+.gui-panel[data-variant="ghost"]::after {
+    display: none;
+}
+
+.gui-panel-head {
+    display: flex;
+    align-items: center;
+    gap: calc(var(--u) * 2);
+    height: calc(var(--u) * 8);
+    flex: none;
+    padding: 0 calc(var(--u) * 3);
+    border-bottom: 1px solid var(--line);
+}
+
+.gui-panel-index {
+    font: 400 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: 0.1em;
+    color: var(--disabled-color);
+}
+
+.gui-panel-label {
+    font: 500 var(--t-label) / 1 var(--font-mono);
+    letter-spacing: var(--track);
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+
+.gui-panel-meta {
+    margin-left: auto;
+    font: 400 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--disabled-color);
+}
+
+.gui-panel-body {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    padding: calc(var(--u) * 2);
+    overflow: hidden;
+}
+
+.gui-panel[data-variant="ghost"] .gui-panel-body {
+    padding: calc(var(--u) * 2) calc(var(--u) * 3);
+}
+
+.gui-eyebrow {
+    display: flex;
+    align-items: center;
+    height: calc(var(--u) * 7);
+    margin-top: calc(var(--u) * 2);
+    padding: 0 calc(var(--u) * 1);
+    font: 400 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--line);
+    margin-bottom: calc(var(--u) * 1);
+}
+
+.gui-eyebrow:first-child {
+    margin-top: 0;
+}
+
+.gui-eyebrow-meta {
+    margin-left: auto;
+    color: var(--disabled-color);
+}
+
+.gui-note {
+    padding: calc(var(--u) * 3) calc(var(--u) * 1);
+    font: 400 var(--t-body) / 1.4 var(--font-mono);
+    color: var(--disabled-color);
+}
+
+/* === The cursor's band, shared by every focusable part ============== */
+
+.gui-row,
+.gui-stat,
+.gui-slot,
+.gui-empty-action {
+    position: relative;
+    min-height: var(--h-m);
+}
+
+.gui-row[data-focused],
+.gui-stat[data-focused],
+.gui-slot[data-focused],
+.gui-empty-action[data-focused] {
+    background: var(--band);
+    color: var(--on-band);
+    animation: gui-band-in 110ms var(--snap);
+}
+
+/* The band wipes in from its leading edge, the cursor's snap made solid. */
+@keyframes gui-band-in {
+    from {
+        clip-path: inset(0 100% 0 0);
+    }
+    to {
+        clip-path: inset(0 0 0 0);
+    }
+}
+
+.gui-row,
+.gui-stat,
+.gui-slot,
+.gui-empty-action {
+    transition:
+        color 60ms linear,
+        transform 90ms ease-out,
+        filter 90ms ease-out;
+}
+
+/* Pressed: the band sinks for a beat. A transition, so the band's own wipe never replays. */
+.gui [data-focused][data-pressed] {
+    transform: scale(0.985);
+    filter: brightness(0.8);
+    transition: none;
+}
+
+/* Refused: a shake. Listed after the wipe, so removing it leaves the wipe finished. */
+.gui [data-focused][data-denied] {
+    animation:
+        gui-band-in 110ms var(--snap),
+        gui-deny 220ms linear;
+}
+
+@keyframes gui-deny {
+    0%,
+    100% {
+        transform: translateX(0);
+    }
+    20% {
+        transform: translateX(-4px);
+    }
+    45% {
+        transform: translateX(3px);
+    }
+    70% {
+        transform: translateX(-2px);
+    }
+}
+
+/* === ListRow ======================================================== */
+
+/*
+ * A list scrolls inside itself (List.tsx) and never shows a scrollbar: a
+ * hairline rail with a thumb on the trailing edge and a fade at an edge that
+ * has more. The scroller reaches into the panel's padding (negative margin,
+ * matching padding) so the selected-row notch in the gutter is not clipped
+ * and a short list lays out exactly like a plain column.
+ */
+.gui-list-wrap {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    flex: 0 1 auto;
+    min-height: 0;
+}
+
+.gui-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 0 1 auto;
+    min-height: 0;
+    margin: 0 calc(var(--u) * -2);
+    padding: 0 calc(var(--u) * 2);
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+}
+
+.gui-list::-webkit-scrollbar {
+    display: none;
+}
+
+.gui-list-wrap[data-above] .gui-list {
+    mask-image: linear-gradient(to bottom, transparent, #000 calc(var(--h-m) * 0.75));
+}
+.gui-list-wrap[data-below] .gui-list {
+    mask-image: linear-gradient(to top, transparent, #000 calc(var(--h-m) * 0.75));
+}
+.gui-list-wrap[data-above][data-below] .gui-list {
+    mask-image: linear-gradient(
+        to bottom,
+        transparent,
+        #000 calc(var(--h-m) * 0.75),
+        #000 calc(100% - var(--h-m) * 0.75),
+        transparent
+    );
+}
+
+.gui-list-rail {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: calc(var(--u) * -1.5);
+    width: 1px;
+    background: var(--line);
+    pointer-events: none;
+}
+
+.gui-list-rail b {
+    position: absolute;
+    left: -0.5px;
+    width: 2px;
+    background: var(--text-secondary);
+    transition: top 90ms var(--snap);
+}
+
+.gui-row {
+    display: flex;
+    align-items: center;
+    gap: calc(var(--u) * 3);
+    width: 100%;
+    padding: 0 calc(var(--u) * 3);
+    font: 400 var(--t-body) / 1.2 var(--font-mono);
+}
+
+.gui-row-index {
+    font: 400 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: 0.1em;
+    color: var(--disabled-color);
+}
+
+.gui-row-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
+.gui-row-name {
+    font: 500 var(--t-body) / 1.1 var(--font-mono);
+    color: var(--text-color);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.gui-row-kind {
+    font: 400 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--disabled-color);
+}
+
+.gui-row-tag {
+    display: flex;
+    align-items: center;
+    gap: calc(var(--u) * 1.5);
+    font: 500 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.gui-row-tag[data-tone="accent"] {
+    color: var(--accent-color);
+}
+.gui-row-tag[data-tone="warn"] {
+    color: var(--warn-color);
+}
+.gui-row-tag[data-tone="dim"] {
+    color: var(--disabled-color);
+}
+
+/* Selected (issued): a notch in the gutter, independent of the cursor. */
+.gui-row[data-selected]::before {
+    content: "";
+    position: absolute;
+    left: calc(var(--u) * -2);
+    top: 25%;
+    bottom: 25%;
+    width: 2px;
+    background: var(--accent-color);
+}
+
+.gui-row[data-locked] .gui-row-name {
+    color: var(--disabled-color);
+}
+
+.gui-row[data-focused] .gui-row-name,
+.gui-row[data-focused] .gui-row-tag {
+    color: var(--on-band);
+}
+.gui-row[data-focused] .gui-row-index,
+.gui-row[data-focused] .gui-row-kind {
+    color: var(--on-band-soft);
+}
+.gui-row[data-focused][data-locked] {
+    background: var(--band-locked);
+}
+.gui-row[data-focused][data-locked] .gui-row-name {
+    color: var(--on-band);
+}
+
+.gui-lock {
+    width: 7px;
+    height: 8px;
+    border: 1px solid currentColor;
+    border-top-width: 3px;
+}
+
+/* === StatRow ======================================================== */
+
+.gui-stat {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto calc(var(--u) * 15);
+    grid-template-rows: 1fr auto;
+    align-items: center;
+    column-gap: calc(var(--u) * 3);
+    padding: calc(var(--u) * 1.5) calc(var(--u) * 2) calc(var(--u) * 2);
+}
+
+.gui-stat-label {
+    font: 500 var(--t-label) / 1 var(--font-mono);
+    letter-spacing: var(--track);
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+
+.gui-stat-value {
+    font: 500 var(--t-body) / 1 var(--font-mono);
+    color: var(--text-color);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+}
+
+.gui-stat-unit {
+    margin-left: calc(var(--u) * 1);
+    font: 400 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--disabled-color);
+}
+
+.gui-stat-delta {
+    font: 500 var(--t-label) / 1 var(--font-mono);
+    letter-spacing: 0.06em;
+    text-align: right;
+    color: var(--disabled-color);
+    font-variant-numeric: tabular-nums;
+}
+
+.gui-stat[data-trend="buff"] .gui-stat-delta {
+    color: var(--buff);
+}
+.gui-stat[data-trend="nerf"] .gui-stat-delta {
+    color: var(--nerf);
+}
+
+.gui-stat-bar {
+    position: relative;
+    grid-column: 1 / -1;
+    height: 3px;
+    margin-top: calc(var(--u) * 1.5);
+    background: var(--line);
+}
+
+.gui-stat-bar i {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    transition:
+        width 180ms var(--snap),
+        left 180ms var(--snap);
+}
+
+.gui-stat-fill {
+    background: var(--text-secondary);
+}
+
+.gui-stat[data-trend="buff"] .gui-stat-change {
+    background: var(--buff);
+}
+
+/* A loss is what the base had and this lacks: hatched, in amber. */
+.gui-stat[data-trend="nerf"] .gui-stat-change {
+    background: repeating-linear-gradient(90deg, var(--nerf) 0 2px, transparent 2px 4px);
+}
+
+.gui-stat[data-focused] .gui-stat-label,
+.gui-stat[data-focused] .gui-stat-value {
+    color: var(--on-band);
+}
+.gui-stat[data-focused] .gui-stat-unit,
+.gui-stat[data-focused][data-trend="even"] .gui-stat-delta {
+    color: var(--on-band-soft);
+}
+.gui-stat[data-focused][data-trend="buff"] .gui-stat-delta {
+    color: var(--buff-on-band);
+}
+.gui-stat[data-focused][data-trend="nerf"] .gui-stat-delta {
+    color: var(--nerf-on-band);
+}
+.gui-stat[data-focused] .gui-stat-bar {
+    background: color-mix(in srgb, var(--background-color) 18%, var(--band));
+}
+.gui-stat[data-focused] .gui-stat-fill {
+    background: var(--on-band);
+}
+.gui-stat[data-focused][data-trend="buff"] .gui-stat-change {
+    background: var(--buff-on-band);
+}
+.gui-stat[data-focused][data-trend="nerf"] .gui-stat-change {
+    background: repeating-linear-gradient(90deg, var(--nerf-on-band) 0 2px, transparent 2px 4px);
+}
+
+/* === Slots, meters, readouts ======================================== */
+
+.gui-slot {
+    display: grid;
+    grid-template-columns: calc(var(--u) * 3) calc(var(--u) * 20) minmax(0, 1fr);
+    align-items: center;
+    gap: calc(var(--u) * 2);
+    width: 100%;
+    padding: 0 calc(var(--u) * 2);
+}
+
+.gui-slot-mark {
+    width: 8px;
+    height: 8px;
+    background: var(--text-secondary);
+}
+
+.gui-slot[data-empty] .gui-slot-mark {
+    background: none;
+    border: 1px dashed var(--disabled-color);
+}
+
+.gui-slot-name {
+    font: 500 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--disabled-color);
+}
+
+.gui-slot-item {
+    font: 400 var(--t-body) / 1.1 var(--font-mono);
+    color: var(--text-color);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.gui-slot[data-empty] .gui-slot-item {
+    color: var(--disabled-color);
+}
+
+.gui-slot[data-focused] .gui-slot-item,
+.gui-slot[data-focused] .gui-slot-name {
+    color: var(--on-band);
+}
+.gui-slot[data-focused] .gui-slot-mark {
+    background: var(--on-band);
+}
+.gui-slot[data-focused][data-empty] .gui-slot-mark {
+    background: none;
+    border-color: var(--on-band);
+}
+
+.gui-meter {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: calc(var(--u) * 2);
+    padding: calc(var(--u) * 2.5) calc(var(--u) * 1) calc(var(--u) * 1);
+}
+
+.gui-meter-label {
+    font: 400 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--disabled-color);
+}
+
+.gui-meter-readout {
+    font: 500 var(--t-label) / 1 var(--font-mono);
+    letter-spacing: 0.08em;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+
+.gui-meter[data-tone="warn"] .gui-meter-readout {
+    color: var(--warn-color);
+}
+
+.gui-meter-bar {
+    position: relative;
+    grid-column: 1 / -1;
+    height: 3px;
+    background: var(--line);
+}
+
+.gui-meter-bar i {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    transition:
+        width 180ms var(--snap),
+        left 180ms var(--snap);
+}
+
+.gui-meter-fill {
+    left: 0;
+    background: var(--text-secondary);
+}
+
+.gui-meter-pending {
+    background: repeating-linear-gradient(90deg, var(--text-color) 0 2px, transparent 2px 4px);
+}
+
+.gui-meter[data-tone="warn"] .gui-meter-pending {
+    background: repeating-linear-gradient(90deg, var(--warn-color) 0 2px, transparent 2px 4px);
+}
+
+.gui-pips {
+    grid-column: 1 / -1;
+    display: flex;
+    gap: 2px;
+}
+
+.gui-pips i {
+    flex: 1;
+    height: 6px;
+    border: 1px solid var(--line-strong);
+}
+
+.gui-pips i[data-on] {
+    background: var(--text-secondary);
+    border-color: var(--text-secondary);
+}
+
+.gui-readout {
+    display: grid;
+    grid-template-columns: calc(var(--u) * 17) minmax(0, 1fr);
+    align-items: center;
+    min-height: calc(var(--u) * 7);
+    padding: 0 calc(var(--u) * 1);
+}
+
+.gui-readout-label {
+    font: 400 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--disabled-color);
+}
+
+.gui-readout-value {
+    font: 400 var(--t-body) / 1.2 var(--font-mono);
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.gui-readout[data-empty] .gui-readout-value {
+    color: var(--disabled-color);
+}
+
+/* A content swap: what replaced the old content drops in. */
+@keyframes gui-swap {
+    from {
+        opacity: 0;
+        transform: translateY(-4px);
+    }
+}
+
+/* === Empty states =================================================== */
+
+.gui-empty,
+.gui-void {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: calc(var(--u) * 3);
+    padding: calc(var(--u) * 6);
+    text-align: center;
+}
+
+.gui-empty-mark,
+.gui-void-mark {
+    position: relative;
+    width: calc(var(--u) * 8);
+    height: calc(var(--u) * 8);
+    border: 1px dashed var(--disabled-color);
+}
+
+.gui-empty-mark::before,
+.gui-void-mark::before {
+    content: "";
+    position: absolute;
+    inset: 50% 20% auto;
+    height: 1px;
+    background: var(--disabled-color);
+    transform: rotate(-45deg);
+}
+
+.gui-empty-headline {
+    font: 500 var(--t-body) / 1 var(--font-mono);
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--text-color);
+}
+
+.gui-empty-body {
+    max-width: 30ch;
+    font: 400 var(--t-body) / 1.5 var(--font-mono);
+    color: var(--text-secondary);
+}
+
+.gui-empty-action {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: calc(var(--u) * 56);
+    margin-top: calc(var(--u) * 2);
+    border: 1px solid var(--line-strong);
+    font: 500 var(--t-label) / 1 var(--font-mono);
+    letter-spacing: var(--track);
+    text-transform: uppercase;
+    color: var(--text-color);
+}
+
+.gui-void {
+    font: 500 var(--t-label) / 1 var(--font-mono);
+    letter-spacing: var(--track);
+    text-transform: uppercase;
+    color: var(--disabled-color);
+}
+
+/* === Glyphs ========================================================= */
+
+.gui-glyph {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    min-width: var(--h-s);
+    height: var(--h-s);
+    font: 600 10px / 1 var(--font-mono);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-color);
+}
+
+.gui-glyph[data-shape="key"] {
+    padding: 0 5px;
+    border: 1px solid var(--line-strong);
+    border-bottom-width: 2px;
+}
+
+/* Face buttons are round, as they are on the pad: filled, letter knocked out. */
+.gui-glyph[data-shape="face"] {
+    width: var(--h-s);
+    border-radius: 50%;
+    background: var(--text-color);
+    color: var(--background-color);
+    font-size: 11px;
+}
+
+.gui-glyph[data-shape="face"][data-pad="ps"] {
+    font-size: 12px;
+    font-family: system-ui, sans-serif;
+}
+
+/* Bumpers: a flat trapezoid, the shoulder button seen from above. */
+.gui-glyph[data-shape="bumper"] {
+    padding: 0 7px;
+    height: 16px;
+    background: var(--text-color);
+    color: var(--background-color);
+    font-size: 9px;
+    clip-path: polygon(14% 0, 86% 0, 100% 100%, 0 100%);
+}
+
+/* === CommandBar ===================================================== */
+
+.gui-bar {
+    position: relative;
+    z-index: 26;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: calc(var(--u) * 6);
+    padding: 0 calc(var(--u) * 6);
+    border-top: 1px solid var(--line);
+    background: linear-gradient(
+        0deg,
+        color-mix(in srgb, var(--background-color) 96%, transparent),
+        color-mix(in srgb, var(--surface-color) 90%, transparent)
+    );
+}
+
+.gui-bar-context {
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--u) * 1.5);
+    min-width: 0;
+}
+
+.gui-bar-title {
+    font: 500 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--disabled-color);
+}
+
+.gui-bar-hint {
+    display: flex;
+    align-items: center;
+    gap: calc(var(--u) * 2);
+    font: 400 var(--t-body) / 1.2 var(--font-mono);
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.gui-bar-hint[data-deny] {
+    color: var(--warn-color);
+    animation: gui-flash 380ms steps(4, jump-none);
+}
+
+@keyframes gui-flash {
+    0%,
+    50% {
+        opacity: 0.35;
+    }
+}
+
+.gui-warn-mark {
+    flex: none;
+    width: 10px;
+    height: 9px;
+    background: var(--warn-color);
+    clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+
+.gui-bar-commands {
+    display: flex;
+    align-items: center;
+    gap: calc(var(--u) * 1);
+    flex: none;
+}
+
+.gui-bar-rule {
+    width: 1px;
+    height: calc(var(--u) * 6);
+    margin: 0 calc(var(--u) * 2);
+    background: var(--line);
+}
+
+.gui-cmd {
+    display: flex;
+    align-items: center;
+    gap: calc(var(--u) * 2.5);
+    height: var(--h-m);
+    padding: 0 calc(var(--u) * 3);
+    border: 1px solid transparent;
+    font: 500 var(--t-label) / 1 var(--font-mono);
+    letter-spacing: var(--track);
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    white-space: pre;
+    transition:
+        background 80ms linear,
+        transform 80ms linear;
+}
+
+/* Primary: the heaviest thing on the bar, the HUD's End Turn in miniature. */
+.gui-cmd[data-tone="primary"] {
+    min-width: calc(var(--u) * 44);
+    padding: 0 calc(var(--u) * 4);
+    border-color: var(--accent-color);
+    background: color-mix(in srgb, var(--accent-color) 7%, transparent);
+    color: var(--text-color);
+}
+
+.gui-cmd[data-tone="primary"] .gui-glyph[data-shape="face"] {
+    background: var(--accent-color);
+}
+
+.gui-cmd[data-tone="danger"] {
+    color: var(--warn-color);
+}
+
+.gui-cmd[data-tone="danger"] .gui-glyph[data-shape="face"] {
+    background: var(--warn-color);
+}
+
+/* A danger confirm (in a prompt) is as heavy as a primary, in amber. */
+.gui-cmd[data-tone="danger"][data-action="confirm"] {
+    min-width: calc(var(--u) * 44);
+    padding: 0 calc(var(--u) * 4);
+    border-color: var(--warn-color);
+    background: color-mix(in srgb, var(--warn-color) 8%, transparent);
+    color: var(--text-color);
+}
+
+.gui-cmd[data-denied] {
+    color: var(--disabled-color);
+    border-color: var(--line);
+    border-style: dashed;
+    background: none;
+}
+
+.gui-cmd[data-denied] .gui-glyph {
+    opacity: 0.4;
+}
+
+.gui-cmd[data-denied] .gui-glyph[data-shape="face"] {
+    background: var(--text-color);
+}
+
+/* The mouse's affordance, and only the mouse's: commands are never cursor
+   targets, so hover lifts the label and lays a faint plate, nothing more. */
+@media (hover: hover) {
+    button.gui-cmd:hover {
+        color: var(--text-color);
+        background: color-mix(in srgb, var(--text-color) 6%, transparent);
+    }
+    button.gui-cmd[data-tone="primary"]:hover {
+        background: color-mix(in srgb, var(--accent-color) 16%, transparent);
+    }
+    button.gui-cmd[data-tone="danger"][data-action="confirm"]:hover {
+        background: color-mix(in srgb, var(--warn-color) 16%, transparent);
+    }
+    button.gui-cmd[data-denied]:hover {
+        background: none;
+        color: var(--disabled-color);
+    }
+}
+
+span.gui-cmd {
+    cursor: default;
+    color: var(--text-secondary);
+}
+
+.gui-glyph[data-shape="dpad"] {
+    padding: 0 5px;
+    border: 1px solid var(--line-strong);
+    font-size: 9px;
+    letter-spacing: 0.1em;
+}
+
+.gui-cmd[data-pressed],
+.gui-cmd:active {
+    transform: translateY(1px);
+    background: color-mix(in srgb, var(--text-color) 14%, transparent);
+    animation: none;
+}
+
+/* === Prompt ========================================================= */
+
+.gui-scrim {
+    position: absolute;
+    inset: var(--h-l) 0 var(--h-l);
+    z-index: 20;
+    background: color-mix(in srgb, var(--background-color) 72%, transparent);
+    animation: gui-fade 140ms ease-out;
+}
+
+@keyframes gui-fade {
+    from {
+        opacity: 0;
+    }
+}
+
+.gui-prompt-wrap {
+    position: absolute;
+    inset: var(--h-l) 0 var(--h-l);
+    z-index: 25;
+    display: grid;
+    place-items: center;
+    pointer-events: none;
+}
+
+.gui-prompt {
+    position: relative;
+    width: min(calc(var(--u) * 132), calc(100% - var(--u) * 12));
+    padding: calc(var(--u) * 7) calc(var(--u) * 8) 0;
+    background: var(--surface-color);
+    border: 1px solid var(--line-strong);
+    border-top: 2px solid var(--text-color);
+    pointer-events: auto;
+    animation: gui-open 170ms var(--snap);
+}
+
+.gui-prompt[data-tone="danger"] {
+    border-top-color: var(--warn-color);
+}
+
+@keyframes gui-open {
+    from {
+        clip-path: inset(48% 0 48% 0);
+        opacity: 0.4;
+    }
+    to {
+        clip-path: inset(0 0 0 0);
+    }
+}
+
+.gui-prompt-eyebrow {
+    display: block;
+    font: 500 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: 0.26em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+
+.gui-prompt[data-tone="danger"] .gui-prompt-eyebrow {
+    color: var(--warn-color);
+}
+
+.gui-prompt-title {
+    margin-top: calc(var(--u) * 3);
+    font: 400 var(--t-title) / 1.25 var(--font-mono);
+    color: var(--text-color);
+}
+
+.gui-prompt-body {
+    margin-top: calc(var(--u) * 3);
+    font: 400 var(--t-body) / 1.55 var(--font-mono);
+    color: var(--text-secondary);
+}
+
+.gui-prompt-lines {
+    margin-top: calc(var(--u) * 5);
+    border-top: 1px solid var(--line);
+}
+
+.gui-prompt-lines > div {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: calc(var(--u) * 8);
+    border-bottom: 1px solid var(--line);
+}
+
+.gui-prompt-lines dt {
+    font: 400 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--disabled-color);
+}
+
+.gui-prompt-lines dd {
+    font: 400 var(--t-body) / 1 var(--font-mono);
+    color: var(--text-color);
+    font-variant-numeric: tabular-nums;
+}
+
+.gui-prompt-commands {
+    display: flex;
+    justify-content: flex-end;
+    gap: calc(var(--u) * 1);
+    margin: calc(var(--u) * 6) calc(var(--u) * -8) 0;
+    padding: calc(var(--u) * 2) calc(var(--u) * 3);
+    border-top: 1px solid var(--line);
+}
+
+/* === The cursor ===================================================== */
+
+.gui-cursor {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 30;
+    pointer-events: none;
+    transition:
+        transform 110ms var(--snap),
+        width 110ms var(--snap),
+        height 110ms var(--snap);
+}
+
+.gui-cursor-frame {
+    position: absolute;
+    inset: -5px;
+}
+
+.gui-cursor-frame i {
+    position: absolute;
+    width: 9px;
+    height: 9px;
+    border: 0 solid var(--text-color);
+}
+.gui-cursor-frame i:nth-child(1) {
+    top: 0;
+    left: 0;
+    border-width: 2px 0 0 2px;
+}
+.gui-cursor-frame i:nth-child(2) {
+    top: 0;
+    right: 0;
+    border-width: 2px 2px 0 0;
+}
+.gui-cursor-frame i:nth-child(3) {
+    bottom: 0;
+    left: 0;
+    border-width: 0 0 2px 2px;
+}
+.gui-cursor-frame i:nth-child(4) {
+    bottom: 0;
+    right: 0;
+    border-width: 0 2px 2px 0;
+}
+
+.gui-cursor-frame[data-motion="press"] {
+    animation: gui-cursor-press 150ms ease-out;
+}
+
+@keyframes gui-cursor-press {
+    0% {
+        inset: -1px;
+    }
+}
+
+.gui-cursor-frame[data-motion="deny"] {
+    animation: gui-deny 220ms linear;
+}
+
+.gui-cursor-frame[data-motion="deny"] i {
+    animation: gui-cursor-warn 420ms steps(1, jump-end);
+}
+
+@keyframes gui-cursor-warn {
+    0% {
+        border-color: var(--warn-color);
+    }
+}
+
+.gui-cursor-frame[data-motion="bump"][data-dir="up"] {
+    animation: gui-bump-up 140ms ease-out;
+}
+.gui-cursor-frame[data-motion="bump"][data-dir="down"] {
+    animation: gui-bump-down 140ms ease-out;
+}
+.gui-cursor-frame[data-motion="bump"][data-dir="left"] {
+    animation: gui-bump-left 140ms ease-out;
+}
+.gui-cursor-frame[data-motion="bump"][data-dir="right"] {
+    animation: gui-bump-right 140ms ease-out;
+}
+
+@keyframes gui-bump-up {
+    40% {
+        transform: translateY(-3px);
+    }
+}
+@keyframes gui-bump-down {
+    40% {
+        transform: translateY(3px);
+    }
+}
+@keyframes gui-bump-left {
+    40% {
+        transform: translateX(-3px);
+    }
+}
+@keyframes gui-bump-right {
+    40% {
+        transform: translateX(3px);
+    }
+}
+
+/* === Reduced motion: state changes stay, movement goes ============== */
+
+@media (prefers-reduced-motion: reduce) {
+    .gui *,
+    .gui *::before,
+    .gui *::after {
+        animation: none !important;
+        transition: none !important;
+    }
+}
+
+/* === Late additions: panel foot, list place-keeper, detail stage ==== */
+
+.gui-panel-foot {
+    flex: none;
+    padding: 0 calc(var(--u) * 3) calc(var(--u) * 2);
+    border-top: 1px solid var(--line);
+}
+
+/* The row a panel's cursor will come back to: held, not lit. */
+.gui-row[data-current] {
+    background: color-mix(in srgb, var(--text-color) 9%, transparent);
+    box-shadow: inset 2px 0 0 var(--text-secondary);
+}
+
+.gui-cursor[data-tone="danger"] .gui-cursor-frame i {
+    border-color: var(--warn-color);
+}
+
+/* === Breadcrumb siblings (HQ / SQUAD · ARMORY) ======================= */
+
+.gui-crumbs {
+    align-items: center;
+}
+
+.gui-crumb-up {
+    display: flex;
+    align-items: baseline;
+}
+
+.gui-crumb-up:disabled {
+    cursor: default;
+}
+
+.gui-siblings {
+    display: flex;
+    align-items: center;
+    gap: calc(var(--u) * 2);
+}
+
+.gui-sibling-wrap {
+    display: flex;
+    align-items: baseline;
+}
+
+.gui-sibling-wrap .gui-crumb-sep {
+    padding: 0 calc(var(--u) * 1) 0 0;
+}
+
+.gui-sibling {
+    color: var(--disabled-color);
+}
+
+.gui-sibling[data-here] {
+    color: var(--text-color);
+}
+
+.gui-chip[data-tone="warn"] .gui-chip-value {
+    color: var(--warn-color);
+}
+
+/* === Pre-highlight: the pointer's own, faint, never the cursor ======= */
+
+@media (hover: hover) {
+    .gui [data-pointer]:not([data-focused]):hover {
+        background: color-mix(in srgb, var(--text-color) 5%, transparent);
+    }
+}
+
+/* === Thumbnails, portraits, pictograms =============================== */
+
+.gui-icon {
+    flex: none;
+    display: block;
+}
+
+.gui-thumb {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: calc(var(--u) * 12);
+    height: calc(var(--u) * 7);
+    color: var(--text-secondary);
+}
+
+.gui-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.gui-slot .gui-thumb {
+    width: calc(var(--u) * 10);
+    height: calc(var(--u) * 6);
+}
+
+.gui-row[data-thumb] {
+    padding-left: calc(var(--u) * 1.5);
+}
+
+/* On the band, a thumbnail's dark backdrop would read as a hole: blend it. */
+.gui-row[data-focused] .gui-thumb img,
+.gui-slot[data-focused] .gui-thumb img {
+    mix-blend-mode: multiply;
+}
+
+.gui-row[data-focused] .gui-thumb,
+.gui-slot[data-focused] .gui-thumb {
+    color: var(--on-band);
+}
+
+/* === Inline commands and the right-click list ======================== */
+
+.gui-inline {
+    display: flex;
+    gap: calc(var(--u) * 1);
+    flex: none;
+}
+
+.gui-chip-cmd {
+    display: flex;
+    align-items: center;
+    gap: calc(var(--u) * 1.5);
+    height: calc(var(--u) * 6);
+    padding: 0 calc(var(--u) * 2) 0 calc(var(--u) * 1);
+    border: 1px solid color-mix(in srgb, var(--on-band) 30%, transparent);
+    font: 500 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: var(--track);
+    text-transform: uppercase;
+    color: var(--on-band);
+}
+
+.gui-chip-cmd .gui-glyph {
+    min-width: 16px;
+    height: 16px;
+    font-size: 9px;
+    color: var(--on-band);
+    border-color: color-mix(in srgb, var(--on-band) 40%, transparent);
+}
+
+.gui-chip-cmd[data-tone="primary"] {
+    background: var(--on-band);
+    color: var(--band);
+}
+
+.gui-chip-cmd[data-tone="primary"] .gui-glyph {
+    color: var(--band);
+    border-color: color-mix(in srgb, var(--band) 50%, transparent);
+}
+
+.gui-chip-cmd[data-tone="danger"] {
+    color: var(--nerf-on-band);
+    border-color: var(--nerf-on-band);
+}
+
+.gui-chip-cmd[data-denied] {
+    opacity: 0.45;
+    border-style: dashed;
+    background: none;
+    color: var(--on-band);
+}
+
+@media (hover: hover) {
+    .gui-chip-cmd:hover {
+        filter: brightness(1.2);
+        background: color-mix(in srgb, var(--on-band) 12%, transparent);
+    }
+    .gui-chip-cmd[data-tone="primary"]:hover {
+        background: color-mix(in srgb, var(--on-band) 85%, transparent);
+    }
+}
+
+.gui-menu-catch {
+    position: absolute;
+    inset: 0;
+    z-index: 38;
+}
+
+.gui-menu {
+    position: absolute;
+    z-index: 40;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: calc(var(--u) * 2);
+    background: var(--surface-color);
+    border: 1px solid var(--line-strong);
+    border-top: 2px solid var(--text-color);
+    animation: gui-open 120ms var(--snap);
+}
+
+.gui-menu-title {
+    padding: calc(var(--u) * 1) calc(var(--u) * 2) calc(var(--u) * 2);
+    font: 500 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--disabled-color);
+}
+
+.gui-menu-item {
+    display: flex;
+    align-items: center;
+    gap: calc(var(--u) * 2.5);
+    height: calc(var(--u) * 9);
+    padding: 0 calc(var(--u) * 2);
+    font: 500 var(--t-label) / 1 var(--font-mono);
+    letter-spacing: var(--track);
+    text-transform: uppercase;
+    color: var(--text-color);
+}
+
+.gui-menu-item[data-tone="danger"] {
+    color: var(--warn-color);
+}
+
+.gui-menu-item[data-refused] {
+    color: var(--disabled-color);
+}
+
+.gui-menu-item[data-focused] {
+    background: var(--band);
+    color: var(--on-band);
+}
+
+.gui-menu-item[data-focused][data-tone="danger"] {
+    color: var(--nerf-on-band);
+}
+
+/* === The 3D stage ==================================================== */
+
+.gui-stage-panel {
+    background: none;
+    border-color: transparent;
+}
+
+.gui-stage-panel::before,
+.gui-stage-panel::after {
+    display: none;
+}
+
+.gui-stage-body {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* The studio reads its theme off the host: plain token colours (no mixes),
+   so the platform and fog sit in the screen's own surface. */
+.gui-stage-canvas {
+    --squad-studio-background: var(--background-color);
+    --squad-studio-platform: var(--raised-color);
+    --squad-studio-line: var(--border-color);
+}
+
+.gui-stage-canvas {
+    position: absolute;
+    inset: 0;
+}
+
+.gui-stage-canvas canvas {
+    display: block;
+    width: 100% !important;
+    height: 100% !important;
+    outline: none;
+    cursor: grab;
+}
+
+.gui-stage-canvas canvas:active {
+    cursor: grabbing;
+}
+
+/* Registration marks: the stage's only frame. */
+.gui-stage-reg {
+    position: absolute;
+    width: calc(var(--u) * 3);
+    height: calc(var(--u) * 3);
+    border: 0 solid var(--line-strong);
+    pointer-events: none;
+}
+.gui-stage-reg[data-at="tl"] {
+    top: 0;
+    left: 0;
+    border-width: 1px 0 0 1px;
+}
+.gui-stage-reg[data-at="tr"] {
+    top: 0;
+    right: 0;
+    border-width: 1px 1px 0 0;
+}
+.gui-stage-reg[data-at="bl"] {
+    bottom: 0;
+    left: 0;
+    border-width: 0 0 1px 1px;
+}
+.gui-stage-reg[data-at="br"] {
+    bottom: 0;
+    right: 0;
+    border-width: 0 1px 1px 0;
+}
+
+.gui-stage-caption {
+    position: absolute;
+    top: calc(var(--u) * 4);
+    left: calc(var(--u) * 5);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: calc(var(--u) * 1.5);
+    pointer-events: none;
+}
+
+.gui-stage-eyebrow {
+    display: flex;
+    align-items: center;
+    gap: calc(var(--u) * 2);
+    font: 500 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+
+.gui-stage-title {
+    font: 300 var(--t-title) / 1.1 var(--font-mono);
+    color: var(--text-color);
+    animation: gui-swap 160ms var(--snap);
+}
+
+.gui-stage-sub {
+    font: 400 var(--t-body) / 1 var(--font-mono);
+    color: var(--text-secondary);
+}
+
+.gui-stage-tag {
+    margin-top: calc(var(--u) * 1);
+    font: 500 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: var(--track);
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+
+.gui-stage-tag[data-state="issued"] {
+    color: var(--accent-color);
+}
+
+.gui-stage-tag[data-state="locked"] {
+    color: var(--disabled-color);
+}
+
+.gui-stage-readout {
+    position: absolute;
+    left: calc(var(--u) * 5);
+    bottom: calc(var(--u) * 4);
+    display: flex;
+    gap: calc(var(--u) * 4);
+    font: 500 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
+}
+
+.gui-stage-status {
+    position: absolute;
+    left: 50%;
+    bottom: calc(var(--u) * 4);
+    transform: translateX(-50%);
+    font: 500 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--disabled-color);
+    animation: gui-live 1.2s steps(2, jump-none) infinite;
+    pointer-events: none;
+}
+
+.gui-stage-status[data-error] {
+    color: var(--warn-color);
+    animation: none;
+}
+
+/* === Inspector, choosers, picker ===================================== */
+
+.gui-stat-label {
+    display: flex;
+    align-items: center;
+    gap: calc(var(--u) * 2);
+}
+
+.gui-stat-label .gui-icon {
+    color: var(--disabled-color);
+}
+
+.gui-stat[data-focused] .gui-stat-label .gui-icon {
+    color: var(--on-band);
+}
+
+.gui-slot {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.gui-slot-text {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
+.gui-slot .gui-icon {
+    color: var(--disabled-color);
+}
+
+.gui-chooser {
+    position: relative;
+    display: grid;
+    grid-template-columns: calc(var(--u) * 18) minmax(0, 1fr);
+    grid-template-rows: 1fr auto;
+    align-items: center;
+    column-gap: calc(var(--u) * 2);
+    min-height: var(--h-m);
+    padding: calc(var(--u) * 1.5) calc(var(--u) * 2);
+}
+
+.gui-chooser-label {
+    grid-row: 1 / span 2;
+    font: 500 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--disabled-color);
+}
+
+.gui-stepper {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: calc(var(--u) * 2);
+}
+
+.gui-step {
+    width: calc(var(--u) * 6);
+    height: calc(var(--u) * 6);
+    display: grid;
+    place-items: center;
+    font: 400 16px / 1 var(--font-mono);
+    color: var(--text-secondary);
+    visibility: hidden;
+}
+
+.gui-chooser[data-focused] .gui-step,
+.gui-chooser:hover .gui-step {
+    visibility: visible;
+}
+
+.gui-stepper-value {
+    flex: 1;
+    text-align: center;
+    font: 500 var(--t-body) / 1 var(--font-mono);
+    color: var(--text-color);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    animation: gui-fade 120ms ease-out;
+}
+
+.gui-chooser-pips {
+    grid-column: 2;
+    display: flex;
+    justify-content: center;
+    gap: 3px;
+    padding-top: calc(var(--u) * 1);
+}
+
+.gui-chooser-pips i {
+    width: 4px;
+    height: 4px;
+    background: var(--line-strong);
+}
+
+.gui-chooser-pips i[data-on] {
+    background: var(--text-secondary);
+}
+
+.gui-swatches {
+    grid-row: 1 / span 2;
+    display: flex;
+    gap: calc(var(--u) * 1.5);
+    flex-wrap: wrap;
+}
+
+.gui-swatch {
+    position: relative;
+    display: flex;
+    width: calc(var(--u) * 6);
+    height: calc(var(--u) * 6);
+    padding: 3px;
+    border: 1px solid transparent;
+}
+
+.gui-swatch i {
+    flex: 1;
+}
+
+.gui-swatch[data-picked] {
+    border-color: var(--text-color);
+}
+
+.gui-chooser[data-focused] {
+    background: var(--band);
+    color: var(--on-band);
+}
+
+.gui-chooser[data-focused] .gui-chooser-label,
+.gui-chooser[data-focused] .gui-stepper-value,
+.gui-chooser[data-focused] .gui-step {
+    color: var(--on-band);
+}
+
+.gui-chooser[data-focused] .gui-chooser-pips i {
+    background: color-mix(in srgb, var(--on-band) 25%, transparent);
+}
+
+.gui-chooser[data-focused] .gui-chooser-pips i[data-on] {
+    background: var(--on-band);
+}
+
+.gui-chooser[data-focused] .gui-swatch[data-picked] {
+    border-color: var(--on-band);
+}
+
+.gui-chooser[data-focused] {
+    animation: gui-band-in 110ms var(--snap);
+}
+
+.gui-action-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: calc(var(--u) * 2);
+    width: 100%;
+    min-height: var(--h-m);
+    margin-top: calc(var(--u) * 4);
+    padding: 0 calc(var(--u) * 2);
+    border: 1px solid var(--line);
+    font: 500 var(--t-label) / 1 var(--font-mono);
+    letter-spacing: var(--track);
+    text-transform: uppercase;
+    color: var(--text-color);
+}
+
+.gui-action-row[data-tone="danger"] {
+    color: var(--warn-color);
+    border-color: color-mix(in srgb, var(--warn-color) 40%, transparent);
+}
+
+.gui-action-row[data-focused] {
+    background: var(--band);
+    color: var(--on-band);
+    border-color: var(--band);
+    animation: gui-band-in 110ms var(--snap);
+}
+
+.gui-action-row[data-focused][data-tone="danger"] {
+    color: var(--nerf-on-band);
+}
+
+/* The cursor draws over menus too. */
+.gui-cursor {
+    z-index: 45;
+}
+
+/* Phone landscape: the same composition, tighter. Rows step down a height. */
+@media (orientation: landscape) and (max-height: 500px) {
+    .gui {
+        --h-m: 34px;
+    }
+    .gui-stat {
+        padding-top: calc(var(--u) * 1);
+        padding-bottom: calc(var(--u) * 1.5);
+    }
+    .gui-stat-bar {
+        margin-top: calc(var(--u) * 1);
+    }
+}
+
+/* A thumbnail is an inset picture: its own dark plate whether or not the row is lit. */
+.gui-thumb {
+    background: var(--background-color);
+    color: var(--text-secondary);
+}
+.gui-row[data-focused] .gui-thumb,
+.gui-slot[data-focused] .gui-thumb {
+    color: var(--text-secondary);
+}
+.gui-row[data-focused] .gui-thumb img,
+.gui-slot[data-focused] .gui-thumb img {
+    mix-blend-mode: normal;
+}
+
+.gui-menu-item[data-focused] .gui-glyph[data-shape="key"] {
+    color: var(--on-band);
+    border-color: color-mix(in srgb, var(--on-band) 40%, transparent);
+}
+
+/* With the mouse in use, the selected row opens a second line for its commands,
+   so the name keeps its room and the chips sit right under the pointer. */
+.gui-row:has(> .gui-inline) {
+    flex-wrap: wrap;
+    row-gap: calc(var(--u) * 1.5);
+    padding-top: calc(var(--u) * 2);
+    padding-bottom: calc(var(--u) * 2);
+}
+
+.gui-row > .gui-inline {
+    flex-basis: 100%;
+    justify-content: flex-end;
+}
+
+.gui-slot:has(> .gui-inline) {
+    grid-template-columns: auto minmax(0, 1fr);
+    row-gap: calc(var(--u) * 1.5);
+    padding-top: calc(var(--u) * 2);
+    padding-bottom: calc(var(--u) * 2);
+}
+
+.gui-slot > .gui-inline {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+}
+
+.gui-action-row:has(> .gui-inline) .gui-inline {
+    margin-left: auto;
+}
+
+.gui-menu-item span {
+    white-space: nowrap;
+}
+
+/* The cursor's row is scrolled out of its list's view: no frame over the panels around it. */
+.gui-cursor[data-hidden] {
+    visibility: hidden;
+}
+
+/* A tap is a select, never a double-tap zoom. */
+.gui [data-pointer] {
+    touch-action: manipulation;
+}
+
+/* === Slider: a continuous value as segments ========================== */
+
+.gui-chooser[data-kind="slider"] {
+    grid-template-columns: calc(var(--u) * 26) minmax(0, 1fr) calc(var(--u) * 7);
+    grid-template-rows: auto;
+}
+
+.gui-chooser[data-kind="slider"] .gui-chooser-label {
+    grid-row: auto;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.gui-slider {
+    display: flex;
+    gap: 2px;
+    height: calc(var(--u) * 4);
+    align-items: stretch;
+    cursor: pointer;
+    touch-action: none;
+}
+
+.gui-slider i {
+    flex: 1;
+    background: color-mix(in srgb, var(--text-color) 12%, transparent);
+}
+
+.gui-slider i[data-zero] {
+    box-shadow: inset 1px 0 0 var(--text-secondary);
+}
+
+.gui-slider i[data-on] {
+    background: var(--text-secondary);
+}
+
+.gui-slider-value {
+    justify-self: end;
+    font: 400 var(--t-label) / 1 var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-secondary);
+}
+
+.gui-chooser[data-focused] .gui-slider i {
+    background: color-mix(in srgb, var(--on-band) 18%, transparent);
+}
+
+.gui-chooser[data-focused] .gui-slider i[data-on] {
+    background: var(--on-band);
+}
+
+.gui-chooser[data-focused] .gui-slider-value {
+    color: var(--on-band);
+}
+
+/* === Grid picker ==================================================== */
+
+.gui-grid-picker {
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--u) * 2);
+    min-height: 0;
+    animation: gui-swap 160ms var(--snap);
+}
+
+.gui-grid {
+    display: grid;
+    gap: 2px;
+}
+
+.gui-tile {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: calc(var(--u) * 2);
+    min-height: calc(var(--h-m) * 1.6);
+    padding: calc(var(--u) * 2);
+    border: 1px solid var(--line);
+    font: 400 var(--t-label) / 1.2 var(--font-mono);
+    text-align: center;
+    color: var(--text-secondary);
+}
+
+.gui-tile img {
+    width: 100%;
+    height: calc(var(--u) * 10);
+    object-fit: contain;
+}
+
+.gui-tile[data-current-value] {
+    border-color: var(--accent-color);
+    color: var(--text-color);
+}
+
+.gui-tile[data-focused] {
+    background: var(--band);
+    color: var(--on-band);
+    border-color: var(--band);
+    animation: gui-band-in 110ms var(--snap);
+}
+
+.gui-tile-chip {
+    display: flex;
+    width: calc(var(--u) * 8);
+    height: calc(var(--u) * 4);
+}
+
+.gui-tile-chip i {
+    flex: 1;
+}
+
+/* === Text field (in a prompt) ======================================== */
+
+.gui-field {
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--u) * 1.5);
+    margin-top: calc(var(--u) * 3);
+}
+
+.gui-field-label {
+    font: 500 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: var(--track);
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+
+.gui .gui-field-input {
+    height: var(--h-m);
+    padding: 0 calc(var(--u) * 3);
+    border: 1px solid var(--line-strong);
+    border-radius: 0;
+    background: var(--background-color);
+    color: var(--text-color);
+    font: 400 var(--t-body) / 1 var(--font-mono);
+    letter-spacing: 0.06em;
+    outline: none;
+    user-select: text;
+    -webkit-user-select: text;
+}
+
+.gui .gui-field-input:focus {
+    border-color: var(--accent-color);
+}

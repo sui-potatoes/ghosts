@@ -1,77 +1,25 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
-/** Fictional requisition stock for the sample screen; nothing here is read from the chain. */
+/**
+ * The sample's items: only what the game has. Names, tiers, stats and rank
+ * requirements are `ghosts::items` (move/packages/ghosts/sources/recruit/
+ * items.move): three rifles, three armors, the frag grenade, and the four
+ * weapon upgrades in three tiers. Models are the squad catalog's, the way
+ * Headquarters maps chain items (`features/headquarters/mapping.ts`). The
+ * game has no sidearm on chain yet, no weight and no purchase currency, so
+ * the sample shows none. What the sample owns and who holds which rank are
+ * fixtures; nothing here is read from or written to the chain.
+ */
 
-export type StatKey =
-    "damage" | "aim" | "crit" | "range" | "ammo" | "weight" | "armor" | "dodge" | "health";
+import { ATTACHMENTS } from "@ghosts/squad/catalog";
+import { formatStat, ITEM_STATS, VISIBLE, type StatKey, type Stats } from "@ghosts/squad/stats";
+import type { AttachmentSlot, Equipment, Recruit, Slot } from "@ghosts/squad/types";
 
-export type Stat = {
-    key: StatKey;
-    value: number;
-    text?: string;
-};
+import { RANKS } from "../../chain/match-rules";
 
-export type StatDef = {
-    label: string;
-    max: number;
-    unit?: string;
-    lowerIsBetter?: boolean;
-    hint: string;
-};
-
-export const STATS: Record<StatKey, StatDef> = {
-    damage: {
-        label: "Damage",
-        max: 10,
-        hint: "Damage per hit; the upper figure on a critical roll is added on top",
-    },
-    aim: {
-        label: "Aim",
-        max: 30,
-        unit: "%",
-        hint: "Added to the operative's base aim on every shot",
-    },
-    crit: { label: "Critical", max: 40, unit: "%", hint: "Chance a hit lands as a critical" },
-    range: {
-        label: "Range",
-        max: 12,
-        unit: "tiles",
-        hint: "Optimal engagement distance; aim falls off past it",
-    },
-    ammo: { label: "Magazine", max: 8, unit: "rds", hint: "Shots before a reload costs an action" },
-    weight: {
-        label: "Weight",
-        max: 8,
-        unit: "kg",
-        lowerIsBetter: true,
-        hint: "Counts against the operative's carry limit",
-    },
-    armor: { label: "Armor", max: 4, hint: "Damage absorbed from every hit" },
-    dodge: { label: "Dodge", max: 30, unit: "%", hint: "Chance a hit is turned into a graze" },
-    health: {
-        label: "Health",
-        max: 4,
-        unit: "+hp",
-        hint: "Added to the operative's maximum health",
-    },
-};
-
-export type Item = {
-    id: string;
-    name: string;
-    kind: string;
-    serial: string;
-    description: string;
-    stats: Stat[];
-    /** Credit cost to requisition; owned items have none. */
-    cost?: number;
-    owned?: boolean;
-    /** Locked behind something other than credit. */
-    clearance?: string;
-    /** Fitting slots; omitted for gear that takes none. */
-    slots?: string[];
-};
+export type Rank = (typeof RANKS)[number];
+export { RANKS };
 
 export type Section = "weapons" | "armor" | "utility" | "mods";
 
@@ -82,242 +30,194 @@ export const SECTIONS: { id: Section; label: string }[] = [
     { id: "mods", label: "Mods" },
 ];
 
-const rifleSlots = ["Optic", "Muzzle", "Magazine"];
+/** One line of an item's specification. */
+export type Stat = { key: StatKey; label: string; value: number; text: string; max: number };
+
+export type Item = {
+    /** The squad catalog id (rifles, armor, utility) or the attachment id (mods). */
+    id: string;
+    name: string;
+    kind: string;
+    section: Section;
+    tier: 1 | 2 | 3;
+    /** `for_rank` in `ghosts::items`; Rookie when the item has none. */
+    rank: Rank;
+    stats: Stat[];
+    /** The plain effect, for the bar's hint. */
+    effect: string;
+    /** Rifles take the four upgrade kinds. */
+    slots?: AttachmentSlot[];
+    /** What the gear stage shows; for a mod, the Standard Rifle wearing it. */
+    model?: Equipment["model"];
+    /** For a mod: its slot, fitted on the stage's rifle. */
+    mod?: AttachmentSlot;
+    /** For armor: the catalog item the character stage dresses the wearer in. */
+    wear?: string;
+};
+
+const RIFLE_SLOTS: AttachmentSlot[] = ["scope", "laser", "stock", "clip"];
+
+function statRows(stats: Stats, keys: StatKey[]): Stat[] {
+    return VISIBLE.filter((row) => keys.includes(row.key)).map((row) => ({
+        key: row.key,
+        label: row.label,
+        value: stats[row.key],
+        text: formatStat(row, stats),
+        max: row.max,
+    }));
+}
+
+const WEAPON_KEYS: StatKey[] = ["damage", "critChance", "range", "ammo"];
+const ARMOR_KEYS: StatKey[] = ["mobility", "health", "armor", "dodge"];
+
+function rifle(id: string, name: string, tier: 1 | 2 | 3, rank: Rank, kind: string): Item {
+    const stats = statRows(ITEM_STATS[id], WEAPON_KEYS);
+    return {
+        id,
+        name,
+        kind,
+        section: "weapons",
+        tier,
+        rank,
+        stats,
+        effect: stats.map((s) => `${s.text} ${s.label.toLowerCase()}`).join(" · "),
+        slots: RIFLE_SLOTS,
+        model: id === "mx4" ? "rifle" : id === "srs9" ? "sniper" : "plasma",
+    };
+}
+
+function armor(id: string, name: string, tier: 1 | 2 | 3, rank: Rank, effect: string): Item {
+    return {
+        id,
+        name,
+        kind: `Tier ${"I".repeat(tier)} armor`,
+        section: "armor",
+        tier,
+        rank,
+        stats: statRows(ITEM_STATS[id], ARMOR_KEYS),
+        effect,
+        wear: id,
+    };
+}
+
+const TIER_NAMES = ["", "I", "II", "III"];
 
 export const STOCK: Record<Section, Item[]> = {
     weapons: [
-        {
-            id: "mx4",
-            name: "Standard Rifle",
-            kind: "Assault rifle",
-            serial: "MX-4",
-            description:
-                "Compact, dependable. The weapon you reach for when the contract gets complicated.",
-            owned: true,
-            slots: rifleSlots,
-            stats: [
-                { key: "damage", value: 6, text: "2–6" },
-                { key: "aim", value: 10 },
-                { key: "crit", value: 10 },
-                { key: "range", value: 7 },
-                { key: "ammo", value: 3 },
-                { key: "weight", value: 3.2 },
-            ],
-        },
-        {
-            id: "srs9",
-            name: "Sharpshooter Rifle",
-            kind: "Marksman rifle",
-            serial: "SRS-9",
-            description: "A long sightline and a steady hand. Built for deliberate engagements.",
-            owned: true,
-            slots: rifleSlots,
-            stats: [
-                { key: "damage", value: 6, text: "4–6" },
-                { key: "aim", value: 20 },
-                { key: "crit", value: 20 },
-                { key: "range", value: 11 },
-                { key: "ammo", value: 3 },
-                { key: "weight", value: 4.7 },
-            ],
-        },
-        {
-            id: "plasma",
-            name: "Plasma Rifle",
-            kind: "Plasma rifle",
-            serial: "HX-P2",
-            description: "High damage and critical potential for precise engagements.",
-            cost: 1200,
-            slots: rifleSlots,
-            stats: [
-                { key: "damage", value: 7, text: "5–7" },
-                { key: "aim", value: 15 },
-                { key: "crit", value: 30 },
-                { key: "range", value: 8 },
-                { key: "ammo", value: 3 },
-                { key: "weight", value: 3.2 },
-            ],
-        },
-        {
-            id: "vk2",
-            name: "VK-2 Carbine",
-            kind: "Carbine",
-            serial: "VK-2",
-            description:
-                "Short barrel, short temper. Trades reach for a lighter frame and a deeper magazine.",
-            cost: 480,
-            slots: ["Optic", "Magazine"],
-            stats: [
-                { key: "damage", value: 5, text: "2–5" },
-                { key: "aim", value: 5 },
-                { key: "crit", value: 10 },
-                { key: "range", value: 5 },
-                { key: "ammo", value: 5 },
-                { key: "weight", value: 2.4 },
-            ],
-        },
-        {
-            id: "hs12",
-            name: "HS-12 Breacher",
-            kind: "Shotgun",
-            serial: "HS-12",
-            description: "Doors, corners, the last two metres of any argument.",
-            cost: 650,
-            slots: ["Muzzle", "Magazine"],
-            stats: [
-                { key: "damage", value: 8, text: "4–8" },
-                { key: "aim", value: 0 },
-                { key: "crit", value: 15 },
-                { key: "range", value: 3 },
-                { key: "ammo", value: 4 },
-                { key: "weight", value: 3.9 },
-            ],
-        },
-        {
-            id: "k12",
-            name: "K–12 Sidearm",
-            kind: "Service pistol",
-            serial: "K-12",
-            description: "A lightweight fallback for close encounters and depleted magazines.",
-            owned: true,
-            stats: [
-                { key: "damage", value: 4, text: "2–4" },
-                { key: "aim", value: 5 },
-                { key: "crit", value: 5 },
-                { key: "range", value: 5 },
-                { key: "ammo", value: 6 },
-                { key: "weight", value: 0.9 },
-            ],
-        },
-        {
-            id: "arc",
-            name: "Arc Lance",
-            kind: "Gauss rifle",
-            serial: "AL-0",
-            description:
-                "Helios prototype. A rail and a capacitor bank that takes a full turn to recover.",
-            cost: 2600,
-            clearance: "Requires Helios clearance III. Complete two Helios contracts.",
-            slots: rifleSlots,
-            stats: [
-                { key: "damage", value: 9, text: "6–9" },
-                { key: "aim", value: 25 },
-                { key: "crit", value: 25 },
-                { key: "range", value: 12 },
-                { key: "ammo", value: 1 },
-                { key: "weight", value: 6.8 },
-            ],
-        },
-        {
-            id: "whisper",
-            name: "Whisper SMG",
-            kind: "Suppressed SMG",
-            serial: "WS-7",
-            description: "Integral suppressor. Shots from concealment do not break it.",
-            cost: 5400,
-            slots: ["Optic"],
-            stats: [
-                { key: "damage", value: 4, text: "2–4" },
-                { key: "aim", value: 10 },
-                { key: "crit", value: 15 },
-                { key: "range", value: 4 },
-                { key: "ammo", value: 6 },
-                { key: "weight", value: 2.1 },
-            ],
-        },
+        rifle("mx4", "Standard Rifle", 1, "Rookie", "Rifle · tier I"),
+        rifle("srs9", "Sharpshooter Rifle", 2, "Corporal", "Rifle · tier II"),
+        rifle("plasma", "Plasma Rifle", 3, "Lieutenant", "Rifle · tier III"),
     ],
     armor: [
-        {
-            id: "spectre",
-            name: "Spectre Carrier",
-            kind: "Light armor",
-            serial: "SP-1",
-            description:
-                "The original fitted carrier. Flexible coverage without sacrificing movement.",
-            owned: true,
-            stats: [
-                { key: "armor", value: 1 },
-                { key: "dodge", value: 10 },
-                { key: "health", value: 0 },
-                { key: "weight", value: 3.4 },
-            ],
-        },
-        {
-            id: "veil",
-            name: "NYX / Veil",
-            kind: "Light armor",
-            serial: "NX-V",
-            description:
-                "Close-fitting ceramic plates over woven graphite, for the quiet approach.",
-            cost: 900,
-            stats: [
-                { key: "armor", value: 1 },
-                { key: "dodge", value: 15 },
-                { key: "health", value: 0 },
-                { key: "weight", value: 2.6 },
-            ],
-        },
-        {
-            id: "shade",
-            name: "NYX / Shade",
-            kind: "Medium armor",
-            serial: "NX-S",
-            description:
-                "Overlapping shells and a reinforced cuirass. Built to move through contested ground.",
-            cost: 1500,
-            stats: [
-                { key: "armor", value: 2 },
-                { key: "dodge", value: 5 },
-                { key: "health", value: 1 },
-                { key: "weight", value: 4.8 },
-            ],
-        },
-        {
-            id: "wraith",
-            name: "NYX / Wraith",
-            kind: "Heavy armor",
-            serial: "NX-W",
-            description: "Continuous breach cuirass and twin dorsal power housings.",
-            cost: 3200,
-            clearance: "Requires a heavy armor rack. Expand the armory first.",
-            stats: [
-                { key: "armor", value: 3 },
-                { key: "dodge", value: 0 },
-                { key: "health", value: 1 },
-                { key: "weight", value: 7.2 },
-            ],
-        },
+        armor("spectre", "Light Armor", 1, "Rookie", "+1 armor · +10% dodge"),
+        armor("nyx-mid", "Medium Armor", 2, "Squaddie", "+2 armor"),
+        armor(
+            "nyx-heavy",
+            "Heavy Armor",
+            3,
+            "Sergeant",
+            "+3 armor · +1 health · −1 mobility · −10% dodge",
+        ),
     ],
     utility: [
         {
             id: "frag",
-            name: "M7 Fragmentation",
-            kind: "Throwable",
-            serial: "M7",
-            description: "One grenade, one opportunity to move a stubborn target.",
-            owned: true,
-            stats: [
-                { key: "damage", value: 5, text: "5" },
-                { key: "range", value: 9 },
-                { key: "weight", value: 0.5 },
-            ],
-        },
-        {
-            id: "trauma",
-            name: "Field Trauma Kit",
-            kind: "Medical",
-            serial: "FT-3",
-            description: "Compact dressings and emergency supplies. Get your people home.",
-            cost: 300,
-            stats: [
-                { key: "health", value: 4, text: "+4" },
-                { key: "range", value: 1 },
-                { key: "weight", value: 0.8 },
-            ],
+            name: "Frag Grenade",
+            kind: "Utility",
+            section: "utility",
+            tier: 1,
+            rank: "Rookie",
+            stats: [],
+            effect: "One grenade throw per match",
+            model: "grenade",
         },
     ],
-    mods: [],
+    mods: ATTACHMENTS.map((a) => ({
+        id: a.id,
+        name: a.name,
+        kind: `Weapon upgrade · tier ${TIER_NAMES[a.tier]}`,
+        section: "mods" as const,
+        tier: a.tier as 1 | 2 | 3,
+        rank: "Rookie" as const,
+        stats: [],
+        effect: a.stat,
+        model: "rifle" as const,
+        mod: a.slot,
+    })),
 };
+
+/** Every item by id. */
+export const ITEMS: Record<string, Item> = Object.fromEntries(
+    Object.values(STOCK)
+        .flat()
+        .map((item) => [item.id, item]),
+);
+
+/** The game's name for a loadout item ("Light Armor", not the model's name). */
+export const gearName = (id: string | null | undefined) => (id ? ITEMS[id]?.name : undefined);
+
+/** The loadout slots the game has: no sidearm on chain yet. */
+export const LOADOUT_SLOTS: Exclude<Slot, "sidearm">[] = ["primary", "armor", "utility"];
+
+export const LOADOUT_SLOT_NAMES: Record<(typeof LOADOUT_SLOTS)[number], string> = {
+    primary: "Rifle",
+    armor: "Armor",
+    utility: "Utility",
+};
+
+/** The items a loadout slot takes. */
+export const SLOT_ITEMS: Record<(typeof LOADOUT_SLOTS)[number], Item[]> = {
+    primary: STOCK.weapons,
+    armor: STOCK.armor,
+    utility: STOCK.utility,
+};
+
+export const rankIndex = (rank: string) => RANKS.indexOf(rank as Rank);
+
+/** Whether `rank` may be issued `item` (`rankAllows` in chain/ghosts.ts). */
+export const rankAllows = (rank: string, item: Item) => rankIndex(rank) >= rankIndex(item.rank);
+
+/** The pictogram step for a rank: one chevron per two ranks, three at most. */
+export const rankIcon = (rank: string): "rank1" | "rank2" | "rank3" => {
+    const i = rankIndex(rank);
+    return i >= 4 ? "rank3" : i >= 2 ? "rank2" : "rank1";
+};
+
+/**
+ * Fixture ranks and experience for the showcase squad, by position: the game
+ * keeps both on each recruit; the local roster /demo plays with has neither.
+ */
+const FIXTURE_RANKS: { rank: Rank; xp: number }[] = [
+    { rank: "Sergeant", xp: 23 },
+    { rank: "Lieutenant", xp: 31 },
+    { rank: "Corporal", xp: 10 },
+    { rank: "Squaddie", xp: 4 },
+];
+
+export function fixtureRank(index: number): { rank: Rank; xp: number } {
+    return FIXTURE_RANKS[index % FIXTURE_RANKS.length];
+}
+
+/**
+ * The showcase recruit on the game's real items: no sidearm, armor and
+ * utility mapped to what the chain mints (Light Armor for the old carriers,
+ * the frag grenade for any other utility).
+ */
+export function realLoadout(recruit: Recruit): Recruit {
+    const { primary, armor, utility } = recruit.equipment;
+    return {
+        ...recruit,
+        equipment: {
+            primary: primary && ITEMS[primary] ? primary : "mx4",
+            sidearm: null,
+            armor: armor && ITEMS[armor] ? armor : "spectre",
+            utility: utility ? "frag" : null,
+        },
+    };
+}
+
+/** What the Armory holds when the screen opens (fixture). */
+export const OWNED = ["mx4", "srs9", "spectre", "nyx-mid", "frag", "scope-1", "scope-2", "clip-1"];
 
 /** What VEX carries when the screen opens, per section. */
 export const ISSUED: Record<Section, string | null> = {
@@ -327,21 +227,11 @@ export const ISSUED: Record<Section, string | null> = {
     mods: null,
 };
 
-/** Fitted mods on owned weapons, by weapon then slot. */
-export const FITTED: Record<string, Record<string, string>> = {
-    mx4: { Optic: "Basic Scope", Magazine: "Expanded Clip" },
-    srs9: { Optic: "Advanced Scope" },
+/** Fitted upgrades on owned rifles, by rifle then slot. */
+export const FITTED: Record<string, Partial<Record<AttachmentSlot, string>>> = {
+    mx4: { scope: "scope-1", clip: "clip-1" },
+    srs9: { scope: "scope-2" },
 };
 
-/** The mod a fitting slot takes when Confirm fits one. */
-export const SPARE_MOD: Record<string, string> = {
-    Optic: "Laser Sight",
-    Muzzle: "Compensator",
-    Magazine: "Expanded Clip",
-};
-
-export const START_BALANCE = 4850;
-
-export function credit(n: number): string {
-    return `₡ ${n.toLocaleString("en-US")}`;
-}
+/** `ghosts::weapon`: one upgrade of each kind, three at most. */
+export const MAX_FITTINGS = 3;

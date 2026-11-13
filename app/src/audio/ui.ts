@@ -47,8 +47,8 @@ function ensure(): boolean {
     return clip !== null;
 }
 
-function play(rate: number) {
-    const level = channelLevel("ui");
+function play(rate: number, soft = 1) {
+    const level = channelLevel("ui") * soft;
     if (level <= 0 || !audioFocused() || !ensure() || !ctx || !clip) return;
     const source = new AudioBufferSourceNode(ctx, { buffer: clip, playbackRate: rate });
     const filter = new BiquadFilterNode(ctx, { type: "bandpass", frequency: 300 });
@@ -80,6 +80,16 @@ export function uiBack() {
 export function uiDeny() {
     play(0.45);
     setTimeout(() => play(0.4), 70);
+}
+
+/**
+ * A result settling into place (the debrief's podiums, one at a time): the
+ * knock at half weight. Home is the confirm's pitch; a promotion lands a
+ * touch brighter; a fallen operative is the lowest and quietest of the set.
+ */
+export function uiResolve(kind: "home" | "promoted" | "fallen") {
+    if (kind === "fallen") play(0.36, 0.4);
+    else play(kind === "promoted" ? 0.8 : 0.6, 0.5);
 }
 
 /** The house menu controls; `.set-row` is deliberately absent (see above). */

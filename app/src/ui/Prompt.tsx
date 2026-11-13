@@ -24,6 +24,8 @@ type PromptProps = {
     tone?: "default" | "danger";
     confirm: { label: string; run: () => void };
     cancel: { label: string; run: () => void };
+    /** A third answer on Reset (X / R): Discard beside Save. Always drawn amber. */
+    alternate?: { label: string; run: () => void };
     glyphs: GlyphSet;
 };
 
@@ -38,8 +40,8 @@ type PromptProps = {
 export function Prompt(props: PromptProps) {
     const back: Command = { action: "back", label: props.cancel.label, run: props.cancel.run };
     return (
-        <FocusScope id={props.id} back={back}>
-            <div className="uis-scrim" aria-hidden />
+        <FocusScope id={props.id} back={back} modal>
+            <div className="gui-scrim" aria-hidden />
             <PromptBlock {...props} />
         </FocusScope>
     );
@@ -55,10 +57,21 @@ function PromptBlock({
     tone = "default",
     confirm,
     cancel,
+    alternate,
     glyphs,
 }: PromptProps) {
     const store = useFocusStore();
     const commands: Command[] = [
+        ...(alternate
+            ? [
+                  {
+                      action: "reset",
+                      label: alternate.label,
+                      tone: "danger",
+                      run: alternate.run,
+                  } satisfies Command,
+              ]
+            : []),
         {
             action: "confirm",
             label: confirm.label,
@@ -75,22 +88,22 @@ function PromptBlock({
         commands,
     });
     return (
-        <div className="uis-prompt-wrap">
+        <div className="gui-prompt-wrap">
             <div
                 role="alertdialog"
                 aria-modal="true"
                 aria-label={title}
-                className="uis-prompt"
+                className="gui-prompt"
                 data-tone={tone}
                 {...props}
                 // The block answers clicks through its command lines only.
                 onClick={undefined}
             >
-                <span className="uis-prompt-eyebrow">{eyebrow}</span>
-                <h2 className="uis-prompt-title">{title}</h2>
-                <p className="uis-prompt-body">{children}</p>
+                <span className="gui-prompt-eyebrow">{eyebrow}</span>
+                <h2 className="gui-prompt-title">{title}</h2>
+                <p className="gui-prompt-body">{children}</p>
                 {lines && (
-                    <dl className="uis-prompt-lines">
+                    <dl className="gui-prompt-lines">
                         {lines.map(([label, value]) => (
                             <div key={label}>
                                 <dt>{label}</dt>
@@ -99,7 +112,7 @@ function PromptBlock({
                         ))}
                     </dl>
                 )}
-                <div className="uis-prompt-commands">
+                <div className="gui-prompt-commands">
                     {commands.map((command) => (
                         <CommandHint
                             key={command.action}
