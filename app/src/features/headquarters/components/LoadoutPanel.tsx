@@ -12,7 +12,6 @@ import type { ArmorColors, Recruit as LocalRecruit } from "@ghosts/squad/types";
 import {
     equipUtilityTx,
     issueTx,
-    rankAllows,
     unequipArmorTx,
     unequipUtilityTx,
     unequipWeaponTx,
@@ -293,7 +292,7 @@ export function LoadoutPanel(props: Props) {
                         return (
                             <button
                                 key={g.objectId}
-                                disabled={busy || !rankAllows(recruit, g)}
+                                disabled={busy}
                                 onClick={() =>
                                     act(() =>
                                         issueTx(
@@ -312,9 +311,7 @@ export function LoadoutPanel(props: Props) {
                                     {slot === "primary"
                                         ? `${fitted} / ${MAX_FITTINGS} fitted · `
                                         : ""}
-                                    {rankAllows(recruit, g)
-                                        ? `Issue to ${first}`
-                                        : `Needs ${g.requiredRank.$kind}`}
+                                    {`Issue to ${first}`}
                                 </small>
                             </button>
                         );

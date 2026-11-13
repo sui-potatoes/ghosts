@@ -122,10 +122,9 @@ test("an unchanged rating is not shown", () => {
     assert.equal(debriefOf(result({ rating: null })).rating, null);
 });
 
-test("hiring: free up to four, then one at a time up to eight, never mid-game", () => {
+test("hiring: free up to four, no more, never mid-game", () => {
     assert.deepEqual(replacementFor(1), { call: "hire_recruits", count: 3 });
-    assert.deepEqual(replacementFor(4), { call: "hire_recruit", count: 1 });
-    assert.ok("deny" in replacementFor(8));
+    assert.ok("deny" in replacementFor(4));
     assert.ok("deny" in replacementFor(null));
 });
 

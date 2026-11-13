@@ -355,23 +355,23 @@ Recruit base `Stats::default()` = mobility 7, aim 65, health 10, armor 0, dodge 
 
 Weapons (`S/recruit/items.move:74-90`; all single-target, dodgeable, `area_size` 0, `env_damage` 0, ammo 3; byte constants decode to the values below, confirmed by `T/recruit/items_tests.move:18-47`):
 
-| Tier | Name | Rank needed | damage | spread | plus_one | crit_chance | range | ammo |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | Standard Rifle | Rookie | 4 | 2 | 10 | 10 | 4 | 3 |
-| 2 | Sharpshooter Rifle | Corporal | 5 | 1 | 20 | 20 | 5 | 3 |
-| 3 | Plasma Rifle | Lieutenant | 6 | 1 | 30 | 30 | 5 | 3 |
+| Tier | Name | damage | spread | plus_one | crit_chance | range | ammo |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | Standard Rifle | 4 | 2 | 10 | 10 | 4 | 3 |
+| 2 | Sharpshooter Rifle | 5 | 1 | 20 | 20 | 5 | 3 |
+| 3 | Plasma Rifle | 6 | 1 | 30 | 30 | 5 | 3 |
 
 The code comments say "+10% CRIT" and so on and do not mention `plus_one`, which is set to the same number as `crit_chance` in each tier. `default_weapon` (`stats.move:69`) is damage 4, spread 2, plus_one 0, crit 0, range 4, ammo 3 (used only for unarmed units, and for the weapon created by `weapon::default`, `S/recruit/weapon.move:49-51`).
 
-Armor (`items.move:28-45`; the modifier is added to the recruit; `required_rank` is checked when equipping, `S/account.move:338-352`):
+Armor (`items.move:28-45`; the modifier is added to the recruit):
 
-| Tier | Name | Rank needed | mobility | health | armor | dodge | Unit with base recruit |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | Light Armor | Rookie | 0 | 0 | +1 | +10 | mob 7, HP 10, armor 1, dodge 10 |
-| 2 | Medium Armor | Squaddie | 0 | 0 | +2 | 0 | mob 7, HP 10, armor 2, dodge 0 |
-| 3 | Heavy Armor | Sergeant | -1 | +1 | +3 | -10 | mob 6, HP 11, armor 3, dodge 0 (0 - 10 floors at 0) |
+| Tier | Name | mobility | health | armor | dodge | Unit with base recruit |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | Light Armor | 0 | 0 | +1 | +10 | mob 7, HP 10, armor 1, dodge 10 |
+| 2 | Medium Armor | 0 | 0 | +2 | 0 | mob 7, HP 10, armor 2, dodge 0 |
+| 3 | Heavy Armor | -1 | +1 | +3 | -10 | mob 6, HP 11, armor 3, dodge 0 (0 - 10 floors at 0) |
 
-Weapon upgrades (`items.move:94-152`; one of each kind per weapon, three at most; no rank requirement in the code):
+Weapon upgrades (`items.move:94-152`; one of each kind per weapon, three at most):
 
 | Kind (id) | Tier 1 | Tier 2 | Tier 3 | Stat |
 | --- | --- | --- | --- | --- |
@@ -380,9 +380,9 @@ Weapon upgrades (`items.move:94-152`; one of each kind per weapon, three at most
 | Stock (2): Basic / Advanced / Sniper | +1 | +2 | +3 | `range` |
 | Expanded Clip (3): Basic / Advanced / Superior | +1 | +2 | +3 | `ammo` |
 
-Utility (`items.move:63-69`): Frag Grenade (kind 0), stats modifier all zero (`stats::new(0,0,0,0,0)`), one action `Grenade` with `uses: some(1)`; no rank requirement. Its numbers (range 5, radius 2, damage 4) are constants of `perform_grenade`, not stats (section 6).
+Utility (`items.move:63-69`): Frag Grenade (kind 0), stats modifier all zero (`stats::new(0,0,0,0,0)`), one action `Grenade` with `uses: some(1)`. Its numbers (range 5, radius 2, damage 4) are constants of `perform_grenade`, not stats (section 6).
 
-Hiring (`S/account.move:152-214`): recruits are made by `recruit::new` (`S/recruit/recruit.move:215-227`): Rookie, `xp` 0, default stats, no weapon, no armor, no utility. `FREE_RECRUITS` 4 (free top-up to 4), `MAX_RECRUITS` 8 (`account.move:56-58`).
+Hiring (`S/account.move:152-214`): recruits are made by `recruit::new` (`S/recruit/recruit.move:215-227`): Rookie, `xp` 0, default stats, no weapon, no armor, no utility. `FREE_RECRUITS` 4: `hire_recruits` tops the squad up to 4 for free, and 4 is the most an `Account` holds (`account.move:56`).
 
 ## 9. Turn structure and match flow
 

@@ -14,13 +14,7 @@ import {
 import type { AttachmentSlot } from "@ghosts/squad/types";
 import type { WeaponSkin } from "@ghosts/squad/weapon-skins";
 
-import {
-    rankAllows,
-    rankFor,
-    type ChainRecruit,
-    type ChainUtility,
-    type Requisition,
-} from "../../../chain";
+import { type ChainRecruit, type ChainUtility, type Requisition } from "../../../chain";
 import {
     attachmentFor,
     modifierSummary,
@@ -158,7 +152,6 @@ function ArmorStats({ name, modifier }: { name: string; modifier: Stats }) {
 /** Who carries the item, and handing it to someone else. */
 function Issue({
     kind,
-    gear,
     carrier,
     recruits,
     busy,
@@ -183,26 +176,22 @@ function Issue({
                 {recruits.map((r) => {
                     const current = r.objectId === carrier?.objectId;
                     const holding = kind === "weapon" ? r.weapon : r.armor;
-                    // a looted weapon stays with whoever carries it, whatever their rank
-                    const allowed = current || rankAllows(r, gear);
                     return (
                         <button
                             key={r.objectId}
                             aria-pressed={current}
-                            disabled={busy || current || !allowed}
+                            disabled={busy || current}
                             onClick={() => onIssue(r)}
                         >
                             <strong>{r.metadata.name}</strong>
                             <small>
                                 {current
                                     ? "Carrying"
-                                    : !allowed
-                                      ? `Needs ${gear.requiredRank?.$kind}`
-                                      : holding
-                                        ? `Swap for ${holding.name}`
-                                        : kind === "weapon"
-                                          ? "Standard issue"
-                                          : "No armor"}
+                                    : holding
+                                      ? `Swap for ${holding.name}`
+                                      : kind === "weapon"
+                                        ? "Standard issue"
+                                        : "No armor"}
                             </small>
                         </button>
                     );
@@ -504,9 +493,6 @@ export interface CatalogEntry {
     requisition: Requisition | { utility: UtilityCatalogEntry & { kind: UtilityKind } };
 }
 
-const requiredRank = ({ requisition }: CatalogEntry) =>
-    "utility" in requisition ? requisition.utility.rank : rankFor(requisition);
-
 /** A utility: what it grants, who carries it, and handing it over. */
 export function UtilityBench(props: {
     held: Held<ChainUtility>;
@@ -617,8 +603,7 @@ export function RequisitionBench(props: {
                 </div>
             </div>
             <p className="sq-footnote">
-                Gear goes straight to the racks. Better gear can only be issued to recruits of high
-                enough rank.
+                Gear goes straight to the racks, and any recruit can be issued any of it.
             </p>
             {props.groups.map((group) => (
                 <section key={group.title}>
@@ -638,11 +623,6 @@ export function RequisitionBench(props: {
                                     <span className="hq-gear-text">
                                         <strong>{entry.label}</strong>
                                         <small>{entry.detail}</small>
-                                        <small>
-                                            {requiredRank(entry) === "Rookie"
-                                                ? "Any rank"
-                                                : `${requiredRank(entry)} and above`}
-                                        </small>
                                     </span>
                                 </button>
                                 <button

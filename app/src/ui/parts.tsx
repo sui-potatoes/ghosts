@@ -56,6 +56,8 @@ type Focus = {
     title?: string;
     hint?: string;
     commands?: Command[];
+    /** The first click or tap runs the primary too (`useFocusable`'s `instant`). */
+    instant?: boolean;
 };
 
 /** A small picture at a row's leading edge: a rendered thumbnail, or a pictogram. */

@@ -5,47 +5,6 @@
  * is `gui-`. Scoped by those prefixes and the `.gui` root.
  */
 
-.uis-portrait {
-    flex: none;
-    width: calc(var(--u) * 10);
-    height: calc(var(--u) * 12);
-    overflow: hidden;
-    background: var(--raised-color);
-}
-
-.uis-portrait img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-}
-
-.uis-roster .gui-row {
-    min-height: calc(var(--u) * 14);
-}
-
-.uis-rank {
-    display: inline-flex;
-    align-items: center;
-    gap: calc(var(--u) * 2);
-}
-
-.uis-offstage,
-:root:has(.gui) body > .squad-screen[aria-hidden] {
-    --squad-studio-background: var(--background-color);
-    --squad-studio-platform: var(--raised-color);
-    --squad-studio-line: var(--border-color);
-}
-
-.uis-offstage {
-    position: fixed;
-    left: -10000px;
-    top: 0;
-    width: 320px;
-    height: 320px;
-    pointer-events: none;
-}
-
 .uis-plate {
     position: absolute;
     inset: 0;
@@ -73,46 +32,6 @@
     fill: none;
     stroke: var(--line-strong);
     stroke-width: 0.6px;
-}
-
-.uis-inspector-body,
-.uis-picker {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    animation: gui-swap 160ms var(--snap);
-}
-
-.uis-stat-group {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-}
-
-.uis-stat-group + .uis-stat-group {
-    margin-top: calc(var(--u) * 3);
-}
-
-.uis-change b {
-    font-weight: 500;
-}
-
-.uis-change[data-trend="buff"] b {
-    color: var(--buff);
-}
-
-.uis-change[data-trend="nerf"] b {
-    color: var(--nerf);
-}
-
-@media (orientation: landscape) and (max-height: 500px) {
-    .uis-roster .gui-row {
-        min-height: calc(var(--u) * 11);
-    }
-    .uis-portrait {
-        height: calc(var(--u) * 10);
-        width: calc(var(--u) * 8);
-    }
 }
 
 /* === Deploy: the three-podium diorama ================================ */

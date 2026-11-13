@@ -48,6 +48,23 @@ export function useHeadquarters() {
     if (owner && !reading && synced !== owner) setSynced(owner);
     const loading = reading && synced !== owner;
 
+    const unreadable = account.isError || recruitsQuery.isError;
+    /** The gate as data, for screens that draw it themselves. */
+    const gateKind: "disabled" | "signed-out" | "loading" | { error: string } | null =
+        !ghostsEnabled
+            ? "disabled"
+            : !connected
+              ? "signed-out"
+              : loading
+                ? "loading"
+                : unreadable
+                  ? {
+                        error: String(
+                            (account.error ?? recruitsQuery.error)?.message ?? "decode failed",
+                        ),
+                    }
+                  : null;
+
     const gate = !ghostsEnabled ? (
         <Gate heading="AWAITING DEPLOYMENT">
             The ghosts package is not on chain yet. Publish <code>move/packages/ghosts</code> and
@@ -79,5 +96,6 @@ export function useHeadquarters() {
         /** Recruits on file by the account's own count, never by what decoded. */
         onFile: Number(account.data?.recruits ?? 0),
         gate,
+        gateKind,
     };
 }

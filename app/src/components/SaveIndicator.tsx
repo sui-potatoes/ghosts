@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { useEffect, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 
 import { useSaving } from "../chain";
 import { usePadActive } from "./PadHints";
@@ -17,6 +18,8 @@ const MIN_VISIBLE_MS = 900;
 export function SaveIndicator() {
     const saving = useSaving();
     const pad = usePadActive();
+    // Headquarters shows saving in its own header.
+    const own = useLocation().pathname === "/headquarters";
     const [shown, setShown] = useState(false);
     const since = useRef(0);
 
@@ -34,7 +37,7 @@ export function SaveIndicator() {
 
     return (
         <div
-            className={`save-indicator ${shown ? "is-on" : ""} ${pad ? "above-pad" : ""}`}
+            className={`save-indicator ${shown && !own ? "is-on" : ""} ${pad ? "above-pad" : ""}`}
             role="status"
             aria-live="polite"
         >

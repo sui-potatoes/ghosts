@@ -36,7 +36,7 @@ notes and the per-unit tables.
 
 ## `items.json`
 
-One entry per item a recruit can carry.
+One entry per item a recruit can carry. Any recruit can carry any item: nothing is gated by rank.
 
 | Field | Meaning |
 | --- | --- |
@@ -47,7 +47,6 @@ One entry per item a recruit can carry.
 | `description` | One or two sentences for the UI |
 | `tier` | Tier 1 to 3 where the item has tiers |
 | `kind`, `slot` | For upgrades, the kind id on chain and the slot it takes on a weapon (one of each per weapon). For utilities, the kind id |
-| `rank` | Lowest recruit rank that can equip it. Upgrades and the frag grenade have no gate in the code and say `Rookie` |
 | `stats` | What the item adds to the unit that carries it, by `Stats` field name. A negative number takes away. A weapon's entry holds the weapon's own stats |
 | `actions` | Actions the item gives the unit, as `kind` and `uses` (`null` is unlimited). A weapon gives `Attack` and `Reload` by being equipped; a utility lists them on the object |
 | `chain` | The account function that requisitions it, with its arguments, and the one that equips it on a recruit. Upgrades are fitted to a weapon with `weapon::add_upgrade` rather than equipped on a recruit |

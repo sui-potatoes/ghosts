@@ -74,6 +74,8 @@ export function MatchStatus() {
     useMatchmakingDriver();
 
     if (["/demo", "/editor", "/match"].some((path) => pathname.startsWith(path))) return null;
+    // Headquarters shows the search in its own header.
+    if (pathname === "/headquarters") return null;
     if (!searching && !playing) return null;
 
     return (

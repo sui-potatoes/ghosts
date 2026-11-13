@@ -187,18 +187,18 @@ Notes: (1) in `Won`, the loser is defined as having nobody on the map (`count_lo
 
 XP lives on the recruit: `Recruit.xp: u16`, with `rank` and `stats` (`S/recruit/recruit.move:62-81`); the Account stores none. It is added at `send_home` to every survivor (`add_xp`, `:185-196`); a recruit not deployed earns nothing, a dead one loses all of it (the dog tag keeps only rank and metadata, `:85-91`). Sources: `SURVIVAL_XP` 1 for coming home, `WIN_XP` 1 more for coming home from a game won by elimination; a win handed over by a leaver pays only `SURVIVAL_XP`, and nothing if `turn < MIN_TURNS_TO_EARN` (`:94-99`, `:584-594`). A stalemate pays 1 to every survivor. So 2 XP per survivor is the most a game gives.
 
-| Rank (ordinal) | Total XP to reach (`rank.move:59-70`) | Wins by elimination at 2 XP | Gear it unlocks (equip check, `account.move:338-357`) | Promotion stat (`recruit.move:42-44`, `:185-196`) |
-| --- | --- | --- | --- | --- |
-| Rookie (0) | 0 | 0 | Standard Rifle (tier 1), Light Armor (tier 1) | none |
-| Squaddie (1) | 3 | 2 | Medium Armor (tier 2) | +2 aim |
-| Corporal (2) | 8 | 4 | Sharpshooter Rifle (tier 2) | +2 aim, +1 health |
-| Sergeant (3) | 15 | 8 | Heavy Armor (tier 3) | +2 aim |
-| Lieutenant (4) | 25 | 13 | Plasma Rifle (tier 3) | +2 aim, +1 health |
-| Captain (5) | 40 | 20 | nothing | +2 aim |
-| Major (6) | 60 | 30 | nothing | +2 aim, +1 health |
-| Colonel (7) | 90 | 45 | nothing | +2 aim |
+| Rank (ordinal) | Total XP to reach (`rank.move:59-70`) | Wins by elimination at 2 XP | Promotion stat (`recruit.move:42-44`, `:185-196`) |
+| --- | --- | --- | --- |
+| Rookie (0) | 0 | 0 | none |
+| Squaddie (1) | 3 | 2 | +2 aim |
+| Corporal (2) | 8 | 4 | +2 aim, +1 health |
+| Sergeant (3) | 15 | 8 | +2 aim |
+| Lieutenant (4) | 25 | 13 | +2 aim, +1 health |
+| Captain (5) | 40 | 20 | +2 aim |
+| Major (6) | 60 | 30 | +2 aim, +1 health |
+| Colonel (7) | 90 | 45 | +2 aim |
 
-Gear gates are `required_rank` of weapons (`items.move:74-90`) and armor (`:28-45`) only; weapon upgrades (three per weapon, one of each of four kinds, `weapon.move:74-79`) and the frag grenade have no rank requirement (`items.move:63-69`, `:94-152`), and one utility slot exists (`recruit.move:39`). Colonel total: aim +14, health +3. Stat values and the item catalogue are in mechanics.md section 8.
+Rank gates no gear: any recruit may equip any weapon, armor, upgrade or utility. The rules are on the items: weapon upgrades three per weapon, one of each of four kinds (`weapon.move`), and one utility slot (`recruit.move:39`). Colonel total: aim +14, health +3. Stat values and the item catalogue are in mechanics.md section 8.
 
 ## 6. Death and replacement
 
@@ -209,12 +209,11 @@ What it costs to replace one, from the code:
 | Item | Rule | Ref | Price in the code |
 | --- | --- | --- | --- |
 | `hire_recruits` | tops the at-home count up to `FREE_RECRUITS` 4; aborts if already >= 4 (`ERecruitLimitReached`) or the account is `Playing` (`EInGame`) | `account.move:155-162` | none (no payment argument); Sui gas only |
-| `hire_recruit` | one more, up to `MAX_RECRUITS` 8 at home | `:165-171` | none; Sui gas only |
 | fresh recruit | Rookie, `xp` 0, default stats (mobility 7, aim 65, health 10, armor 0, dodge 0), no weapon, no armor, no utility, random name and looks | `recruit.move:215-227`, `account.move:174-214` | |
-| `requisition_rifle/armor/utility/upgrade` | any tier, any kind, any number; the rank is checked only when equipping | `account.move:291-320`, `:338-357` | none |
-| equip | rank gate for weapon and armor; one utility slot | `:338-374` | none |
+| `requisition_rifle/armor/utility/upgrade` | any tier, any kind, any number | `account.move:291-320`, `:338-357` | none |
+| equip | any recruit, any gear; one utility slot | `:338-374` | none |
 
-So the free squad size is 3 and the hard cap on a roster is 8 recruits at home; the deployable squad is 1 to 3 (`positions` per side, mechanics.md 1.4; `deploy_squad` requires at least one, `ghosts.move:362-363`). There is no in-game currency in the Move sources (no `Coin` or `Balance` in `S/`). Replacement is free of anything but gas: what a death costs is the recruit's rank, XP and the time to re-earn them (section 5). An unarmed recruit gets no `Attack` or `Reload` (mechanics.md 1.5), and may be deployed (no gear check in `deploy_squad`). `dismiss_recruit` (`account.move:258-266`) deletes a recruit voluntarily and returns its gear to the armory.
+So the free squad is 4 recruits, which is also the hard cap on a roster at home (`hire_recruits` is the only way to hire); the deployable squad is 1 to 3 (`positions` per side, mechanics.md 1.4; `deploy_squad` requires at least one, `ghosts.move:362-363`). There is no in-game currency in the Move sources (no `Coin` or `Balance` in `S/`). Replacement is free of anything but gas: what a death costs is the recruit's rank, XP and the time to re-earn them (section 5). An unarmed recruit gets no `Attack` or `Reload` (mechanics.md 1.5), and may be deployed (no gear check in `deploy_squad`). `dismiss_recruit` (`account.move:258-266`) deletes a recruit voluntarily and returns its gear to the armory.
 
 ## 7. What matchmaking does not look at
 
@@ -248,11 +247,11 @@ Each item is a fact from Part A and its consequence. Nothing here proposes a rul
 
 ### 9.1 The rating measures the account; strength lives in mortal recruits
 
-Facts. The rating is on the `Account` (`account.move:95`) and the update takes only the two ratings, the two deviations, the result and the time (3.3). The squad is chosen after matching, from up to 8 recruits at home, 1 to 3 deployed (section 6, 7). The recruits' rank, XP and gear are not inputs to the pairing or to the update.
+Facts. The rating is on the `Account` (`account.move:95`) and the update takes only the two ratings, the two deviations, the result and the time (3.3). The squad is chosen after matching, from up to 4 recruits at home, 1 to 3 deployed (section 6, 7). The recruits' rank, XP and gear are not inputs to the pairing or to the update.
 
 How far squad power can diverge at equal rating (expected damage per shot at the weapon's ideal range, no cover, formulas of mechanics.md 5.1-5.2; computed by a Python script, not run in Move; a Rookie's aim is 65, each promotion adds 2, promotion health as in section 5):
 
-| Attacker | vs unarmored (armor 0, dodge 0) | vs Light (armor 1, dodge 10) | vs Heavy (armor 3, dodge 0) | Own health (Heavy Armor adds 1, from Sergeant) |
+| Attacker | vs unarmored (armor 0, dodge 0) | vs Light (armor 1, dodge 10) | vs Heavy (armor 3, dodge 0) | Own health (Heavy Armor adds 1) |
 | --- | --- | --- | --- | --- |
 | Rookie, no weapon | no `Attack` action | - | - | 10 |
 | Rookie, Standard Rifle | 2.79 | 1.93 | 1.12 | 10 |
@@ -262,7 +261,7 @@ How far squad power can diverge at equal rating (expected damage per shot at the
 | Lieutenant, Plasma + Scope + Laser (aim 88, crit 45) | 6.73 | 5.27 | 4.09 | 12 |
 | Colonel, Plasma + Scope + Laser (aim 94, crit 45) | 7.19 | 5.63 | 4.37 | 13 |
 
-The third upgrade (stock or clip) does not enter these figures. The spread between a plain armed Rookie and a fully equipped Colonel is 2.6x in damage per shot against an unarmored target and 3.9x against Heavy armor; a Colonel in Heavy Armor has 14 health against a Rookie's 10 (40% more). In shots to deal one unit's health on average: an upgraded Rookie against that Colonel needs about 9 (14 / 1.56); that Colonel against a Light-armored Rookie about 1.8 (10 / 5.63). These are mean-damage ratios, not kill-time simulations (variance, the 1-damage minimum, cover and range are ignored). Squad size multiplies this: a unit attacks once per turn (mechanics.md section 5, an attack sets AP to 0), so 3 units against 1 is 3 attacks a turn, and a side wins only by eliminating every opposing unit. A fully-geared rookie squad needs no rank (upgrades and grenade are ungated), so even an account with no veteran can field 1.3x the plain rookie (3.68 / 2.79).
+The third upgrade (stock or clip) does not enter these figures. The spread between a plain armed Rookie and a fully equipped Colonel is 2.6x in damage per shot against an unarmored target and 3.9x against Heavy armor; a Colonel in Heavy Armor has 14 health against a Rookie's 10 (40% more). In shots to deal one unit's health on average: an upgraded Rookie against that Colonel needs about 9 (14 / 1.56); that Colonel against a Light-armored Rookie about 1.8 (10 / 5.63). These are mean-damage ratios, not kill-time simulations (variance, the 1-damage minimum, cover and range are ignored). Squad size multiplies this: a unit attacks once per turn (mechanics.md section 5, an attack sets AP to 0), so 3 units against 1 is 3 attacks a turn, and a side wins only by eliminating every opposing unit. No gear is gated by rank, so a Rookie squad can carry the same rifles, armor and upgrades as a veteran one from its first game; over the same gear, rank adds only the promotion stats (section 5).
 
 Consequence. For two accounts with equal rating, `E = 0.5` in the update whatever they deploy, and the update after the game is the same as after a close game: +/-3 to 10 points at established deviation (3.4). The realized strength gap in a game between equal ratings ranges from none to the table's spread, plus the squad-size multiplier, and none of it is visible to the queue (section 7). The reverse also holds: a rating bought by a veteran squad does not follow the account when the veterans die.
 
@@ -272,7 +271,7 @@ What a loss removes. A decided game (`Won`) is over only when the loser has no u
 
 What the winner keeps. The winner keeps its survivors and gains 2 XP each (`experience`, `:593`); the recruits it lost during the game stay lost and their XP with them, so a win can also cost recruits. Nothing in the code scales what the winner earns with what it risked or with the opponent's squad.
 
-What the rating system assumes. Glicko treats a rating as the strength of a player that changes slowly from game to game; the deviation widens only through inactivity. Here the strength is a state that one loss can destroy (all deployed recruits, replaced for free with Rookies of 0 XP, section 6) and that a win raises slowly (2 XP per survivor, 2 to 45 wins per rank in section 5; the first promotion is 2 wins, the third tier of gear 13 wins). After the loss the rating has moved by a few points while the squad has dropped by the spread of 9.1; the next pairing draws from the same rating neighbourhood as before. Asymmetry: building is slow and bounded per game, destruction is instant and complete per game. Whether the account's rating then converges to the rating of its current squad rather than its past one is not determined here (depends on how often it deploys a degraded squad and on the pairings; not simulated).
+What the rating system assumes. Glicko treats a rating as the strength of a player that changes slowly from game to game; the deviation widens only through inactivity. Here the strength is a state that one loss can destroy (all deployed recruits, replaced for free with Rookies of 0 XP, section 6) and that a win raises slowly (2 XP per survivor, 2 to 45 wins per rank in section 5; the first promotion is 2 wins). After the loss the rating has moved by a few points while the squad has dropped by the spread of 9.1; the next pairing draws from the same rating neighbourhood as before. Asymmetry: building is slow and bounded per game, destruction is instant and complete per game. Whether the account's rating then converges to the rating of its current squad rather than its past one is not determined here (depends on how often it deploys a degraded squad and on the pairings; not simulated).
 
 There is no insurance in the code: no roster minimum, no revive, no loss cap per game, no transfer of XP or rank to a replacement (the dog tag keeps rank and looks only).
 

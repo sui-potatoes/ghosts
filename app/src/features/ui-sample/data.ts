@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * The sample's items: only what the game has. Names, tiers, stats and rank
- * requirements are `ghosts::items` (move/packages/ghosts/sources/recruit/
- * items.move): three rifles, three armors, the frag grenade, and the four
- * weapon upgrades in three tiers. Models are the squad catalog's, the way
+ * The sample's items: only what the game has. Names, tiers and stats are
+ * `ghosts::items` (move/packages/ghosts/sources/recruit/items.move): three
+ * rifles, three armors, the frag grenade, and the four weapon upgrades in
+ * three tiers; any operative takes any of them. Models are the squad catalog's, the way
  * Headquarters maps chain items (`features/headquarters/mapping.ts`). The
  * game has no sidearm on chain yet, no weight and no purchase currency, so
  * the sample shows none. What the sample owns and who holds which rank are
@@ -40,8 +40,6 @@ export type Item = {
     kind: string;
     section: Section;
     tier: 1 | 2 | 3;
-    /** `for_rank` in `ghosts::items`; Rookie when the item has none. */
-    rank: Rank;
     stats: Stat[];
     /** The plain effect, for the bar's hint. */
     effect: string;
@@ -70,7 +68,7 @@ function statRows(stats: Stats, keys: StatKey[]): Stat[] {
 const WEAPON_KEYS: StatKey[] = ["damage", "critChance", "range", "ammo"];
 const ARMOR_KEYS: StatKey[] = ["mobility", "health", "armor", "dodge"];
 
-function rifle(id: string, name: string, tier: 1 | 2 | 3, rank: Rank, kind: string): Item {
+function rifle(id: string, name: string, tier: 1 | 2 | 3, kind: string): Item {
     const stats = statRows(ITEM_STATS[id], WEAPON_KEYS);
     return {
         id,
@@ -78,7 +76,6 @@ function rifle(id: string, name: string, tier: 1 | 2 | 3, rank: Rank, kind: stri
         kind,
         section: "weapons",
         tier,
-        rank,
         stats,
         effect: stats.map((s) => `${s.text} ${s.label.toLowerCase()}`).join(" · "),
         slots: RIFLE_SLOTS,
@@ -86,14 +83,13 @@ function rifle(id: string, name: string, tier: 1 | 2 | 3, rank: Rank, kind: stri
     };
 }
 
-function armor(id: string, name: string, tier: 1 | 2 | 3, rank: Rank, effect: string): Item {
+function armor(id: string, name: string, tier: 1 | 2 | 3, effect: string): Item {
     return {
         id,
         name,
         kind: `Tier ${"I".repeat(tier)} armor`,
         section: "armor",
         tier,
-        rank,
         stats: statRows(ITEM_STATS[id], ARMOR_KEYS),
         effect,
         wear: id,
@@ -104,20 +100,14 @@ const TIER_NAMES = ["", "I", "II", "III"];
 
 export const STOCK: Record<Section, Item[]> = {
     weapons: [
-        rifle("mx4", "Standard Rifle", 1, "Rookie", "Rifle · tier I"),
-        rifle("srs9", "Sharpshooter Rifle", 2, "Corporal", "Rifle · tier II"),
-        rifle("plasma", "Plasma Rifle", 3, "Lieutenant", "Rifle · tier III"),
+        rifle("mx4", "Standard Rifle", 1, "Rifle · tier I"),
+        rifle("srs9", "Sharpshooter Rifle", 2, "Rifle · tier II"),
+        rifle("plasma", "Plasma Rifle", 3, "Rifle · tier III"),
     ],
     armor: [
-        armor("spectre", "Light Armor", 1, "Rookie", "+1 armor · +10% dodge"),
-        armor("nyx-mid", "Medium Armor", 2, "Squaddie", "+2 armor"),
-        armor(
-            "nyx-heavy",
-            "Heavy Armor",
-            3,
-            "Sergeant",
-            "+3 armor · +1 health · −1 mobility · −10% dodge",
-        ),
+        armor("spectre", "Light Armor", 1, "+1 armor · +10% dodge"),
+        armor("nyx-mid", "Medium Armor", 2, "+2 armor"),
+        armor("nyx-heavy", "Heavy Armor", 3, "+3 armor · +1 health · −1 mobility · −10% dodge"),
     ],
     utility: [
         {
@@ -126,7 +116,6 @@ export const STOCK: Record<Section, Item[]> = {
             kind: "Utility",
             section: "utility",
             tier: 1,
-            rank: "Rookie",
             stats: [],
             effect: "One grenade throw per match",
             model: "grenade",
@@ -138,7 +127,6 @@ export const STOCK: Record<Section, Item[]> = {
         kind: `Weapon upgrade · tier ${TIER_NAMES[a.tier]}`,
         section: "mods" as const,
         tier: a.tier as 1 | 2 | 3,
-        rank: "Rookie" as const,
         stats: [],
         effect: a.stat,
         model: "rifle" as const,
@@ -173,9 +161,6 @@ export const SLOT_ITEMS: Record<(typeof LOADOUT_SLOTS)[number], Item[]> = {
 };
 
 export const rankIndex = (rank: string) => RANKS.indexOf(rank as Rank);
-
-/** Whether `rank` may be issued `item` (`rankAllows` in chain/ghosts.ts). */
-export const rankAllows = (rank: string, item: Item) => rankIndex(rank) >= rankIndex(item.rank);
 
 /** The pictogram step for a rank: one chevron per two ranks, three at most. */
 export const rankIcon = (rank: string): "rank1" | "rank2" | "rank3" => {

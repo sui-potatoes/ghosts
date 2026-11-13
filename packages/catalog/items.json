@@ -8,7 +8,6 @@
             "name": "Standard Rifle",
             "description": "Compact, dependable. The weapon you reach for when the contract gets complicated.",
             "tier": 1,
-            "rank": "Rookie",
             "stats": {
                 "damage": 4,
                 "spread": 2,
@@ -48,7 +47,6 @@
             "name": "Sharpshooter Rifle",
             "description": "A long sightline and a steady hand. Built for deliberate engagements.",
             "tier": 2,
-            "rank": "Corporal",
             "stats": {
                 "damage": 5,
                 "spread": 1,
@@ -88,7 +86,6 @@
             "name": "Plasma Rifle",
             "description": "High damage and critical potential for precise engagements.",
             "tier": 3,
-            "rank": "Lieutenant",
             "stats": {
                 "damage": 6,
                 "spread": 1,
@@ -128,7 +125,6 @@
             "name": "Light Armor",
             "description": "Flexible coverage that keeps a recruit quick on their feet and harder to hit.",
             "tier": 1,
-            "rank": "Rookie",
             "stats": {
                 "armor": 1,
                 "dodge": 10
@@ -153,7 +149,6 @@
             "name": "Medium Armor",
             "description": "Reinforced plates for contested ground, with no cost to movement.",
             "tier": 2,
-            "rank": "Squaddie",
             "stats": {
                 "armor": 2
             },
@@ -176,7 +171,6 @@
             "name": "Heavy Armor",
             "description": "The most protection a recruit can carry. Slower, and too bulky to dodge in.",
             "tier": 3,
-            "rank": "Sergeant",
             "stats": {
                 "mobility": -1,
                 "health": 1,
@@ -204,7 +198,6 @@
             "slot": "Scope",
             "kind": 0,
             "tier": 1,
-            "rank": "Rookie",
             "stats": {
                 "aim": 5
             },
@@ -230,7 +223,6 @@
             "slot": "Scope",
             "kind": 0,
             "tier": 2,
-            "rank": "Rookie",
             "stats": {
                 "aim": 10
             },
@@ -256,7 +248,6 @@
             "slot": "Scope",
             "kind": 0,
             "tier": 3,
-            "rank": "Rookie",
             "stats": {
                 "aim": 15
             },
@@ -282,7 +273,6 @@
             "slot": "Laser Sight",
             "kind": 1,
             "tier": 1,
-            "rank": "Rookie",
             "stats": {
                 "crit_chance": 5
             },
@@ -308,7 +298,6 @@
             "slot": "Laser Sight",
             "kind": 1,
             "tier": 2,
-            "rank": "Rookie",
             "stats": {
                 "crit_chance": 10
             },
@@ -334,7 +323,6 @@
             "slot": "Laser Sight",
             "kind": 1,
             "tier": 3,
-            "rank": "Rookie",
             "stats": {
                 "crit_chance": 15
             },
@@ -360,7 +348,6 @@
             "slot": "Stock",
             "kind": 2,
             "tier": 1,
-            "rank": "Rookie",
             "stats": {
                 "range": 1
             },
@@ -386,7 +373,6 @@
             "slot": "Stock",
             "kind": 2,
             "tier": 2,
-            "rank": "Rookie",
             "stats": {
                 "range": 2
             },
@@ -412,7 +398,6 @@
             "slot": "Stock",
             "kind": 2,
             "tier": 3,
-            "rank": "Rookie",
             "stats": {
                 "range": 3
             },
@@ -438,7 +423,6 @@
             "slot": "Expanded Clip",
             "kind": 3,
             "tier": 1,
-            "rank": "Rookie",
             "stats": {
                 "ammo": 1
             },
@@ -464,7 +448,6 @@
             "slot": "Expanded Clip",
             "kind": 3,
             "tier": 2,
-            "rank": "Rookie",
             "stats": {
                 "ammo": 2
             },
@@ -490,7 +473,6 @@
             "slot": "Expanded Clip",
             "kind": 3,
             "tier": 3,
-            "rank": "Rookie",
             "stats": {
                 "ammo": 3
             },
@@ -514,7 +496,6 @@
             "name": "Frag Grenade",
             "description": "Fragmentation grenade. Thrown up to 5 tiles; deals 4 damage, less armor, to every unit within 2 tiles of the target, friend or foe, and destroys cover. Cannot be dodged. One per match.",
             "kind": 0,
-            "rank": "Rookie",
             "stats": {},
             "actions": [
                 {
@@ -539,7 +520,6 @@
             "status": "app",
             "name": "K–12 Sidearm",
             "description": "A lightweight fallback for close encounters and depleted magazines.",
-            "rank": null,
             "stats": null,
             "actions": [],
             "chain": null,
@@ -553,7 +533,6 @@
             "status": "app",
             "name": "Field Trauma Kit",
             "description": "Compact dressings and emergency supplies. Get your people home.",
-            "rank": null,
             "stats": null,
             "actions": [],
             "chain": null,

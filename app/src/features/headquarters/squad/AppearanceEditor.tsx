@@ -3,7 +3,8 @@
 
 /**
  * The Appearance tab at the real character editor's depth
- * (features/squad/components/AppearancePanel.tsx), in the shared language:
+ * (features/squad/components/AppearancePanel.tsx), in the shared language,
+ * shared by Headquarters and the `/ui-sample` reference:
  * eight sections stepped from the top row (Body, Face, Eyes, Brows, Hair,
  * Skin, Details, Kit) so no list gets long; steppers for small sets, a grid
  * picker for large ones (the stage wears the tile under the cursor), sliders
@@ -41,7 +42,7 @@ import {
     SwatchRow,
     type Command,
     type GridOption,
-} from "../../ui";
+} from "../../../ui";
 
 type Look = { appearance: Appearance; armorColors: ArmorColors };
 
@@ -378,6 +379,7 @@ export function AppearanceEditor({
         <SlotRow
             key={id}
             id={`look-${id}`}
+            instant
             group="inspector"
             slot={label}
             item={current}

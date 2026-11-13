@@ -459,3 +459,26 @@ export function nearest<N extends { el: FocusElement | null }>(
     }
     return best;
 }
+
+/**
+ * What the pointer reaches on the target itself (inline chips, the command
+ * list): its secondary commands. The primary is the click, and the command
+ * bar names it with its glyph for keys and pad.
+ */
+export function secondaryCommands(commands: Command[]): Command[] {
+    return commands.filter((c) => c.action === "reset");
+}
+
+/**
+ * The command a click or tap on a target runs. `instant` targets (selecting,
+ * opening a picker: cheap and undoable) run their primary on the first click;
+ * the others run it on a click while already focused, unless `clickConfirm`
+ * is off (choosers, whose clicks belong to their arrows and swatches).
+ */
+export function clickCommand(
+    commands: Command[],
+    { again, instant, clickConfirm }: { again: boolean; instant: boolean; clickConfirm: boolean },
+): Command | undefined {
+    if (!clickConfirm || !(instant || again)) return undefined;
+    return commands.find((c) => c.action === "confirm");
+}

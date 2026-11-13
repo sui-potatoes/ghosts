@@ -10,7 +10,7 @@
  */
 
 import { initialSquad, savedRecruits, SQUAD_STORAGE_KEY } from "@ghosts/squad/model";
-import { formatStat, RECRUIT_DEFAULT, recruitStats, VISIBLE } from "@ghosts/squad/stats";
+import { recruitStats } from "@ghosts/squad/stats";
 import type { Appearance, ArmorColors, Recruit, Slot } from "@ghosts/squad/types";
 import {
     useLayoutEffect,
@@ -24,25 +24,19 @@ import {
 import { previewVoice } from "../../audio";
 import { useEquipmentImages } from "../headquarters/equipmentImages";
 import { useRecruitPortraits } from "../squad/useRecruitPortraits";
-import { nextRankXp } from "../../chain/match-rules";
 import {
     ActionRow,
     Eyebrow,
     FocusCommandBar,
     FocusScope,
-    Icon,
     List,
     ListRow,
-    Meter,
     Panel,
     Prompt,
-    ReadoutLine,
     ScreenFrame,
     SLOT_ICON,
     SlotRow,
     StagePanel,
-    STAT_ICON,
-    StatRow,
     Stepper,
     Tabs,
     Thumb,
@@ -51,16 +45,22 @@ import {
     type GlyphSet,
     type TabDef,
 } from "../../ui";
-import { AppearanceEditor, HEAD_SECTIONS } from "./appearance";
-import { CharacterCanvas, useWireframeAction } from "./canvases";
+import { AppearanceEditor, HEAD_SECTIONS } from "../headquarters/squad/AppearanceEditor";
+import { CharacterCanvas, useWireframeAction } from "../headquarters/squad/CharacterCanvas";
+import {
+    Offstage,
+    Portrait,
+    RankMark,
+    RankProgress,
+    SquadStats,
+    StatChanges,
+} from "../headquarters/squad/parts";
 import {
     fixtureRank,
     gearName,
     ITEMS,
     LOADOUT_SLOT_NAMES,
     LOADOUT_SLOTS,
-    rankAllows,
-    rankIcon,
     realLoadout,
     SLOT_ITEMS,
 } from "./data";
@@ -275,9 +275,7 @@ export function Squad({ squad, tab, onTab, glyphs, frame, guard, save }: Props) 
     if (!recruit || !onStage) return null;
 
     const look = squad.look;
-    const stats = recruitStats(onStage);
     const { rank, xp } = squad.rank(recruit.id);
-    const next = nextRankXp(rank);
     const voiceIds = [0, 1, 2, 3].map((i) => i * 2 + (look.appearance.sex === "female" ? 1 : 0));
     const voice = voiceIds.includes(squad.voice(recruit.id))
         ? squad.voice(recruit.id)
@@ -293,6 +291,7 @@ export function Squad({ squad, tab, onTab, glyphs, frame, guard, save }: Props) 
                         <SlotRow
                             key={slot}
                             id={`slot-${slot}`}
+                            instant
                             group="inspector"
                             slot={LOADOUT_SLOT_NAMES[slot]}
                             icon={SLOT_ICON[slot]}
@@ -325,33 +324,16 @@ export function Squad({ squad, tab, onTab, glyphs, frame, guard, save }: Props) 
                     );
                 });
             case "stats":
-                return (["operative", "weapon"] as const).map((group) => (
-                    <div key={group} className="uis-stat-group">
-                        {group === "weapon" && (
-                            <Eyebrow>{gearName(onStage.equipment.primary) ?? "Unarmed"}</Eyebrow>
+                return (
+                    <SquadStats
+                        recruit={onStage}
+                        weaponName={gearName(onStage.equipment.primary) ?? "Unarmed"}
+                        names={Object.fromEntries(
+                            Object.values(ITEMS).map((item) => [item.wear ?? item.id, item.name]),
                         )}
-                        {VISIBLE.filter((row) => row.group === group).map((row) => (
-                            <StatRow
-                                key={row.key}
-                                id={`sq-stat-${row.key}`}
-                                group="inspector"
-                                label={row.label}
-                                icon={STAT_ICON[row.key]}
-                                value={stats[row.key]}
-                                base={group === "operative" ? RECRUIT_DEFAULT[row.key] : undefined}
-                                text={formatStat(row, stats)}
-                                max={row.max}
-                                title={row.label}
-                                hint={
-                                    group === "operative"
-                                        ? `Base ${RECRUIT_DEFAULT[row.key]}, the delta is from gear`
-                                        : "From the rifle and its fittings"
-                                }
-                                commands={[toRoster]}
-                            />
-                        ))}
-                    </div>
-                ));
+                        commands={[toRoster]}
+                    />
+                );
             case "appearance":
                 return (
                     <AppearanceEditor
@@ -371,20 +353,7 @@ export function Squad({ squad, tab, onTab, glyphs, frame, guard, save }: Props) 
             case "dossier":
                 return (
                     <>
-                        <ReadoutLine label="Rank">
-                            <span className="uis-rank">
-                                <Icon name={rankIcon(rank)} size={14} />
-                                {rank}
-                            </span>
-                        </ReadoutLine>
-                        {next !== undefined && (
-                            <Meter
-                                label="Experience"
-                                value={xp}
-                                max={next}
-                                readout={`${xp} / ${next}`}
-                            />
-                        )}
+                        <RankProgress rank={rank} xp={xp} />
                         <Stepper
                             id="dossier-voice"
                             group="inspector"
@@ -476,7 +445,7 @@ export function Squad({ squad, tab, onTab, glyphs, frame, guard, save }: Props) 
             commands={<FocusCommandBar glyphs={glyphs} />}
             overlay={overlay}
         >
-            <Panel className="uis-roster">
+            <Panel className="hqs-roster">
                 <List label="Roster">
                     {roster.map((r) => {
                         const current = r.id === recruit.id;
@@ -484,13 +453,10 @@ export function Squad({ squad, tab, onTab, glyphs, frame, guard, save }: Props) 
                             <ListRow
                                 key={r.id}
                                 id={`roster-${r.id}`}
+                                instant
                                 group="list"
                                 thumb={
-                                    <span className="uis-portrait">
-                                        {portraits[r.id] && (
-                                            <img src={portraits[r.id]} alt="" draggable={false} />
-                                        )}
-                                    </span>
+                                    <Portrait src={portraits[r.id]} rank={squad.rank(r.id).rank} />
                                 }
                                 name={r.callsign}
                                 kind={r.role}
@@ -536,8 +502,7 @@ export function Squad({ squad, tab, onTab, glyphs, frame, guard, save }: Props) 
                 caption={
                     <>
                         <span className="gui-stage-eyebrow">
-                            <Icon name={rankIcon(squad.rank(recruit.id).rank)} size={14} />
-                            {squad.rank(recruit.id).rank} · {recruit.role}
+                            <RankMark rank={rank} /> · {recruit.role}
                         </span>
                         <span className="gui-stage-title">{recruit.callsign}</span>
                         <span className="gui-stage-sub">{recruit.name}</span>
@@ -560,7 +525,6 @@ export function Squad({ squad, tab, onTab, glyphs, frame, guard, save }: Props) 
                     <Picker
                         slot={picker}
                         recruit={recruit}
-                        rank={squad.rank(recruit.id).rank}
                         candidate={candidate}
                         images={images}
                         onPick={(item) => {
@@ -571,13 +535,13 @@ export function Squad({ squad, tab, onTab, glyphs, frame, guard, save }: Props) 
                         onClose={() => setPicker(null)}
                     />
                 ) : (
-                    <div className="uis-inspector-body" key={tab}>
+                    <div className="hqs-stack" key={tab}>
                         {inspector()}
                     </div>
                 )}
             </Panel>
             {/* Portraits are drawn by a short-lived studio of their own, off screen. */}
-            <div ref={studioHost} className="uis-offstage" aria-hidden />
+            <Offstage ref={studioHost} />
         </ScreenFrame>
     );
 }
@@ -585,7 +549,6 @@ export function Squad({ squad, tab, onTab, glyphs, frame, guard, save }: Props) 
 type PickerProps = {
     slot: (typeof LOADOUT_SLOTS)[number];
     recruit: Recruit;
-    rank: string;
     /** The item under the cursor, previewed on the stage ("" for none). */
     candidate?: string;
     images: Record<string, string>;
@@ -596,10 +559,9 @@ type PickerProps = {
 /**
  * The loadout picker: the inspector turns into a list of what fits the slot.
  * The cursor is held in it (its own focus scope); the stage wears whatever
- * the cursor is on; Confirm issues it, Back returns to the loadout. Gear
- * above the operative's rank is listed and refused, with the rank it needs.
+ * the cursor is on; Confirm issues it, Back returns to the loadout.
  */
-function Picker({ slot, recruit, rank, candidate, images, onPick, onClose }: PickerProps) {
+function Picker({ slot, recruit, candidate, images, onPick, onClose }: PickerProps) {
     const items = SLOT_ITEMS[slot];
     const current = recruit.equipment[slot];
     const before = recruitStats(recruit);
@@ -610,15 +572,13 @@ function Picker({ slot, recruit, rank, candidate, images, onPick, onClose }: Pic
                   equipment: { ...recruit.equipment, [slot]: candidate || null },
               })
             : before;
-    const changes = VISIBLE.filter((row) => after[row.key] !== before[row.key]);
     const close: Command = { action: "back", label: "Loadout", run: onClose };
     return (
         <FocusScope id="picker" back={close}>
-            <div className="uis-picker">
+            <div className="hqs-stack">
                 <Eyebrow>{LOADOUT_SLOT_NAMES[slot]}</Eyebrow>
                 <List label={LOADOUT_SLOT_NAMES[slot]}>
                     {items.map((item) => {
-                        const allowed = rankAllows(rank, item);
                         return (
                             <ListRow
                                 key={item.id}
@@ -626,12 +586,9 @@ function Picker({ slot, recruit, rank, candidate, images, onPick, onClose }: Pic
                                 group="picker"
                                 thumb={<Thumb src={images[item.id]} icon={SLOT_ICON[slot]} />}
                                 name={item.name}
-                                tag={
-                                    item.id === current ? "Issued" : allowed ? undefined : item.rank
-                                }
-                                tagTone={item.id === current ? "accent" : "dim"}
+                                tag={item.id === current ? "Issued" : undefined}
+                                tagTone="accent"
                                 selected={item.id === current}
-                                locked={!allowed}
                                 title={item.name}
                                 hint={item.effect}
                                 commands={[
@@ -642,9 +599,6 @@ function Picker({ slot, recruit, rank, candidate, images, onPick, onClose }: Pic
                                                   action: "confirm",
                                                   label: "Issue",
                                                   tone: "primary",
-                                                  deny: allowed
-                                                      ? undefined
-                                                      : `Needs ${item.rank}. ${recruit.callsign} is ${rank}`,
                                                   run: () => onPick(item.id),
                                               },
                                           ] satisfies Command[])),
@@ -677,18 +631,7 @@ function Picker({ slot, recruit, rank, candidate, images, onPick, onClose }: Pic
                         />
                     )}
                 </List>
-                {changes.length > 0 && <Eyebrow>If issued</Eyebrow>}
-                {changes.map((row) => {
-                    const delta = after[row.key] - before[row.key];
-                    return (
-                        <ReadoutLine key={row.key} label={row.label}>
-                            <span className="uis-change" data-trend={delta > 0 ? "buff" : "nerf"}>
-                                {formatStat(row, before)} → {formatStat(row, after)}
-                                <b>{delta > 0 ? ` ▲ +${delta}` : ` ▼ −${-delta}`}</b>
-                            </span>
-                        </ReadoutLine>
-                    );
-                })}
+                <StatChanges before={before} after={after} />
             </div>
         </FocusScope>
     );

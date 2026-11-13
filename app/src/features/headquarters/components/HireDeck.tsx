@@ -1,16 +1,9 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
-import { useEffect, useState } from "react";
-
-import { uiTick } from "../../../audio";
 import type { ChainRecruit } from "../../../chain";
+import { useReveal } from "../reveal";
 import { RecruitCard } from "./RecruitCard";
-
-/** The beat between two cards turning over. */
-const REVEAL_GAP_MS = 650;
-/** How long a hired card waits for its portrait before it turns over anyway. */
-const PORTRAIT_WAIT_MS = 3500;
 
 interface Props {
     slots: (ChainRecruit | null)[];
@@ -30,22 +23,7 @@ interface Props {
  * headquarters with that recruit selected.
  */
 export function HireDeck({ slots, portraits, pending, error, onHire, onEnter }: Props) {
-    // Cards hired before the deck mounted are already face up — unless a hire
-    // is still settling, in which case they turn over like any fresh hire.
-    const [revealed, setRevealed] = useState(() => (pending ? 0 : slots.filter(Boolean).length));
-    const nextId = slots[revealed]?.objectId;
-    const nextReady = !!nextId && !!portraits[nextId];
-    useEffect(() => {
-        if (!nextId) return;
-        const timer = window.setTimeout(
-            () => {
-                setRevealed((r) => r + 1);
-                uiTick();
-            },
-            nextReady ? REVEAL_GAP_MS : PORTRAIT_WAIT_MS,
-        );
-        return () => window.clearTimeout(timer);
-    }, [nextId, nextReady]);
+    const revealed = useReveal(slots, portraits, pending);
 
     const shown = slots.map((s, i) => (i < revealed ? s : null));
     const vacant = shown.filter((s) => !s).length;
