@@ -28,13 +28,28 @@ async function chainId(baseUrl: string): Promise<{ chainId: string; latencyMs: n
  */
 export async function probeRpc(url: string): Promise<RpcProbe> {
     let found: Awaited<ReturnType<typeof chainId>>;
+    let blockedByCsp = false;
+    const onViolation = (e: SecurityPolicyViolationEvent) => {
+        if (e.effectiveDirective.startsWith("connect-src")) blockedByCsp = true;
+    };
+    document.addEventListener("securitypolicyviolation", onViolation);
     try {
         found = await chainId(url);
     } catch (e) {
+        // The violation event is queued as its own task, so it can land after the rejection.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        if (blockedByCsp) {
+            return {
+                ok: false,
+                error: "Blocked by this site's Content-Security-Policy, which does not allow connections to that endpoint.",
+            };
+        }
         return {
             ok: false,
             error: `Could not reach the endpoint (${e instanceof Error ? e.message : String(e)}).`,
         };
+    } finally {
+        document.removeEventListener("securitypolicyviolation", onViolation);
     }
     let expected: string;
     try {

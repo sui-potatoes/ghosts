@@ -1388,14 +1388,47 @@ var BASIS = (() => {
                     }
                 }
             }
-            let [args, invokerFnBody] = createJsInvoker(
-                argTypes,
-                isClassMethodFunc,
-                returns,
-                isAsync,
-            );
-            args.push(invokerFnBody);
-            var invokerFn = newFunc(Function, args)(...closureArgs);
+            // Ghosts: the stock build generates this wrapper with new Function(), which the
+            // site's Content-Security-Policy (no 'unsafe-eval') forbids. Same logic as the
+            // generated body, written as a closure.
+            var nArgs = argCount - 2;
+            var invokerFn = function (...callArgs) {
+                if (callArgs.length !== nArgs) {
+                    throwBindingError(
+                        "function " +
+                            humanName +
+                            " called with " +
+                            callArgs.length +
+                            " arguments, expected " +
+                            nArgs,
+                    );
+                }
+                var destructors = needsDestructorStack ? [] : null;
+                var wired = [];
+                var thisWired;
+                if (isClassMethodFunc) {
+                    thisWired = argTypes[1]["toWireType"](destructors, this);
+                    wired.push(thisWired);
+                }
+                for (var j = 0; j < nArgs; ++j) {
+                    wired.push(argTypes[j + 2]["toWireType"](destructors, callArgs[j]));
+                }
+                var rv = cppInvokerFunc(cppTargetFunc, ...wired);
+                if (needsDestructorStack) {
+                    runDestructors(destructors);
+                } else {
+                    for (var k = isClassMethodFunc ? 1 : 2; k < argTypes.length; ++k) {
+                        if (argTypes[k].destructorFunction !== null) {
+                            argTypes[k].destructorFunction(
+                                wired[isClassMethodFunc ? k - 1 : k - 2],
+                            );
+                        }
+                    }
+                }
+                if (returns) {
+                    return argTypes[0]["fromWireType"](rv);
+                }
+            };
             return createNamedFunction(humanName, invokerFn);
         }
         var __embind_register_class_constructor = (
@@ -2210,31 +2243,23 @@ var BASIS = (() => {
             var types = emval_lookupTypes(argCount, argTypes);
             var retType = types.shift();
             argCount--;
-            var functionBody = `return function (obj, func, destructorsRef, args) {\n`;
+            // Ghosts: closure instead of new Function(), for the site's Content-Security-Policy.
+            var offsets = [];
             var offset = 0;
-            var argsList = [];
-            if (kind === 0) {
-                argsList.push("obj");
-            }
-            var params = ["retType"];
-            var args = [retType];
             for (var i = 0; i < argCount; ++i) {
-                argsList.push("arg" + i);
-                params.push("argType" + i);
-                args.push(types[i]);
-                functionBody += `  var arg${i} = argType${i}.readValueFromPointer(args${offset ? "+" + offset : ""});\n`;
+                offsets.push(offset);
                 offset += types[i]["argPackAdvance"];
             }
-            var invoker = kind === 1 ? "new func" : "func.call";
-            functionBody += `  var rv = ${invoker}(${argsList.join(", ")});\n`;
-            if (!retType.isVoid) {
-                params.push("emval_returnValue");
-                args.push(emval_returnValue);
-                functionBody += "  return emval_returnValue(retType, destructorsRef, rv);\n";
-            }
-            functionBody += "};\n";
-            params.push(functionBody);
-            var invokerFunction = newFunc(Function, params)(...args);
+            var invokerFunction = function (obj, func, destructorsRef, args) {
+                var vals = kind === 0 ? [obj] : [];
+                for (var j = 0; j < argCount; ++j) {
+                    vals.push(types[j].readValueFromPointer(args + offsets[j]));
+                }
+                var rv = kind === 1 ? new func(...vals) : func.call(...vals);
+                if (!retType.isVoid) {
+                    return emval_returnValue(retType, destructorsRef, rv);
+                }
+            };
             var functionName = `methodCaller<(${types.map((t) => t.name).join(", ")}) => ${retType.name}>`;
             return emval_addMethodCaller(createNamedFunction(functionName, invokerFunction));
         };
