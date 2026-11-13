@@ -374,7 +374,7 @@ export default function Headquarters() {
                                         Hire
                                     </button>
                                 )}
-                            {action.error && <p className="sq-footnote hq-error">{action.error}</p>}
+                            {action.error && <p className="sq-footnote">{action.error}</p>}
                         </aside>
                     )}
                     <div className="hq-stage">

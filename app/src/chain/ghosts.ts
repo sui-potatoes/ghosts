@@ -99,11 +99,6 @@ export type ChainUpgrade = ReturnType<typeof WeaponUpgrade.parse> & { objectId: 
 
 // === Reads ===
 
-/** The shared `Registry`: the accounts table and the hire presets. */
-export function useRegistry() {
-    return useBcsObject({ id: ghostsEnabled ? GHOSTS.registry : null, schema: Registry });
-}
-
 /** The `Account` id `owner` holds, read from `Registry.accounts`; null when none. */
 /** The registry's table of accounts; it never moves. */
 let accountTable: Promise<string> | null = null;
