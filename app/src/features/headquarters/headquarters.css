@@ -607,11 +607,12 @@
 }
 .hq-inventory-tabs {
     display: flex;
+    flex-wrap: wrap;
     gap: 4px;
     flex-shrink: 0;
 }
 .hq-inventory-tabs button {
-    flex: 1;
+    flex: 1 1 auto;
     display: flex;
     justify-content: space-between;
     gap: 6px;
@@ -749,6 +750,13 @@
     margin: 0 auto;
     padding: 24px;
 }
+.hq-stage-placeholder {
+    position: absolute;
+    inset: 0;
+    align-items: center;
+    text-align: center;
+    pointer-events: none;
+}
 .hq-armory-empty .sq-eyebrow {
     border: 0;
     padding: 0;
@@ -861,6 +869,39 @@
 .hq-fitting-options button:hover:not(:disabled) {
     border-color: var(--accent-color);
 }
+.hq-finish {
+    margin-bottom: 24px;
+}
+.hq-finishes {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 4px;
+}
+.hq-finishes button {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 6px;
+    border: 1px solid var(--border-color);
+    font-size: 10px;
+    color: var(--text-secondary);
+    text-align: left;
+}
+.hq-finishes button > span {
+    display: flex;
+    height: 14px;
+}
+.hq-finishes i {
+    flex: 1;
+}
+.hq-finishes button[aria-checked="true"] {
+    border-color: var(--accent-color);
+    background: var(--accent-dim);
+    color: var(--accent-color);
+}
+.hq-finishes button:hover {
+    border-color: var(--accent-color);
+}
 .hq-notice {
     margin-top: 0;
     color: var(--warn-color);
@@ -882,6 +923,68 @@
 }
 .hq-bench-actions .sq-primary {
     width: auto;
+}
+.hq-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+    font: 10px var(--font-mono);
+    letter-spacing: 0.06em;
+}
+.hq-chips b {
+    font-weight: 400;
+    color: var(--accent-color);
+}
+.hq-chips b.down {
+    color: var(--warn-color);
+}
+.hq-fitting-lines {
+    margin: 0 0 20px;
+    padding: 0;
+    list-style: none;
+}
+.hq-fitting-lines li {
+    display: grid;
+    grid-template-columns: 52px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+    border-top: 1px solid var(--border-color);
+}
+.hq-fitting-tag {
+    font: 9px var(--font-mono);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--disabled-color);
+}
+.hq-fitting-label {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+.hq-fitting-label strong {
+    font: 400 12px var(--font-mono);
+    color: var(--text-color);
+}
+.hq-fitting-label small {
+    font: 9px var(--font-mono);
+    color: var(--text-secondary);
+}
+/* A draft line is dashed, like its stat cells; one coming off is struck through. */
+.hq-fitting-lines li.drafted {
+    border-top-style: dashed;
+    border-top-color: color-mix(in srgb, var(--accent-color) 60%, transparent);
+}
+.hq-fitting-lines li.drafted .hq-fitting-tag {
+    color: var(--accent-color);
+}
+.hq-fitting-lines li.removed {
+    opacity: 0.6;
+}
+.hq-fitting-lines li.removed .hq-fitting-label strong,
+.hq-fitting-lines li.removed .hq-chips b {
+    text-decoration: line-through;
 }
 .hq-upgrade-stat {
     margin: 0 0 24px;

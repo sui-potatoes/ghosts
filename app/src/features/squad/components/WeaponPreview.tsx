@@ -5,18 +5,24 @@ import { useEffect, useRef, useState } from "react";
 import * as T from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { acquireArmoryWeapon, isArmoryGun } from "@ghosts/squad/studio/armory-weapons";
+import { loadArmorySkin, type ArmorySkin } from "@ghosts/squad/studio/armory-skins";
 import { EquipmentAssets } from "@ghosts/squad/studio/equipment-assets";
 import { applyWireframe, formatMeshStats, meshStats } from "@ghosts/squad/studio/wireframe";
 import type { Equipment, WeaponAttachments } from "@ghosts/squad/types";
+import { FACTORY_SKIN } from "@ghosts/squad/weapon-skins";
 import { useWireframe, useWireframeShortcut, wireframeColors } from "../useWireframe";
 
 /** Product-lighting inspection of the actual equipped assembly, with full orbit and zoom. */
 export function WeaponPreview({
     item,
     attachments,
+    skin,
 }: {
     item: Equipment;
     attachments?: WeaponAttachments;
+    /** A weapon skin id (`@ghosts/squad/weapon-skins`); Factory when unset. */
+    skin?: string;
 }) {
     const [error, setError] = useState("");
     const [expanded, setExpanded] = useState(false);
@@ -34,6 +40,7 @@ export function WeaponPreview({
                 <WeaponCanvas
                     item={item}
                     attachments={attachments}
+                    skin={skin}
                     wireframe={wireframe}
                     onStats={setStats}
                     onError={setError}
@@ -86,6 +93,7 @@ export function WeaponPreview({
                         <WeaponCanvas
                             item={item}
                             attachments={attachments}
+                            skin={skin}
                             wireframe={wireframe}
                             onStats={setStats}
                             onError={setError}
@@ -104,12 +112,14 @@ export function WeaponPreview({
 function WeaponCanvas({
     item,
     attachments,
+    skin,
     wireframe,
     onStats,
     onError,
 }: {
     item: Equipment;
     attachments?: WeaponAttachments;
+    skin?: string;
     wireframe: boolean;
     onStats(text: string): void;
     onError(message: string): void;
@@ -171,6 +181,10 @@ function WeaponCanvas({
         let unwire: (() => void) | undefined;
         wire.current = (on) => {
             unwire?.();
+            // The laser trace is an unlit effect: it has no wireframe, so it hides.
+            shown?.traverse((o) => {
+                if (o.userData.laserTrace) o.visible = !on;
+            });
             unwire = on && shown ? applyWireframe(shown, wireframeColors(element)) : undefined;
             draw();
         };
@@ -194,11 +208,29 @@ function WeaponCanvas({
         const observer = new ResizeObserver(resize);
         observer.observe(element);
         controls.addEventListener("change", draw);
-        void assets
-            .get(item.model, attachments)
+        // The Armory shows the redesigned long guns; everything else (and every
+        // character) keeps the baked assets through EquipmentAssets.
+        let release: (() => void) | undefined;
+        const load = async () => {
+            if (!isArmoryGun(item.model)) return assets.get(item.model, attachments);
+            // A skin's files are fetched the first time it is shown; if they
+            // cannot be had, the gun shows in its factory finish.
+            let finish: ArmorySkin | undefined;
+            if (skin && skin !== FACTORY_SKIN)
+                finish = await loadArmorySkin(item.model, skin).catch(() => undefined);
+            const weapon = acquireArmoryWeapon(item.model, attachments, finish);
+            if (disposed) weapon.release();
+            else release = weapon.release;
+            return weapon.model;
+        };
+        void load()
             .then((model) => {
                 if (disposed) return;
+                // Framing measures the gun, not the laser trace beyond its muzzle.
+                const traces = model.children.filter((o) => o.userData.laserTrace);
+                traces.forEach((o) => model.remove(o));
                 const bounds = new T.Box3().setFromObject(model);
+                if (traces.length) model.add(...traces);
                 extent = bounds.getSize(new T.Vector3()).x;
                 model.position.sub(bounds.getCenter(new T.Vector3()));
                 scene.add(model);
@@ -218,12 +250,13 @@ function WeaponCanvas({
             wire.current = undefined;
             observer.disconnect();
             controls.dispose();
+            release?.();
             assets.dispose();
             environment.dispose();
             renderer.dispose();
             renderer.forceContextLoss();
             renderer.domElement.remove();
         };
-    }, [item, attachments, onError, onStats]);
+    }, [item, attachments, skin, onError, onStats]);
     return <div className="weapon-canvas" ref={host} />;
 }

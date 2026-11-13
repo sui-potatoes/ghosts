@@ -1,13 +1,12 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
-import type { CSSProperties } from "react";
-
-import { Tooltip } from "../../../components/Tooltip";
 import { attachmentById, itemById } from "@ghosts/squad/catalog";
 import { contributions, formatStat, RECRUIT_DEFAULT, VISIBLE } from "@ghosts/squad/stats";
 import type { Contribution, StatRow } from "@ghosts/squad/stats";
 import type { Recruit } from "@ghosts/squad/types";
+
+import { StatLine } from "./StatLine";
 
 const SOURCE_NAMES = {
     weapon: "Primary weapon",
@@ -74,38 +73,16 @@ export function StatsPanel({ recruit, tag }: { recruit: Recruit; tag?: string })
                         const delta = group.delta ? value - RECRUIT_DEFAULT[row.key] : 0;
                         const parts = group.delta ? byStat[row.key] : [];
                         const base = group.delta ? RECRUIT_DEFAULT[row.key] : value;
-                        const pct = (n: number) =>
-                            `${Math.max(0, Math.min(100, (n / row.max) * 100))}%`;
-                        const bar = {
-                            "--base": pct(Math.min(base, value)),
-                            "--gain": pct(Math.max(0, value - base)),
-                            "--loss": pct(Math.max(0, base - value)),
-                        } as CSSProperties;
                         return (
-                            <div className="stat-row" key={row.key}>
-                                <span className="stat-label">{row.label}</span>
-                                <span className="stat-bar" aria-hidden="true" style={bar}>
-                                    <i className="stat-bar-base" />
-                                    <i className="stat-bar-gain" />
-                                    <i className="stat-bar-loss" />
-                                </span>
-                                <span className="stat-value">{formatStat(row, total)}</span>
-                                <span className="stat-delta">
-                                    {parts.length > 0 && (
-                                        <Tooltip text={explain(row, parts)}>
-                                            <span
-                                                className={`stat-delta-value ${delta > 0 ? "up" : delta < 0 ? "down" : ""}`}
-                                            >
-                                                {delta > 0
-                                                    ? `+${delta}`
-                                                    : delta < 0
-                                                      ? String(delta)
-                                                      : "±0"}
-                                            </span>
-                                        </Tooltip>
-                                    )}
-                                </span>
-                            </div>
+                            <StatLine
+                                key={row.key}
+                                row={row}
+                                base={base}
+                                value={value}
+                                text={formatStat(row, total)}
+                                delta={delta}
+                                tip={parts.length > 0 ? explain(row, parts) : undefined}
+                            />
                         );
                     })}
                 </section>

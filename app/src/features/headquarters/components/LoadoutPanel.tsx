@@ -10,16 +10,20 @@ import { ATTACHMENT_SLOTS, ATTACHMENT_SLOT_NAMES, itemById } from "@ghosts/squad
 import type { ArmorColors, Recruit as LocalRecruit } from "@ghosts/squad/types";
 
 import {
+    equipUtilityTx,
     issueTx,
     rankAllows,
     unequipArmorTx,
+    unequipUtilityTx,
     unequipWeaponTx,
     type ChainArmor,
     type ChainRecruit,
+    type ChainUtility,
     type ChainWeapon,
 } from "../../../chain";
 import { attachmentFor, fitOf, MAX_FITTINGS } from "../armory";
-import { armorModel, weaponModel } from "../mapping";
+import { actionLines, UTILITY_SLOTS } from "../../squad/utilities";
+import { armorModel, utilityModel, weaponModel } from "../mapping";
 
 interface Props {
     accountId: string;
@@ -30,6 +34,7 @@ interface Props {
     onColors(colors: ArmorColors): void;
     weapons: ChainWeapon[];
     armors: ChainArmor[];
+    utilities: ChainUtility[];
     images: Record<string, string>;
     busy: boolean;
     act(build: () => Transaction): void;
@@ -44,12 +49,18 @@ const armoryLink = (id?: string) => `/headquarters/armory${id ? `?item=${id}` : 
  */
 export function LoadoutPanel(props: Props) {
     const { accountId, recruit, local, images, busy, act } = props;
-    const [slot, setSlot] = useState<"primary" | "armor">("primary");
+    const [slot, setSlot] = useState<"primary" | "armor" | "utility">("primary");
     const rid = recruit.objectId;
     const first = recruit.metadata.name.split(" ")[0];
     const primary = itemById(local.equipment.primary);
     const armor = itemById(local.equipment.armor);
     const fit = fitOf(recruit.weapon?.upgrades);
+    const carried = recruit.utilities;
+    const utilityFull = carried.length >= UTILITY_SLOTS;
+    const utilityImage = (u: { name: string }) => {
+        const id = utilityModel(u);
+        return id ? images[id] : undefined;
+    };
 
     return (
         <div className="loadout-panel">
@@ -92,6 +103,36 @@ export function LoadoutPanel(props: Props) {
                         )}
                     </button>
                 ))}
+                {Array.from({ length: UTILITY_SLOTS }, (_, i) => {
+                    const u = carried[i];
+                    const image = u && utilityImage(u);
+                    return (
+                        <button
+                            key={`utility-${i}`}
+                            className={slot === "utility" ? "selected" : ""}
+                            aria-pressed={slot === "utility"}
+                            onClick={() => setSlot("utility")}
+                        >
+                            <span className="slot-number">0{i + 3}</span>
+                            <span>
+                                <small>{UTILITY_SLOTS > 1 ? `Utility ${i + 1}` : "Utility"}</small>
+                                <strong>{u ? u.name : "No utility"}</strong>
+                                {u && (
+                                    <em className="slot-detail">
+                                        {actionLines(u.actions)
+                                            .map((a) => `${a.name} · ${a.uses}`)
+                                            .join(", ")}
+                                    </em>
+                                )}
+                            </span>
+                            {image ? (
+                                <img src={image} alt="" />
+                            ) : (
+                                <span className="slot-empty">＋</span>
+                            )}
+                        </button>
+                    );
+                })}
             </div>
 
             {slot === "primary" && (
@@ -156,48 +197,136 @@ export function LoadoutPanel(props: Props) {
                 </>
             )}
 
+            {slot === "utility" && (
+                <section className="hq-carried" aria-label="Carried utility">
+                    {carried.length === 0 && (
+                        <p className="sq-footnote">
+                            Nothing carried. Issue a utility from the racks below.
+                        </p>
+                    )}
+                    {carried.map((u) => (
+                        <div key={u.id} className="hq-utility">
+                            <ul className="hq-fit-list">
+                                {actionLines(u.actions).map((a) => (
+                                    <li key={a.id} className="on">
+                                        <span>{a.name}</span>
+                                        <strong>{a.uses}</strong>
+                                    </li>
+                                ))}
+                            </ul>
+                            {actionLines(u.actions).map((a) => (
+                                <p key={a.id} className="sq-footnote">
+                                    {a.description}
+                                </p>
+                            ))}
+                            <div className="hq-carried-actions">
+                                <button
+                                    className="btn sq-equipped"
+                                    disabled={busy}
+                                    onClick={() =>
+                                        act(() => unequipUtilityTx(accountId, rid, u.id))
+                                    }
+                                >
+                                    Return {u.name} to armory
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                </section>
+            )}
+
             <div className="inventory-heading">
                 <h4>Racks</h4>
-                <span>{slot === "primary" ? "Rifles in storage" : "Armor in storage"}</span>
+                <span>
+                    {slot === "primary"
+                        ? "Rifles in storage"
+                        : slot === "armor"
+                          ? "Armor in storage"
+                          : "Utilities in storage"}
+                </span>
             </div>
-            <div className="hq-issue-list">
-                {(slot === "primary" ? props.weapons : props.armors).map((g) => {
-                    const model = itemById(slot === "primary" ? weaponModel(g) : armorModel(g));
-                    const fitted = "upgrades" in g ? (g as ChainWeapon).upgrades.length : 0;
-                    return (
-                        <button
-                            key={g.objectId}
-                            disabled={busy || !rankAllows(recruit, g)}
-                            onClick={() =>
-                                act(() =>
-                                    issueTx(
-                                        accountId,
-                                        slot === "primary" ? "weapon" : "armor",
-                                        g.objectId,
-                                        null,
-                                        rid,
-                                    ),
-                                )
-                            }
-                        >
-                            {model && images[model.id] && <img src={images[model.id]} alt="" />}
-                            <strong>{g.name}</strong>
-                            <small>
-                                {slot === "primary" ? `${fitted} / ${MAX_FITTINGS} fitted · ` : ""}
-                                {rankAllows(recruit, g)
-                                    ? `Issue to ${first}`
-                                    : `Needs ${g.requiredRank.$kind}`}
-                            </small>
-                        </button>
-                    );
-                })}
-                {(slot === "primary" ? props.weapons : props.armors).length === 0 && (
-                    <p className="sq-footnote">
-                        Nothing in storage.{" "}
-                        <Link to={armoryLink()}>Requisition in the armory ↗</Link>
-                    </p>
-                )}
-            </div>
+            {slot === "utility" ? (
+                <div className="hq-issue-list">
+                    {props.utilities.map((g) => {
+                        const image = utilityImage(g);
+                        const lines = actionLines(g.actions);
+                        return (
+                            <button
+                                key={g.objectId}
+                                disabled={busy}
+                                onClick={() =>
+                                    act(() =>
+                                        equipUtilityTx(
+                                            accountId,
+                                            rid,
+                                            g.objectId,
+                                            utilityFull ? carried[0].id : undefined,
+                                        ),
+                                    )
+                                }
+                            >
+                                {image && <img src={image} alt="" />}
+                                <strong>{g.name}</strong>
+                                <small>
+                                    {lines.map((a) => `${a.name} · ${a.uses}`).join(", ")}
+                                </small>
+                                <small>
+                                    {utilityFull
+                                        ? `Swap with ${carried[0].name}`
+                                        : `Issue to ${first}`}
+                                </small>
+                            </button>
+                        );
+                    })}
+                    {props.utilities.length === 0 && (
+                        <p className="sq-footnote">
+                            Nothing in storage.{" "}
+                            <Link to={armoryLink()}>Requisition in the armory ↗</Link>
+                        </p>
+                    )}
+                </div>
+            ) : (
+                <div className="hq-issue-list">
+                    {(slot === "primary" ? props.weapons : props.armors).map((g) => {
+                        const model = itemById(slot === "primary" ? weaponModel(g) : armorModel(g));
+                        const fitted = "upgrades" in g ? (g as ChainWeapon).upgrades.length : 0;
+                        return (
+                            <button
+                                key={g.objectId}
+                                disabled={busy || !rankAllows(recruit, g)}
+                                onClick={() =>
+                                    act(() =>
+                                        issueTx(
+                                            accountId,
+                                            slot === "primary" ? "weapon" : "armor",
+                                            g.objectId,
+                                            null,
+                                            rid,
+                                        ),
+                                    )
+                                }
+                            >
+                                {model && images[model.id] && <img src={images[model.id]} alt="" />}
+                                <strong>{g.name}</strong>
+                                <small>
+                                    {slot === "primary"
+                                        ? `${fitted} / ${MAX_FITTINGS} fitted · `
+                                        : ""}
+                                    {rankAllows(recruit, g)
+                                        ? `Issue to ${first}`
+                                        : `Needs ${g.requiredRank.$kind}`}
+                                </small>
+                            </button>
+                        );
+                    })}
+                    {(slot === "primary" ? props.weapons : props.armors).length === 0 && (
+                        <p className="sq-footnote">
+                            Nothing in storage.{" "}
+                            <Link to={armoryLink()}>Requisition in the armory ↗</Link>
+                        </p>
+                    )}
+                </div>
+            )}
         </div>
     );
 }

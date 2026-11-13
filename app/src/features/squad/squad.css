@@ -387,6 +387,13 @@
     object-fit: contain;
     margin-left: auto;
 }
+.loadout-slots .slot-detail {
+    display: block;
+    margin-top: 3px;
+    font-size: 9px;
+    font-style: normal;
+    color: var(--disabled-color);
+}
 .slot-empty {
     margin-left: auto;
     color: var(--disabled-color);
@@ -733,6 +740,39 @@
     color: var(--accent-color);
 }
 .stat-delta-value.down {
+    color: var(--warn-color);
+}
+/* A draft change, not applied yet: striped in the bar, dashed in the value. */
+.stat-bar-draft {
+    width: var(--draft, 0%);
+    background: repeating-linear-gradient(
+        135deg,
+        var(--accent-color) 0 2px,
+        color-mix(in srgb, var(--accent-color) 25%, transparent) 2px 4px
+    );
+}
+.stat-bar-draft.down {
+    background: repeating-linear-gradient(
+        135deg,
+        var(--warn-color) 0 2px,
+        color-mix(in srgb, var(--warn-color) 25%, transparent) 2px 4px
+    );
+}
+.stat-draft {
+    grid-column: 2 / -1;
+    margin-top: -4px;
+    text-align: right;
+    font-size: 9px;
+}
+.stat-draft-value {
+    padding: 1px 4px;
+    border: 1px dashed currentColor;
+    white-space: nowrap;
+}
+.stat-draft-value.up {
+    color: var(--accent-color);
+}
+.stat-draft-value.down {
     color: var(--warn-color);
 }
 .sq-error {

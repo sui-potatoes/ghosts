@@ -8,12 +8,14 @@ import {
     itemById,
 } from "@ghosts/squad/catalog";
 
+import type { ChainUtility } from "../../../chain";
 import { fitOf, type Gear, type Held } from "../armory";
 import { armorModel, weaponModel } from "../mapping";
+import { utilityActions } from "../utilities";
 
-export type Category = "weapons" | "armor" | "mods";
+export type Category = "weapons" | "armor" | "mods" | "utilities";
 export type Selection =
-    | { kind: "weapon" | "armor"; id: string }
+    | { kind: "weapon" | "armor" | "utility"; id: string }
     | { kind: "upgrade"; attachment: string }
     | { kind: "requisition" };
 
@@ -22,6 +24,7 @@ interface Props {
     onCategory(category: Category): void;
     weapons: Held<Gear>[];
     armors: Held<Gear>[];
+    utilities: Held<ChainUtility>[];
     stock: Record<string, number>;
     /** Weapons carrying each attachment, by catalog id. */
     fitted: Record<string, number>;
@@ -42,19 +45,20 @@ export function ArmoryInventory(props: Props) {
         weapons: props.weapons.length,
         armor: props.armors.length,
         mods: Object.values(props.stock).reduce((n, c) => n + c, 0),
+        utilities: props.utilities.length,
     };
     const isSelected = (s: Selection) => JSON.stringify(s) === JSON.stringify(selection);
 
     return (
         <aside className="squad-roster hq-inventory" aria-label="Armory inventory">
             <nav className="hq-inventory-tabs" aria-label="Inventory categories">
-                {(["weapons", "armor", "mods"] as const).map((c) => (
+                {(["weapons", "armor", "mods", "utilities"] as const).map((c) => (
                     <button
                         key={c}
                         aria-pressed={category === c}
                         onClick={() => props.onCategory(c)}
                     >
-                        {c}
+                        {c === "utilities" ? "util" : c}
                         <span>{String(counts[c]).padStart(2, "0")}</span>
                     </button>
                 ))}
@@ -112,6 +116,29 @@ export function ArmoryInventory(props: Props) {
                             />
                         );
                     })}
+                {category === "utilities" &&
+                    props.utilities.map(({ item, carrier }) => {
+                        const s = { kind: "utility", id: item.id } as const;
+                        return (
+                            <Row
+                                key={item.id}
+                                name={item.name}
+                                status={
+                                    carrier
+                                        ? `Carried · ${firstName(carrier.metadata.name)}`
+                                        : "In armory"
+                                }
+                                selected={isSelected(s)}
+                                onClick={() => props.onSelect(s)}
+                            >
+                                <small>
+                                    {utilityActions(item)
+                                        .map((a) => a.name)
+                                        .join(" · ")}
+                                </small>
+                            </Row>
+                        );
+                    })}
                 {category === "mods" &&
                     upgrades.map((a) => {
                         const s = { kind: "upgrade", attachment: a.id } as const;
@@ -132,7 +159,9 @@ export function ArmoryInventory(props: Props) {
                             ? "No rifles on file. Recruits without one carry the standard issue, which is not an armory item."
                             : category === "armor"
                               ? "No armor on file."
-                              : "No mods in stock."}
+                              : category === "utilities"
+                                ? "No utilities on file."
+                                : "No mods in stock."}
                     </p>
                 )}
             </div>
