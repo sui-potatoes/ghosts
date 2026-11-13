@@ -12,6 +12,8 @@
   Cache-Control: public, max-age=2592000
 /sounds/*
   Cache-Control: public, max-age=2592000
+/fonts/*
+  Cache-Control: public, max-age=2592000
 
 # Documents: always revalidate so a deploy shows up on the next load.
 /
@@ -39,7 +41,34 @@
 /favicon*
   Cache-Control: public, max-age=86400
 
+# Security headers for every response.
+#
+# Content-Security-Policy is enforced and starts from default-src 'none': every
+# directive the game needs is spelled out. Every non-'self' token:
+#   'wasm-unsafe-eval'  Rapier physics and the Basis (KTX2) transcoder compile WebAssembly.
+#   blob:               worker-src: three.js starts the KTX2 transcoder as a blob worker.
+#                       img-src/media-src/connect-src: decoded textures and audio buffers.
+#   data:               img-src/connect-src: inline SVG/PNG, fetch() of data: URLs in loaders.
+#   style-src-attr 'unsafe-inline'
+#                       React style={...} props and the style attribute on <html>. Inline
+#                       <style> elements are NOT allowed (style-src-elem is 'self').
+#   chain hosts         connect-src, the network from src/constants.ts NETWORK (testnet):
+#                       fullnode (gRPC-web), GraphQL, Enoki (zkLogin) and the MVR name registry.
+#                       For mainnet replace "testnet" by "mainnet" in these four hosts;
+#                       scripts/check-no-external-assets.mjs fails CI when they drift from NETWORK.
+#   https:              connect-src, DELIBERATE OPENING so Settings -> Network can point at any
+#                       TLS fullnode (a custom RPC). http://localhost:* allows a local node.
+#                       To drop custom RPCs, delete "https: http://localhost:* http://127.0.0.1:*"
+#                       from connect-src (variant A: only the known hosts above). Nothing else
+#                       in the policy changes; the Network panel then reports the block.
+# Google sign-in is a popup that navigates to accounts.google.com and back to our own origin:
+# navigation is not governed by CSP, so no Google host is listed anywhere.
 /*
+  Content-Security-Policy: default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; script-src-attr 'none'; style-src-elem 'self'; style-src-attr 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; worker-src 'self' blob:; manifest-src 'self'; connect-src 'self' blob: data: https://fullnode.testnet.sui.io https://graphql.testnet.sui.io https://api.enoki.mystenlabs.com https://testnet.mvr.mystenlabs.com https: http://localhost:* http://127.0.0.1:*; frame-src 'none'; frame-ancestors 'none'; object-src 'none'; base-uri 'none'; form-action 'self'; upgrade-insecure-requests
   X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
   Referrer-Policy: strict-origin-when-cross-origin
-  X-Frame-Options: SAMEORIGIN
+  Strict-Transport-Security: max-age=31536000
+  Cross-Origin-Opener-Policy: same-origin-allow-popups
+  Cross-Origin-Resource-Policy: same-origin
+  Permissions-Policy: accelerometer=(), autoplay=(self), bluetooth=(), camera=(), clipboard-read=(), clipboard-write=(self), display-capture=(), encrypted-media=(), fullscreen=(self), gamepad=(self), geolocation=(), gyroscope=(), hid=(), idle-detection=(), magnetometer=(), microphone=(), midi=(), payment=(), picture-in-picture=(), publickey-credentials-create=(self), publickey-credentials-get=(self), screen-wake-lock=(), serial=(), usb=(), xr-spatial-tracking=()

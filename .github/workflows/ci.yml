@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -15,17 +18,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
 
       # pnpm version comes from the packageManager field in the root package.json.
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: pnpm
 
-      - run: pnpm install --frozen-lockfile
+      # Dependency lifecycle scripts stay off; the app builds without any (see pnpm.onlyBuiltDependencies).
+      - run: pnpm install --frozen-lockfile --ignore-scripts
 
       - run: pnpm lint
 
@@ -37,7 +43,7 @@ jobs:
 
       - run: pnpm build
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: dist
           path: app/dist
@@ -51,11 +57,13 @@ jobs:
       # Matches toolchain-version in move/packages/*/Published.toml.
       SUI_VERSION: 1.82.1
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
 
       - name: Cache Sui CLI
         id: sui-cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.local/sui
           key: sui-${{ runner.os }}-${{ runner.arch }}-${{ env.SUI_VERSION }}
@@ -93,3 +101,8 @@ jobs:
         run: |
           sui move build --warnings-are-errors
           sui move test --warnings-are-errors
+
+      # Dependencies must resolve to the revs recorded in Move.lock; a build that has to
+      # rewrite either lock means a manifest changed without the lock being committed.
+      - name: Move.lock is up to date
+        run: git diff --exit-code -- move/packages/matchmaker/Move.lock move/packages/ghosts/Move.lock

@@ -31,6 +31,8 @@ export const activeRpcUrl = getSettings().network.rpcUrl || defaultRpcUrl(NETWOR
 export const dAppKit = createDAppKit({
     networks: [NETWORK],
     defaultNetwork: NETWORK,
+    // Off: dApp Kit registers the Slush web wallet by default, which fetches api.slush.app on every load.
+    slushWalletConfig: null,
     createClient: (network) =>
         new SuiGrpcClient({
             network,
