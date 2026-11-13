@@ -18,8 +18,8 @@ no storage, no app imports.
   `body-shape.ts`: the procedural body-proportion warp).
 - `studio/`: the shared character builder (`character-assets.ts`), armor
   materials, held equipment, the recruit studio, and the parametric gear
-  sources — `long-guns.ts`, `weapon-attachments.ts` and `weapon-finish.ts`
-  (rifles and fittings), `sidearm.ts`, `field-supplies.ts` (grenade, trauma
+  sources — `held-weapons.ts` (the long guns characters carry, from the
+  redesigned gun files and their fittings), `weapon-finish.ts`, `sidearm.ts`, `field-supplies.ts` (grenade, trauma
   case), `office-worker.ts` with its generated `crossed-arms-reference.ts`,
   and `gear-geometry.ts` underneath them.
 - `motion/`: the captured action catalog (`catalog.ts`: combat actions plus
@@ -57,20 +57,27 @@ batches, embedded leather/webbing normals, and hip-bound pouch assemblies whose
 flaps, closures and stitching follow the pouch orientation. Build and pack with
 `field-kit` in place of `spectre` above.
 
-`studio/long-guns.ts`, `weapon-attachments.ts` and `weapon-finish.ts` are the
-parametric source for the three rifles (assault, precision, plasma) and their
-interchangeable fittings, authored in the shared native weapon socket with one
-bore axis per weapon. They bake to `app/public/squad/weapons/*.glb` through
-the `app/scripts/weapons/` pipeline (see its README); Squad and inventory load
-those baked GLBs, while combat still builds the assault and precision rifles
-procedurally without attachments — moving combat onto the baked models is the
-open follow-up. Combat tracers start at the authored muzzle positions, and the
-finishes use deterministic micro-normal maps with no per-frame geometry work.
+Characters carry the redesigned long guns: `studio/held-weapons.ts` builds the
+service rifle (`rifle`), marksman rifle (`sniper`) and plasma rifle from
+`service-rifle.ts`, `marksman-rifle.ts` and `plasma-rifle.ts`, with their
+fittings (`rail-upgrades.ts`, `furniture-upgrades.ts`) seated from each gun's
+mount table, or its standard clip and stock, merged to one mesh per material
+in the shared hand socket. The guns share the family pistol grip where the old
+receivers had it, so the trigger-hand mount is unchanged; muzzle, mounts and the
+support-hand station (`heldMuzzle`, `heldMount`, `heldSupport`) come from the
+gun files' constants. `acquireHeldWeapon` shares one build per (gun, fittings,
+detail): Squad, the title screens and inventory thumbnails use `"high"`,
+combat's field units `"low"` (service rifle about 9.5k triangles, marksman
+about 20k; five draws each). Combat tracers start at `userData.muzzle`.
+`long-guns.ts` and `weapon-attachments.ts` are the previous generation and its
+GLB pipeline (`app/scripts/weapons/`); nothing at runtime loads them now.
 `studio/field-supplies.ts` builds the grenade and sewn trauma case in four batches.
 Equipment tests check dimensions, finite geometry, muzzle/optic alignment, and
 palm fit for both sexes through five weapon motions.
 
-Equipment fitting is baked into `motions/{sex}-equipment.bin` and shared by the
+Equipment fitting is baked into `motions/{sex}{,-sniper,-plasma}-equipment.bin`
+(one hold per long gun: the support hand closes on that gun's own handguard,
+placed from its measured seat) and shared by the
 frozen Squad idle, the motion preview, and combat. Loading no longer constructs a
 second body skeleton to run a partial clearance solver. The grenade handoff is
 prepared from the throw's own first frame. NYX forearm plates stop before the

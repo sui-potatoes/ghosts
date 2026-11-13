@@ -16,6 +16,22 @@ const HAND_FIT: Record<string, Record<string, number[]>> = {
     },
 };
 
+/** The firing finger: flexion of its three joints (degrees) and the vertical
+ * slope of each phalanx (holder frame: + up). The first phalanx dips into
+ * the guard opening under the lower receiver's trigger-guard roof; the
+ * distal ones level out so the pad meets the blade above the guard bow.
+ * `null`: the finger stays straight along the receiver, just above the guard.
+ * The male finger (17 mm across the pad) does not fit the redesigned guard's
+ * 16 mm opening at the held scale without touching roof or bow. */
+export interface TriggerFinger {
+    curl: [number, number, number];
+    slope: [number, number, number];
+}
+export const TRIGGER_FINGER: Record<"female" | "male", TriggerFinger | null> = {
+    female: { curl: [25, 55, 70], slope: [-0.28, -0.08, -0.08] },
+    male: null,
+};
+
 const fingerFrames = new WeakMap<T.Group, Map<string, T.Matrix4>>();
 /** Capture anatomical finger roll from the bind pose before fitting any animation. */
 export function captureTriggerHand(root: T.Group) {
@@ -41,7 +57,13 @@ export function captureTriggerHand(root: T.Group) {
 }
 
 /** Fit the trigger hand around the grip's outside surface; keep the wrist/socket invariant. */
-export function triggerGrip(root: T.Group, weapon: T.Group, sex: string, firing: boolean) {
+export function triggerGrip(
+    root: T.Group,
+    weapon: T.Group,
+    sex: string,
+    firing: boolean,
+    finger: TriggerFinger | null = TRIGGER_FINGER[sex === "male" ? "male" : "female"],
+) {
     root.updateMatrixWorld(true);
     const bone = (name: string) => root.getObjectByName(`mixamorigRightHand${name}`)!;
     const across = bone("Index1")
@@ -85,16 +107,11 @@ export function triggerGrip(root: T.Group, weapon: T.Group, sex: string, firing:
     aim("Thumb1", [0, 0.2, 1]);
     aim("Thumb2", [0.5, 0.1, 1]);
     aim("Thumb3", [1, 0.1, 0.3]);
-    if (firing) {
+    if (firing && finger) {
         // Spread flexion across PIP and DIP; the tip never hooks backward.
-        const angles = sex === "female" ? [20, 45, 65] : [20, 50, 70];
-        angles.forEach((degrees, index) => {
+        finger.curl.forEach((degrees, index) => {
             const angle = T.MathUtils.degToRad(degrees);
-            aim(`Index${index + 1}`, [
-                Math.cos(angle),
-                sex === "female" ? -0.08 : 0.08,
-                Math.sin(angle),
-            ]);
+            aim(`Index${index + 1}`, [Math.cos(angle), finger.slope[index], Math.sin(angle)]);
         });
     } else {
         aim("Index1", [1, 0.12, 0]);

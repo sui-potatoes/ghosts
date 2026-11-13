@@ -17,7 +17,7 @@ import {
   type IdleChoice,
 } from "./idle-behavior";
 // One model and one grip calibration for Squad, inventory thumbnails and combat.
-import { createLongGun } from "@ghosts/squad/studio/long-guns";
+import { acquireHeldWeapon } from "@ghosts/squad/studio/held-weapons";
 import { createSidearm, SIDEARM_MOUNT_OFFSET } from "@ghosts/squad/studio/sidearm";
 import { aimClip, combatClips } from "./combat-pose";
 import { createWeaponMount } from "./weapon-mount";
@@ -167,7 +167,9 @@ export function soldier(u: Unit): Rig {
   const donorRifle = model.getObjectByName("Rifle")!;
   const gun = createWeaponMount(donorRifle);
   donorRifle.removeFromParent();
-  const rifle = createLongGun("rifle"), sniper = createLongGun("sniper");
+  // Field units carry the low-detail build, shared by every unit (built once
+  // per gun, kept for the session); never dispose these meshes per unit.
+  const rifle = fieldGun("rifle"), sniper = fieldGun("sniper");
   gun.add(rifle, sniper);
   model.userData.weaponCarry=new WeaponCarry(gun,find("LeftHand"));
   const pistol = createSidearm();
@@ -214,6 +216,18 @@ export function soldier(u: Unit): Rig {
   initial.setEffectiveTimeScale(rig.idleSpeed);
   setWeapon(rig, u.weapon);
   return rig;
+}
+const fieldGuns = new Map<"rifle" | "sniper", T.Group>();
+/** A unit's long gun: a clone of the shared low-detail build. */
+function fieldGun(kind: "rifle" | "sniper") {
+  let source = fieldGuns.get(kind);
+  if (!source) {
+    source = acquireHeldWeapon(kind, {}, "low").model;
+    fieldGuns.set(kind, source);
+  }
+  const gun = source.clone();
+  gun.userData = { ...source.userData };
+  return gun;
 }
 export function play(
   r: Rig,
@@ -360,6 +374,8 @@ export function disposePortrait(r: Rig) {
   const skeletons = new Set<T.Skeleton>();
   r.root.traverse((o) => {
     if (o instanceof T.Mesh) {
+      // Field guns are shared by every unit (`fieldGun`).
+      if (o.userData.sharedWeapon) return;
       if (!sharedGeometry.has(o.geometry)) o.geometry.dispose();
       for (const m of Array.isArray(o.material) ? o.material : [o.material])
         if (!sharedMaterials.has(m)) {

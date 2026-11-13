@@ -10,7 +10,11 @@ import { gunzipSync, gzipSync } from "node:zlib";
 import * as T from "three";
 import { motionSkeleton, armTo } from "@ghosts/squad/motion/clearance";
 import { nativeClip } from "@ghosts/squad/motion/clips";
-import { equipmentPose, type EquipmentPoses } from "@ghosts/squad/motion/equipment-poses";
+import {
+    equipmentPose,
+    poseSuffix,
+    type EquipmentPoses,
+} from "@ghosts/squad/motion/equipment-poses";
 import { captureArmRest, distributeArmTwist } from "./arm-twist.ts";
 import { triggerGrip, captureTriggerHand } from "./trigger-grip.ts";
 import { supportGrip } from "./support-grip.ts";
@@ -69,7 +73,7 @@ export function changedTracks(source: T.AnimationClip, result: T.AnimationClip) 
         .map((track) => T.KeyframeTrack.toJSON(track.clone().optimize()));
 }
 const configurations = ["female", "male"].flatMap((sex) =>
-    ["rifle", "sniper"].map((model) => ({ sex, model })),
+    (["rifle", "sniper", "plasma"] as const).map((model) => ({ sex, model })),
 );
 for (const { sex, model } of configurations) {
     const raw = read(`public/squad/motions/${sex}.bin`).map(
@@ -178,12 +182,16 @@ for (const { sex, model } of configurations) {
         ...["spectre", "nyx", "nyx-mid", "nyx-heavy", "field-kit"].map(
             (id) => `public/squad/armor/${id}-${sex}.glb`,
         ),
-        "../packages/squad/src/studio/long-guns.ts",
-        "../packages/squad/src/studio/held-equipment.ts",
-        "../packages/squad/src/studio/weapon-attachments.ts",
-        "../packages/squad/src/studio/weapon-finish.ts",
-        ...["rifle", "sniper", "plasma"].map((id) => `public/squad/weapons/${id}.glb`),
-        "../packages/squad/src/studio/sidearm.ts",
+        ...[
+            "held-weapons",
+            "held-equipment",
+            "rifle-shapes",
+            "service-rifle",
+            "marksman-rifle",
+            "plasma-rifle",
+            "weapon-finish",
+            "sidearm",
+        ].map((id) => `../packages/squad/src/studio/${id}.ts`),
         "scripts/equipment-fit/references.json",
         "scripts/equipment-fit/build.ts",
         "scripts/equipment-fit/support-grip.ts",
@@ -326,7 +334,7 @@ for (const { sex, model } of configurations) {
             for (let i = 0; i < track.values.length; i += 4)
                 new T.Quaternion().fromArray(track.values, i).normalize().toArray(track.values, i);
         }
-    const output = `public/squad/motions/${sex}${model === "sniper" ? "-sniper" : ""}-equipment.bin`,
+    const output = `public/squad/motions/${sex}${poseSuffix(model)}-equipment.bin`,
         packed = gzipSync(JSON.stringify(result), { level: 9 });
     fs.writeFileSync(output, packed);
     console.log(`${output}: ${Object.keys(result.clips).length} poses, ${packed.length} bytes`);

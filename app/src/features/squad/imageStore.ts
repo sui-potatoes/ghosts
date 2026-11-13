@@ -14,6 +14,9 @@
 const CACHE = "ghosts-images";
 /** Bump when the captures themselves change (framing, size, lighting). */
 const RENDER_VERSION = 1;
+/** Bump when gear built in code (not loaded from files) changes: the long
+ * guns and their fittings are built by `@ghosts/squad/studio/held-weapons`. */
+const GEAR_VERSION = 2;
 /** Portraits kept; looks edited away from age out first. */
 const MAX_PORTRAITS = 96;
 
@@ -42,7 +45,7 @@ function fingerprint() {
         const { files } = (await response.json()) as { files: Files };
         return {
             portraits: `${RENDER_VERSION}-${digest(files, ["/squad/body/", "/squad/editor/"])}`,
-            gear: `${RENDER_VERSION}-${digest(files, ["/squad/weapons/", "/squad/armor/"])}`,
+            gear: `${RENDER_VERSION}.${GEAR_VERSION}-${digest(files, ["/squad/weapons/", "/squad/armor/"])}`,
         };
     })().catch(() => null);
     return fingerprints;

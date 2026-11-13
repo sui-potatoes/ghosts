@@ -30,6 +30,7 @@
     "./studio/equipment-assets": "./src/studio/equipment-assets.ts",
     "./studio/gltf-loader": "./src/studio/gltf-loader.ts",
     "./studio/held-equipment": "./src/studio/held-equipment.ts",
+    "./studio/held-weapons": "./src/studio/held-weapons.ts",
     "./studio/recruit-studio": "./src/studio/recruit-studio.ts",
     "./studio/wireframe": "./src/studio/wireframe.ts",
     "./studio/long-guns": "./src/studio/long-guns.ts",

@@ -4,10 +4,16 @@ import * as T from "three";
 import { skinMeshes, posedSurface, weaponEdges, rifleAsset } from "./gear-collision.ts";
 import { motionSkeleton, clearEquipment } from "@ghosts/squad/motion/clearance";
 import { nativeClip } from "@ghosts/squad/motion/clips";
-import { equipmentPose, type EquipmentPoses } from "@ghosts/squad/motion/equipment-poses";
+import { equipmentPose, poseSuffix, type EquipmentPoses } from "@ghosts/squad/motion/equipment-poses";
 import { mountHandEquipment } from "@ghosts/squad/studio/held-equipment";
-import { createLongGun } from "@ghosts/squad/studio/long-guns";
 import { createSidearm } from "@ghosts/squad/studio/sidearm";
+import {
+    HELD_GRIP,
+    heldMount,
+    heldMuzzle,
+    heldPoint,
+    heldSupport,
+} from "@ghosts/squad/studio/held-weapons";
 import { WeaponCarry } from "@ghosts/squad/motion/weapon-carry";
 const sex = process.env.SEX ?? "female",
     fps = Number(process.env.FPS ?? 30),
@@ -26,7 +32,7 @@ if(!sets.length)throw Error("Unknown collision set");
 const mount = JSON.parse(fs.readFileSync(`public/squad/body/${sex}/weapon-mount.json`, "utf8"));
 const kind = process.env.WEAPON === "rifle" ? "rifle" : process.env.WEAPON === "plasma" ? "plasma" : "sniper";
 const equipment = [kind, "pistol"].map((type) => {
-    const gun = type === "pistol" ? createSidearm() : process.env.RIGID ? rifleAsset(kind,process.env.ATTACHMENTS === "max" ? 3 : 0) : createLongGun(kind, process.env.ATTACHMENTS === "max" ? { clip: "clip-3", stock: "stock-3", laser: "laser-3", scope: "scope-3" } : {}),
+    const gun = type === "pistol" ? createSidearm() : rifleAsset(kind, process.env.ATTACHMENTS === "max" ? 3 : 0, process.env.DETAIL === "low" ? "low" : "high"),
         group = new T.Group();
     gun.quaternion.setFromRotationMatrix(
         new T.Matrix4().makeBasis(
@@ -49,7 +55,7 @@ const equipment = [kind, "pistol"].map((type) => {
 const fitted: EquipmentPoses | undefined = process.env.FIT
     ? undefined
     : JSON.parse(
-          gunzipSync(fs.readFileSync(`public/squad/motions/${sex}${kind === "sniper" ? "-sniper" : ""}-equipment.bin`)).toString(),
+          gunzipSync(fs.readFileSync(`public/squad/motions/${sex}${poseSuffix(kind)}-equipment.bin`)).toString(),
       );
 const clips = JSON.parse(
     gunzipSync(fs.readFileSync(process.env.FIT ?? `public/squad/motions/${sex}.bin`)).toString(),
@@ -112,14 +118,15 @@ for (const raw of clips) {
         const landmarks = (
             type === "pistol"
                 ? [[0, 0, 0]]
-                : [
-                      [0, -0.29, -0.045],
-                      [0, -0.045, -0.046],
-                      [0, 0.18, -0.046],
-                      [0, 0.02, 0.1],
-                      [0, 0.4, -0.046],
-                      ...(type === "sniper" ? [[0, 0.05, -0.132]] : []),
-                  ]
+                : // Inside the held gun: stock, receiver, grip, handguard, muzzle, optic rail.
+                  [
+                      heldMount(kind, "stock"),
+                      heldPoint([0, 0.025, 0]),
+                      new T.Vector3(...HELD_GRIP),
+                      heldSupport(kind),
+                      heldMuzzle(kind).add(new T.Vector3(0, -0.03, 0)),
+                      heldMount(kind, "scope"),
+                  ].map((p) => p.toArray())
         ).map((p) => new T.Vector3(...p).applyMatrix4(gun.matrixWorld));
         let total = 0;
         const regions: Record<string, number> = {},

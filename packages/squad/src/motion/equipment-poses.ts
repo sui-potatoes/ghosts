@@ -35,13 +35,24 @@ export function equipmentPose(source: T.AnimationClip, poses: EquipmentPoses) {
     return clip;
 }
 
+/** Each long gun has its own baked hold (the support hand closes on its own
+ * handguard); the rifle's serves every other model. */
+export type PoseSet = "rifle" | "sniper" | "plasma";
+export const poseSet = (model = "rifle"): PoseSet =>
+    model === "sniper" || model === "plasma" ? model : "rifle";
+/** File suffix of a model's baked hold: `motions/<sex><suffix>-equipment.bin`. */
+export const poseSuffix = (model = "rifle") => {
+    const set = poseSet(model);
+    return set === "rifle" ? "" : `-${set}`;
+};
+
 const cache = new Map<string, Promise<EquipmentPoses>>();
 export function loadEquipmentPoses(sex: Sex, model = "rifle") {
-    const key = `${sex}${model === "sniper" ? "-sniper" : ""}`;
+    const key = `${sex}${poseSuffix(model)}`;
     if (!cache.has(key)) {
         const request = (async () => {
             const response = await fetch(
-                `${import.meta.env.BASE_URL}squad/motions/${key}-equipment.bin?v=8`,
+                `${import.meta.env.BASE_URL}squad/motions/${key}-equipment.bin?v=9`,
             );
             if (!response.ok) throw Error("Equipment poses could not load.");
             const blob = await response.blob();

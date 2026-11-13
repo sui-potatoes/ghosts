@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import * as T from "three";
-import { equipmentPose, loadEquipmentPoses } from "../motion/equipment-poses";
+import { equipmentPose, loadEquipmentPoses, poseSet } from "../motion/equipment-poses";
 import { nativeClip } from "../motion/clips";
 import { paintArmor } from "./armor-materials";
 import { officeIdle } from "./office-worker";
@@ -311,7 +311,7 @@ export class CharacterAssets {
         );
     }
     private pose(sex: Sex, model: string) {
-        const key = `${sex}/${model === "sniper" ? "sniper" : "rifle"}`;
+        const key = `${sex}/${poseSet(model)}`;
         return remember(shared.poses, key, () =>
             Promise.all([
                 json<Parameters<typeof T.AnimationClip.parse>[0]>(

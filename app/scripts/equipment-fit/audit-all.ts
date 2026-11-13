@@ -1,4 +1,4 @@
-// Exact mesh audit of every shipped clip, for both rigs and both long guns.
+// Exact mesh audit of every shipped clip, for both rigs and the three long guns.
 // Sidearm clips automatically use the pistol. Outputs machine-readable evidence.
 import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -7,7 +7,7 @@ const directory = process.env.REPORT_DIR ?? "/tmp/ghosts-pose-audit";
 mkdirSync(directory, { recursive: true });
 const runs = await Promise.all(
     ["female", "male"].flatMap((sex) =>
-        ["rifle", "sniper"].map(
+        ["rifle", "sniper", "plasma"].map(
             (weapon) =>
                 new Promise<{ sex: string; weapon: string; code: number; report: string }>(
                     (resolve) => {
