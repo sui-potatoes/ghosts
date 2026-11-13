@@ -117,8 +117,9 @@ only / in the design note / proposed here.
 
 ### 3.1 Recruit, as on chain today
 
-A recruit without a weapon still gets the default weapon stats (`stats.move:69`) but no `Attack` or
-`Reload`; without a utility it has no `Grenade` either. Armed and carrying a frag grenade it has all four.
+A hire carries a Standard Rifle (`account.move`, `hire`), so a recruit is without a weapon only once
+its rifle is taken off. A recruit without a weapon still gets the default weapon stats
+(`stats.move:69`) but no `Attack` or `Reload`; without a utility it has no `Grenade` either. Armed and carrying a frag grenade it has all four.
 
 | Action | Source | Requires | Status |
 | --- | --- | --- | --- |

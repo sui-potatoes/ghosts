@@ -174,9 +174,10 @@ export interface Fitting {
 }
 
 /**
- * Arm recruits at home as the armory does: a recruit hired with no gear has no `Attack`,
- * `Reload` or `Grenade` once on the map. Each standard rifle and frag grenade is requisitioned,
- * equipped while the recruit is borrowed and handed back, in one transaction.
+ * Arm recruits at home as the armory does: a hire carries a Standard Rifle but no `Grenade`,
+ * and a recruit whose rifle was taken off has no `Attack` or `Reload` once on the map. Each
+ * standard rifle and frag grenade is requisitioned, equipped while the recruit is borrowed and
+ * handed back, in one transaction.
  */
 export function armSquadTx(d: Deployment, account: string, fittings: Fitting[]): Transaction {
     const tx = new Transaction();

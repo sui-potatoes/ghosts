@@ -5,7 +5,7 @@
 /// Weapons have different stats and can be upgraded with additional modules.
 module ghosts::weapon;
 
-use ghosts::{stats::{Self, Stats}, weapon_upgrade::WeaponUpgrade};
+use ghosts::{stats::Stats, weapon_upgrade::WeaponUpgrade};
 use std::string::String;
 
 /// Attempt to attach too many upgrades to a weapon.
@@ -32,11 +32,6 @@ public struct Weapon has key, store {
 /// Create a new `Weapon` with the provided parameters.
 public(package) fun new(name: String, stats: Stats, ctx: &mut TxContext): Weapon {
     Weapon { id: object::new(ctx), name, stats, upgrades: vector[] }
-}
-
-/// Create a new default `Weapon`.
-public(package) fun default(ctx: &mut TxContext): Weapon {
-    new("Standard Issue Rifle", stats::default_weapon(), ctx)
 }
 
 /// Destroy the `Weapon`, with whatever upgrades are fitted to it.

@@ -263,10 +263,10 @@ test("a search a match answered can't be cancelled before its seat is accepted",
     assert.equal((await backend.account())?.search.kind, "playing");
 });
 
-test("a recruit with no gear can only move: no shot, no throw", async () => {
+test("a fresh hire carries a rifle but no grenade: a shot, no throw", async () => {
     const backend = createSandbox({ seed: 7 });
     const agent = new GhostsAgent(backend, fast);
-    await agent.setName("unarmed-one");
+    await agent.setName("rifle-only");
     await backend.createAccount();
     await backend.hireSquad();
     await agent.findGame();
@@ -274,11 +274,14 @@ test("a recruit with no gear can only move: no shot, no throw", async () => {
 
     const kinds = new Set((await agent.legal()).actions.map((a) => a.kind));
     assert.ok(kinds.has("move"));
-    assert.ok(!kinds.has("attack") && !kinds.has("reload") && !kinds.has("grenade"));
+    assert.ok(kinds.has("attack") || kinds.has("reload"), "the hire's rifle shoots");
+    assert.ok(!kinds.has("grenade"));
+    const unit = (await agent.observe()).units.find((unit) => unit.mine)!;
+    assert.ok(!unit.grenade, "a grenade is not part of the hire");
 
-    // Arming takes one transaction, and only while someone at home lacks gear:
-    // a match deploys three of the four, so the fourth is still bare.
-    assert.notEqual(await backend.armSquad(), null, "the recruit left at home is armed");
+    // Fitting takes one transaction, and only while someone at home lacks gear:
+    // a match deploys three of the four, so the fourth still has a free slot.
+    assert.notEqual(await backend.armSquad(), null, "the recruit left at home gets a grenade");
     assert.equal(await backend.armSquad(), null, "everyone at home is fitted or deployed");
 });
 

@@ -126,10 +126,71 @@ fun test_hire_recruits() {
     assert_eq!(jane.leader(), home);
     ts::return_to_address(home, jane);
 
+    // the hires carry a Standard Rifle, the very one `requisition_rifle` gives,
+    // and nothing else; the armory is still empty
+    let standard = acc.requisition_rifle(1, ts.ctx());
+    owned.do!(|id| {
+        if (id == recruit_id) return;
+        let hire = ts.take_from_address_by_id<Recruit>(home, id);
+        let rifle = hire.weapon().borrow();
+        assert_eq!(rifle.name(), b"Standard Rifle".to_string());
+        assert_eq!(rifle.name(), standard.name());
+        assert!(rifle.stats() == standard.stats());
+        assert!(rifle.upgrades().is_empty());
+        assert!(hire.armor().is_none());
+        assert!(hire.utilities().is_empty());
+        ts::return_to_address(home, hire);
+    });
+    standard.destroy();
+    assert!(ts::ids_for_address<Weapon>(home).is_empty());
+
     ts::return_shared(registry);
     ts::return_shared(rng);
     ts::return_shared(acc);
     ts.end();
+}
+
+/// A hire's rifle is gear like any other: unequipped, it goes to the armory and
+/// leaves the recruit unarmed; dismissed, the recruit leaves it there too.
+#[test]
+fun test_hired_rifle_to_armory() {
+    use std::unit_test::assert_eq;
+
+    let mut ts = ts::begin(@0);
+    let (registry, mut acc, rng) = open_account(&mut ts);
+    acc.hire_recruits(&registry, &rng, ts.ctx());
+
+    let home = object::id_address(&acc);
+    ts.next_tx(@1);
+    let hires = ts::ids_for_address<Recruit>(home);
+    let (mut first, borrow) = acc.borrow_recruit(ts::receiving_ticket_by_id(hires[0]), ts.ctx());
+    let rifle = unequip_weapon(&mut first);
+    let rifle_id = object::id(&rifle);
+    assert!(first.weapon().is_none());
+    transfer::public_transfer(rifle, home);
+    return_recruit(first, borrow);
+
+    ts.next_tx(@1);
+    assert_eq!(ts::ids_for_address<Weapon>(home), vector[rifle_id]);
+    let first = ts.take_from_address_by_id<Recruit>(home, hires[0]);
+    assert!(first.weapon().is_none());
+    ts::return_to_address(home, first);
+
+    // the second hire is dismissed armed: their rifle joins the first one, and
+    // the squad tops up with another armed hire
+    let second = ts.take_from_address_by_id<Recruit>(home, hires[1]);
+    let second_rifle = object::id(second.weapon().borrow());
+    ts::return_to_address(home, second);
+    acc.dismiss_recruit(ts::receiving_ticket_by_id(hires[1]), ts.ctx());
+    acc.hire_recruits(&registry, &rng, ts.ctx());
+    assert_eq!(acc.num_recruits(), FREE_RECRUITS);
+
+    ts.next_tx(@1);
+    let armory = ts::ids_for_address<Weapon>(home);
+    assert_eq!(armory.length(), 2);
+    assert!(armory.contains(&rifle_id) && armory.contains(&second_rifle));
+
+    close_account(ts, registry, acc, rng);
 }
 
 #[test]

@@ -337,7 +337,8 @@ export class GhostsAgent {
         if (account && account.recruits < FREE_RECRUITS && account.search.kind === "idle") {
             await this.backend.hireSquad();
         }
-        // A recruit hired with no gear can't attack, reload or throw on the map.
+        // A hire carries a Standard Rifle but no grenade; a recruit whose rifle was taken off
+        // can't attack or reload on the map.
         if (account && account.search.kind !== "playing") await this.backend.armSquad();
         return this.situation();
     }

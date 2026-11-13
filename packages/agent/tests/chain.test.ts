@@ -52,6 +52,7 @@ test("every Move-written value reserializes to the same bytes under the SDK's sc
         [AccountBcs, FIXTURES.accountAfterWin],
         [AccountBcs, FIXTURES.accountSuspended],
         [SeatBcs, FIXTURES.seat],
+        [RecruitBcs, FIXTURES.recruitHired],
         [RecruitBcs, FIXTURES.recruitUnarmed],
         [RecruitBcs, FIXTURES.recruitArmed],
         [RecruitBcs, FIXTURES.recruitGrenadier],
@@ -235,8 +236,13 @@ test("an Account's state decodes from Idle through Playing and Suspended", () =>
 
 test("a Seat names the game, and a Recruit shows what it carries", () => {
     assert.equal(SeatBcs.parse(bytes(FIXTURES.seat)).game, GAME);
+    const hired = RecruitBcs.parse(bytes(FIXTURES.recruitHired));
+    assert.equal(hired.weapon?.name, "Standard Rifle", "`hire_recruits` arms every recruit");
+    assert.deepEqual(hired.weapon?.upgrades, []);
+    assert.equal(hired.armor, null);
+    assert.deepEqual(hired.utilities, []);
     const unarmed = RecruitBcs.parse(bytes(FIXTURES.recruitUnarmed));
-    assert.equal(unarmed.weapon, null, "`hire_recruits` leaves a recruit with no weapon");
+    assert.equal(unarmed.weapon, null, "a recruit whose rifle was taken off has no weapon");
     const armed = RecruitBcs.parse(bytes(FIXTURES.recruitArmed));
     assert.equal(armed.weapon?.name, "Standard Rifle");
     assert.equal(armed.armor?.name, "Medium Armor");
