@@ -211,9 +211,10 @@ export const EQUIPMENT: Equipment[] = [
     name: "M7 Fragmentation",
     type: "THROWABLE",
     slot: "utility",
-    description: "One grenade, one opportunity to move a stubborn target.",
+    description:
+      "Fragmentation grenade. Thrown up to 5 tiles; deals 4 damage, less armor, to every unit within 2 tiles of the target, friend or foe, and destroys cover. Cannot be dodged. One per match.",
     weight: 0.5,
-    stat: "5 damage · area effect",
+    stat: "4 damage · 2-tile blast",
     model: "grenade",
   },
   {

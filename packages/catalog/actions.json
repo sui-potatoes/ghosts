@@ -48,7 +48,7 @@
             "tag": 3,
             "status": "chain",
             "name": "Grenade",
-            "description": "Throw a grenade up to 5 tiles. It hurts every unit within 2 tiles, friend or foe, and destroys cover. It cannot be dodged.",
+            "description": "Costs 1 AP. Throw up to 5 tiles; deals 4 damage, less armor, to every unit within 2 tiles of the target, friend or foe. Destroys cover. Cannot be dodged. Walls block the throw.",
             "source": "utility",
             "ap": 1,
             "endsActivation": false,

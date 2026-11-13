@@ -512,7 +512,7 @@
             "type": "utility",
             "status": "chain",
             "name": "Frag Grenade",
-            "description": "One grenade, one opportunity to move a stubborn target.",
+            "description": "Fragmentation grenade. Thrown up to 5 tiles; deals 4 damage, less armor, to every unit within 2 tiles of the target, friend or foe, and destroys cover. Cannot be dodged. One per match.",
             "kind": 0,
             "rank": "Rookie",
             "stats": {},
