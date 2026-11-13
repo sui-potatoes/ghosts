@@ -334,7 +334,7 @@
 .hq-deck-cards {
     --hq-deck-card: min(320px, calc((100dvh - var(--squad-header-height) - 264px) * 0.68));
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, max(210px, var(--hq-deck-card))));
+    grid-template-columns: repeat(4, minmax(0, max(210px, var(--hq-deck-card))));
     gap: 22px;
     width: 100%;
     justify-content: center;
@@ -1241,7 +1241,7 @@
             320px,
             calc((100dvh / var(--ui-scale) - var(--squad-header-height) - 264px) * 0.68)
         );
-        grid-template-columns: repeat(3, minmax(0, max(210px, var(--hq-deck-card))));
+        grid-template-columns: repeat(4, minmax(0, max(210px, var(--hq-deck-card))));
     }
     .hq-gate {
         margin-top: calc(18vh / var(--ui-scale));

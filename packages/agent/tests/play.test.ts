@@ -213,7 +213,7 @@ test("three missed turns in a row lose the game", async () => {
     assert.equal((await agent.act(["complete"])).situation.phase, "idle");
     const { account } = await agent.status();
     assert.deepEqual(account?.score, { wins: 1, losses: 0, draws: 0 });
-    assert.equal(account?.recruits, 3, "the squad came home");
+    assert.equal(account?.recruits, 4, "the squad came home");
     assert.equal(account?.rating, 1500, "only the score moves: nothing writes the rating");
 });
 
@@ -276,7 +276,9 @@ test("a recruit with no gear can only move: no shot, no throw", async () => {
     assert.ok(kinds.has("move"));
     assert.ok(!kinds.has("attack") && !kinds.has("reload") && !kinds.has("grenade"));
 
-    // Arming takes one transaction, and only while someone at home lacks gear.
+    // Arming takes one transaction, and only while someone at home lacks gear:
+    // a match deploys three of the four, so the fourth is still bare.
+    assert.notEqual(await backend.armSquad(), null, "the recruit left at home is armed");
     assert.equal(await backend.armSquad(), null, "everyone at home is fitted or deployed");
 });
 
@@ -340,13 +342,13 @@ test("abandoning loses the game, brings the squad home and suspends the account"
     await agent.act(["deploy"]);
     assert.equal(
         (await agent.status()).account?.recruits,
-        0,
-        "deployed recruits leave the account",
+        1,
+        "deployed recruits leave the account, the fourth stays home",
     );
     assert.ok(!(await agent.legal()).actions.some((a) => a.id === "abandon"), "never suggested");
 
     assert.equal((await agent.act(["abandon"])).situation.phase, "suspended");
-    assert.equal((await agent.status()).account?.recruits, 3, "the squad came home");
+    assert.equal((await agent.status()).account?.recruits, 4, "the squad came home");
     await assert.rejects(agent.findGame(), /suspended/);
 
     clock += 3_600_001;
@@ -361,9 +363,9 @@ test("recruits who fall stay gone, and setup replaces them", async () => {
         signal: AbortSignal.timeout(20_000),
     });
     const after = (await agent.status()).account!;
-    assert.ok(after.recruits <= 3);
+    assert.ok(after.recruits <= 4);
     await agent.setup();
-    assert.equal((await agent.status()).account?.recruits, 3);
+    assert.equal((await agent.status()).account?.recruits, 4);
 });
 
 test("two sides that only pass end in a stalemate at turn 60, a draw", async () => {
@@ -384,7 +386,7 @@ test("two sides that only pass end in a stalemate at turn 60, a draw", async () 
     await agent.act(["complete"]);
     const { account } = await agent.status();
     assert.deepEqual(account?.score, { wins: 0, losses: 0, draws: 1 });
-    assert.equal(account?.recruits, 3);
+    assert.equal(account?.recruits, 4);
     assert.equal(await agent.backend.account().then((a) => a?.suspendedUntilMs), 0, "no blame");
 });
 
