@@ -46,20 +46,28 @@ export function CommandBar({
     const slots = ORDER.map((action) => commands.find((c) => c.action === action)).filter(
         (c): c is Command => !!c,
     );
+    const nav = commands.filter((c) => c.action === "nav");
     return (
-        <footer className="uis-bar">
-            <div className="uis-bar-context">
-                {title && <span className="uis-bar-title">{title}</span>}
+        <footer className="gui-bar">
+            <div className="gui-bar-context">
+                {title && <span className="gui-bar-title">{title}</span>}
                 {deny ? (
-                    <span key={denyKey} className="uis-bar-hint" data-deny>
-                        <i className="uis-warn-mark" aria-hidden />
+                    <span key={denyKey} className="gui-bar-hint" data-deny>
+                        <i className="gui-warn-mark" aria-hidden />
                         {deny}
                     </span>
                 ) : (
-                    hint && <span className="uis-bar-hint">{hint}</span>
+                    hint && <span className="gui-bar-hint">{hint}</span>
                 )}
             </div>
-            <div className="uis-bar-commands">
+            <div className="gui-bar-commands">
+                {nav.map((command) => (
+                    <span key={command.label} className="gui-cmd" data-action="nav">
+                        <Glyph action="nav" nav={command.glyph} set={glyphs} />
+                        <span className="gui-cmd-label">{command.label}</span>
+                    </span>
+                ))}
+                {nav.length > 0 && <span className="gui-bar-rule" aria-hidden />}
                 {slots.map((command) => (
                     <CommandHint
                         key={command.action}
@@ -69,7 +77,7 @@ export function CommandBar({
                         onRun={onRun}
                     />
                 ))}
-                <span className="uis-bar-rule" aria-hidden />
+                <span className="gui-bar-rule" aria-hidden />
                 <CommandHint
                     command={back}
                     glyphs={glyphs}
@@ -94,7 +102,7 @@ export function CommandHint({ command, glyphs, pressed, onRun }: HintProps) {
         <button
             type="button"
             tabIndex={-1}
-            className="uis-cmd"
+            className="gui-cmd"
             data-action={command.action}
             data-tone={command.tone}
             data-denied={command.deny ? "" : undefined}
@@ -102,8 +110,8 @@ export function CommandHint({ command, glyphs, pressed, onRun }: HintProps) {
             onMouseDown={(e: MouseEvent) => e.preventDefault()}
             onClick={() => onRun(command)}
         >
-            <Glyph action={command.action} set={glyphs} />
-            <span className="uis-cmd-label">{command.label}</span>
+            <Glyph action={command.action} nav={command.glyph} set={glyphs} />
+            <span className="gui-cmd-label">{command.label}</span>
         </button>
     );
 }
