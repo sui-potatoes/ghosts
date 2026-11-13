@@ -57,8 +57,8 @@ public struct Metadata has drop, store {
 }
 
 /// Defines the Recruit - a unit in the game which users hire, train and send on
-/// missions. As the Recruit gains experience, they can be promoted to higher
-/// ranks and get access to better equipment and abilities.
+/// missions. As the Recruit gains experience, they are promoted to higher ranks,
+/// each promotion adding to their stats.
 public struct Recruit has key, store {
     id: UID,
     /// `Metadata` of the Recruit.

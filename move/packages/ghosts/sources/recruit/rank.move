@@ -83,9 +83,6 @@ public fun ordinal(rank: &Rank): u8 {
     }
 }
 
-/// Whether the rank is the given one or above it.
-public fun at_least(rank: &Rank, other: &Rank): bool { rank.ordinal() >= other.ordinal() }
-
 /// Promotes the rank of the Recruit.
 public(package) fun rank_up(rank: &mut Rank) {
     *rank =
