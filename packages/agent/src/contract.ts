@@ -42,10 +42,10 @@ export const TESTNET_NAMES: NameRegistry = {
 
 /** The package on testnet, the same ids as `GHOSTS` in `app/src/constants.ts`. */
 export const TESTNET_DEPLOYMENT: Deployment = {
-    package: "0x2d98340895491cbea1964d14e2c394eba2be907be4f278f966dbe9a3b25e0002",
-    registry: "0x4818af61995f3d63602efe6a080d4b3caa781d23a4edda345fd3e56450c39558",
-    matchmaker: "0x3ae996767215956e3e74e5d6364ad5cbddd0933aabbd5a2e9cb87a7f7fddc935",
-    preset: "0xbf87177f12715adfa48574471f176163ae4ac673dd972ef8f83821446b5265a9",
+    package: "0xaf839ad9a8dcc9ab9cc3a1b6caab495629f3e724b0ebbed4bc00350ae30b6e32",
+    registry: "0xc97a1b2988b4e89585a44b777c3ccb900181e144f37638469f2922df5b6b407c",
+    matchmaker: "0x3a77c4d1ff92940d522b638ae0fbe566eec7850cc834a48205694e5a51c19cf9",
+    preset: "0x4344b213865638bb962a67bc767b5d1be94d86b1a13f9484785565509db105a1",
     names: TESTNET_NAMES,
 };
 
