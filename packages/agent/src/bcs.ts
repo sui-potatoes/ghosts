@@ -165,14 +165,12 @@ const Weapon = bcs.struct("Weapon", {
     name: bcs.string(),
     stats: StatsBcs,
     upgrades: bcs.vector(WeaponUpgrade),
-    requiredRank: Rank,
 });
 
 const Armor = bcs.struct("Armor", {
     id: bcs.Address,
     name: bcs.string(),
     stats: StatsBcs,
-    requiredRank: Rank,
 });
 
 /** `ghosts::utility::Utility`: a stats modifier for its carrier and the actions it grants. */
