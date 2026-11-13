@@ -1,10 +1,11 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { PadHints } from "./components/PadHints";
 import { useBack } from "./hooks/useBack";
+import { useFitScale } from "./hooks/useFitScale";
 import { useMenuNav } from "./hooks/useMenuNav";
 import { SettingsOverlay } from "./settings/SettingsView";
 
@@ -45,6 +46,10 @@ export function PauseMenu({
         if (open && view === "menu") items.current[0]?.focus();
     }, [open, view, items]);
 
+    // A phone in landscape sees the same card, scaled to fit (the overlay's own padding counts).
+    const card = useRef<HTMLDivElement | null>(null);
+    useFitScale(card, { extraHeight: 48, enabled: open && view === "menu" });
+
     useBack(open ? onResume : null);
 
     if (!open) return null;
@@ -59,14 +64,15 @@ export function PauseMenu({
 
     return (
         <div
-            className={`fixed inset-0 z-[200] flex items-center justify-center bg-overlay backdrop-blur-sm ${view === "menu" ? "p-6" : ""}`}
+            className={`pause-overlay fixed inset-0 z-[200] flex items-center justify-center bg-overlay backdrop-blur-sm ${view === "menu" ? "p-6" : ""}`}
             onClick={onResume}
         >
             {/* The root menu is a small card; the settings take the whole screen, like the route. */}
             <div
+                ref={card}
                 className={
                     view === "menu"
-                        ? "flex max-h-[92vh] w-full max-w-md flex-col gap-6 overflow-y-auto border border-line bg-surface px-8 py-7"
+                        ? "pause-card fit-root flex max-h-[92vh] w-full max-w-md flex-col gap-6 overflow-y-auto border border-line bg-surface px-8 py-7"
                         : // No padding here: SettingsOverlay carries it inside its
                           // smoke root, so the smoke reaches the screen edges.
                           "flex h-full min-h-0 w-full flex-col"

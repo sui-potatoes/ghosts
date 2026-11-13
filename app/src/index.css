@@ -1,3 +1,5 @@
+/* app/reset.css is the lowest layer; Tailwind's own statement follows in the import. */
+@layer reset, theme, base, components, utilities;
 @import "tailwindcss";
 @import "./styles/theme-tokens.css";
 
@@ -275,7 +277,9 @@
         z-index: 30;
     }
 
-    /* Outline button for secondary actions on the settings screen. */
+    /* Outline button for secondary actions: mono 11px in any container (the
+       reset sits in a lower layer, so this wins). Weight and line height are
+       left to the container, like .label. */
     .btn {
         font-family: var(--font-mono);
         font-size: 11px;
@@ -493,7 +497,6 @@
         width: max-content;
         max-width: calc(100vw - 32px);
         padding: 6px 6px 6px 14px;
-        /* A button takes its font from here: `.btn` loses to the global reset. */
         font: 11px var(--font-mono);
         transform: translateX(-50%);
         border: 1px solid var(--border-color);
@@ -528,7 +531,7 @@
         padding: 4px 10px;
     }
 
-    /* A match's own screens: `.btn` takes its font from here, see `.match-status`. */
+    /* A match's own screens: the mono 11px voice for their text. */
     .match-panel {
         font: 11px var(--font-mono);
     }
@@ -656,5 +659,89 @@
 @media (orientation: landscape) and (max-height: 350px) {
     :root {
         --ui-scale: 0.6;
+    }
+}
+
+/*
+ * Fit-to-screen for the menu screens (title, settings, pause) on a phone held
+ * in landscape. They are the desktop screens, unchanged, scaled down as one
+ * piece: `useFitScale` (hooks/useFitScale.ts) measures the screen's natural
+ * height and sets --fit = min(1, visible height / natural height) on <html>,
+ * and the screen root (.fit-root) is zoomed by it. Same mechanism as
+ * `.ui-zoom` above, with a continuous scale instead of steps. Without a fit
+ * (desktop, tablet, anything taller than 500px) nothing here applies.
+ *
+ * Inside a zoomed root, rem lengths are already shrunk by the html font size
+ * (16px * --fit), so the Tailwind tokens the menus use are divided by --fit
+ * and come out scaled exactly once; viewport units and env() insets are not
+ * scaled by zoom, so those are divided by --fit by hand. Unlayered on purpose:
+ * these rules must beat the Tailwind utilities on the same elements.
+ */
+:root {
+    --fit: 1;
+}
+
+@media (orientation: landscape) and (max-height: 500px) {
+    html[data-fit] {
+        font-size: calc(16px * var(--fit));
+    }
+
+    .fit-root {
+        zoom: var(--fit);
+        --spacing: calc(0.25rem / var(--fit));
+        --container-sm: calc(24rem / var(--fit));
+        --container-md: calc(28rem / var(--fit));
+        --container-xl: calc(36rem / var(--fit));
+        --container-5xl: calc(64rem / var(--fit));
+        --container-6xl: calc(72rem / var(--fit));
+        --text-xs: calc(0.75rem / var(--fit));
+        --text-sm: calc(0.875rem / var(--fit));
+        --text-base: calc(1rem / var(--fit));
+        --text-lg: calc(1.125rem / var(--fit));
+        --text-xl: calc(1.25rem / var(--fit));
+        --text-3xl: calc(1.875rem / var(--fit));
+        --text-6xl: calc(3.75rem / var(--fit));
+        --text-7xl: calc(4.5rem / var(--fit));
+    }
+
+    /* The title screen, at its desktop (md) composition whatever the width. */
+    .main-menu.fit-root {
+        height: calc(100dvh / var(--fit));
+        min-height: 0;
+        overflow: hidden;
+        padding-block: max(8px, calc(env(safe-area-inset-top, 0px) / var(--fit)))
+            max(8px, calc(env(safe-area-inset-bottom, 0px) / var(--fit)));
+        padding-inline: max(64px, calc(env(safe-area-inset-left, 0px) / var(--fit)))
+            max(64px, calc(env(safe-area-inset-right, 0px) / var(--fit)));
+    }
+
+    .main-menu.fit-root::after {
+        background:
+            linear-gradient(
+                90deg,
+                rgba(10, 11, 13, 0.92),
+                rgba(10, 11, 13, 0.65) 36%,
+                transparent 75%
+            ),
+            linear-gradient(0deg, rgba(10, 11, 13, 0.65), transparent 30%);
+    }
+
+    /* The desktop's 64px top and bottom air is the one thing trimmed, so the
+       menu's natural height (and so the scale) is not wasted on margins. */
+    .main-menu.fit-root .main-menu-body {
+        padding-block: 16px;
+    }
+
+    .main-menu.fit-root .main-menu-head h1 {
+        font-size: var(--text-7xl);
+    }
+
+    .main-menu.fit-root .main-menu-foot {
+        padding-bottom: 0;
+    }
+
+    .match-status.on-menu {
+        top: max(8px, env(safe-area-inset-top, 0px));
+        right: max(16px, env(safe-area-inset-right, 0px));
     }
 }

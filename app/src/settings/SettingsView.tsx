@@ -9,6 +9,7 @@ import { uiTick } from "../audio";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { usePad } from "../components/PadHints";
 import { useBack } from "../hooks/useBack";
+import { useFitScale } from "../hooks/useFitScale";
 import { onAction } from "../input";
 import { ControllerPanel } from "./ControllerPanel";
 import { NetworkPanel } from "./NetworkPanel";
@@ -212,11 +213,11 @@ export function SettingsView({
     );
 
     return (
-        <div ref={rootRef} className="flex min-h-0 min-w-0 flex-1 flex-col gap-6">
+        <div ref={rootRef} className="set-view flex min-h-0 min-w-0 flex-1 flex-col gap-6">
             {mode === "controller" ? (
                 // Controller layout, Sifu-style: no side navbar — the
                 // categories ride a tab bar over a centered column of rows.
-                <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-6">
+                <div className="set-split flex min-h-0 min-w-0 flex-1 flex-col gap-6">
                     <CategoryTabs current={current} select={select} />
                     {/* The controller category spreads diagram and rows across
                         the whole width; the others read better as a column. */}
@@ -233,7 +234,7 @@ export function SettingsView({
                     </section>
                 </div>
             ) : (
-                <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-6 md:flex-row md:gap-16">
+                <div className="set-split set-split-nav flex min-h-0 min-w-0 flex-1 flex-col gap-6 md:flex-row md:gap-16">
                     <nav className="set-nav" aria-label="Settings categories">
                         {CATEGORIES.map((c, i) => (
                             <button
@@ -270,21 +271,35 @@ export function SettingsView({
 }
 
 /**
+ * The least height the settings frame needs at its desktop size: the category
+ * column, the header and a few rows. A phone in landscape scales the screen by
+ * visible height / this (useFitScale); the panel scrolls inside the rest.
+ */
+export const SETTINGS_FIT_HEIGHT = 500;
+/** And the width its one-line hints bar needs beside the 288px category column. */
+export const SETTINGS_FIT_WIDTH = 1000;
+
+/**
  * Settings inside the pause menu: the same view at the same full-screen
  * proportions as the route, with the encounter still mounted behind it.
  */
 export function SettingsOverlay({ onBack }: { onBack: () => void }) {
     const [current, setCurrent] = useState<CategoryId>("audio");
     const mode = useLayoutMode();
+    const screen = useRef<HTMLDivElement | null>(null);
+    useFitScale(screen, { designHeight: SETTINGS_FIT_HEIGHT, designWidth: SETTINGS_FIT_WIDTH });
     // Back closes the settings first; the pause menu behind keeps its own back.
     useBack(onBack);
     return (
         // The screen padding lives on the smoke root (like the route), so the
         // smoke canvas spans the whole screen instead of the padded box.
-        <div className="set-screen relative isolate flex h-full min-h-0 flex-col px-6 py-10 md:px-16 md:py-16">
+        <div
+            ref={screen}
+            className="set-screen fit-root relative isolate flex h-full min-h-0 flex-col px-6 py-10 md:px-16 md:py-16"
+        >
             <SettingsSmoke />
             <div
-                className={`ui-zoom mx-auto flex min-h-0 w-full flex-1 flex-col gap-10 ${
+                className={`mx-auto flex min-h-0 w-full flex-1 flex-col gap-10 ${
                     mode === "controller" ? "" : "max-w-6xl"
                 }`}
             >

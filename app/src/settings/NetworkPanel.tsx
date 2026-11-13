@@ -81,7 +81,7 @@ export function NetworkPanel() {
                     onKeyDown={(e) => {
                         if (e.key === "Enter") void save();
                     }}
-                    className="w-full border border-line bg-raised px-3 py-2 font-mono text-sm text-foreground outline-none focus:border-accent"
+                    className="set-net-input w-full border border-line bg-raised px-3 py-2 font-mono text-sm text-foreground outline-none focus:border-accent"
                 />
                 <p className="text-[12px] text-secondary">
                     Optional. Leave empty for the public {NETWORK} fullnode. https only (http for

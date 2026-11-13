@@ -390,15 +390,10 @@ html[data-reduce-motion="on"] *::after {
     color: var(--background-color);
 }
 
-/* Equal twins: same height, same width, never wrapping. The type is stated
-   here because the layered .btn size loses to the cascade inside the dialog. */
+/* Equal twins: same height, same width, never wrapping. The type is .btn's. */
 .confirm-dialog .confirm-btn {
     width: 100%;
     padding: 10px 8px;
-    font-family: var(--font-mono);
-    font-size: 11px;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -424,13 +419,100 @@ html[data-reduce-motion="on"] *::after {
     color: var(--disabled-color);
 }
 
-/* Phones in landscape: the screen padding is the rem of the page (scaled with
-   the root font size); trim it, the rows need the height. The content root
-   carries .ui-zoom (index.css). */
+/*
+ * Touch screens: the ‹ › arrows are the way to step a value down, so they stay
+ * visible on every row (they only mark the focused row where a pointer hovers).
+ * The row's own space is reserved either way, so nothing shifts.
+ */
+@media (hover: none) {
+    .set-row .set-arrow {
+        visibility: visible;
+    }
+}
+
+/* Coarse pointers: arrows and level-bar blocks reach further than they draw,
+   without growing the row. Sizes are divided by --fit (index.css) so they
+   stay about 40px on the glass when the screen is scaled down. */
+@media (pointer: coarse) {
+    .set-row .set-arrow,
+    .set-seg-block {
+        position: relative;
+    }
+
+    .set-row .set-arrow::after {
+        content: "";
+        position: absolute;
+        inset: -17px calc(-13px / var(--fit));
+    }
+
+    .set-seg-block::after {
+        content: "";
+        position: absolute;
+        inset: -20px -2px;
+    }
+}
+
+/*
+ * Phones in landscape: the settings are the desktop screen, scaled to fit
+ * (--fit, index.css). Only what the desktop gets from viewport-width media
+ * queries is restated here, since a phone is under 768px wide in places and
+ * the zoom does not change what a media query sees: the category column
+ * beside the panel, the keyboard hints, the desktop padding.
+ */
 @media (orientation: landscape) and (max-height: 500px) {
-    .set-screen {
-        padding-block: 16px;
-        padding-inline: max(24px, env(safe-area-inset-left, 0px))
-            max(24px, env(safe-area-inset-right, 0px));
+    .set-screen.fit-root {
+        height: calc(100dvh / var(--fit));
+        padding-block: max(16px, calc(env(safe-area-inset-top, 0px) / var(--fit)))
+            max(16px, calc(env(safe-area-inset-bottom, 0px) / var(--fit)));
+        padding-inline: max(32px, calc(env(safe-area-inset-left, 0px) / var(--fit)))
+            max(32px, calc(env(safe-area-inset-right, 0px) / var(--fit)));
+    }
+
+    .set-split-nav {
+        flex-direction: row;
+        gap: 64px;
+    }
+
+    .set-split-nav > .set-nav {
+        flex-direction: column;
+        width: 288px;
+        align-self: flex-start;
+        gap: 0;
+        overflow: visible;
+        border-bottom: none;
+    }
+
+    .set-split-nav .set-nav-item {
+        width: 100%;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .set-hints {
+        display: flex;
+    }
+
+    /* The controller diagram sits over the rows: the panel scrolls as one. */
+    .ctl-panel {
+        overflow-y: auto;
+    }
+
+    .ctl-rows {
+        flex: none;
+    }
+
+    .ctl-rows .set-list {
+        overflow: visible;
+    }
+
+    /* The pause card, its natural size, zoomed; the overlay around it is not. */
+    .pause-overlay {
+        padding-block: max(8px, env(safe-area-inset-top, 0px))
+            max(8px, env(safe-area-inset-bottom, 0px));
+        padding-inline: max(16px, env(safe-area-inset-left, 0px))
+            max(16px, env(safe-area-inset-right, 0px));
+    }
+
+    .pause-card.fit-root {
+        max-height: none;
     }
 }
