@@ -41,18 +41,25 @@ switch, the command bar with a failed write on its amber line, the match chip,
 the gates), so they read as one screen.
 
 - Tabs Weapons / Armor / Mods / Utilities; the list holds what the account has,
-  carried first (the carrier's first name as the row's tag), with Requisition
-  at its foot: the supply catalog in the same list, free, into storage.
+  equipped items first (the recruit's first name as the row's tag), with
+  Requisition at its foot: the supply catalog in the same list, free, into
+  storage. Identical loose items stack into one row with a ×N tag (same name,
+  in storage, no fitted mods, no draft, no finish; `stackRows` in `rules.ts`).
+  An action on a stack takes one object (its lowest id, or the one a deep link
+  named); once drafted, finished or equipped it leaves the stack and its own
+  row is selected.
 - The stage (`armory/GearCanvas.tsx` + `gear-stage.ts`, shared with `/ui-sample`):
   rifles with their fitted or drafted mods, laser trace and finish; mods on a
   rifle; the frag grenade. Armor is worn on the game's existing sets by its
-  carrier, by the recruit the issue picker points at, or the first recruit.
-- Bench: stats (the delta is the mods, or the draft while drafting), four mod
-  slots each opening a picker of tiers (fitted, ×n in storage, or requisitioned
-  free on Apply), the draft's Fitted / Draft / Off lines, Apply (one
-  `fittingsTx`) and Discard, Finish (a grid of the gun's skins, kept on the
-  device), and Carried by → Issue (a recruit picker: Issue or Swap; the one
-  utility slot swaps in one transaction) or Return.
+  carrier, by the recruit the equip picker points at, or the first recruit.
+- Bench, top to bottom: four mod slots each opening a picker of tiers (fitted,
+  ×n in storage, or requisitioned free on Apply); with a draft, its On / Off
+  lines and Apply (one `fittingsTx`, the accent row) and Discard, while every
+  other bench row offers Apply as its primary and Discard as its secondary;
+  stats (the delta is the mods, or the draft while drafting); Finish (a grid of
+  the gun's skins, kept on the device); and Equipped by → Equip (a recruit
+  picker: Equip or Swap; the one utility slot swaps in one transaction) or
+  Unequip. The words are Equip / Unequip everywhere in both sections.
 - Mods tab: storage count and where each is fitted; Try on drafts it on a rifle
   and opens that rifle's bench.
 - `?item=<object id>` opens the item's tab with it selected.

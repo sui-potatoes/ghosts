@@ -5,8 +5,9 @@
  * The Armory's rules as plain functions, tested in `tests/hq-armory.test.ts`:
  * drafting a weapon's mods (one per kind, three at most — the chain's own
  * `weapon::add_upgrade` rule), what applying a draft sends (kept, stripped,
- * taken from storage, requisitioned), and what issuing an item to a recruit
- * does (issue, swap, the one utility slot).
+ * taken from storage, requisitioned), what equipping an item on a recruit
+ * does (equip, swap, the one utility slot), and how identical items stack
+ * into one inventory row.
  */
 
 import { ATTACHMENTS } from "@ghosts/squad/catalog";
@@ -112,16 +113,16 @@ export interface Holder {
     holding: { id: string; name: string }[];
 }
 
-/** What issuing an item to a recruit does. */
+/** What equipping an item on a recruit does. */
 export type IssueTo =
-    /** The recruit carries it already. */
-    | { verb: "Carrying" }
+    /** The recruit has it equipped already. */
+    | { verb: "Equipped" }
     /**
      * `from`: the carrier it comes off (null: out of storage). `replace`: a
      * utility taken off the target in the same transaction. `returns`: the
      * name of what goes back to storage.
      */
-    | { verb: "Issue" | "Swap"; from: string | null; replace?: string; returns?: string };
+    | { verb: "Equip" | "Swap"; from: string | null; replace?: string; returns?: string };
 
 /**
  * `carrier`: who holds the item now (null: storage). For a utility, a full
@@ -136,14 +137,77 @@ export function issueTo(
     slots = 1,
 ): IssueTo {
     if (carrier === target.id || target.holding.some((h) => h.id === itemId))
-        return { verb: "Carrying" };
+        return { verb: "Equipped" };
     if (kind !== "utility") {
         const own = target.holding[0];
         return own
             ? { verb: "Swap", from: carrier, returns: own.name }
-            : { verb: "Issue", from: carrier };
+            : { verb: "Equip", from: carrier };
     }
-    if (target.holding.length < slots) return { verb: "Issue", from: carrier };
+    if (target.holding.length < slots) return { verb: "Equip", from: carrier };
     const out = target.holding[0];
     return { verb: "Swap", from: carrier, replace: out.id, returns: out.name };
 }
+
+/** An item as the inventory sees it: its object id, its name, and whether it is loose. */
+export interface StackInput {
+    id: string;
+    name: string;
+    /**
+     * Interchangeable with every other loose item of its kind and name: in
+     * storage, no fitted mods, no draft, no finish chosen.
+     */
+    loose: boolean;
+}
+
+/** One inventory row: a single item, or a stack of loose identical ones. */
+export interface StackRow {
+    /**
+     * The row's id, stable while the row exists: `stack-<kind>-<name>` for a
+     * stack (whatever its count), `item-<id>` for a single item.
+     */
+    key: string;
+    /** Every object the row stands for; a single item has one. */
+    ids: string[];
+    /** The object an action on the row takes. */
+    acting: string;
+}
+
+/**
+ * Rows for one kind, in the order the items come: loose items of the same
+ * name stack in the place of the first of them; anything else is its own
+ * row. A stack acts with `prefer[key]` when that object is in it (a deep
+ * link to it), otherwise with its lowest object id, so the choice does not
+ * depend on the order the items were read in.
+ */
+export function stackRows(
+    kind: string,
+    items: StackInput[],
+    prefer: Record<string, string> = {},
+): StackRow[] {
+    const rows: StackRow[] = [];
+    const stacks = new Map<string, StackRow>();
+    for (const item of items) {
+        if (!item.loose) {
+            rows.push({ key: `item-${item.id}`, ids: [item.id], acting: item.id });
+            continue;
+        }
+        const key = `stack-${kind}-${item.name}`;
+        const row = stacks.get(key);
+        if (row) row.ids.push(item.id);
+        else {
+            const fresh = { key, ids: [item.id], acting: item.id };
+            stacks.set(key, fresh);
+            rows.push(fresh);
+        }
+    }
+    for (const row of stacks.values()) {
+        row.ids.sort();
+        const wanted = prefer[row.key];
+        row.acting = wanted && row.ids.includes(wanted) ? wanted : row.ids[0];
+    }
+    return rows;
+}
+
+/** The row that stands for an object, if any. */
+export const rowOf = (rows: StackRow[], id: string) => rows.find((r) => r.ids.includes(id));

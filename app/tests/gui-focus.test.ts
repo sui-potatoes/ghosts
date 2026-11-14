@@ -217,3 +217,31 @@ test("choosers never confirm on a click, and nothing runs without a primary", ()
         undefined,
     );
 });
+
+test("a header key from a picker closes it and goes on; from a prompt it is refused", () => {
+    const s = store();
+    add(s, "slot", "inspector", box(0, 0));
+    s.focus("slot");
+    let closed = 0;
+    add(s, "pick", "picker", box(0, 0), "picker");
+    s.pushScope("picker", {
+        action: "back",
+        label: "Loadout",
+        run: () => {
+            closed++;
+            s.unregister("pick");
+            s.popScope("picker");
+        },
+    });
+    assert.equal(s.clearForHeader(), true);
+    assert.equal(closed, 1);
+    assert.equal(s.scope.id, "root");
+    assert.equal(s.focused, "slot");
+
+    let answered = 0;
+    add(s, "p1", "prompt", box(100, 100), "prompt");
+    s.pushScope("prompt", { action: "back", label: "Keep", run: () => answered++ }, true);
+    assert.equal(s.clearForHeader(), false);
+    assert.equal(answered, 0);
+    assert.equal(s.scope.id, "prompt");
+});

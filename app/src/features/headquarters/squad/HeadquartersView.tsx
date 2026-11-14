@@ -54,6 +54,7 @@ import {
     utilityModel,
     weaponModel,
 } from "../mapping";
+import { useWeaponSkins } from "../skins";
 import { AppearanceEditor, HEAD_SECTIONS } from "./AppearanceEditor";
 import { CharacterCanvas, useWireframeAction } from "./CharacterCanvas";
 import { Dossier, DismissPrompt } from "./Dossier";
@@ -72,7 +73,7 @@ import { utilityStats, weaponName } from "./gear";
 import { GearPicker, LoadoutRows } from "./Loadout";
 import { Offstage, Portrait, RankMark, SquadStats } from "./parts";
 import { Deck } from "./Recruitment";
-import { hireOffer, type GearSlot } from "./rules";
+import { hireOffer, holdingRifle, type GearSlot } from "./rules";
 import type { HqData, HqOps } from "./types";
 import "./squad.css";
 
@@ -102,7 +103,9 @@ export function HeadquartersView({ data, ops }: { data: HqData; ops: HqOps }) {
     const [tab, setTab] = useState<Tab>("loadout");
     const recruits = useMemo(() => data.slots.filter((s): s is ChainRecruit => !!s), [data.slots]);
     // Recomputed per data or order change only: the stage rebuilds on new identities.
-    const mapped = useMemo(() => toLocalRecruits(recruits), [recruits]);
+    // Finishes follow the device's choices (an Armory change shows on return).
+    const skins = useWeaponSkins();
+    const mapped = useMemo(() => toLocalRecruits(recruits, skins), [recruits, skins]);
     // The local playtest keeps its own default rifle (`mapping.ts`).
     useEffect(() => syncDemoRoster(mapped), [mapped]);
     // On this screen a recruit without a weapon object is unarmed, as in the field
@@ -417,6 +420,7 @@ function Squad(props: SquadProps) {
     const store = useFocusState();
     const wire = useWireframeAction();
     const images = useEquipmentImages();
+    const skins = useWeaponSkins();
     const [stage, setStage] = useState<{ loading: boolean; error?: string }>({ loading: true });
     const [picker, setPicker] = useState<GearSlot | null>(null);
     /** A grid tile under the cursor, worn on top of the draft. */
@@ -472,21 +476,25 @@ function Squad(props: SquadProps) {
                 ? { ...r, equipment: { ...r.equipment, utility: null } }
                 : picker === "armor"
                   ? { ...r, equipment: { ...r.equipment, armor: null } }
-                  : { ...r, equipment: { ...r.equipment, primary: null }, attachments: {} };
+                  : holdingRifle(r, null, skins);
         const s = data.storage;
         if (picker === "primary") {
             const w = s.weapons.find((x) => x.objectId === candidate);
             if (w)
-                return {
-                    ...r,
-                    equipment: { ...r.equipment, primary: weaponModel(w) },
-                    attachments: Object.fromEntries(
-                        w.upgrades
-                            .map((u) => upgradeModel(u))
-                            .filter((m) => !!m)
-                            .map((m) => [m.slot, m.id]),
-                    ),
-                };
+                return holdingRifle(
+                    r,
+                    {
+                        id: w.id,
+                        model: weaponModel(w),
+                        attachments: Object.fromEntries(
+                            w.upgrades
+                                .map((u) => upgradeModel(u))
+                                .filter((m) => !!m)
+                                .map((m) => [m.slot, m.id]),
+                        ),
+                    },
+                    skins,
+                );
         } else if (picker === "armor") {
             const a = s.armors.find((x) => x.objectId === candidate);
             if (a) return { ...r, equipment: { ...r.equipment, armor: armorModel(a) } };
@@ -495,7 +503,7 @@ function Squad(props: SquadProps) {
             if (u) return { ...r, equipment: { ...r.equipment, utility: utilityModel(u) ?? null } };
         }
         return r;
-    }, [local, draft.armorColors, picker, candidate, data.storage]);
+    }, [local, draft.armorColors, picker, candidate, data.storage, skins]);
 
     const offer = hireOffer(recruits.length, FREE_RECRUITS);
 

@@ -24,7 +24,7 @@ import { fitOf, stockCounts, type Gear } from "../armory";
 import { armorModel, utilityModel, weaponModel } from "../mapping";
 import { weaponName } from "../squad/rules";
 import { REQUISITIONABLE } from "../utilities";
-import { MOD_SLOTS } from "./rules";
+import { MOD_SLOTS, stackRows } from "./rules";
 import type { Order } from "./types";
 
 export type Tab = "weapons" | "armor" | "mods" | "utilities";
@@ -66,11 +66,15 @@ export function grants(actions: { kind: string; uses: number | null }[]): string
 export const utilityGrants = (u: { actions: ChainUtility["actions"] }) =>
     grants(u.actions.map((a) => ({ kind: a.kind.$kind, uses: a.uses })));
 
-/** A weapon, armor or utility the account holds, and who carries it. */
+/** A weapon, armor or utility the account holds and who has it equipped, or a stack of identical ones. */
 export type HeldEntry = {
     kind: "weapon" | "armor" | "utility";
-    /** The object id (the row's and the deep link's). */
+    /** The object an action takes: the item, or the stack's acting object. */
     id: string;
+    /** The row's stable id (`stackRows`). */
+    key: string;
+    /** Every object the row stands for; more than one for a stack. */
+    ids: string[];
     name: string;
     /** The catalog id for thumbnails and the stage; none for a utility without a model. */
     model?: string;
@@ -110,11 +114,49 @@ export type SupplyEntry = {
 const recruitsCarrying = <T>(recruits: ChainRecruit[], pick: (r: ChainRecruit) => T[]) =>
     recruits.flatMap((r) => pick(r).map((item) => ({ item, carrier: r })));
 
+/**
+ * Whether an object is interchangeable with others of its name: in storage,
+ * no fitted mods, no draft, no finish (the view knows the last two).
+ */
+export type Loose = (
+    kind: HeldEntry["kind"],
+    id: string,
+    item: { upgrades?: unknown[] },
+) => boolean;
+
+type Raw = Omit<HeldEntry, "key" | "ids">;
+
+/** Raw entries to rows: loose identical items stacked (`stackRows`). */
+function stacked(
+    kind: HeldEntry["kind"],
+    raw: Raw[],
+    loose: Loose,
+    prefer: Record<string, string>,
+): HeldEntry[] {
+    const rows = stackRows(
+        kind,
+        raw.map((e) => ({
+            id: e.id,
+            name: e.name,
+            loose:
+                !e.carrier && !(e.gear?.upgrades?.length ?? 0) && loose(kind, e.id, e.gear ?? {}),
+        })),
+        prefer,
+    );
+    return rows.map((row) => ({
+        ...raw.find((e) => e.id === row.acting)!,
+        key: row.key,
+        ids: row.ids,
+    }));
+}
+
 export function heldEntries(
     storage: { weapons: ChainWeapon[]; armors: ChainArmor[]; utilities: ChainUtility[] },
     recruits: ChainRecruit[],
+    loose: Loose = () => true,
+    prefer: Record<string, string> = {},
 ) {
-    const weapons: HeldEntry[] = [
+    const weapons: Raw[] = [
         ...recruitsCarrying(recruits, (r) => (r.weapon ? [r.weapon] : [])),
         ...storage.weapons.map((item) => ({ item, carrier: null })),
     ].map(({ item, carrier }) => ({
@@ -125,7 +167,7 @@ export function heldEntries(
         carrier,
         gear: item,
     }));
-    const armors: HeldEntry[] = [
+    const armors: Raw[] = [
         ...recruitsCarrying(recruits, (r) => (r.armor ? [r.armor] : [])),
         ...storage.armors.map((item) => ({ item, carrier: null })),
     ].map(({ item, carrier }) => ({
@@ -136,7 +178,7 @@ export function heldEntries(
         carrier,
         gear: item,
     }));
-    const utilities: HeldEntry[] = [
+    const utilities: Raw[] = [
         ...recruitsCarrying(recruits, (r) =>
             r.utilities.map((u) => ({ ...u, objectId: u.id }) as ChainUtility),
         ),
@@ -149,7 +191,11 @@ export function heldEntries(
         carrier,
         utility: item,
     }));
-    return { weapons, armors, utilities };
+    return {
+        weapons: stacked("weapon", weapons, loose, prefer),
+        armors: stacked("armor", armors, loose, prefer),
+        utilities: stacked("utility", utilities, loose, prefer),
+    };
 }
 
 /** Every mod kind and tier held: in storage (counted) or fitted somewhere. */

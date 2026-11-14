@@ -166,7 +166,7 @@ export function LoadoutPanel(props: Props) {
                                     disabled={busy}
                                     onClick={() => act(() => unequipWeaponTx(accountId, rid))}
                                 >
-                                    Return to armory
+                                    Unequip
                                 </button>
                             </div>
                         </>
@@ -202,7 +202,7 @@ export function LoadoutPanel(props: Props) {
                 <section className="hq-carried" aria-label="Carried utility">
                     {carried.length === 0 && (
                         <p className="sq-footnote">
-                            Nothing carried. Issue a utility from the racks below.
+                            Nothing equipped. Equip a utility from the racks below.
                         </p>
                     )}
                     {carried.map((u) => (
@@ -274,7 +274,7 @@ export function LoadoutPanel(props: Props) {
                                 <small>
                                     {utilityFull
                                         ? `Swap with ${carried[0].name}`
-                                        : `Issue to ${first}`}
+                                        : `Equip ${first}`}
                                 </small>
                             </button>
                         );
@@ -313,7 +313,7 @@ export function LoadoutPanel(props: Props) {
                                     {slot === "primary"
                                         ? `${fitted} / ${MAX_FITTINGS} fitted · `
                                         : ""}
-                                    {`Issue to ${first}`}
+                                    {`Equip ${first}`}
                                 </small>
                             </button>
                         );

@@ -153,6 +153,23 @@ export class FocusStore {
         return this.scopes.some((s) => s.modal);
     }
 
+    /**
+     * Header navigation (a tab or section key, a header click) from wherever
+     * the cursor is: refused while a modal scope (a prompt) is open; a
+     * passing scope (a picker, the command list) is closed first, as its Back
+     * would, so the switch lands on the screen itself. True when it may go on.
+     */
+    clearForHeader(): boolean {
+        if (this.blocked) return false;
+        for (let i = 0; i < 4 && this.scope.id !== "root"; i++) {
+            const id = this.scope.id;
+            this.scope.back.run?.();
+            // The scope pops when its owner unmounts; a React close lands after this call.
+            if (this.scope.id === id) break;
+        }
+        return true;
+    }
+
     setRootBack(back: Command) {
         this.scopes[0].back = back;
     }

@@ -105,7 +105,7 @@ export function DismissPrompt({
             tone="danger"
             eyebrow="Contract termination"
             title={`Dismiss ${recruit.metadata.name}?`}
-            lines={[["Gear", gear || "None carried"]]}
+            lines={[["Gear", gear || "Nothing equipped"]]}
             confirm={{ label: "Dismiss", run: onConfirm }}
             cancel={{ label: "Keep", run: onCancel }}
             glyphs={glyphs}

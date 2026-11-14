@@ -62,9 +62,9 @@ export function LoadoutRows({
         tone: "primary",
         run: () => openPicker(slot),
     });
-    /** Off the recruit, back into the armory. */
+    /** Unequip: off the recruit, back into the armory. */
     const remove = (run: () => unknown): Command =>
-        write("Remove", run, { action: "reset", tone: undefined });
+        write("Unequip", run, { action: "reset", tone: undefined });
     const utilityImage = utility && utilityModel(utility);
     return (
         <>
@@ -93,7 +93,7 @@ export function LoadoutRows({
                 image={armor ? images[armorModel(armor)] : undefined}
                 item={armor?.name}
                 title={armor?.name ?? SLOT_NAMES.armor}
-                hint={armor ? effectOf(armor.stats) : "Nothing issued"}
+                hint={armor ? effectOf(armor.stats) : "Nothing equipped"}
                 commands={[
                     ...(armor ? [remove(() => ops.unequip("armor", rid))] : []),
                     change("armor"),
@@ -113,7 +113,7 @@ export function LoadoutRows({
                         image={u && utilityImage ? images[utilityImage] : undefined}
                         item={u?.name}
                         title={u?.name ?? SLOT_NAMES.utility}
-                        hint={u ? usesOf(u) : "Nothing issued"}
+                        hint={u ? usesOf(u) : "Nothing equipped"}
                         commands={[
                             ...(u ? [remove(() => ops.unequipUtility(rid, u.id))] : []),
                             change("utility"),
@@ -165,7 +165,7 @@ type StoredItem = { objectId: string; name: string; image?: string; kind?: strin
 /**
  * The loadout picker: the inspector turns into what storage holds for the
  * slot. The cursor is held in it; the stage wears the item under the cursor;
- * Confirm issues it (or swaps, the slot's own piece going back to storage).
+ * Confirm equips it (or swaps, the slot's own piece going back to storage).
  */
 export function GearPicker({
     slot,
@@ -279,7 +279,7 @@ export function GearPicker({
                                     ? `${current} goes back to the armory; unarmed, no attack`
                                     : `${current} goes back to the armory`
                             }
-                            commands={[write("Remove", done(removeCurrent)), close]}
+                            commands={[write("Unequip", done(removeCurrent)), close]}
                         />
                     )}
                     {current && (
@@ -288,11 +288,11 @@ export function GearPicker({
                             group="picker"
                             thumb={<Thumb src={currentImage} icon={SLOT_ICON[slot]} />}
                             name={current}
-                            tag="Issued"
+                            tag="Equipped"
                             tagTone="accent"
                             selected
                             title={current}
-                            hint="Carried now"
+                            hint="Equipped now"
                             commands={[close]}
                         />
                     )}
@@ -340,7 +340,7 @@ export function GearPicker({
                 <StatChanges
                     before={before}
                     after={after}
-                    label={candidate === "none" ? "If removed" : "If issued"}
+                    label={candidate === "none" ? "If unequipped" : "If equipped"}
                 />
             </div>
         </FocusScope>
