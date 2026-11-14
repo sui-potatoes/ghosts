@@ -42,7 +42,14 @@ export function PauseDialog({
     }, [open]);
 
     if (!open) return null;
-    if (view === "options") return <SettingsOptions onBack={() => setView("back-from-options")} />;
+    if (view === "options")
+        return (
+            // A layer of its own: the settings frame alone would sit under the
+            // encounter's rail, unit tags and objectives.
+            <div className="gui-over-field">
+                <SettingsOptions onBack={() => setView("back-from-options")} />
+            </div>
+        );
 
     const run: Record<PauseEntry["id"], () => void> = {
         resume: onResume,

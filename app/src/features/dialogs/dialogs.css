@@ -12,6 +12,15 @@
     animation: gui-fade 140ms ease-out;
 }
 
+/* A whole screen mounted over the paused encounter (the pause menu's Options):
+   opaque, and above every layer of the field's own interface. */
+.gui-over-field {
+    position: fixed;
+    inset: 0;
+    z-index: 210;
+    background: var(--background-color);
+}
+
 .gui-dialog-stage {
     display: grid;
     place-items: center;
