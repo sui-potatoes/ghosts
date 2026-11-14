@@ -23,6 +23,7 @@ import {
 import { attachmentFor, fitOf, MAX_FITTINGS } from "../armory";
 import { actionLines, UTILITY_SLOTS } from "../../squad/utilities";
 import { armorModel, utilityModel, weaponModel } from "../mapping";
+import { weaponName } from "../squad/rules";
 
 interface Props {
     accountId: string;
@@ -78,7 +79,8 @@ export function LoadoutPanel(props: Props) {
                         [
                             "primary",
                             "Primary weapon",
-                            recruit.weapon?.name ?? "Standard Issue Rifle",
+                            (recruit.weapon && weaponName(recruit.weapon)) ??
+                                "Standard Issue Rifle",
                             primary,
                         ],
                         ["armor", "Body armor", recruit.armor?.name ?? "No body armor", armor],

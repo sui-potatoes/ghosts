@@ -15,8 +15,9 @@ const CACHE = "ghosts-images";
 /** Bump when the captures themselves change (framing, size, lighting). */
 const RENDER_VERSION = 1;
 /** Bump when gear built in code (not loaded from files) changes: the long
- * guns and their fittings are built by `@ghosts/squad/studio/held-weapons`. */
-const GEAR_VERSION = 2;
+ * guns and their fittings are built by `@ghosts/squad/studio/held-weapons`.
+ * 3: the thumbnails are drawn by Headquarters' own lit, transparent capture. */
+const GEAR_VERSION = 3;
 /** Portraits kept; looks edited away from age out first. */
 const MAX_PORTRAITS = 96;
 

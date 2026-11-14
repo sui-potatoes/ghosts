@@ -1,0 +1,31 @@
+/*
+ * The Armory's few pieces on top of the shared interface (src/ui/gui.css)
+ * and the squad pieces (../squad/squad.css). Classes keep the `hqa-` prefix.
+ */
+
+.hqa-list,
+.hqa-bench {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+/* A draft's per-mod lines: what comes off reads in amber. */
+.hqa-line[data-state="drafted"] {
+    color: var(--text-color);
+}
+
+.hqa-line[data-state="removed"] {
+    color: var(--nerf);
+}
+
+.hqa-note {
+    padding-top: calc(var(--u) * 2);
+    padding-bottom: calc(var(--u) * 2);
+}
+
+/* Nothing on the stage: the mark sits in its middle. */
+.hqa-stage-void {
+    position: absolute;
+    inset: 0;
+}

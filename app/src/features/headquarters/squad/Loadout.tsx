@@ -26,7 +26,7 @@ import {
 } from "../../../ui";
 import { UTILITY_SLOTS } from "../../squad/utilities";
 import { armorModel, upgradeModel, utilityModel, weaponModel } from "../mapping";
-import { effectOf, modsOf, packed, SLOT_NAMES, usesOf, utilityStats } from "./gear";
+import { effectOf, modsOf, packed, SLOT_NAMES, usesOf, utilityStats, weaponName } from "./gear";
 import { issuePlan, type GearSlot } from "./rules";
 import { fieldStats, StatChanges } from "./parts";
 import type { HqData, HqOps } from "./types";
@@ -75,8 +75,8 @@ export function LoadoutRows({
                 slot={SLOT_NAMES.primary}
                 icon={SLOT_ICON.primary}
                 image={images[local.equipment.primary ?? ""]}
-                item={weapon?.name}
-                title={weapon?.name ?? SLOT_NAMES.primary}
+                item={weapon ? weaponName(weapon) : undefined}
+                title={weapon ? weaponName(weapon) : SLOT_NAMES.primary}
                 hint={weapon ? modsOf(weapon) : "Unarmed: no attack in the field"}
                 commands={[
                     ...(weapon ? [remove(() => ops.unequip("weapon", rid))] : []),
@@ -142,7 +142,7 @@ export function LoadoutRows({
                         instant
                         group="inspector"
                         label="Fit in the Armory"
-                        title={weapon.name}
+                        title={weaponName(weapon)}
                         hint="Mods are fitted on the Armory bench"
                         commands={[
                             {
@@ -214,7 +214,7 @@ export function GearPicker({
         slot === "primary"
             ? storage.weapons.map((w) => ({
                   objectId: w.objectId,
-                  name: w.name,
+                  name: weaponName(w),
                   image: images[weaponModel(w)],
                   kind: w.upgrades.length ? `${w.upgrades.length} mods` : undefined,
               }))
@@ -240,7 +240,7 @@ export function GearPicker({
             : ops.issue(slot === "primary" ? "weapon" : "armor", id, rid);
     const current =
         slot === "primary"
-            ? recruit.weapon?.name
+            ? recruit.weapon && weaponName(recruit.weapon)
             : slot === "armor"
               ? recruit.armor?.name
               : recruit.utilities[0]?.name;

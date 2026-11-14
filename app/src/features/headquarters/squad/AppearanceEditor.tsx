@@ -6,8 +6,10 @@
  * (features/squad/components/AppearancePanel.tsx), in the shared language,
  * shared by Headquarters and the `/ui-sample` reference:
  * eight sections stepped from the top row (Body, Face, Eyes, Brows, Hair,
- * Skin, Details, Kit) so no list gets long; steppers for small sets, a grid
- * picker for large ones (the stage wears the tile under the cursor), sliders
+ * Skin, Details, Kit) so no list gets long; steppers for every set of
+ * styles (hair, brows, skin texture, tattoo: left/right in place, the stage
+ * changing as they step), a grid picker only for the starting identity
+ * (it rewrites the whole face, so it previews before it applies), sliders
  * for the continuous values. Everything edits the real `Appearance` (and the
  * armor colours), so the character on the stage really changes.
  */
@@ -404,9 +406,6 @@ export function AppearanceEditor({
                 ),
             );
 
-    const nameOf = (list: [string, string][], id: string) =>
-        list.find(([k]) => k === id)?.[1] ?? id;
-
     let rows: ReactNode;
     switch (section) {
         case "body":
@@ -527,15 +526,7 @@ export function AppearanceEditor({
         case "brows":
             rows = (
                 <>
-                    {pick("brows", "Style", nameOf(BROWS, s.brows), () =>
-                        setGrid({
-                            id: "grid-brows",
-                            title: "Brow style",
-                            value: s.brows,
-                            options: BROWS.map(([id, label]) => ({ id, label })),
-                            patch: (brows) => ({ brows }),
-                        }),
-                    )}
+                    {stepper("brows", "Style", BROWS, s.brows, (brows) => edit({ brows }))}
                     {swatchRow("brow-color", "Colour", HAIR_COLORS, s.browColor, (browColor) =>
                         edit({ browColor }),
                     )}
@@ -557,15 +548,7 @@ export function AppearanceEditor({
         case "hair":
             rows = (
                 <>
-                    {pick("hair", "Style", nameOf(HAIR, s.hair), () =>
-                        setGrid({
-                            id: "grid-hair",
-                            title: "Hair style",
-                            value: s.hair,
-                            options: HAIR.map(([id, label]) => ({ id, label })),
-                            patch: (hair) => ({ hair }),
-                        }),
-                    )}
+                    {stepper("hair", "Style", HAIR, s.hair, (hair) => edit({ hair }))}
                     {swatchRow("hair-color", "Colour", HAIR_COLORS, s.hairColor, (hairColor) =>
                         edit({ hairColor }),
                     )}
@@ -575,16 +558,7 @@ export function AppearanceEditor({
         case "skin":
             rows = (
                 <>
-                    {pick("skin", "Texture", nameOf(SKINS, s.skin), () =>
-                        setGrid({
-                            id: "grid-skin",
-                            title: "Skin texture",
-                            columns: 2,
-                            value: s.skin,
-                            options: SKINS.map(([id, label]) => ({ id, label })),
-                            patch: (skin) => ({ skin }),
-                        }),
-                    )}
+                    {stepper("skin", "Texture", SKINS, s.skin, (skin) => edit({ skin }))}
                     {swatchRow("skin-tint", "Tint", SKIN_TINTS, s.skinTint, (skinTint) =>
                         edit({ skinTint }),
                     )}
@@ -685,15 +659,7 @@ export function AppearanceEditor({
                             )}
                         </>
                     )}
-                    {pick("tattoo", "Tattoo", nameOf(TATTOOS, s.tattoo), () =>
-                        setGrid({
-                            id: "grid-tattoo",
-                            title: "Tattoo",
-                            value: s.tattoo,
-                            options: TATTOOS.map(([id, label]) => ({ id, label })),
-                            patch: (tattoo) => ({ tattoo }),
-                        }),
-                    )}
+                    {stepper("tattoo", "Tattoo", TATTOOS, s.tattoo, (tattoo) => edit({ tattoo }))}
                     {s.tattoo !== "none" && (
                         <>
                             {stepper(

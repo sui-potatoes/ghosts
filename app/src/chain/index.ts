@@ -15,6 +15,7 @@ export {
     ghostsEnabled,
     hireRecruitsTx,
     issueTx,
+    moveUtilityTx,
     requisitionTx,
     SquadPreload,
     unequipArmorTx,

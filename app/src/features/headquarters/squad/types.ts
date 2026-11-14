@@ -10,9 +10,9 @@ import type {
     ChainWeapon,
     RecruitEdit,
 } from "../../../chain";
+import type { HqGate, MatchState } from "../frame";
 
-/** Why the workspace cannot open yet. */
-export type HqGate = "disabled" | "signed-out" | "loading" | { error: string } | null;
+export type { HqGate };
 
 export interface HqData {
     gate: HqGate;
@@ -32,7 +32,7 @@ export interface HqData {
     clearError(): void;
     /** Anything is saving (the shell's save signal). */
     saving: boolean;
-    match: { searchingSince: number | null; playing: boolean; cancel(): void };
+    match: MatchState;
 }
 
 /** Each resolves true once the change is written and read back. */

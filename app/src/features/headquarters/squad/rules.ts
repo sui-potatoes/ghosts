@@ -48,3 +48,12 @@ export function hireOffer(count: number, size: number): HireOffer {
 export function dismissalNote(size: number): string {
     return `The slot refills for free with the next hire, up to ${size}.`;
 }
+
+/**
+ * An owned weapon's name as the screens show it: " +" once at least one
+ * upgrade is fitted ("Sharpshooter Rifle +"). Display only; what is fitted
+ * on the object counts, never a draft, and catalog entries never take it.
+ */
+export function weaponName(weapon: { name: string; upgrades?: readonly unknown[] }): string {
+    return weapon.upgrades?.length ? `${weapon.name} +` : weapon.name;
+}

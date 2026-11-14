@@ -37,7 +37,7 @@ import {
     type IconName,
 } from "../../ui";
 import { CharacterCanvas, useWireframeAction } from "../headquarters/squad/CharacterCanvas";
-import { GearCanvas } from "./canvases";
+import { GearCanvas } from "../headquarters/armory/GearCanvas";
 import {
     FITTED,
     ISSUED,

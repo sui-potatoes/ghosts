@@ -2,25 +2,34 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * A turntable for one piece of gear, built on the same pieces the Armory's
- * WeaponPreview uses (the redesigned long guns from `acquireArmoryWeapon`,
- * every other model through `EquipmentAssets`, product lighting from a room
- * environment) but with no chrome of its own: the sample's frame and command
- * bar own the controls. Renders on demand only — a frame per change, nothing
- * while the model sits still. Loaded on its own chunk with three.js.
+ * A turntable for one piece of gear, for the Armory and the `/ui-sample`
+ * reference: the redesigned long guns (`acquireArmoryWeapon`, with their
+ * fittings, the laser's trace and an optional finish), the utilities'
+ * display models (`acquireArmoryUtility`) and every other model through
+ * `EquipmentAssets`, under product lighting from a room environment. No
+ * chrome of its own: the shared stage host owns the controls. Renders on
+ * demand only — a frame per change, nothing while the model sits still.
+ * Loaded on its own chunk with three.js.
  */
 
 import * as T from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { acquireArmoryWeapon, isArmoryGun } from "@ghosts/squad/studio/armory-weapons";
+import { loadArmorySkin, type ArmorySkin } from "@ghosts/squad/studio/armory-skins";
+import { acquireArmoryUtility, isArmoryUtility } from "@ghosts/squad/studio/armory-utilities";
 import { EquipmentAssets } from "@ghosts/squad/studio/equipment-assets";
 import { applyWireframe, type WireframeColors } from "@ghosts/squad/studio/wireframe";
 import type { Equipment, WeaponAttachments } from "@ghosts/squad/types";
+import { FACTORY_SKIN } from "@ghosts/squad/weapon-skins";
 
 export interface WeaponStage {
-    /** Show a model; resolves once it is on the turntable. Superseded calls resolve quietly. */
-    show(model: Equipment["model"], attachments?: WeaponAttachments): Promise<void>;
+    /**
+     * Show a model; resolves once it is on the turntable. Superseded calls
+     * resolve quietly. `skin` is a weapon finish id; Factory when unset or
+     * when its files cannot be had.
+     */
+    show(model: Equipment["model"], attachments?: WeaponAttachments, skin?: string): Promise<void>;
     /** Empty the turntable (gear with no model in the game). */
     clear(): void;
     /** Turn the turntable to `angle` radians (absolute; the stage host owns it). */
@@ -76,6 +85,8 @@ export function createWeaponStage(host: HTMLElement): WeaponStage {
     let unwire: (() => void) | undefined;
     let wire: WireframeColors | null = null;
     let extent = 0.85;
+    /** A small object (a utility) frames by its largest side, not the gun's width. */
+    let compact = false;
     let ticket = 0;
     let raf = 0;
     let disposed = false;
@@ -96,7 +107,9 @@ export function createWeaponStage(host: HTMLElement): WeaponStage {
     /** Three-quarter view from slightly above, the gun filling the stage's width. */
     const frame = () => {
         const tan = 2 * Math.tan(T.MathUtils.degToRad(camera.fov / 2));
-        const distance = (extent / (tan * Math.min(camera.aspect, 2.4))) * 1.25;
+        const distance = compact
+            ? (extent / (tan * Math.min(camera.aspect, 1))) * 1.6
+            : (extent / (tan * Math.min(camera.aspect, 2.4))) * 1.25;
         const dir = new T.Vector3(0.42, 0.22, 1).normalize();
         camera.position.copy(dir.multiplyScalar(distance));
         controls.target.set(0, 0, 0);
@@ -128,14 +141,25 @@ export function createWeaponStage(host: HTMLElement): WeaponStage {
     };
 
     return {
-        async show(model, attachments = {}) {
+        async show(model, attachments = {}, skin) {
             const mine = ++ticket;
             let object: T.Object3D;
             let letGo: (() => void) | undefined;
+            let small = false;
             if (isArmoryGun(model)) {
-                const weapon = acquireArmoryWeapon(model, attachments);
+                // A finish's files are fetched the first time it is shown.
+                let finish: ArmorySkin | undefined;
+                if (skin && skin !== FACTORY_SKIN)
+                    finish = await loadArmorySkin(model, skin).catch(() => undefined);
+                if (disposed || mine !== ticket) return;
+                const weapon = acquireArmoryWeapon(model, attachments, finish);
                 object = weapon.model;
                 letGo = weapon.release;
+            } else if (isArmoryUtility(model)) {
+                const utility = acquireArmoryUtility(model);
+                object = utility.model;
+                letGo = utility.release;
+                small = true;
             } else {
                 object = await assets.get(model, attachments);
             }
@@ -154,7 +178,15 @@ export function createWeaponStage(host: HTMLElement): WeaponStage {
             const bounds = new T.Box3().setFromObject(object);
             if (traces.length) object.add(...traces);
             const size = bounds.getSize(new T.Vector3());
-            extent = Math.max(size.x, size.y * 1.6, size.z, 0.12);
+            compact = small;
+            extent = small
+                ? Math.max(size.x, size.y, size.z, 0.02)
+                : Math.max(size.x, size.y * 1.6, size.z, 0.12);
+            // A small object zooms in proportion, with the camera planes to match.
+            camera.near = small ? extent / 50 : 0.01;
+            camera.far = small ? extent * 100 : 20;
+            controls.minDistance = small ? extent * 1.2 : 0.25;
+            controls.maxDistance = small ? extent * 12 : 3.5;
             object.position.sub(bounds.getCenter(new T.Vector3()));
             turntable.add(object);
             shown = object;
