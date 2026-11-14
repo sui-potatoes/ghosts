@@ -14,7 +14,9 @@
  */
 
 import { useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
+
+import { useGoUp } from "../hooks/useGoUp";
 
 import { tabOf, tabParams, type TabId } from "../features/settings/model";
 import { SettingsView } from "../features/settings/SettingsView";
@@ -33,13 +35,8 @@ export function SettingsOptions({ onBack }: { onBack: () => void }) {
 }
 
 function SettingsScreen() {
-    const navigate = useNavigate();
     const [params, setParams] = useSearchParams();
-    const leave = () => {
-        const idx = (window.history.state as { idx?: number } | null)?.idx ?? 0;
-        if (idx > 0) navigate(-1);
-        else navigate("/", { replace: true });
-    };
+    const leave = useGoUp();
     return (
         <SettingsView
             tab={tabOf(params.get("tab"))}

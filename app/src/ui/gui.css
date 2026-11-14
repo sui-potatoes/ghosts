@@ -1922,6 +1922,17 @@ span.gui-cmd {
     visibility: visible;
 }
 
+/* A finger has no hover and no cursor to have selected the row first: on touch
+ * the arrows are always drawn, each a finger-sized target (44px on the glass;
+ * /--ui-scale undoes the zoom of phone landscape), and a tap on one acts at once. */
+@media (hover: none), (pointer: coarse) {
+    .gui-step {
+        visibility: visible;
+        width: calc(44px / var(--ui-scale));
+        height: calc(40px / var(--ui-scale));
+    }
+}
+
 .gui-stepper-value {
     flex: 1;
     text-align: center;

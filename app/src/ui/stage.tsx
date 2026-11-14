@@ -8,7 +8,7 @@
  * `StageControl` through `useStageAttach()`.
  *
  * Focused, the stage offers Inspect (plus any `actions` the feature adds,
- * e.g. Wireframe on Reset). Inspect hands it the directions — left/right turn
+ * e.g. a feature's own). Inspect hands it the directions — left/right turn
  * the model, up/down zoom — until Back. The right stick turns it any time it
  * is on screen. The mouse drags and scrolls inside the canvas (a touch drags
  * and pinches) without ever moving the cursor.
@@ -31,6 +31,7 @@ import {
 } from "react";
 
 import { uiTick } from "../audio";
+import { useWireframeShortcut } from "../features/squad/useWireframe";
 import { useFocusable, useFocusStore, type Command, type Dir } from "./focus";
 
 /** What a canvas gives the host. */
@@ -73,7 +74,7 @@ type StagePanelProps = {
     caption?: ReactNode;
     /** Back while not inspecting (e.g. to the list); the screen's back otherwise. */
     back?: Command;
-    /** More commands, offered idle and while inspecting (e.g. Wireframe on Reset). */
+    /** More commands, offered idle and while inspecting (feature-specific). */
     actions?: Command[];
     /** Frame the subject close (a character's face) while true: an editor working on the head. */
     close?: boolean;
@@ -103,6 +104,8 @@ export function StagePanel({
     const angleRef = useRef(0);
     const body = useRef<HTMLDivElement>(null);
     const store = useFocusStore();
+    // The hidden developer shortcut (Z); a stage on screen is what enables it.
+    useWireframeShortcut();
 
     const turnTo = useCallback((next: number) => {
         angleRef.current = next;

@@ -5,6 +5,7 @@ import { useRef } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
 import { useFitScale } from "../hooks/useFitScale";
+import { useGoUp } from "../hooks/useGoUp";
 
 import { useLayoutMode } from "../settings/layoutMode";
 import {
@@ -26,6 +27,7 @@ import {
  */
 export default function SettingsClassic() {
     const [params, setParams] = useSearchParams();
+    const goUp = useGoUp();
     const tab = params.get("tab");
     const current: CategoryId = isCategory(tab) ? tab : "player";
     // The controller layout takes the whole screen width.
@@ -47,7 +49,14 @@ export default function SettingsClassic() {
                 {/* The controller layout folds the header into the tab bar. */}
                 {mode === "desktop" && (
                     <SettingsHeader>
-                        <Link to="/" className="label text-secondary hover:text-accent">
+                        <Link
+                            to="/"
+                            className="label text-secondary hover:text-accent"
+                            onClick={(e) => {
+                                e.preventDefault();
+                                goUp();
+                            }}
+                        >
                             ← Menu
                         </Link>
                     </SettingsHeader>

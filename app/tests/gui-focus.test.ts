@@ -245,3 +245,13 @@ test("a header key from a picker closes it and goes on; from a prompt it is refu
     assert.equal(answered, 0);
     assert.equal(s.scope.id, "prompt");
 });
+
+test("a command marked click answers a click on the first tap, never the primary", () => {
+    const apply = { action: "confirm" as const, label: "Apply", tone: "primary" as const };
+    const change = { action: "reset" as const, label: "Change", click: true };
+    for (const again of [false, true])
+        assert.equal(
+            clickCommand([apply, change], { again, instant: true, clickConfirm: true }),
+            change,
+        );
+});

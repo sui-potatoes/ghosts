@@ -1,10 +1,15 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
-import { useRef, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import {
+    useRef,
+    type MouseEvent as ReactMouseEvent,
+    type PointerEvent as ReactPointerEvent,
+    type ReactNode,
+} from "react";
 
 import { uiTick } from "../audio";
-import { useFocusable, type Command } from "./focus";
+import { useFocusable, useFocusState, type Command } from "./focus";
 import { Icon, type IconName } from "./icons";
 import { InlineCommands } from "./pointer";
 
@@ -335,6 +340,7 @@ export function Stepper({ label, options, value, onChange, ...focus }: StepperPr
         uiTick(null);
         onChange(next[0]);
     };
+    const store = useFocusState();
     const { props } = useFocusable<HTMLDivElement>({
         ...focus,
         clickConfirm: false,
@@ -344,6 +350,14 @@ export function Stepper({ label, options, value, onChange, ...focus }: StepperPr
             return true;
         },
     });
+    // An arrow acts on the first click or tap and takes the cursor to its row,
+    // selected or not (its click does not reach the row's own handler).
+    const press = (by: 1 | -1) => (e: ReactMouseEvent) => {
+        e.stopPropagation();
+        store.pointerInput();
+        store.focus(focus.id);
+        step(by);
+    };
     return (
         <div className="gui-chooser" {...props}>
             <span className="gui-chooser-label">{label}</span>
@@ -353,10 +367,7 @@ export function Stepper({ label, options, value, onChange, ...focus }: StepperPr
                     tabIndex={-1}
                     className="gui-step"
                     aria-label={`Previous ${label}`}
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        step(-1);
-                    }}
+                    onClick={press(-1)}
                 >
                     ‹
                 </button>
@@ -368,10 +379,7 @@ export function Stepper({ label, options, value, onChange, ...focus }: StepperPr
                     tabIndex={-1}
                     className="gui-step"
                     aria-label={`Next ${label}`}
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        step(1);
-                    }}
+                    onClick={press(1)}
                 >
                     ›
                 </button>
@@ -407,6 +415,7 @@ export function SwatchRow({ label, swatches, value, onChange, ...focus }: Swatch
         uiTick(null);
         onChange(swatches[(i + swatches.length) % swatches.length].id);
     };
+    const store = useFocusState();
     const { props } = useFocusable<HTMLDivElement>({
         ...focus,
         clickConfirm: false,
@@ -431,6 +440,8 @@ export function SwatchRow({ label, swatches, value, onChange, ...focus }: Swatch
                         data-picked={i === at || undefined}
                         onClick={(e) => {
                             e.stopPropagation();
+                            store.pointerInput();
+                            store.focus(focus.id);
                             if (i !== at) pick(i);
                         }}
                     >

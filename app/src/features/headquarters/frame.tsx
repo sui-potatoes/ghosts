@@ -12,6 +12,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "re
 import { useNavigate } from "react-router-dom";
 
 import { SEARCH_TIMEOUT_MS } from "../../chain";
+import { useGoUp } from "../../hooks/useGoUp";
 import {
     CommandBar,
     EmptyState,
@@ -256,14 +257,9 @@ function MatchChipBody({ match, onClick }: { match: MatchState; onClick: () => v
     );
 }
 
-/** Leave Headquarters the way the player came, or to the menu. */
+/** Leave Headquarters (either section) for the menu. */
 export function useLeave() {
-    const navigate = useNavigate();
-    return () => {
-        const idx = (window.history.state as { idx?: number } | null)?.idx ?? 0;
-        if (idx > 0) navigate(-1);
-        else navigate("/", { replace: true });
-    };
+    return useGoUp();
 }
 
 /** Opened from the match chip: stop the search, or keep it. */

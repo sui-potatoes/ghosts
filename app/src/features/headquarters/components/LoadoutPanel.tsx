@@ -69,7 +69,7 @@ export function LoadoutPanel(props: Props) {
                     <span className="sq-eyebrow">LOADOUT</span>
                     <h3>Equipment</h3>
                 </div>
-                <Link className="sq-count hq-armory-link" to={armoryLink()}>
+                <Link className="sq-count hq-armory-link" to={armoryLink()} replace>
                     Armory ↗
                 </Link>
             </div>
@@ -158,7 +158,11 @@ export function LoadoutPanel(props: Props) {
                                 })}
                             </ul>
                             <div className="hq-carried-actions">
-                                <Link className="btn sq-primary" to={armoryLink(recruit.weapon.id)}>
+                                <Link
+                                    className="btn sq-primary"
+                                    to={armoryLink(recruit.weapon.id)}
+                                    replace
+                                >
                                     Fit in the armory <span>↗</span>
                                 </Link>
                                 <button
@@ -282,7 +286,9 @@ export function LoadoutPanel(props: Props) {
                     {props.utilities.length === 0 && (
                         <p className="sq-footnote">
                             Nothing in storage.{" "}
-                            <Link to={armoryLink()}>Requisition in the armory ↗</Link>
+                            <Link to={armoryLink()} replace>
+                                Requisition in the armory ↗
+                            </Link>
                         </p>
                     )}
                 </div>
@@ -321,7 +327,9 @@ export function LoadoutPanel(props: Props) {
                     {(slot === "primary" ? props.weapons : props.armors).length === 0 && (
                         <p className="sq-footnote">
                             Nothing in storage.{" "}
-                            <Link to={armoryLink()}>Requisition in the armory ↗</Link>
+                            <Link to={armoryLink()} replace>
+                                Requisition in the armory ↗
+                            </Link>
                         </p>
                     )}
                 </div>

@@ -3,8 +3,7 @@
 
 /**
  * The character stage canvas for the shared `StagePanel` (src/ui/stage.tsx):
- * the recruit studio from `@ghosts/squad/studio` mounted bare, plus the
- * stage's Wireframe toggle. Used by Headquarters and the `/ui-sample`
+ * the recruit studio from `@ghosts/squad/studio` mounted bare. Used by Headquarters and the `/ui-sample`
  * reference. The canvas hands the host a `StageControl` once its renderer is
  * up; the host owns the turn and the zoom steps.
  */
@@ -13,18 +12,8 @@ import type { RecruitStudio } from "@ghosts/squad/studio/recruit-studio";
 import type { Appearance, Recruit } from "@ghosts/squad/types";
 import { useEffect, useRef, useState } from "react";
 
-import { useStageAttach, type Command } from "../../../ui";
+import { useStageAttach } from "../../../ui";
 import { useWireframe, wireframeColors } from "../../squad/useWireframe";
-
-/** The stage's Wireframe toggle (Reset), for `StagePanel`'s `actions`. */
-export function useWireframeAction(): Command {
-    const [wireframe, setWireframe] = useWireframe();
-    return {
-        action: "reset",
-        label: wireframe ? "Shaded" : "Wireframe",
-        run: () => setWireframe(!wireframe),
-    };
-}
 
 type CharacterCanvasProps = {
     recruit: Recruit;
