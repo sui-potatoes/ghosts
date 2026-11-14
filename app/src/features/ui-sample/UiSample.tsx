@@ -17,9 +17,9 @@
  */
 
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 
 import { uiTick } from "../../audio";
+import { useGoUp } from "../../hooks/useGoUp";
 import { Armory, useArmoryState } from "./armory";
 import { Debrief, useDebriefState } from "./debrief-screen";
 import { Deploy, useDeployState } from "./deploy";
@@ -52,7 +52,6 @@ function cycle<T extends { id: string }>(list: T[], current: string, step: 1 | -
 }
 
 export default function UiSample() {
-    const navigate = useNavigate();
     const glyphs = useGlyphSet();
     const clock = useSearchClock(84);
     const [area, setArea] = useState<Area>(() => {
@@ -82,11 +81,7 @@ export default function UiSample() {
         else go();
     };
 
-    const leave = () => {
-        const idx = (window.history.state as { idx?: number } | null)?.idx ?? 0;
-        if (idx > 0) navigate(-1);
-        else navigate("/", { replace: true });
-    };
+    const leave = useGoUp();
 
     const switchArea = (next: Area) => {
         if (next === area) return;

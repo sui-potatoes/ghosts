@@ -74,7 +74,7 @@ import { useEquipmentImages } from "../equipmentImages";
 import { HqFrame, HqGateView, MatchChip, SearchPrompt, useLeave, type FrameBits } from "../frame";
 import { toLocalRecruits } from "../mapping";
 import { readWeaponSkins, saveWeaponSkin } from "../skins";
-import { CharacterCanvas, useWireframeAction } from "../squad/CharacterCanvas";
+import { CharacterCanvas } from "../squad/CharacterCanvas";
 import { Offstage, Portrait, StatChanges } from "../squad/parts";
 import { weaponName } from "../squad/rules";
 import { MAX_UTILITIES, utilityModifiers } from "../utilities";
@@ -104,6 +104,7 @@ import {
     MAX_FITTINGS,
     MOD_SLOTS,
     planSummary,
+    benchCommands as rulesBenchCommands,
     sameFit,
     type Fit,
     type Holder,
@@ -200,7 +201,7 @@ export function ArmoryView({ data, ops }: { data: ArmoryData; ops: ArmoryOps }) 
         if (drafted.length) setPrompt({ kind: "leave", go });
         else go();
     };
-    const toSquad = () => guard(() => navigate(SQUAD));
+    const toSquad = () => guard(() => navigate(SQUAD, { replace: true }));
 
     const switchTab = (next: Tab) => {
         uiTick(null);
@@ -309,7 +310,7 @@ export function ArmoryView({ data, ops }: { data: ArmoryData; ops: ArmoryOps }) 
                                 action: "confirm",
                                 label: "Squad",
                                 tone: "primary",
-                                run: () => navigate(SQUAD),
+                                run: () => navigate(SQUAD, { replace: true }),
                             },
                         ]}
                     >
@@ -386,7 +387,6 @@ function standIn(armor: string): LocalRecruit {
 function Workspace(props: WorkspaceProps) {
     const { frame, tab, supply, data, ops, held, mods, drafts, setDrafts } = props;
     const store = useFocusState();
-    const wire = useWireframeAction();
     const images = useEquipmentImages();
     const recruits = data.recruits;
     const locals = useMemo(() => toLocalRecruits(recruits), [recruits]);
@@ -592,7 +592,6 @@ function Workspace(props: WorkspaceProps) {
     const stagePanel = (
         <StagePanel
             key={stageKey}
-            actions={[wire]}
             id="stage"
             group="stage"
             label="Stage"
@@ -783,12 +782,18 @@ function Workspace(props: WorkspaceProps) {
                   : r.utilities.map((u) => ({ id: u.id, name: u.name })),
     });
 
-    // While a weapon has unapplied mods, Apply is the bench's primary and Discard
-    // its secondary on every row whose own action waits on them.
+    // While a weapon has unapplied mods, Apply is the bench's primary on EVERY row
+    // (`rules.benchCommands`): Discard is the secondary where the row's own action
+    // waits on the draft; a slot or Finish row keeps its own action as the
+    // secondary. A click on such a row still runs its own action (`click`): Apply
+    // sends a transaction, so it is never run by a click or a tap (the bar, the
+    // Apply row, Confirm on keys and pad). The exception to `instant` is the same
+    // for mouse and touch.
     const applyCommand = write("Apply mods", () => apply(), { short: "Apply" });
     const discardCommand: Command = { action: "reset", label: "Discard", run: discard };
-    const benchCommands = (own: Command[]): Command[] =>
-        dirty ? [applyCommand, discardCommand, toList] : own;
+    // `waits`: the row's own action is refused until the draft is settled.
+    const benchCommands = (own: Command[], waits = true): Command[] =>
+        rulesBenchCommands(dirty, own, applyCommand, discardCommand, toList, waits);
 
     /** Who has it equipped, Equip (a picker) and Unequip; refused while a weapon has a draft. */
     const carrierRow = (e: HeldEntry) => {
@@ -1013,28 +1018,31 @@ function Workspace(props: WorkspaceProps) {
                             item={a?.name}
                             title={ATTACHMENT_SLOT_NAMES[slot]}
                             hint={a ? modifierSummary(unpack(a.packed)) : "One of each kind"}
-                            commands={[
-                                ...(a
-                                    ? [
-                                          {
-                                              action: "reset" as const,
-                                              label: "Clear",
-                                              run: () => {
-                                                  const next = draftMod(draft, slot, null);
-                                                  if ("fit" in next) setDraft(next.fit);
+                            commands={benchCommands(
+                                [
+                                    ...(a
+                                        ? [
+                                              {
+                                                  action: "reset" as const,
+                                                  label: "Clear",
+                                                  run: () => {
+                                                      const next = draftMod(draft, slot, null);
+                                                      if ("fit" in next) setDraft(next.fit);
+                                                  },
                                               },
-                                          },
-                                      ]
-                                    : []),
-                                {
-                                    action: "confirm",
-                                    label: a ? "Change" : "Fit",
-                                    tone: "primary",
-                                    deny: full ? LIMIT_REASON : undefined,
-                                    run: () => setPicker({ kind: "mod", slot }),
-                                },
-                                toList,
-                            ]}
+                                          ]
+                                        : []),
+                                    {
+                                        action: "confirm",
+                                        label: a ? "Change" : "Fit",
+                                        tone: "primary",
+                                        deny: full ? LIMIT_REASON : undefined,
+                                        run: () => setPicker({ kind: "mod", slot }),
+                                    },
+                                    toList,
+                                ],
+                                false,
+                            )}
                         />
                     );
                 })}
@@ -1088,15 +1096,18 @@ function Workspace(props: WorkspaceProps) {
                             item={skinName}
                             title="Finish"
                             hint="Kept on this device"
-                            commands={[
-                                {
-                                    action: "confirm",
-                                    label: "Change",
-                                    tone: "primary",
-                                    run: () => setPicker({ kind: "finish" }),
-                                },
-                                toList,
-                            ]}
+                            commands={benchCommands(
+                                [
+                                    {
+                                        action: "confirm",
+                                        label: "Change",
+                                        tone: "primary",
+                                        run: () => setPicker({ kind: "finish" }),
+                                    },
+                                    toList,
+                                ],
+                                false,
+                            )}
                         />
                     </>
                 )}

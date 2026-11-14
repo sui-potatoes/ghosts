@@ -46,7 +46,7 @@ import {
     type TabDef,
 } from "../../ui";
 import { AppearanceEditor, HEAD_SECTIONS } from "../headquarters/squad/AppearanceEditor";
-import { CharacterCanvas, useWireframeAction } from "../headquarters/squad/CharacterCanvas";
+import { CharacterCanvas } from "../headquarters/squad/CharacterCanvas";
 import {
     Offstage,
     Portrait,
@@ -223,7 +223,6 @@ type LocalPrompt = { kind: "dismiss"; recruit: Recruit } | null;
 
 export function Squad({ squad, tab, onTab, glyphs, frame, guard, save }: Props) {
     const store = useFocusState();
-    const wire = useWireframeAction();
     const [stage, setStage] = useState<{ loading: boolean; error?: string }>({ loading: true });
     const [picker, setPicker] = useState<(typeof LOADOUT_SLOTS)[number] | null>(null);
     const [prompt, setPrompt] = useState<LocalPrompt>(null);
@@ -491,7 +490,6 @@ export function Squad({ squad, tab, onTab, glyphs, frame, guard, save }: Props) 
             </Panel>
 
             <StagePanel
-                actions={[wire]}
                 id="stage"
                 group="stage"
                 label="Stage"

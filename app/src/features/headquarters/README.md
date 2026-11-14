@@ -173,8 +173,8 @@ cancelled signature, lost connection) read in plain words.
 The view takes `HqData` and `HqOps` (`squad/types.ts`), so fixtures can drive it;
 the screen maps every op onto the same transaction builders as before.
 
-- Pieces shared with `/ui-sample`: `AppearanceEditor`, `CharacterCanvas` (+ the
-  stage's Wireframe action), `parts.tsx` (portrait with rank insignia, rank and
+- Pieces shared with `/ui-sample`: `AppearanceEditor`, `CharacterCanvas` (the
+  stage canvas), `parts.tsx` (portrait with rank insignia, rank and
   XP, the stat block, "if issued" lines, the off-screen portrait host), `ranks.ts`.
 - Pure rules, tested in `tests/hq-squad.test.ts`: `drafts.ts` (unsaved looks per
   recruit, kept on the device under the classic key) and `rules.ts` (issue or

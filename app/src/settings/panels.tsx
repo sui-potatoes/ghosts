@@ -366,7 +366,7 @@ export function DisplayPanel() {
         flag(
             "wireframe",
             "Wireframe models",
-            "Draw gear and recruit models as triangle wireframes, with a triangle count, to check topology. Also the Z key in the Armory.",
+            "Draw gear and recruit models as triangle wireframes, with a triangle count, to check topology.",
         ),
     ];
 

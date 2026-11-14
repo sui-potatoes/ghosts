@@ -32,6 +32,13 @@ export type Command = {
     short?: string;
     /** For `nav`: which directions it names. */
     glyph?: "lr" | "ud";
+    /**
+     * A click or tap on the target runs THIS command instead of the primary.
+     * For a row whose primary is a commit elsewhere (Apply sends a transaction)
+     * while its own cheap action (open a picker) is a secondary: a click must
+     * never commit by surprise. Runs on the first click, so the row is `instant`.
+     */
+    click?: boolean;
     run?: () => void;
 };
 
@@ -496,6 +503,9 @@ export function clickCommand(
     commands: Command[],
     { again, instant, clickConfirm }: { again: boolean; instant: boolean; clickConfirm: boolean },
 ): Command | undefined {
-    if (!clickConfirm || !(instant || again)) return undefined;
+    if (!clickConfirm) return undefined;
+    const own = commands.find((c) => c.click);
+    if (own) return own;
+    if (!(instant || again)) return undefined;
     return commands.find((c) => c.action === "confirm");
 }

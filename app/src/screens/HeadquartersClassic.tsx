@@ -16,7 +16,6 @@
 
 import type { Transaction } from "@mysten/sui/transactions";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
 
 import { encodeVisuals, sameVisuals } from "@ghosts/squad/appearance/codec";
 import type { Focus } from "@ghosts/squad/studio/recruit-studio";
@@ -46,6 +45,7 @@ import { AppearancePanel } from "../features/squad/components/AppearancePanel";
 import { CharacterViewport } from "../features/squad/components/CharacterViewport";
 import { StatsPanel } from "../features/squad/components/StatsPanel";
 import { useBack } from "../hooks/useBack";
+import { useGoUp } from "../hooks/useGoUp";
 import { requestSignIn } from "../signIn";
 import "../features/squad/squad.css";
 import "../features/headquarters/headquarters.css";
@@ -198,7 +198,7 @@ export default function Headquarters() {
     // "Save" sends every changed recruit in one transaction and leaves at
     // once, the corner spinner covering the save. Any other way out (the
     // browser's back) saves the same way unless the player chose Discard.
-    const navigate = useNavigate();
+    const goUp = useGoUp();
     const [leaving, setLeaving] = useState<(() => void) | null>(null);
     const edits: RecruitEdit[] = [...dirtyIds].map((id) => ({
         recruitId: id,
@@ -221,16 +221,7 @@ export default function Headquarters() {
         else go();
     }
     // Mirrors EscapeBack, which this entry outranks while drafts are open.
-    useBack(
-        unsaved
-            ? () =>
-                  guard(() => {
-                      const idx = (window.history.state as { idx?: number } | null)?.idx ?? 0;
-                      if (idx > 0) navigate(-1);
-                      else navigate("/", { replace: true });
-                  })
-            : null,
-    );
+    useBack(unsaved ? () => guard(goUp) : null);
     function leave(save: boolean) {
         const go = leaving;
         setLeaving(null);

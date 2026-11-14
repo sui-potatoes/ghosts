@@ -173,10 +173,17 @@ scrolled out of view the cursor hides; the next move brings it back.
 ## Hosting a 3D stage
 
 ```tsx
-<StagePanel id="stage" group="stage" label="Stage" caption={…} back={toList} actions={[wireframe]}>
+<StagePanel id="stage" group="stage" label="Stage" caption={…} back={toList}>
     <MyCanvas />
 </StagePanel>
 ```
+
+Z toggles the wireframe view on any screen with a stage: a hidden developer
+shortcut on the input bus's shortcut lane (`useWireframeShortcut`, mounted by
+`StagePanel`), shown nowhere — no command, chip or hint. It is silent while a
+text field has focus or a rebind prompt is capturing, and yields when the player
+has bound Z to a menu or combat action. Matches mount no stage, so combat keys
+are never touched.
 
 Inside the canvas component call `const attach = useStageAttach()` and, once
 the renderer is up, `attach({ turn(angle), zoom(step), dragRate? })`. The host
@@ -204,7 +211,26 @@ changed; never run an idle loop.
   the pointer when the target has a secondary (a focus scope: keys work in
   it, Back or a press outside closes it).
 - The command bar's commands are click targets too.
+- A command may carry `click: true`: a click or tap runs that one instead of
+  the primary, on the first press. The armory's slot and Finish rows use it
+  while a draft is open (Apply is the primary there; a tap must open the
+  picker, never send a transaction).
+- Choosers act on the first press: a Stepper's arrows and a SwatchRow's chips
+  change the value AND move the cursor to their row, selected or not; a Slider's
+  bar sets the value on press and drag. On touch (`hover: none` / coarse
+  pointer) the arrows are always drawn, 44px on the glass each (`/--ui-scale`).
 - Any key or pad action returns to the console presentation (no inline chips).
+
+## Back is hierarchical
+
+Back (Escape, pad B) never walks history. Closing the innermost thing comes
+first (list, picker, prompt, inspect); then on a screen one press goes to its
+parent, the menu (`src/routes.ts`, `useGoUp`): it pops the history entry when
+the previous one is that parent, otherwise replaces the current entry with it.
+Squad and Armory are sibling sections, so Armory also leaves for the menu.
+Tab, section and query changes, and deep links between sections, use
+`navigate(…, { replace: true })`, so the stack holds only real entries.
+Don't call `navigate(-1)` for Back.
 
 ## Don't
 
@@ -221,4 +247,4 @@ changed; never run an idle loop.
 
 `pnpm test:gui`: spatial navigation, scope stack and focus restore
 (`tests/gui-focus.test.ts`), list windowing math (`tests/gui-list.test.ts`),
-Back ownership (`tests/gui-back.test.ts`).
+Back ownership (`tests/gui-back.test.ts`), route parents (`tests/routes.test.ts`).

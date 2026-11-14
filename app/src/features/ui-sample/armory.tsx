@@ -36,7 +36,7 @@ import {
     type GlyphSet,
     type IconName,
 } from "../../ui";
-import { CharacterCanvas, useWireframeAction } from "../headquarters/squad/CharacterCanvas";
+import { CharacterCanvas } from "../headquarters/squad/CharacterCanvas";
 import { GearCanvas } from "../headquarters/armory/GearCanvas";
 import {
     FITTED,
@@ -93,7 +93,6 @@ function fittedOn(fitted: Fitted, mod: string): string | undefined {
 
 export function Armory({ armory, tab, onTab, wearer, glyphs, frame, save }: Props) {
     const store = useFocusState();
-    const wire = useWireframeAction();
     const [stage, setStage] = useState<{ loading: boolean; error?: string }>({ loading: false });
     const [prompt, setPrompt] = useState<Item | null>(null);
     const { owned, setOwned, issued, setIssued, fitted, setFitted } = armory;
@@ -290,7 +289,6 @@ export function Armory({ armory, tab, onTab, wearer, glyphs, frame, save }: Prop
             </Panel>
 
             <StagePanel
-                actions={[wire]}
                 key={stageKey}
                 id="stage"
                 group="stage"

@@ -211,3 +211,41 @@ export function stackRows(
 
 /** The row that stands for an object, if any. */
 export const rowOf = (rows: StackRow[], id: string) => rows.find((r) => r.ids.includes(id));
+
+// === Bench commands =======================================================
+
+/** The bits of a command the bench rules shape; the view's `Command` fits. */
+export interface BenchCommand {
+    action: "nav" | "confirm" | "reset" | "back";
+    label: string;
+    tone?: "primary" | "danger";
+    deny?: string;
+    click?: boolean;
+}
+
+/**
+ * The command set of a row on a weapon's bench. With no draft a row keeps its
+ * own (`own`: its primary Change / Fit / Equip, Back last). While the weapon
+ * has unapplied mods Apply is the primary on every row (Confirm):
+ * - a row whose own action waits on the draft (stats, Equipped by) gets
+ *   Discard as the secondary (Reset);
+ * - a slot or Finish row keeps its own action, demoted to the secondary
+ *   (Reset, the inline chip and the right-click entry) and marked `click`, so
+ *   a click still opens the picker and never applies by surprise. Its Clear
+ *   waits (the picker's None clears), and Discard is the Discard row.
+ * Back stays last either way: the bar's three slots are Confirm, Reset, Back.
+ */
+export function benchCommands<C extends BenchCommand>(
+    dirty: boolean,
+    own: C[],
+    apply: C,
+    discard: C,
+    back: C,
+    waits: boolean,
+): C[] {
+    if (!dirty) return own;
+    if (waits) return [apply, discard, back];
+    const action = own.find((c) => c.action === "confirm");
+    if (!action) return [apply, discard, back];
+    return [apply, { ...action, action: "reset", tone: undefined, click: true }, back];
+}

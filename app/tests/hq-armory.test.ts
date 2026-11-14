@@ -8,6 +8,7 @@ import {
     draftMod,
     fitCount,
     fitPlan,
+    benchCommands,
     issueTo,
     LIMIT_REASON,
     planSummary,
@@ -200,4 +201,29 @@ test("a recruit previewing another rifle wears that rifle's finish, not their ow
     const empty = holdingRifle(vex, null, skins);
     assert.equal(empty.equipment.primary, null);
     assert.equal(empty.weaponSkin, undefined);
+});
+
+test("bench commands: no draft keeps the row's own, a draft makes Apply the primary everywhere", () => {
+    const apply = { action: "confirm" as const, label: "Apply mods" };
+    const discard = { action: "reset" as const, label: "Discard" };
+    const back = { action: "back" as const, label: "List" };
+    const change = { action: "confirm" as const, label: "Change", tone: "primary" as const };
+    const clear = { action: "reset" as const, label: "Clear" };
+    const slotOwn = [clear, change, back];
+    const asLabels = (cs: { action: string; label: string }[]) =>
+        cs.map((c) => `${c.action}:${c.label}`);
+
+    // No draft: untouched.
+    assert.equal(benchCommands(false, slotOwn, apply, discard, back, false), slotOwn);
+
+    // Draft, a slot or Finish row: Apply primary, the row's action secondary and the click.
+    const slot = benchCommands(true, slotOwn, apply, discard, back, false);
+    assert.deepEqual(asLabels(slot), ["confirm:Apply mods", "reset:Change", "back:List"]);
+    assert.equal(slot[1].click, true);
+    assert.equal(slot[1].tone, undefined);
+    assert.equal(slot[0].click, undefined);
+
+    // Draft, a row whose own action waits (stats, Equipped by): Apply and Discard.
+    const waiting = benchCommands(true, [change, back], apply, discard, back, true);
+    assert.deepEqual(asLabels(waiting), ["confirm:Apply mods", "reset:Discard", "back:List"]);
 });

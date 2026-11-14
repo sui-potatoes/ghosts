@@ -56,7 +56,7 @@ import {
 } from "../mapping";
 import { useWeaponSkins } from "../skins";
 import { AppearanceEditor, HEAD_SECTIONS } from "./AppearanceEditor";
-import { CharacterCanvas, useWireframeAction } from "./CharacterCanvas";
+import { CharacterCanvas } from "./CharacterCanvas";
 import { Dossier, DismissPrompt } from "./Dossier";
 import {
     encodeDraft,
@@ -189,7 +189,7 @@ export function HeadquartersView({ data, ops }: { data: HqData; ops: HqOps }) {
     };
     const leave = useLeave();
     const toArmory = (itemId?: string) =>
-        guard(() => navigate(itemId ? `${ARMORY}?item=${itemId}` : ARMORY));
+        guard(() => navigate(itemId ? `${ARMORY}?item=${itemId}` : ARMORY, { replace: true }));
 
     // --- Recruitment ----------------------------------------------------------
     // The deck stays up after a hire from zero until the player walks in.
@@ -418,7 +418,6 @@ type SquadProps = {
 function Squad(props: SquadProps) {
     const { frame, tab, data, ops, recruits, recruit, local, draft, pending } = props;
     const store = useFocusState();
-    const wire = useWireframeAction();
     const images = useEquipmentImages();
     const skins = useWeaponSkins();
     const [stage, setStage] = useState<{ loading: boolean; error?: string }>({ loading: true });
@@ -566,7 +565,6 @@ function Squad(props: SquadProps) {
 
     const stagePanel = (
         <StagePanel
-            actions={[wire]}
             id="stage"
             group="stage"
             label="Stage"

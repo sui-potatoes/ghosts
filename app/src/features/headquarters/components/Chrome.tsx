@@ -4,6 +4,8 @@
 import type { MouseEvent, ReactNode } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 
+import { useGoUp } from "../../../hooks/useGoUp";
+
 /**
  * The Headquarters header: back to the menu, and the Squad / Armory sections.
  * `guard` gets a say before any of its links leaves the screen (unsaved
@@ -17,26 +19,33 @@ export function HqHeader({
     guard?: (go: () => void) => void;
 }) {
     const navigate = useNavigate();
+    const goUp = useGoUp();
+    // Sections are siblings: switching replaces the entry (never grows the history).
     const via = (to: string) => (e: MouseEvent) => {
         if (!guard) return;
         e.preventDefault();
-        guard(() => navigate(to));
+        if (e.currentTarget.getAttribute("aria-current")) return; // already here
+        guard(() => navigate(to, { replace: true }));
+    };
+    const menu = (e: MouseEvent) => {
+        e.preventDefault();
+        (guard ?? ((go) => go()))(goUp);
     };
     return (
         <header className="squad-header">
             <Link
                 to="/"
                 className="squad-back label text-secondary hover:text-accent"
-                onClick={via("/")}
+                onClick={menu}
             >
                 ‹ Menu
             </Link>
             <h1 className="squad-title">Headquarters</h1>
             <nav className="hq-sections" aria-label="Headquarters sections">
-                <NavLink to="/headquarters" end>
+                <NavLink to="/headquarters" end replace onClick={via("/headquarters")}>
                     Squad
                 </NavLink>
-                <NavLink to="/headquarters/armory" onClick={via("/headquarters/armory")}>
+                <NavLink to="/headquarters/armory" replace onClick={via("/headquarters/armory")}>
                     Armory
                 </NavLink>
             </nav>
