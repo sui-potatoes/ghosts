@@ -20,7 +20,7 @@
         "@dgreenheck/three-pinata": "^2.0.1",
         "@dimforge/rapier3d-compat": "^0.21.0",
         "@ghosts/squad": "workspace:*",
-        "three": "^0.174.0"
+        "three": "^0.187.0"
     },
     "peerDependencies": {
         "react": "^19.1.1",
@@ -28,7 +28,7 @@
     },
     "devDependencies": {
         "@types/react": "^19.1.8",
-        "@types/three": "^0.174.0",
+        "@types/three": "^0.187.0",
         "react": "^19.1.1",
         "react-dom": "^19.1.1",
         "typescript": "^5.8.3"
