@@ -5,6 +5,8 @@ import * as T from "three";
 import { assetUrl } from "./character-assets.ts";
 import { createGLTFLoader } from "./gltf-loader.ts";
 import type { ArmoryGun } from "./armory-weapons.ts";
+import { createSkinPaint } from "./skin-paint.ts";
+import { SKIN_RECIPES } from "../skin-recipes.ts";
 
 /**
  * Skinned guns, for the Armory stage and for recruits holding a skinned gun
@@ -14,23 +16,32 @@ import type { ArmoryGun } from "./armory-weapons.ts";
  * authored model): `weapons/skins/<gun>.glb` holds the body and the standard
  * clip and stock as separate meshes in the Armory weapon frame, sharing one
  * material with the normal and AO maps; each skin adds a colour map and a
- * roughness/metalness map (`<gun>-<skin>-{base,rm}.webp`). Nothing is fetched
- * until a skin is first shown. Fittings stay procedural: an upgraded clip or
- * stock replaces the skinned standard piece and keeps its own finish.
+ * roughness/metalness map (`<gun>-<skin>-{base,rm}.webp`). Indicator faces come
+ * as `<piece>-glow` meshes, drawn in the gun's own indicator material. Nothing
+ * is fetched until a skin is first shown. Fittings stay procedural (an
+ * upgraded clip or stock replaces the skinned standard piece) and wear the
+ * skin live: `paint` is the recipe's pattern as a shader (`skin-paint.ts`).
  *
  * The shared mesh and its two maps are kept for the session once loaded; a
  * skin's own maps and material are reference counted by the stage models
  * built with it, and up to `KEEP` idle skins are kept for quick switching.
  */
 
-const VERSION = 1;
+const VERSION = 2;
 /** Guns that have skins: the shared mesh per gun. */
-const SKINNABLE: Partial<Record<ArmoryGun, true>> = { rifle: true };
+const SKINNABLE: Partial<Record<ArmoryGun, true>> = {
+  rifle: true,
+  sniper: true,
+  plasma: true,
+};
 
+export type SkinPiece = "body" | "clip" | "stock";
 export interface SkinPieces {
   body: T.BufferGeometry;
   clip: T.BufferGeometry;
   stock: T.BufferGeometry;
+  /** Indicator faces per piece, untextured; absent when a piece has none. */
+  glow?: Partial<Record<SkinPiece, T.BufferGeometry>>;
 }
 
 export interface ArmorySkin {
@@ -40,6 +51,10 @@ export interface ArmorySkin {
   pieces: SkinPieces;
   /** Shared by every model built with this skin; never dispose it directly. */
   material: T.MeshStandardMaterial;
+  /** The skin painted live on fittings, for meshes whose object space maps to
+   * the weapon frame by `toWeapon` (one material per `frame` key, shared and
+   * owned like `material`). Undefined for a skin without a recipe. */
+  paint?(frame: string, toWeapon: T.Matrix4): T.MeshStandardMaterial;
   /** A model built with the skin holds it until it is disposed. */
   retain(): void;
   release(): void;
@@ -71,10 +86,15 @@ function shared(gun: ArmoryGun): Promise<Shared> {
         let material: T.MeshStandardMaterial | undefined;
         gltf.scene.traverse((o) => {
           if (!(o instanceof T.Mesh)) return;
-          const name = o.name as keyof SkinPieces;
-          if (name === "body" || name === "clip" || name === "stock")
-            found[name] = o.geometry as T.BufferGeometry;
-          material = o.material as T.MeshStandardMaterial;
+          const name = o.name as string;
+          const geometry = o.geometry as T.BufferGeometry;
+          if (name === "body" || name === "clip" || name === "stock") {
+            found[name] = geometry;
+            material = o.material as T.MeshStandardMaterial;
+          } else if (name.endsWith("-glow")) {
+            const piece = name.slice(0, -5) as SkinPiece;
+            found.glow = { ...found.glow, [piece]: geometry };
+          }
         });
         if (!found.body || !found.clip || !found.stock || !material)
           throw new Error("Weapon finish unavailable.");
@@ -154,15 +174,29 @@ export function loadArmorySkin(
     material.roughness = 1;
     material.metalness = 1;
     material.userData.armorySkin = key;
+    const recipe = SKIN_RECIPES[skin];
+    const paints = new Map<string, T.MeshStandardMaterial>();
     entry.dispose = () => {
       map.dispose();
       rm.dispose();
       material.dispose();
+      paints.forEach((p) => p.dispose());
     };
     return {
       key,
       pieces,
       material,
+      paint: recipe
+        ? (frame: string, toWeapon: T.Matrix4) => {
+            let p = paints.get(frame);
+            if (!p) {
+              p = createSkinPaint(recipe, toWeapon, `paint-${skin}`);
+              p.userData.armorySkin = key;
+              paints.set(frame, p);
+            }
+            return p;
+          }
+        : undefined,
       retain() {
         entry.refs++;
       },

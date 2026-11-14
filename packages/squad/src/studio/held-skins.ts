@@ -19,7 +19,7 @@ import type { ArmorySkin } from "./armory-skins.ts";
 /**
  * A held gun wearing a skin: the skinned game mesh (body, and the standard
  * clip and stock where nothing upgraded is fitted) with the procedural
- * fittings beside it, exactly as the Armory builds it (`buildArmoryWeapon`),
+ * fittings beside it in the skin's live paint, exactly as the Armory builds it (`buildArmoryWeapon`),
  * then taken from the weapon frame into the hand socket by the same transform
  * `held-weapons.ts` uses for the procedural gun: mirrored across z = 0, the
  * basis rotation, `WEAPON_SCALE` about `HELD_GRIP`. The hands, mounts and
@@ -57,6 +57,9 @@ export const ARMORY_TO_SOCKET = SOCKET.clone().multiply(
   ),
 );
 
+/** The live paint on fittings reads the weapon frame back from the socket. */
+const HELD_FRAME = { key: "held", toWeapon: ARMORY_TO_SOCKET.clone().invert() };
+
 /** Reverses every triangle after the mirror, indexed or not. */
 function rewind(geometry: T.BufferGeometry) {
   const index = geometry.index;
@@ -86,7 +89,7 @@ export function createSkinnedHeldWeapon(
   attachments: WeaponAttachments,
   skin: ArmorySkin,
 ): T.Group {
-  const group = buildArmoryWeapon(gun, attachments, skin);
+  const group = buildArmoryWeapon(gun, attachments, skin, HELD_FRAME);
   group.name = `held-${gun}`;
   for (const mesh of group.children) {
     if (!(mesh instanceof T.Mesh)) continue;

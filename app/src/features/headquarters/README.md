@@ -102,13 +102,15 @@ inventory (Weapons / Armor / Mods), a full-size 3D stage and a bench.
   by reference count like the rifles; the stage frames it by its own bounds and
   scales the zoom limits to it). The band is plain: the builder only exports
   where the stencils go. A utility without a model shows a short placeholder.
-- **Finish** (weapon skins, device only): Factory plus the gun's baked skins
-  (`@ghosts/squad/weapon-skins`; only the Standard Rifle has any yet), applied
+- **Finish** (weapon skins, device only): Factory plus the long guns' seven
+  baked skins (`@ghosts/squad/weapon-skins`; the sidearm has none), applied
   to the stage at once and remembered per weapon object id in localStorage
-  (`skins.ts`, key `ghosts:weapon-skins`). The skinned model is the gun's game
-  mesh from `public/squad/weapons/skins/` (`@ghosts/squad/studio/armory-skins`),
-  fetched the first time a skin is shown; upgraded clips and stocks, scopes and
-  lasers stay in their own finish. Nothing about a skin is on chain.
+  (`skins.ts`, key `ghosts:weapon-skins`; a retired skin reads as Factory). The
+  skinned model is the gun's game mesh from `public/squad/weapons/skins/`
+  (`@ghosts/squad/studio/armory-skins`), fetched the first time a skin is
+  shown; upgraded clips and stocks, scopes and lasers wear the same skin live
+  (`studio/skin-paint.ts`). Rebaking: `app/scripts/weapon-skins/README.md`.
+  Nothing about a skin is on chain.
 - **Mods** (weapon upgrades on chain): stock and where each is fitted; "Try it on" opens a rifle's
   bench with the upgrade drafted.
 - **Requisition** (testnet, free): the supply catalog — rifles, armor, all
