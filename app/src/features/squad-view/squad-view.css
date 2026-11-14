@@ -1,0 +1,350 @@
+/*
+ * The squad diorama on top of the shared interface (src/ui/gui.css): podiums
+ * over the canvas, their engraved base plates, the Deploy plaque, the
+ * recruit picker, and the match's bench. Used by the match's squad selection
+ * and the /ui-sample deploy and debrief. Classes keep the `sqv-` prefix;
+ * scoped under `.gui`.
+ */
+
+/* The scene is the screen: no panel frame, the canvas fills the body. */
+.sqv-diorama {
+    position: relative;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.sqv-diorama-canvas {
+    position: absolute;
+    inset: 0;
+    --squad-studio-background: var(--background-color);
+}
+
+.sqv-diorama-canvas canvas {
+    display: block;
+    width: 100% !important;
+    height: 100% !important;
+}
+
+/* A podium: a cursor target over the figure, down to its plate. No fill of its own. */
+.sqv-podium {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    transition: opacity 160ms ease;
+}
+
+.gui [data-pointer].sqv-podium:not([data-focused]):hover {
+    background: none;
+}
+
+.sqv-podium[data-dim] {
+    opacity: 0.45;
+}
+
+.sqv-plate-mount {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: calc(var(--u) * 1.5);
+    padding: 0 calc(var(--u) * 2) calc(var(--u) * 2);
+}
+
+/* The base plate: an engraved strip on the plinth's front, not a card. */
+.sqv-plate-engraved {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: calc(var(--u) * 1);
+    min-width: calc(var(--u) * 40);
+    padding: calc(var(--u) * 2) calc(var(--u) * 3);
+    border-top: 1px solid var(--line-strong);
+    border-bottom: 1px solid var(--line);
+    background: linear-gradient(color-mix(in srgb, var(--text-color) 4%, transparent), transparent);
+    color: var(--text-secondary);
+    text-align: center;
+}
+
+.sqv-podium[data-focused] .sqv-plate-engraved {
+    border-top-color: var(--accent-color);
+    color: var(--text-color);
+}
+
+.sqv-plate-head {
+    display: flex;
+    align-items: baseline;
+    gap: calc(var(--u) * 2);
+}
+
+.sqv-plate-name {
+    font: 500 var(--t-body) / 1 var(--font-mono);
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--text-color);
+}
+
+.sqv-plate-engraved[data-vacant] .sqv-plate-name {
+    color: var(--disabled-color);
+}
+
+.sqv-plate-line {
+    display: flex;
+    align-items: center;
+    gap: calc(var(--u) * 1.5);
+    font: 400 var(--t-label) / 1 var(--font-mono);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+
+.sqv-plate-kit {
+    display: flex;
+    align-items: center;
+    gap: calc(var(--u) * 3);
+    color: var(--text-secondary);
+}
+
+.sqv-plate-kit > span {
+    display: inline-flex;
+    align-items: center;
+    gap: calc(var(--u) * 1);
+}
+
+.sqv-plate-kit > span[data-empty] {
+    color: var(--disabled-color);
+    opacity: 0.5;
+}
+
+.sqv-plate-kit b {
+    font: 500 var(--t-micro) / 1 var(--font-mono);
+}
+
+/* What matters in a fight (Unarmed): amber, spelled out, never an icon alone. */
+.sqv-plate-warn {
+    display: inline-flex;
+    align-items: center;
+    gap: calc(var(--u) * 1.5);
+    font: 500 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--warn-color);
+    white-space: nowrap;
+}
+
+.sqv-pips {
+    display: inline-flex;
+    align-items: flex-end;
+    gap: 2px;
+}
+
+/* One pip per fitted upgrade, filled by its tier (no text). */
+.sqv-pips i {
+    position: relative;
+    width: 5px;
+    height: 12px;
+    border: 1px solid var(--line-strong);
+}
+
+.sqv-pips i[data-tier] {
+    border-color: var(--text-secondary);
+}
+
+.sqv-pips i[data-tier]::after {
+    content: "";
+    position: absolute;
+    inset: auto 0 0;
+    height: calc(var(--fill) * 100%);
+    background: var(--text-secondary);
+}
+
+.sqv-pips i[data-tier="1"] {
+    --fill: 0.34;
+}
+.sqv-pips i[data-tier="2"] {
+    --fill: 0.67;
+}
+.sqv-pips i[data-tier="3"] {
+    --fill: 1;
+}
+
+/* Deploy (and the debrief's Continue): a stencilled plaque at the top-right. */
+.sqv-plaque {
+    position: absolute;
+    top: calc(var(--u) * 3);
+    right: calc(var(--u) * 3);
+    min-width: calc(var(--u) * 40);
+    height: var(--h-m);
+    padding: 0 calc(var(--u) * 4);
+    border: 1px solid var(--accent-color);
+    font: 500 var(--t-label) / 1 var(--font-mono);
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    text-align: center;
+    color: var(--accent-color);
+}
+
+.sqv-plaque[data-refused] {
+    border-color: var(--line-strong);
+    color: var(--disabled-color);
+}
+
+.sqv-plaque[data-focused] {
+    background: var(--accent-color);
+    color: var(--background-color);
+}
+
+.sqv-plaque[data-focused][data-refused] {
+    background: var(--band-locked);
+    color: var(--on-band);
+}
+
+/* Deployed: the plaque's place, stamped, not a target. */
+.sqv-stamp {
+    position: absolute;
+    top: calc(var(--u) * 3);
+    right: calc(var(--u) * 3);
+    display: flex;
+    align-items: center;
+    gap: calc(var(--u) * 2);
+    height: var(--h-m);
+    padding: 0 calc(var(--u) * 4);
+    border: 1px dashed var(--line-strong);
+    font: 500 var(--t-label) / 1 var(--font-mono);
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    pointer-events: none;
+}
+
+.sqv-picker {
+    position: absolute;
+    top: calc(var(--u) * 3);
+    right: calc(var(--u) * 3);
+    bottom: calc(var(--u) * 3);
+    width: calc(var(--u) * 80);
+    z-index: 2;
+    background: var(--surface-color);
+    animation: gui-swap 160ms var(--snap);
+}
+
+.sqv-picker[data-side="left"] {
+    right: auto;
+    left: calc(var(--u) * 3);
+}
+
+/* === The match's bench: who stays home ============================== */
+
+.sqv-bench {
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--u) * 2);
+    min-height: 0;
+    overflow: hidden;
+    padding-top: calc(var(--u) * 3);
+}
+
+.sqv-bench-label {
+    display: flex;
+    justify-content: space-between;
+    font: 500 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: var(--track);
+    text-transform: uppercase;
+    color: var(--disabled-color);
+    padding-bottom: calc(var(--u) * 2);
+    border-bottom: 1px solid var(--line);
+}
+
+/* A bench plate: the recruit off the plinths, unlit (dimmed until focused). */
+.sqv-bench-plate {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: calc(var(--u) * 1.5);
+    padding: calc(var(--u) * 2) calc(var(--u) * 2) calc(var(--u) * 3);
+    border: 1px solid var(--line);
+    background: color-mix(in srgb, var(--text-color) 2%, transparent);
+    color: var(--text-secondary);
+    text-align: center;
+    opacity: 0.72;
+    transition: opacity 160ms ease;
+}
+
+.sqv-bench-plate .hqs-portrait {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 5 / 4;
+    margin-bottom: calc(var(--u) * 1);
+    filter: grayscale(0.7) brightness(0.7);
+}
+
+.sqv-bench-plate[data-focused] {
+    opacity: 1;
+    border-color: var(--line-strong);
+    color: var(--text-color);
+}
+
+.sqv-bench-plate[data-focused] .hqs-portrait {
+    filter: none;
+}
+
+.gui [data-pointer].sqv-bench-plate:not([data-focused]):hover {
+    opacity: 0.9;
+}
+
+.sqv-bench-plate .sqv-plate-name {
+    font-size: var(--t-label);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sqv-bench-plate .sqv-plate-kit {
+    gap: calc(var(--u) * 2);
+}
+
+/* Two or more on the bench: compact rows, portrait at the side. */
+.sqv-bench[data-compact] .sqv-bench-plate {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    justify-items: start;
+    align-items: center;
+    gap: calc(var(--u) * 1) calc(var(--u) * 3);
+    padding: calc(var(--u) * 2);
+    text-align: left;
+}
+
+.sqv-bench[data-compact] .hqs-portrait {
+    grid-row: span 4;
+    width: calc(var(--u) * 12);
+    height: calc(var(--u) * 14);
+    aspect-ratio: auto;
+    margin: 0;
+}
+
+.sqv-bench-empty {
+    font: 400 var(--t-label) / 1.4 var(--font-mono);
+    color: var(--disabled-color);
+}
+
+@media (orientation: landscape) and (max-height: 500px) {
+    .sqv-plate-kit,
+    .sqv-plate-line {
+        display: none;
+    }
+    .sqv-plate-engraved {
+        min-width: 0;
+        padding: calc(var(--u) * 1) calc(var(--u) * 2);
+    }
+    /* The bench keeps its kit line: it has the room the plates lack. */
+    .sqv-bench-plate .sqv-plate-kit {
+        display: flex;
+    }
+    .sqv-bench-plate .hqs-portrait {
+        aspect-ratio: 2 / 1;
+    }
+    .sqv-bench[data-compact] .hqs-portrait {
+        grid-row: span 2;
+        width: calc(var(--u) * 8);
+        height: calc(var(--u) * 9);
+    }
+}

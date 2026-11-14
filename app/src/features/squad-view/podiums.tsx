@@ -2,19 +2,24 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * The three-podium diorama as React: the canvas (`podium-scene.ts`, loaded on
- * its own chunk), and each podium as one cursor target whose box spans the
- * figure and its engraved base plate. Shared by mission prep and the debrief.
+ * The podium diorama as React: the canvas (`podium-scene.ts`, loaded on its
+ * own chunk), and each podium as one cursor target whose box spans the figure
+ * and its engraved base plate. Shared by the match's squad selection
+ * (`SquadSelect.tsx`) and the `/ui-sample` deploy and debrief.
  */
 
 import type { Recruit } from "@ghosts/squad/types";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import { useFocusable, type Command } from "../../ui";
+import { InlineCommands, useFocusable, type Command } from "../../ui";
 import type { Anchor, PodiumScene } from "./podium-scene";
+import "./squad-view.css";
 
 type CanvasProps = {
+    /** One per podium, left to right; their number at mount is the row's length. */
     figures: (Recruit | null)[];
+    /** Full-detail figures (the studio's): only for comparing costs. */
+    full?: boolean;
     focus: number | null;
     lit: boolean[];
     /** Lights change without the fade (reduced motion, a fixture switch). */
@@ -28,6 +33,7 @@ type CanvasProps = {
 
 export function PodiumCanvas({
     figures,
+    full = false,
     focus,
     lit,
     instant,
@@ -44,27 +50,36 @@ export function PodiumCanvas({
     const report = useRef(onState);
     report.current = onState;
 
+    const count = useRef(figures.length);
+    const detail = useRef(full);
     useEffect(() => {
         let cancelled = false;
         void import("./podium-scene")
             .then(({ createPodiumScene }) => {
                 if (cancelled || !host.current) return;
-                const view = createPodiumScene(host.current, (anchors) => layout.current(anchors));
+                const view = createPodiumScene(host.current, (anchors) => layout.current(anchors), {
+                    count: count.current,
+                    full: detail.current,
+                });
                 scene.current = view;
                 layout.current(view.anchors());
-                // For the report: the frame cost, readable from the console.
+                // For measuring: the frame cost, readable from the console.
                 (window as { __podiums?: PodiumScene }).__podiums = view;
                 setReady(true);
             })
             .catch((e) => report.current?.({ loading: false, error: String(e) }));
         return () => {
             cancelled = true;
+            const w = window as { __podiums?: PodiumScene };
+            if (scene.current && w.__podiums === scene.current) delete w.__podiums;
             scene.current?.dispose();
             scene.current = null;
         };
     }, []);
 
-    const key = JSON.stringify(figures.map((f) => f && [f.id, f.equipment, f.attachments]));
+    const key = JSON.stringify(
+        figures.map((f) => f && [f.id, f.equipment, f.attachments, f.weaponSkin]),
+    );
     useEffect(() => {
         if (!ready) return;
         let cancelled = false;
@@ -108,7 +123,7 @@ export function PodiumCanvas({
         if (ready && turn !== undefined) scene.current?.turn(turn);
     }, [ready, turn]);
 
-    return <div ref={host} className="uis-diorama-canvas" />;
+    return <div ref={host} className="sqv-diorama-canvas" />;
 }
 
 type PodiumProps = {
@@ -138,7 +153,7 @@ export function Podium({
     dim,
     children,
 }: PodiumProps) {
-    const { props } = useFocusable<HTMLDivElement>({
+    const { props, inline } = useFocusable<HTMLDivElement>({
         id: `podium-${index}`,
         group: "podiums",
         title,
@@ -157,8 +172,11 @@ export function Podium({
           }
         : { display: "none" };
     return (
-        <div className="uis-podium" style={style} data-dim={dim || undefined} {...props}>
-            <div className="uis-plate-mount">{children}</div>
+        <div className="sqv-podium" style={style} data-dim={dim || undefined} {...props}>
+            <div className="sqv-plate-mount">
+                {inline && <InlineCommands commands={commands} />}
+                {children}
+            </div>
         </div>
     );
 }

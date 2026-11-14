@@ -53,11 +53,19 @@ import { engineSettings } from "../engineSettings";
 import { RecruitCard } from "../features/headquarters/components/RecruitCard";
 import { toLocalRecruits } from "../features/headquarters/mapping";
 import { useRecruitPortraits } from "../features/squad/useRecruitPortraits";
+import { SquadSelect } from "../features/squad-view/SquadSelect";
 import { useBack } from "../hooks/useBack";
 import { useMenuNav } from "../hooks/useMenuNav";
 import { PauseMenu } from "../PauseMenu";
 import "../features/squad/squad.css";
 import "../features/headquarters/headquarters.css";
+
+/**
+ * The squad selection before the field. `true`: the podium screen in the shared
+ * interface (`src/features/squad-view/SquadSelect.tsx`). `false`: the card pick
+ * it replaced (`SquadPick` below), kept until the new one is signed off.
+ */
+const PODIUM_SQUAD_SELECT = true;
 
 /** How often the game is re-read here; the driver follows the opponent's turn on its own. */
 const POLL_MS = 2_000;
@@ -336,6 +344,8 @@ function Field({
 
     useBack(() => setPaused(true));
 
+    // The unit readout: names, rank and gear from the recruits already read, the opponent's line.
+
     return (
         <div className="fixed inset-0 h-dvh w-full bg-surface">
             <Encounter
@@ -565,6 +575,22 @@ export default function Match() {
           : (settled ?? "ended");
     const fieldReady = (inGame.data?.length ?? 0) >= unitsOnMap(game.data).length;
     const abandon = () => setConfirming(true);
+    /** Abandon without asking (the caller asked): the opponent wins, the squad comes home. */
+    const abandonNow = () => {
+        setAbandoned(true);
+        const players = game.data!.players;
+        void action
+            .run([
+                async () =>
+                    abandonGameTx(
+                        gameId,
+                        accountId.data!,
+                        players,
+                        await fetchPendingSeats(action.client, gameId, players),
+                    ),
+            ])
+            .then((done) => setAbandoned(done));
+    };
     const deploying = isDeploying(game.data);
     const showResult = finished && (played || abandoned || deploying || !fieldReady);
     const mine = squadOf(game.data, side);
@@ -621,7 +647,31 @@ export default function Match() {
     return (
         <>
             {deploying ? (
-                !finished && (
+                !finished &&
+                (PODIUM_SQUAD_SELECT ? (
+                    <SquadSelect
+                        podiums={squadSize(game.data, side) + mine.length}
+                        roster={recruits.data ?? []}
+                        deployed={
+                            mine.length
+                                ? (inGame.data ?? []).filter((r) => mine.includes(r.objectId))
+                                : null
+                        }
+                        deadline={deployUntil(game.data)}
+                        opponentDeployed={squadOf(game.data, 1 - side).length > 0}
+                        joining={!!current.seat}
+                        busy={action.busy}
+                        error={action.error}
+                        clearError={action.clearError}
+                        onDeploy={(ids) =>
+                            action.run([() => deploySquadTx(gameId, accountId.data!, ids)])
+                        }
+                        onTimeUp={() =>
+                            void action.run([() => nextTurnTx(gameId, accountId.data!)])
+                        }
+                        onAbandon={abandonNow}
+                    />
+                ) : (
                     <SquadPick
                         game={game.data}
                         side={side}
@@ -633,7 +683,7 @@ export default function Match() {
                         action={action}
                         onAbandon={abandon}
                     />
-                )
+                ))
             ) : fieldReady ? (
                 <Field
                     game={game.data}
@@ -666,19 +716,7 @@ export default function Match() {
                 onClose={() => setConfirming(false)}
                 onConfirm={() => {
                     setConfirming(false);
-                    setAbandoned(true);
-                    const players = game.data!.players;
-                    void action
-                        .run([
-                            async () =>
-                                abandonGameTx(
-                                    gameId,
-                                    accountId.data!,
-                                    players,
-                                    await fetchPendingSeats(action.client, gameId, players),
-                                ),
-                        ])
-                        .then((done) => setAbandoned(done));
+                    abandonNow();
                 }}
             >
                 Your opponent wins and your squad comes home, but you can't search for a match for a

@@ -10,6 +10,7 @@ import { BodyDeformation } from "../appearance/body-shape";
 import type { GLTF } from "three/addons/loaders/GLTFLoader.js";
 import { createGLTFLoader } from "./gltf-loader";
 import { clone } from "three/addons/utils/SkeletonUtils.js";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { weights } from "../appearance/editor-state.js";
 import { frontSurface, shapeBrow } from "../appearance/brow-shape.js";
 import { installBlush, updateBlush } from "../appearance/skin-blush.js";
@@ -22,6 +23,19 @@ import type { Appearance, ArmorColors, Sex } from "../types";
 
 export const assetUrl = (path: string) => `${import.meta.env.BASE_URL}squad/${path}`;
 export type CharacterLook = "operative" | "office-worker";
+/**
+ * How a character is built. "full" (the default) is the posable, skinned
+ * character every existing view uses. "figurine" is for small, still views
+ * that show several at once (the squad dioramas): the same look in the same
+ * frozen pose, without the lashes (sub-pixel at that size), with every mesh
+ * baked into its posed shape (plain meshes, no skinning, no bone texture)
+ * and meshes that share a material merged into one draw. A figurine keeps
+ * its bones (the hand still carries the gun) but must not be animated.
+ */
+export type CharacterDetail = "full" | "figurine";
+export interface CreateOptions {
+    detail?: CharacterDetail;
+}
 interface Target {
     offset: number;
     count: number;
@@ -235,6 +249,102 @@ function deform(
     mesh.frustumCulled = false;
 }
 /**
+ * A skinned mesh in its current pose as a plain mesh: positions and normals
+ * run through the skeleton once, the skin attributes dropped. Same parent,
+ * transform and material, so it draws where the skinned one did.
+ */
+function bakePose(mesh: T.SkinnedMesh): T.Mesh {
+    const g = mesh.geometry,
+        position = g.attributes.position,
+        normal = g.attributes.normal,
+        joints = g.attributes.skinIndex,
+        skinWeight = g.attributes.skinWeight,
+        bones = mesh.skeleton.boneMatrices!;
+    const positions = new Float32Array(position.count * 3),
+        normals = normal ? new Float32Array(position.count * 3) : null;
+    const blend = new T.Matrix4(),
+        bone = new T.Matrix4(),
+        linear = new T.Matrix3(),
+        v = new T.Vector3();
+    for (let i = 0; i < position.count; i++) {
+        blend.elements.fill(0);
+        for (let k = 0; k < 4; k++) {
+            const w = skinWeight.getComponent(i, k);
+            if (!w) continue;
+            bone.fromArray(bones, joints.getComponent(i, k) * 16);
+            for (let e = 0; e < 16; e++) blend.elements[e] += bone.elements[e] * w;
+        }
+        blend.premultiply(mesh.bindMatrixInverse).multiply(mesh.bindMatrix);
+        v.fromBufferAttribute(position, i)
+            .applyMatrix4(blend)
+            .toArray(positions, i * 3);
+        if (normals) {
+            linear.setFromMatrix4(blend);
+            v.fromBufferAttribute(normal, i)
+                .applyMatrix3(linear)
+                .normalize()
+                .toArray(normals, i * 3);
+        }
+    }
+    g.setAttribute("position", new T.BufferAttribute(positions, 3));
+    if (normals) g.setAttribute("normal", new T.BufferAttribute(normals, 3));
+    g.deleteAttribute("skinIndex");
+    g.deleteAttribute("skinWeight");
+    g.computeBoundingSphere();
+    const baked = new T.Mesh(g, mesh.material);
+    baked.name = mesh.name;
+    baked.userData = mesh.userData;
+    baked.matrix.copy(mesh.matrix);
+    baked.matrix.decompose(baked.position, baked.quaternion, baked.scale);
+    baked.renderOrder = mesh.renderOrder;
+    baked.frustumCulled = false;
+    mesh.parent!.add(baked);
+    mesh.removeFromParent();
+    return baked;
+}
+/**
+ * Plain meshes under one parent that share a material and their transform,
+ * merged into one geometry each: one draw instead of several. Meshes whose
+ * attributes differ stay as they are.
+ */
+function mergeByMaterial(root: T.Object3D) {
+    const groups = new Map<string, T.Mesh[]>();
+    root.traverse((o) => {
+        if (!(o instanceof T.Mesh) || o instanceof T.SkinnedMesh || Array.isArray(o.material))
+            return;
+        const g = o.geometry as T.BufferGeometry;
+        const key = [
+            o.material.uuid,
+            o.parent?.uuid,
+            o.matrix.elements.join(),
+            Object.keys(g.attributes).sort().join(),
+            g.index ? 1 : 0,
+            Object.keys(g.morphAttributes).length,
+        ].join("|");
+        const list = groups.get(key) ?? [];
+        list.push(o);
+        groups.set(key, list);
+    });
+    for (const list of groups.values()) {
+        if (list.length < 2) continue;
+        const merged = mergeGeometries(list.map((m) => m.geometry as T.BufferGeometry));
+        if (!merged) continue;
+        merged.computeBoundingSphere();
+        const [first] = list;
+        const mesh = new T.Mesh(merged, first.material);
+        mesh.name = first.name;
+        mesh.userData = { ...first.userData, merged: list.length };
+        mesh.matrix.copy(first.matrix);
+        mesh.matrix.decompose(mesh.position, mesh.quaternion, mesh.scale);
+        mesh.frustumCulled = false;
+        first.parent!.add(mesh);
+        for (const m of list) {
+            m.removeFromParent();
+            m.geometry.dispose();
+        }
+    }
+}
+/**
  * Decoded assets shared by every `CharacterAssets` for the session: the
  * squad stage, the armory's thumbnails, the title scene and the encounter
  * each used to download and decode the same bodies, parts, outfits and
@@ -335,10 +445,23 @@ export class CharacterAssets {
         poseMode: "idle" | "rest" = "idle",
         look: CharacterLook = "operative",
         weaponModel = "rifle",
+        { detail = "full" }: CreateOptions = {},
     ): Promise<Character> {
         if (this.disposed) throw Error("Studio closed.");
         const office = look === "office-worker";
-        const keys = ["skin", "eyes", "lashes", s.brows, s.hair].filter((k) => k !== "none");
+        const figurine = detail === "figurine";
+        const keys = ["skin", "eyes", "lashes", s.brows, s.hair].filter(
+            (k) => k !== "none" && !(figurine && k === "lashes"),
+        );
+        // A figurine's kit and armor meshes share one clone per source material, so they merge.
+        const copies = new Map<T.Material, T.MeshStandardMaterial>();
+        const kitMaterial = (skin: T.Mesh) => {
+            if (!figurine) return material(skin).clone();
+            const source = material(skin);
+            let copy = copies.get(source);
+            if (!copy) copies.set(source, (copy = source.clone()));
+            return copy;
+        };
         const [parts, skinTexture, eyeTexture, pose, mount, kit] = await Promise.all([
             Promise.all(keys.map((key) => this.getPart(s.sex, key))),
             this.texture(`editor/textures/${s.skin}_${s.sex}.webp`),
@@ -463,7 +586,7 @@ export class CharacterAssets {
         for (const source of meshes(kit.scene)) {
             await pause();
             const skin = source as T.SkinnedMesh;
-            const attached = attach(skin.geometry.clone(), material(skin).clone(), skin.skeleton);
+            const attached = attach(skin.geometry.clone(), kitMaterial(skin), skin.skeleton);
             attached.userData.nativePart = office ? "office-worker" : "field-kit";
             kitMeshes.push(attached);
         }
@@ -503,8 +626,8 @@ export class CharacterAssets {
             for (const source of meshes(armor.scene)) {
                 await pause();
                 const skin = source as T.SkinnedMesh;
-                const armorMaterial = material(skin).clone();
-                armorMaterials.push(armorMaterial);
+                const armorMaterial = kitMaterial(skin);
+                if (!armorMaterials.includes(armorMaterial)) armorMaterials.push(armorMaterial);
                 attach(skin.geometry.clone(), armorMaterial, skin.skeleton).userData.nativePart =
                     "armor";
             }
@@ -538,6 +661,14 @@ export class CharacterAssets {
             ? new T.Box3().setFromObject(eyes).getCenter(new T.Vector3())
             : new T.Vector3(0, top - 0.12, 0.08);
         mixer.timeScale = 0;
+        if (figurine) {
+            const skinned: T.SkinnedMesh[] = [];
+            root.traverse((o) => {
+                if (o instanceof T.SkinnedMesh) skinned.push(o);
+            });
+            for (const mesh of skinned) bakePose(mesh);
+            mergeByMaterial(root);
+        }
         return {
             root,
             eye,

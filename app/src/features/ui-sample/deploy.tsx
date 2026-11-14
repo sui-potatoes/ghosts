@@ -32,8 +32,8 @@ import {
 } from "../../ui";
 import { Offstage, Portrait } from "../headquarters/squad/parts";
 import { gearName, ITEMS, rankIcon } from "./data";
-import type { Anchor } from "./podium-scene";
-import { Podium, PodiumCanvas } from "./podiums";
+import type { Anchor } from "../squad-view/podium-scene";
+import { Podium, PodiumCanvas } from "../squad-view/podiums";
 import { ManagePreset, missingLine, NamePrompt, PresetRail } from "./preset-rail";
 import {
     add,
@@ -303,9 +303,9 @@ export function Deploy({
         const recruit = figures[i];
         if (!recruit)
             return (
-                <div className="uis-plate-engraved" data-vacant>
-                    <span className="uis-plate-name">Vacant</span>
-                    <span className="uis-plate-line">Podium {i + 1}</span>
+                <div className="sqv-plate-engraved" data-vacant>
+                    <span className="sqv-plate-name">Vacant</span>
+                    <span className="sqv-plate-line">Podium {i + 1}</span>
                 </div>
             );
         const loadout = loadouts[i]!;
@@ -314,21 +314,21 @@ export function Deploy({
         const armorTier = loadout.armor ? (ITEMS[loadout.armor]?.tier ?? 1) : 0;
         const r = rank(recruit.id).rank;
         return (
-            <div className="uis-plate-engraved">
-                <span className="uis-plate-head">
-                    <span className="uis-plate-name">{recruit.callsign}</span>
+            <div className="sqv-plate-engraved">
+                <span className="sqv-plate-head">
+                    <span className="sqv-plate-name">{recruit.callsign}</span>
                     <span className="uis-plate-marker" data-marker={marker}>
                         {marker === "base" ? "Base" : "Custom"}
                     </span>
                 </span>
-                <span className="uis-plate-line">
+                <span className="sqv-plate-line">
                     <Icon name={rankIcon(r)} size={12} />
                     {r} · {recruit.role}
                 </span>
-                <span className="uis-plate-kit" aria-label="Loadout">
+                <span className="sqv-plate-kit" aria-label="Loadout">
                     <span title={gearName(loadout.primary)}>
                         <Icon name="primary" size={14} />
-                        <span className="uis-pips">
+                        <span className="sqv-pips">
                             {[0, 1, 2].map((k) => (
                                 // An upgrade's tier is how far its pip fills.
                                 <i key={k} data-tier={mods[k] ? modTier(mods[k]) : undefined} />
@@ -475,7 +475,7 @@ export function Deploy({
             commands={<FocusCommandBar glyphs={glyphs} />}
             overlay={overlay}
         >
-            <section className="uis-diorama" data-picking={picking !== null || undefined}>
+            <section className="sqv-diorama" data-picking={picking !== null || undefined}>
                 <PodiumCanvas
                     figures={figures}
                     focus={focusIndex}
@@ -624,7 +624,7 @@ function DeployPlaque({ command, over }: { command: Command; over: boolean }) {
         <button
             type="button"
             tabIndex={-1}
-            className="uis-deploy"
+            className="sqv-plaque"
             data-refused={command.deny ? "" : undefined}
             data-over={over || undefined}
             {...props}
@@ -651,7 +651,7 @@ function RecruitPicker({ index, roster, podiums, portraits, rank, onPick, onClos
     return (
         <FocusScope id="deploy-picker" back={close}>
             <StartOn id={`pick-${current ?? "none"}`} />
-            <div className="uis-deploy-picker gui-panel">
+            <div className="sqv-picker gui-panel">
                 <header className="gui-panel-head">
                     <span className="gui-panel-label">Podium {index + 1}</span>
                 </header>
