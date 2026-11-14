@@ -4,6 +4,19 @@
 import { CELL, TacticalMap, type Cell } from "./map.ts";
 import { describe, type Command, type GameEvent } from "./events.ts";
 import { blackRain, type Scenario } from "./scenario.ts";
+import {
+  GRENADE_DAMAGE,
+  GRENADE_RADIUS,
+  GRENADE_RANGE,
+  MAX_RANGE_OFFSET,
+  hasKind,
+  loadoutActions,
+  spendUse,
+  specOf,
+  usesLeft,
+  type UnitAction,
+} from "./action-registry.ts";
+import type { UnitEffect } from "./status-effects.ts";
 // Local presentation simulation. Rules reference ghosts::{unit,map,stats}; no chain imports.
 export type { Cell };
 export type Weapon = "rifle" | "sniper" | "pistol";
@@ -38,17 +51,21 @@ export interface Unit {
   range: number;
   mobility: number;
   damage: number;
-  grenade: boolean;
   hunkered: boolean;
   overwatch: boolean;
   weapon: Weapon;
   magazines: Record<Weapon, number>;
   color: string;
-  /** What this unit may do; absent, everything the rules have. */
-  actions?: UnitOrder[];
+  /**
+   * What this unit may do, in its own order, with the uses left: the chain's
+   * `Unit.actions`, or the demo's from the loadout (`loadoutActions`).
+   */
+  actions: UnitAction[];
+  /** Status effects on the unit; none exist yet (status-effects.ts). */
+  effects: UnitEffect[];
 }
-/** Whether `u` may ever take `order`: its allow-list, when it has one, AP and ammo aside. */
-export const allows = (u: Unit, order: UnitOrder) => !u.actions || u.actions.includes(order);
+/** Whether `u` carries `order` at all (`Unit.has_action`): AP, ammo and uses aside. */
+export const allows = (u: Pick<Unit, "actions">, order: UnitOrder) => hasKind(u, specOf(order).id);
 export const key = (p: Cell) => p.join(",");
 export const distance = (a: Cell, b: Cell) =>
   Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]);
@@ -75,7 +92,9 @@ export function initialUnits(scenario: Scenario = blackRain): Unit[] {
       ap: 2,
       armor: role === "HEAVY" ? 2 : 1,
       mobility: role === "HEAVY" ? 5 : 7,
-      grenade: false,
+      // Armed, no utilities until the host's loadout says otherwise (`applyLoadouts`).
+      actions: loadoutActions({ armed: true, utilities: [], demo: enemy ? undefined : { extract: !scenario.versus } }),
+      effects: [],
       hunkered: false,
       overwatch: false,
       weapon,
@@ -106,6 +125,12 @@ export class Encounter {
   readonly map: TacticalMap;
   /** Whoever decides this encounter, when it isn't the bundled rules. */
   authority?: GameAuthority;
+  /**
+   * When the turn in play runs out (epoch ms), for a match with a turn limit:
+   * past it the contract takes only `next_turn` (`ETurnExpired`). The host's
+   * driver keeps it; the bundled rules have no clock.
+   */
+  turnDeadline?: number;
   units: Unit[];
   // Encounter-local credit, shared by direct fire, overwatch and grenades.
   kills: Record<string, number> = {};
@@ -197,7 +222,8 @@ export class Encounter {
       case "shot": {
         const a = this.unit(event.unit)!,
           b = this.unit(event.target)!;
-        a.ap = event.reaction || a.weapon !== "pistol" ? 0 : a.ap - 1;
+        // `Unit.perform_attack` depletes AP, whatever the weapon.
+        a.ap = 0;
         a.hunkered = false;
         a.overwatch = false;
         a.ammo--;
@@ -216,7 +242,7 @@ export class Encounter {
       case "grenade": {
         const u = this.unit(event.unit)!;
         u.ap--;
-        u.grenade = true;
+        spendUse(u, "Grenade");
         for (const { unit, damage, killed } of event.casualties) {
           const target = this.unit(unit)!;
           target.hp -= damage;
@@ -314,7 +340,7 @@ export class Encounter {
   }
   /** Whether a throw from one cell can land on another. */
   throwBlocked(from: Cell, to: Cell) {
-    return !!this.authority && !this.authority.clearThrow(from, to);
+    return this.authority ? !this.authority.clearThrow(from, to) : !this.map.clearThrow(from, to);
   }
   private groundOpen(p: Cell) {
     return this.authority ? this.authority.terrain(p) === "open" : this.map.open(p);
@@ -415,7 +441,7 @@ export class Encounter {
   chance(a: Unit, b: Unit) {
     if (this.authority) return this.authority.chance(a, b);
     const d = distance(a.pos, b.pos);
-    if (d > a.range + 3 || this.map.coverPeek(a.pos, b.pos).blocked) return 0;
+    if (d > a.range + MAX_RANGE_OFFSET || this.map.coverPeek(a.pos, b.pos).blocked) return 0;
     return Math.max(
       0,
       Math.min(
@@ -430,7 +456,7 @@ export class Encounter {
       a.ammo > 0 &&
       b.hp > 0 &&
       a.enemy !== b.enemy &&
-      distance(a.pos, b.pos) <= a.range + 3 &&
+      distance(a.pos, b.pos) <= a.range + MAX_RANGE_OFFSET &&
       !this.shotBlocked(a.pos, b.pos)
     );
   }
@@ -471,11 +497,19 @@ export class Encounter {
     return true;
   }
   throwGrenade(u: Unit, p: Cell) {
-    if (!this.canAct(u) || !allows(u, "grenade") || u.grenade || distance(u.pos, p) > 5) return false;
+    if (
+      !this.canAct(u) ||
+      !allows(u, "grenade") ||
+      usesLeft(u, "Grenade") === 0 ||
+      distance(u.pos, p) > GRENADE_RANGE ||
+      this.throwBlocked(u.pos, p)
+    )
+      return false;
+    // `Map.explode`: armor takes off the damage, never below 1; no dodge.
     const casualties = this.units
-      .filter((t) => t.hp > 0 && distance(t.pos, p) <= 2)
+      .filter((t) => t.hp > 0 && distance(t.pos, p) <= GRENADE_RADIUS)
       .map((t) => {
-        const damage = Math.min(t.hp, Math.max(1, 6 - t.armor));
+        const damage = Math.min(t.hp, Math.max(1, GRENADE_DAMAGE - t.armor));
         return { unit: t.id, damage, killed: t.hp - damage === 0 };
       });
     const environment = this.map.blastProps(p);

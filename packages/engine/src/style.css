@@ -1,108 +1,75 @@
+/*
+ * The encounter: the field, what is drawn on it, and the HUD chrome in the
+ * game's interface language (the menus' app/src/ui). Scale and tints come from
+ * tokens.css; colours from the host's theme tokens. The HUD's own parts are
+ * `hud-` prefixed; the unit readout keeps its own sheet (ui/intel/intel.css),
+ * the debrief its own (aftermath/reveal.css).
+ */
+
+/* === Root ============================================================ */
+
 .encounter {
-  font-family: "Barlow", Arial, sans-serif;
-  color: #d7dbe4;
-  background: #111718;
-  font-synthesis: none;
-  --muted: #7e828b;
-  --line: #ffffff12;
-  --amber: #d9bd85;
-  --amber-dark: #9a8054;
-  --red: #d67c73;
-  --mono: "IBM Plex Mono", monospace;
-  --condensed: var(--mono);
-  --panel: #171e1f;
-}
-.encounter, .encounter * {
-  box-sizing: border-box;
-}
-.encounter button,
-.encounter a,
-.encounter input {
-  -webkit-tap-highlight-color: transparent;
-}
-.encounter button {
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
-  background: none;
-  border: 0;
-}
-.encounter button:disabled {
-  cursor: not-allowed;
-  opacity: 0.3;
-}
-.encounter button:not(:disabled):hover {
-  color: #f3d8a4;
-}
-.encounter button:focus-visible,
-.encounter a:focus-visible,
-.encounter input:focus-visible {
-  outline: 2px solid var(--amber);
-  outline-offset: 4px;
-}
-.encounter button svg {
-  width: 22px;
-  height: 22px;
-  flex-shrink: 0;
-}
-.encounter button {
-  transition:
-    background 0.18s,
-    color 0.18s,
-    border-color 0.18s;
-}
-.encounter button:not(:disabled):active {
-  transform: translateY(1px);
-}
-.encounter a {
-  color: inherit;
-  text-decoration: none;
-}
-.encounter kbd {
-  font-family: var(--mono);
-  font-size: 9px;
-  font-weight: 400;
-  color: #9da1aa;
-  border: 1px solid #b9bdc630;
-  border-radius: 2px;
-  padding: 2px 4px;
-  line-height: 1.2;
-}
-.encounter button kbd {
-  pointer-events: none;
-}
-.encounter small {
-  font-weight: 400;
-}
-.encounter {
-  height: 100dvh;
-  min-height: 740px;
-  display: grid;
-  grid-template-columns: 66px 1fr;
-  grid-template-rows: 76px 1fr 31px;
-  overflow: hidden;
-}
-.encounter .workspace {
-  grid-column: 2;
-  grid-row: 2;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 292px;
-  grid-template-rows: minmax(0, 1fr) 105px;
-  overflow: hidden;
-}
-.encounter .battlefield {
   position: relative;
-  min-height: 0;
+  height: 100dvh;
   overflow: hidden;
-  background: #182529;
+  color: var(--text-color);
+  background: var(--background-color);
+  font: 400 var(--t-body) / 1.4 var(--font-mono);
+  letter-spacing: 0.02em;
+  font-synthesis: none;
+  cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
-.encounter .battlefield:after {
-  content: "";
+.encounter,
+.encounter * {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+  scrollbar-width: none;
+}
+.encounter *::-webkit-scrollbar {
+  display: none;
+}
+.encounter :where(button, kbd, h2, h3, p, dl, dd, ol, ul, li) {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: inherit;
+  list-style: none;
+}
+.encounter :where(button) {
+  cursor: pointer;
+}
+.encounter :where(button):disabled {
+  cursor: default;
+}
+/* The cursor language is the band and the brackets; browsers' focus rings never show. */
+.encounter :focus,
+.encounter :focus-visible {
+  outline: none;
+}
+.encounter svg {
+  flex: none;
+}
+.encounter input,
+.encounter select {
+  font: 400 var(--t-label) var(--font-mono);
+  accent-color: var(--accent-color);
+  user-select: text;
+}
+
+/* === The field ======================================================= */
+
+.encounter .workspace,
+.encounter .battlefield {
   position: absolute;
   inset: 0;
-  pointer-events: none;
-  border: 1px solid #c0c4cd11;
-  z-index: 2;
+  overflow: hidden;
 }
 .encounter #viewport {
   position: absolute;
@@ -113,43 +80,44 @@
   display: block;
   width: 100%;
   height: 100%;
-  outline: 0;
 }
 .encounter .vignette {
   position: absolute;
   inset: 0;
+  z-index: 1;
   pointer-events: none;
   background:
     linear-gradient(
       180deg,
-      #0c151c60 0%,
-      transparent 27%,
-      transparent 65%,
-      #0d151bd9 100%
-    ),
-    linear-gradient(90deg, #09141a22, transparent 40%);
-  z-index: 1;
+      color-mix(in srgb, var(--background-color) 55%, transparent) 0,
+      transparent 18%,
+      transparent 72%,
+      color-mix(in srgb, var(--background-color) 70%, transparent) 100%
+    );
 }
 .encounter #world-labels {
   position: absolute;
   inset: 0;
-  pointer-events: none;
-  overflow: hidden;
   z-index: 2;
+  overflow: hidden;
+  pointer-events: none;
 }
+
+/* Name plates over the units: a DOM button per unit, placed by the scene. */
 .encounter .unit-label {
   position: absolute;
   top: 0;
   left: 0;
+  min-width: calc(var(--u) * 16);
+  padding: calc(var(--u) * 1) calc(var(--u) * 2);
   pointer-events: auto;
-  padding: 4px 7px;
-  background: #142123c4;
-  backdrop-filter: blur(8px);
-  border: 1px solid #c0c4cd33;
-  font: 8px var(--mono);
-  letter-spacing: 1px;
-  color: #c2c6cf;
-  min-width: 58px;
+  font: 500 var(--t-micro) / 1.2 var(--font-mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--background-color) 88%, transparent);
+  border: 1px solid var(--line-strong);
+  will-change: transform;
 }
 .encounter .unit-label span {
   white-space: nowrap;
@@ -157,2790 +125,1121 @@
 .encounter .unit-label i {
   display: block;
   height: 2px;
+  margin-top: var(--u);
   background: linear-gradient(
     90deg,
-    #afb3bc var(--health),
-    #afb3bc22 var(--health)
+    var(--text-secondary) var(--health),
+    color-mix(in srgb, var(--text-secondary) 15%, transparent) var(--health)
   );
-  margin-top: 4px;
 }
 .encounter .unit-label.selected {
-  color: var(--amber);
-  border-color: #d9bd8570;
+  color: var(--background-color);
+  background: var(--band);
+  border-color: var(--band);
 }
 .encounter .unit-label.selected i {
   background: linear-gradient(
     90deg,
-    var(--amber) var(--health),
-    #d9bd8522 var(--health)
+    var(--background-color) var(--health),
+    color-mix(in srgb, var(--background-color) 25%, transparent) var(--health)
   );
 }
 .encounter .unit-label.hostile {
-  color: #ecb2a5;
-  border-color: #e9978344;
+  color: color-mix(in srgb, var(--hostile) 70%, var(--text-color));
+  border-color: color-mix(in srgb, var(--hostile) 45%, transparent);
 }
 .encounter .unit-label.hostile i {
   background: linear-gradient(
     90deg,
-    #d68272 var(--health),
-    #d6827222 var(--health)
+    var(--hostile) var(--health),
+    color-mix(in srgb, var(--hostile) 15%, transparent) var(--health)
   );
 }
 /* The aimed hostile: odds and the slice a hit (deeper on a crit) takes off the bar. */
 .encounter .unit-label.aimed {
-  border-color: #e4c58a99;
-  box-shadow: 0 0 0 5px #e4c58a0c;
+  border-color: var(--text-color);
 }
 .encounter .unit-label.aimed i {
   height: 3px;
   background: linear-gradient(
     90deg,
-    #d68272 var(--kept),
-    #8a4f44 var(--kept) var(--hit-from),
-    #ef9c87 var(--hit-from) var(--health),
-    #d6827222 var(--health)
+    var(--hostile) var(--kept),
+    color-mix(in srgb, var(--hostile) 45%, var(--background-color)) var(--kept) var(--hit-from),
+    var(--text-color) var(--hit-from) var(--health),
+    color-mix(in srgb, var(--hostile) 15%, transparent) var(--health)
   );
 }
 .encounter .unit-label .aim-readout {
   display: block;
+  margin-top: calc(var(--u) * 1.5);
   font-style: normal;
-  margin-top: 5px;
-  color: #cfd3dc;
-  letter-spacing: 1px;
   white-space: nowrap;
+  color: var(--text-color);
 }
 .encounter .unit-label .aim-readout strong {
-  font: 500 17px/1 var(--condensed);
-  color: var(--amber);
-  letter-spacing: 0.5px;
-  margin-right: 5px;
-  vertical-align: -2px;
+  margin-right: var(--u);
+  font: 500 var(--t-body) / 1 var(--font-mono);
 }
 .encounter .unit-label .aim-readout b {
-  font-weight: inherit;
-  color: #ef9c87;
-}
-.encounter .eyebrow {
-  font: 8px var(--mono);
-  letter-spacing: 1.5px;
-  color: #969aa3;
-}
-.encounter h1 {
-  font: 600 clamp(38px, 4.5vw, 65px) / 1 var(--condensed);
-  letter-spacing: 1.5px;
-  margin: 12px 0 12px;
-  color: #e5e5d9;
-}
-.encounter h1 span {
-  font-family: sans-serif;
-  font-size: 15px;
-  display: inline-block;
-  font-weight: 400;
-  letter-spacing: 4px;
-  margin-left: 15px;
-  color: #a9adb6;
-  vertical-align: middle;
-  opacity: 0.65;
-}
-.encounter .view-tools {
-  position: absolute;
-  right: 21px;
-  top: 29px;
-  display: flex;
-  gap: 5px;
-  z-index: 3;
-}
-.encounter .view-tools button {
-  height: 31px;
-  border: 1px solid #adb1ba29;
-  background: #162025a8;
-  color: #a6aab3;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 9px;
-  padding: 0 9px;
-  backdrop-filter: blur(10px);
-}
-.encounter .view-tools svg {
-  width: 15px;
-  height: 15px;
-}
-.encounter .view-tools button span {
-  font: 7px var(--mono);
-  letter-spacing: 1px;
-}
-.encounter .view-tools button.active {
-  color: var(--amber);
-  border-color: #d9bd8560;
-}
-.encounter .north {
-  position: absolute;
-  right: 28px;
-  top: 86px;
-  z-index: 2;
-  color: #a9adb6;
-  text-align: center;
-  pointer-events: none;
-}
-.encounter .north > span {
-  font: 9px var(--mono);
-}
-.encounter .north > i {
-  display: block;
-  height: 37px;
-  width: 21px;
-  margin: 6px auto 14px;
-  background: linear-gradient(90deg, #c2c6cf 50%, #636770 50%);
-  clip-path: polygon(50% 0, 100% 100%, 50% 76%, 0 100%);
-  opacity: 0.7;
-}
-.encounter .north small {
-  font: 6px/1.7 var(--mono);
-  letter-spacing: 0.5px;
-}
-.encounter .field-bottom {
-  position: absolute;
-  bottom: 0;
-  left: 28px;
-  right: 28px;
-  z-index: 3;
-}
-.encounter .live-pip {
-  display: inline-block;
-  height: 5px;
-  width: 5px;
-  background: var(--amber);
-  border-radius: 50%;
-  box-shadow: 0 0 9px #d9bd8533;
-}
-.encounter #squad-cards {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 7px;
-  max-width: 840px;
-}
-.encounter .squad-card {
-  display: flex;
-  position: relative;
-  text-align: left;
-  background: linear-gradient(110deg, #292d36d9, #172224ef);
-  border: 1px solid #8a8e9735;
-  height: 88px;
-  padding: 0;
-  overflow: hidden;
-  backdrop-filter: blur(10px);
-}
-.encounter .squad-card.selected {
-  border-color: #cfb47d9c;
-  box-shadow: inset 0 -2px var(--amber);
-}
-.encounter .squad-card.selected:after {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 19px;
-  height: 2px;
-  background: var(--amber);
-}
-.encounter .squad-card img {
-  height: 100%;
-  width: 77px;
-  object-fit: cover;
-  mix-blend-mode: lighten;
-  filter: saturate(0.55);
-  opacity: 0.85;
-  mask-image: linear-gradient(90deg, black 70%, transparent);
-}
-.encounter .squad-index {
-  position: absolute;
-  left: 6px;
-  top: 6px;
-  font: 7px var(--mono);
-  color: #b3b7c0;
-}
-.encounter .squad-details {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  flex: 1;
-  min-width: 0;
-  padding: 4px 12px 4px 0;
-}
-.encounter .squad-details > small {
-  font: 6px var(--mono);
-  letter-spacing: 1.3px;
-  color: #8d919a;
-}
-.encounter .squad-details > strong {
-  font: 500 21px var(--condensed);
-  letter-spacing: 1px;
-  line-height: 1.3;
-}
-.encounter .squad-card.selected .squad-details > strong {
-  color: #ead2a6;
-}
-.encounter .hp-track {
-  height: 3px;
-  background: #afb3bc20;
-  margin: 6px 0;
-  display: block;
-}
-.encounter .hp-track > i {
-  display: block;
-  height: 100%;
-  background: #a4a8b1;
-}
-.encounter .squad-card.selected .hp-track > i {
-  background: var(--amber);
-}
-.encounter .squad-meta {
-  font: 6px var(--mono);
-  letter-spacing: 0.5px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  color: #92969f;
-  gap: 4px;
-}
-.encounter .ap-dots {
-  display: flex;
-  gap: 4px;
-}
-.encounter .ap-dots i {
-  width: 5px;
-  height: 5px;
-  border: 1px solid #a4a8b177;
-  transform: rotate(45deg);
-}
-.encounter .ap-dots i.filled {
-  background: #b6bac3;
-  border-color: #b6bac3;
-}
-.encounter .squad-card.kia {
-  filter: grayscale(1);
-  opacity: 0.35;
-}
-.encounter .intel-panel {
-  grid-column: 2;
-  grid-row: 1/3;
-  border-left: 1px solid #a3a7b022;
-  background: linear-gradient(135deg, #1e222b, #151c1e 60%);
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow: auto;
-  scrollbar-width: thin;
-  scrollbar-color: #4b4f58 transparent;
-}
-.encounter .panel-heading {
-  padding: 19px 21px;
-  border-bottom: 1px solid var(--line);
-  display: flex;
-  justify-content: space-between;
-  font: 8px var(--mono);
-  letter-spacing: 1.6px;
-  color: #afb3bc;
-}
-.encounter .signal {
-  font-size: 9px;
-  letter-spacing: 2px;
-  color: var(--amber);
-}
-.encounter .contract {
-  padding: 22px 21px 17px;
-  border-bottom: 1px solid var(--line);
-}
-.encounter .contract .eyebrow {
-  font-size: 7px;
-  color: #7c8089;
-}
-.encounter .corp-logo {
-  font-size: 31px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 12px 0 20px;
-  color: #c8ccd5;
-}
-.encounter .corp-logo > span {
-  font: 600 25px/0.9 var(--condensed);
-  letter-spacing: 2px;
-}
-.encounter .corp-logo small {
-  display: block;
-  font: 6px var(--mono);
-  letter-spacing: 1.2px;
-  margin-top: 6px;
-  color: #8b8f98;
-}
-.encounter .corp-logo .verified {
-  margin-left: auto;
-  font-size: 12px;
-  color: #92969f;
-  border: 1px solid #92969f55;
-  border-radius: 50%;
-  padding: 4px;
-  letter-spacing: 0;
-}
-.encounter .contract-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 10px;
-  color: #868a93;
-  margin-top: 12px;
-}
-.encounter .contract-row strong {
-  font: 12px var(--mono);
-  color: #d5ceb3;
-}
-.encounter .contract-row b {
-  font: 7px var(--mono);
-  letter-spacing: 0.5px;
-}
-.encounter .contract-row i {
-  font-style: normal;
-  margin-left: 7px;
-  font-size: 8px;
-  letter-spacing: 1px;
-}
-.encounter .danger-text {
-  color: #c28d78;
-}
-.encounter .objectives {
-  padding: 21px;
-  border-bottom: 1px solid var(--line);
-}
-.encounter .section-title {
-  font: 7px var(--mono);
-  letter-spacing: 1.6px;
-  color: #9599a2;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.encounter .section-title > span {
-  color: #6e727b;
-}
-.encounter .objective {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin-top: 19px;
-  color: #bfc3cc;
-}
-.encounter .objective > i {
-  font-style: normal;
-  font-size: 17px;
-  line-height: 0.9;
-  color: var(--amber);
-}
-.encounter .objective > div {
-  font-size: 11px;
   font-weight: 500;
-  line-height: 1.3;
-  flex: 1;
+  color: var(--warn-color);
 }
-.encounter .objective small {
+/* Status effects over the unit (empty until the contract has effects). */
+.encounter .unit-label[data-effects]:not([data-effects=""])::after {
+  content: attr(data-effects);
   display: block;
-  font:
-    8px/1.6 "Barlow",
-    sans-serif;
-  color: #80848d;
-  margin-top: 5px;
+  margin-top: var(--u);
+  color: var(--warn-color);
+  white-space: nowrap;
 }
-.encounter .objective > span {
-  font: 7px var(--mono);
-  color: #686c75;
-}
-.encounter .objective.complete > i {
-  color: #b9bdc6;
-}
-.encounter .objective.complete > div {
-  color: #999da6;
-  text-decoration: line-through;
-}
-.encounter .turn-info {
-  padding: 18px 21px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid var(--line);
-  background: #b9b17b06;
-}
-.encounter .turn-info .eyebrow {
-  font-size: 6px;
-  letter-spacing: 1.3px;
-}
-.encounter .turn-info h2 {
-  font: 500 23px var(--condensed);
-  letter-spacing: 1.5px;
-  margin: 7px 0 0;
-  color: var(--amber);
-}
-.encounter .turn-number {
-  text-align: center;
-  border-left: 1px solid #989ca522;
-  padding-left: 21px;
-}
-.encounter .turn-number span {
-  font: 6px var(--mono);
-  color: #797d86;
-  letter-spacing: 1px;
-  display: block;
-}
-.encounter .turn-number strong {
-  font: 400 31px/0.95 var(--condensed);
-  color: #bcc0c9;
-  display: block;
-  margin-top: 4px;
-}
-.encounter .target-section {
-  padding: 20px 21px 10px;
-}
-.encounter .target-section .section-title {
-  margin-bottom: 12px;
-}
-.encounter .target-row {
-  display: flex;
-  align-items: center;
-  width: 100%;
-  gap: 10px;
-  padding: 9px 0;
-  text-align: left;
-  border-bottom: 1px solid #b7bbc40a;
-}
-.encounter .target-symbol {
-  width: 25px;
-  height: 25px;
-  border: 1px solid #c7857540;
-  display: grid;
-  place-items: center;
-  color: #c78c7f;
-  transform: rotate(45deg);
-  margin: 0 6px 0 3px;
-}
-.encounter .target-symbol svg {
-  width: 17px;
-  height: 17px;
-  transform: rotate(-45deg);
-}
-.encounter .target-row > span:nth-child(2) {
-  flex: 1;
-}
-.encounter .target-row strong {
-  display: block;
-  font: 9px var(--mono);
-  letter-spacing: 0.5px;
-  color: #bec2cb;
-}
-.encounter .target-row small {
-  display: block;
-  font: 6px var(--mono);
-  letter-spacing: 0.5px;
-  color: #72767f;
-  margin-top: 4px;
-}
-.encounter .target-row i {
-  font-style: normal;
-  margin: 0 4px;
-}
-.encounter .target-row.selected strong {
-  color: #e1c4a0;
-}
-.encounter .target-row.selected .target-symbol {
-  background: #b57c6b11;
-  border-color: #c78c7f99;
-}
-.encounter .target-hp {
-  font: 12px var(--mono);
-  color: #a6aab3;
-  text-align: center;
-}
-.encounter .hit-chance {
-  font: 20px var(--condensed);
-  color: #c0b38b;
-  min-width: 32px;
-  text-align: right;
-}
-.encounter .hit-chance small {
-  display: inline;
-  color: #9d936e;
-  font-size: 8px;
-  margin-left: 1px;
-}
-.encounter #context-card {
-  padding: 17px 21px;
-  border-top: 1px solid var(--line);
-  margin-top: 5px;
-}
-.encounter .weapon-title {
-  display: flex;
-  gap: 11px;
-  align-items: center;
-  margin: 13px 0;
-  color: #bec2cb;
-}
-.encounter .weapon-title > svg {
-  width: 32px;
-  height: 26px;
-  color: #8d919a;
-}
-.encounter .weapon-title strong {
-  font: 9px var(--mono);
-  letter-spacing: 0.3px;
-  display: block;
-}
-.encounter .weapon-title small {
-  font: 6px var(--mono);
-  display: block;
-  letter-spacing: 0.5px;
-  color: #878b94;
-  margin-top: 7px;
-}
-.encounter .weapon-title i {
-  font-style: normal;
-  margin: 0 5px;
-  color: #5a5e67;
-}
-.encounter .action-instruction {
-  margin-top: 13px;
-}
-.encounter .action-instruction > span {
-  font: 7px var(--mono);
-  letter-spacing: 1px;
-}
-.encounter .action-instruction p {
-  font-size: 10px;
-  line-height: 1.5;
-  color: #888c95;
-  margin: 6px 0 0;
-}
-.encounter .amber-text {
-  color: var(--amber);
-}
-.encounter .shot-preview {
-  display: flex;
-  align-items: center;
-  gap: 15px;
-  padding: 12px 0;
-}
-.encounter .shot-preview > strong {
-  font: 500 40px var(--condensed);
-  color: var(--amber);
-}
-.encounter .shot-preview > strong > span {
-  font-size: 18px;
-}
-.encounter .shot-preview > div {
-  font: 7px var(--mono);
-  color: #b9bdc6;
-  letter-spacing: 0.6px;
-}
-.encounter .shot-preview small {
-  display: block;
-  font-size: 6px;
-  color: #888c95;
-  margin-top: 7px;
-}
-.encounter .primary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  background: var(--amber);
-  color: #22262f;
-  font: 600 9px var(--mono);
-  padding: 14px 16px;
-  letter-spacing: 0.7px;
-}
-.encounter .primary:not(:disabled):hover {
-  background: #e7cc9b;
-  color: #141821;
-}
-.encounter .primary svg {
-  width: 16px;
-  height: 16px;
-}
-.encounter .activity {
-  margin-top: auto;
-  padding: 18px 21px 12px;
-  border-top: 1px solid var(--line);
-}
-.encounter .activity .section-title {
-  margin-bottom: 11px;
-}
-.encounter #log p {
-  font-size: 9px;
-  line-height: 1.5;
-  color: #838790;
-  margin: 7px 0;
-  display: flex;
-  gap: 9px;
-}
-.encounter #log p:first-child {
-  color: #acb0b9;
-}
-.encounter #log p > span {
-  font: 6px/2 var(--mono);
-  color: #61656e;
-  flex-shrink: 0;
-}
-.encounter .end-turn {
-  display: flex;
-  align-items: center;
-  text-align: left;
-  background: #c4ad7d;
-  color: #242831;
-  margin: 8px 17px 0;
-  padding: 13px 15px;
-  font: 600 10px var(--mono);
-  letter-spacing: 1.3px;
-  border: 1px solid #dbc99e;
-  min-height: 57px;
-}
-.encounter .end-turn small {
-  display: block;
-  font-size: 6px;
-  letter-spacing: 1px;
-  color: #5b5f68;
-  margin-top: 6px;
-}
-.encounter .end-turn > svg {
-  margin-left: auto;
-  width: 19px;
-  height: 19px;
-}
-.encounter .end-turn kbd {
-  color: #5b5f68;
-  border-color: #74735766;
-  margin-left: 9px;
-}
-.encounter .end-turn:not(:disabled):hover {
-  background: #dfc692;
-  color: #1e222b;
-}
-.encounter .panel-foot {
-  display: flex;
-  justify-content: space-between;
-  font: 5px var(--mono);
-  letter-spacing: 1px;
-  color: #6d717a;
-  padding: 11px 19px;
-}
-.encounter .command-deck {
-  display: flex;
-  align-items: center;
-  border-top: 1px solid #a9adb629;
-  background: linear-gradient(180deg, #232730, #1c2029);
-  min-width: 0;
-  padding: 13px 19px;
-  gap: 18px;
+
+/* The aim reticle, placed by the scene while a shot is lined up. */
+.encounter #aim-reticle {
+  position: absolute;
   z-index: 4;
+  width: 48px;
+  height: 48px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  border: 1px solid color-mix(in srgb, var(--text-color) 55%, transparent);
+  border-radius: 50%;
 }
-.encounter #selected-info {
-  display: flex;
-  align-items: center;
-  gap: 13px;
-  flex-shrink: 0;
-  min-width: 200px;
-}
-.encounter .selected-mark {
-  height: 43px;
-  width: 34px;
-  color: var(--amber);
-  display: grid;
-  place-items: center;
-}
-.encounter .selected-mark svg {
-  height: 33px;
-  width: 33px;
-}
-.encounter #selected-info > div > small {
-  display: block;
-  font: 6px var(--mono);
-  letter-spacing: 1px;
-  color: #878b94;
-}
-.encounter #selected-info strong {
-  display: block;
-  font: 500 23px var(--condensed);
-  color: #dbd4b8;
-  letter-spacing: 0.8px;
-  margin: 4px 0 6px;
-}
-.encounter #selected-info strong span {
-  font: 6px var(--mono);
-  color: #90949d;
-  letter-spacing: 1px;
-  vertical-align: middle;
-}
-.encounter .operator-meta {
-  font: 6px var(--mono);
-  color: #91959e;
-  white-space: nowrap;
-  letter-spacing: 0.3px;
-}
-.encounter .operator-meta i {
-  font-style: normal;
-  margin: 0 4px;
-  color: #5e626b;
-}
-.encounter .action-list {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 5px;
-  flex: 1;
-  min-width: 0;
-}
-.encounter .action-list button {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 75px;
-  gap: 5px;
-  border: 1px solid #9da1aa27;
-  color: #adb1ba;
-  min-width: 0;
-  background: #2a2e373d;
-  padding: 6px 3px;
-}
-.encounter .action-list button > svg {
-  width: 21px;
-  height: 21px;
-  margin: 3px 0 1px;
-}
-.encounter .action-list button > span {
-  font: 8px var(--condensed);
-  font-weight: 500;
-  letter-spacing: 1.1px;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-.encounter .action-list button > small {
-  font: 5px var(--mono);
-  letter-spacing: 0.5px;
-  color: #7b7f88;
-}
-.encounter .action-list button > kbd {
-  position: absolute;
-  right: 4px;
-  top: 4px;
-  font-size: 5px;
-  padding: 1px 2px;
-  opacity: 0.65;
-}
-.encounter .action-list button.active {
-  border-color: #c6b38391;
-  background: #c6b3830c;
-  color: var(--amber);
-}
-.encounter .action-list button.active:after {
+.encounter #aim-reticle::before,
+.encounter #aim-reticle::after {
   content: "";
   position: absolute;
-  bottom: 0;
-  left: 30%;
-  right: 30%;
-  height: 2px;
-  background: var(--amber);
+  background: color-mix(in srgb, var(--text-color) 55%, transparent);
 }
-.encounter .action-list button:not(:disabled):hover {
-  background: #d1ba7f12;
-  border-color: #d1ba7f80;
+.encounter #aim-reticle::before {
+  left: 50%;
+  top: -8px;
+  width: 1px;
+  height: 64px;
 }
-.encounter .loading {
+.encounter #aim-reticle::after {
+  top: 50%;
+  left: -8px;
+  width: 64px;
+  height: 1px;
+}
+.encounter #aim-reticle i {
   position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
-  gap: 20px;
-  background: #172226;
-  z-index: 10;
-  font: 9px var(--mono);
-  letter-spacing: 2px;
-  color: var(--amber);
+  inset: 16px;
+  border: 1px solid var(--hostile);
+  border-radius: 50%;
 }
-.encounter .loading svg {
-  width: 60px;
-  animation: loadingPulse 2s infinite;
-}
-.encounter .loading p {
-  text-align: center;
-  line-height: 2;
-}
+
+/* The status line: one message, a few seconds, over the field's middle. */
 .encounter #feedback {
   position: absolute;
-  top: 27%;
+  top: 22%;
   left: 50%;
-  transform: translate(-50%, -12px);
-  padding: 14px 23px;
-  max-width: 80%;
-  font: 9px var(--mono);
-  letter-spacing: 1px;
-  color: #ead7ad;
-  background: #1c2029ed;
-  border: 1px solid #d9bd8544;
-  z-index: 6;
+  z-index: 12;
+  padding: calc(var(--u) * 2.5) calc(var(--u) * 4);
+  transform: translate(-50%, -6px);
   opacity: 0;
-  transition:
-    opacity 0.25s,
-    transform 0.25s;
   pointer-events: none;
-  text-align: center;
-  line-height: 1.5;
-  box-shadow: 0 10px 35px #0004;
+  font: 500 var(--t-label) / 1.3 var(--font-mono);
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--text-color);
+  background: var(--surface-color);
+  border: 1px solid var(--line-strong);
+  border-left: 2px solid var(--text-color);
+  transition:
+    opacity 160ms ease,
+    transform 160ms var(--snap);
 }
 .encounter #feedback.visible {
   opacity: 1;
   transform: translate(-50%, 0);
 }
-.encounter #feedback.miss {
-  color: #e6aaa0;
-  border-color: #d67c7366;
-}
 .encounter #feedback.hit {
-  color: #e2d0a5;
-  border-color: var(--amber);
+  border-left-color: var(--accent-color);
 }
-.encounter .empty-targets {
-  font: 7px/1.5 var(--mono);
-  color: #999da6;
-  letter-spacing: 1px;
-  padding: 12px 0;
-}
-.encounter dialog {
-  border: 1px solid #8a8e9755;
-  background: linear-gradient(130deg, #2b2f38, #1a1e27);
-  color: #d1d5de;
-  width: min(900px, 90vw);
-  padding: 42px;
-  max-height: 88dvh;
-  box-shadow: 0 30px 140px #000b;
-  scrollbar-width: thin;
-  scrollbar-color: #676b74 transparent;
-}
-.encounter dialog::backdrop {
-  background: #071014b8;
-  backdrop-filter: blur(9px);
-}
-.encounter .modal-close {
-  position: absolute;
-  right: 17px;
-  top: 17px;
-  color: #9ca0a9;
-}
-.encounter .modal-close svg {
-  width: 20px;
-  height: 20px;
-}
-.encounter .modal-heading .eyebrow {
-  color: var(--amber);
-  letter-spacing: 2px;
-}
-.encounter .modal-heading h2 {
-  font: 500 48px/1 var(--condensed);
-  letter-spacing: 0.5px;
-  margin: 18px 0 12px;
-  color: #e0deca;
-}
-.encounter .modal-heading > p {
-  font-size: 13px;
-  color: #9599a2;
-  margin: 0 0 30px;
-  line-height: 1.5;
-}
-.encounter .briefing {
-  display: grid;
-  grid-template-columns: 1.4fr 1fr;
-  gap: 40px;
-}
-.encounter .briefing h3 {
-  font: 8px var(--mono);
-  letter-spacing: 2px;
-  color: var(--amber);
-  margin: 20px 0 12px;
-}
-.encounter .briefing p {
-  font-size: 13px;
-  line-height: 1.8;
-  color: #a0a4ad;
-}
-.encounter .briefing-facts {
-  border-left: 1px solid #969aa333;
-  padding: 15px 0 0 30px;
-  display: flex;
-  flex-direction: column;
-  gap: 26px;
-  font: 7px var(--mono);
-  letter-spacing: 1px;
-  color: #848891;
-}
-.encounter .briefing-facts b {
-  display: block;
-  font: 10px var(--mono);
-  color: #c4c8d1;
-  margin-top: 10px;
-}
-@keyframes loadingPulse {
-  50% {
-    opacity: 0.3;
-  }
-}
-@media (min-width: 1600px) {
-  .encounter .workspace {
-    grid-template-columns: minmax(0, 1fr) 320px;
-  }
-  .encounter .intel-panel > div:not(.panel-foot) {
-    padding-left: 26px;
-    padding-right: 26px;
-  }
-  .encounter .contract {
-    padding-top: 25px;
-    padding-bottom: 23px;
-  }
-  .encounter .objectives {
-    padding-top: 25px;
-    padding-bottom: 25px;
-  }
-  .encounter .field-bottom {
-    left: 38px;
-    right: 38px;
-    bottom: 9px;
-  }
-  .encounter .squad-card {
-    height: 100px;
-  }
-  .encounter .squad-card img {
-    width: 88px;
-  }
-  .encounter .squad-details > strong {
-    font-size: 25px;
-  }
-  .encounter .action-list {
-    max-width: 850px;
-  }
-  .encounter .command-deck {
-    gap: 30px;
-    padding-left: 28px;
-  }
-  .encounter .action-list button > span {
-    font-size: 10px;
-  }
-  .encounter .action-list button > small {
-    font-size: 6px;
-  }
-  .encounter #selected-info {
-    min-width: 230px;
-  }
-}
-@media (max-height: 880px) and (min-width: 1000px) {
-  .encounter {
-    min-height: 650px;
-    grid-template-rows: 65px 1fr 27px;
-  }
-  .encounter .workspace {
-    grid-template-rows: minmax(0, 1fr) 95px;
-  }
-  .encounter .panel-heading {
-    padding-top: 15px;
-    padding-bottom: 15px;
-  }
-  .encounter .contract {
-    padding-top: 15px;
-    padding-bottom: 15px;
-  }
-  .encounter .corp-logo {
-    margin: 9px 0 12px;
-  }
-  .encounter .contract-row {
-    margin-top: 9px;
-  }
-  .encounter .objectives {
-    padding-top: 15px;
-    padding-bottom: 15px;
-  }
-  .encounter .objective {
-    margin-top: 13px;
-  }
-  .encounter .turn-info {
-    padding-top: 13px;
-    padding-bottom: 13px;
-  }
-  .encounter .target-section {
-    padding-top: 14px;
-    padding-bottom: 7px;
-  }
-  .encounter #context-card {
-    padding-top: 12px;
-    padding-bottom: 12px;
-  }
-  .encounter .activity {
-    padding-top: 12px;
-    padding-bottom: 5px;
-  }
-  .encounter #log p:nth-child(n + 3) {
-    display: none;
-  }
-  .encounter .target-row {
-    padding: 7px 0;
-  }
-  .encounter .weapon-title {
-    margin: 10px 0;
-  }
-  .encounter .action-list button {
-    height: 70px;
-  }
-  .encounter h1 {
-    font-size: 52px;
-  }
-  .encounter .field-bottom {
-    left: 24px;
-    right: 24px;
-  }
-  .encounter .squad-card {
-    height: 81px;
-  }
-  .encounter .end-turn {
-    padding: 10px 13px;
-    min-height: 50px;
-  }
-  .encounter .panel-foot {
-    padding-top: 8px;
-    padding-bottom: 8px;
-  }
-}
-@media (max-width: 1250px) {
-  .encounter .workspace {
-    grid-template-columns: minmax(0, 1fr) 265px;
-  }
-  .encounter h1 {
-    font-size: 48px;
-  }
-  .encounter .view-tools button span,
-.encounter .view-tools kbd {
-    display: none;
-  }
-  .encounter .squad-card img {
-    width: 53px;
-  }
-  .encounter .squad-details > strong {
-    font-size: 19px;
-  }
-  .encounter .squad-details {
-    padding-right: 8px;
-  }
-  .encounter .command-deck {
-    gap: 12px;
-    padding: 11px;
-  }
-  .encounter #selected-info {
-    min-width: 145px;
-    gap: 5px;
-  }
-  .encounter .selected-mark {
-    display: none;
-  }
-  .encounter #selected-info strong {
-    font-size: 21px;
-  }
-  .encounter #selected-info strong span {
-    display: none;
-  }
-  .encounter .operator-meta {
-    font-size: 5px;
-  }
-  .encounter .action-list {
-    gap: 3px;
-  }
-  .encounter .action-list button > span {
-    font-size: 7px;
-    letter-spacing: 0.4px;
-  }
-  .encounter .action-list button > small {
-    font-size: 4px;
-  }
-}
-@media (max-width: 1000px) {
-  .encounter {
-    grid-template-columns: 52px 1fr;
-    grid-template-rows: 64px 1fr 27px;
-    min-height: 850px;
-  }
-  .encounter .workspace {
-    grid-template-columns: minmax(0, 1fr) 235px;
-    grid-template-rows: minmax(0, 1fr) 172px;
-  }
-  .encounter .command-deck {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 10px;
-  }
-  .encounter .action-list {
-    flex: none;
-  }
-  .encounter .action-list button {
-    height: 77px;
-  }
-  .encounter #selected-info {
-    min-height: 35px;
-  }
-  .encounter #selected-info > div {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-  .encounter #selected-info > div > small {
-    font-size: 6px;
-  }
-  .encounter #selected-info strong {
-    margin: 0;
-  }
-  .encounter #selected-info .operator-meta {
-    margin-left: auto;
-  }
-  .encounter .intel-panel > div:not(.panel-foot) {
-    padding-left: 16px;
-    padding-right: 16px;
-  }
-  .encounter .field-bottom {
-    left: 16px;
-    right: 16px;
-  }
-  .encounter #squad-cards {
-    grid-template-columns: 1fr 1fr;
-    gap: 6px;
-  }
-  .encounter .squad-card {
-    height: 69px;
-  }
-  .encounter .squad-card img {
-    width: 58px;
-  }
-  .encounter .north {
-    display: none;
-  }
-  .encounter .unit-label {
-    font-size: 6px;
-    min-width: 46px;
-    padding: 3px 5px;
-  }
-}
-@media (max-width: 740px) {
-  .encounter {
-    display: block;
-    height: auto;
-    min-height: 100dvh;
-    overflow: auto;
-  }
-  .encounter .workspace {
-    display: flex;
-    flex-direction: column;
-    overflow: visible;
-  }
-  .encounter .battlefield {
-    height: 72dvh;
-    min-height: 570px;
-  }
-  .encounter .view-tools {
-    right: 14px;
-    top: 24px;
-  }
-  .encounter .view-tools button {
-    width: 29px;
-    padding: 0;
-  }
-  .encounter .view-tools button:first-child {
-    width: 29px;
-  }
-  .encounter .command-deck {
-    order: 1;
-    height: auto;
-    padding: 12px;
-    position: sticky;
-    bottom: 0;
-    z-index: 6;
-    box-shadow: 0 -10px 30px #161a2388;
-  }
-  .encounter .action-list button {
-    height: 67px;
-  }
-  .encounter .action-list button > span {
-    font-size: 8px;
-  }
-  .encounter .action-list button > small {
-    font-size: 5px;
-  }
-  .encounter .action-list button > kbd {
-    display: none;
-  }
-  .encounter .intel-panel {
-    order: 2;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    overflow: visible;
-    border-left: 0;
-  }
-  .encounter .panel-heading,
-.encounter .turn-info,
-.encounter #context-card,
-.encounter .end-turn,
-.encounter .panel-foot,
-.encounter .activity {
-    grid-column: 1/-1;
-  }
-  .encounter .contract,
-.encounter .objectives {
-    border-bottom: 1px solid var(--line);
-  }
-  .encounter .target-section {
-    grid-column: 1/-1;
-  }
-  .encounter .target-section #targets {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 7px;
-  }
-  .encounter .target-row {
-    gap: 4px;
-    flex-wrap: wrap;
-  }
-  .encounter .target-symbol {
-    display: none;
-  }
-  .encounter .target-row strong {
-    font-size: 8px;
-  }
-  .encounter .target-row small {
-    font-size: 5px;
-  }
-  .encounter .target-row .target-hp {
-    display: none;
-  }
-  .encounter .target-row .hit-chance {
-    font-size: 20px;
-  }
-  .encounter .field-bottom {
-    left: 15px;
-    right: 15px;
-  }
-  .encounter .squad-card {
-    height: 70px;
-  }
-  .encounter .squad-details > strong {
-    font-size: 22px;
-  }
-  .encounter .squad-details > small {
-    font-size: 6px;
-  }
-  .encounter .squad-meta {
-    font-size: 6px;
-  }
-  .encounter .end-turn {
-    margin: 12px 16px 0;
-  }
-  .encounter .panel-foot {
-    padding: 13px 19px;
-  }
-  .encounter .briefing {
-    grid-template-columns: 1fr;
-    gap: 15px;
-  }
-  .encounter .briefing-facts {
-    padding: 0 0 0 20px;
-  }
-  .encounter .modal-heading h2 {
-    font-size: 39px;
-  }
-  .encounter dialog {
-    padding: 28px 20px;
-  }
-  .encounter #feedback {
-    font-size: 7px;
-    top: 34%;
-    padding: 12px 17px;
-    max-width: 90%;
-  }
-  .encounter .unit-label {
-    font-size: 6px;
-  }
-  .encounter .view-tools svg {
-    width: 13px;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .encounter,
-.encounter *,
-.encounter:before,
-.encounter *:before,
-.encounter:after,
-.encounter *:after {
-    scroll-behavior: auto !important;
-    transition: none !important;
-    animation: none !important;
-  }
+.encounter #feedback.miss {
+  border-left-color: var(--warn-color);
 }
 
-/* Keep the primary turn control reachable in shorter desktop panels. */
-@media (min-width: 741px) {
-  .encounter .end-turn {
-    position: sticky;
-    bottom: 22px;
-    z-index: 5;
-    box-shadow: 0 8px 0 8px #191d26;
-  }
-  .encounter .panel-foot {
-    position: sticky;
-    bottom: 0;
-    background: #191d26;
-    z-index: 6;
-  }
-  .encounter .intel-panel {
-    scroll-padding-bottom: 90px;
-  }
-  .encounter .objective small {
-    font-size: 9px;
-  }
-  .encounter .action-instruction p {
-    font-size: 11px;
-  }
-  .encounter .section-title {
-    font-size: 8px;
-  }
-  .encounter .target-row strong {
-    font-size: 10px;
-  }
-  .encounter .target-row small {
-    font-size: 7px;
-  }
-  .encounter .action-list button > small {
-    font-size: 6px;
-  }
-}
-
-/* Target confirmations live in the battlefield, never below a sidebar fold. */
-.encounter [hidden] {
-  display: none !important;
-}
-.encounter .battlefield.targeting .field-bottom {
-  display: none;
-}
-.encounter .battlefield.targeting .north {
-  display: none;
-}
-.encounter #targeting-hud {
-  position: absolute;
-  left: 24px;
-  right: 24px;
-  bottom: 24px;
-  z-index: 7;
-  background: linear-gradient(115deg, #1b1f28f5, #10191df5);
-  border: 1px solid #d9bd8570;
-  box-shadow: 0 12px 60px #0009;
-  backdrop-filter: blur(16px);
-  padding: 16px 20px;
-  color: #dedcc8;
-}
-.encounter .targeting-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  font: 9px var(--mono);
-  letter-spacing: 1.5px;
-  color: var(--amber);
-  padding-bottom: 13px;
-  border-bottom: 1px solid #d9bd8525;
-}
-.encounter .targeting-top button {
-  font: 8px var(--mono);
-  letter-spacing: 1px;
-  color: #acb0b9;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.encounter .targeting-main {
-  display: flex;
-  align-items: center;
-  gap: 22px;
-  padding: 16px 0;
-}
-.encounter .aim-probability {
-  font: 500 48px/0.9 var(--condensed);
-  color: var(--amber);
-  min-width: 70px;
-}
-.encounter .aim-probability small {
-  display: block;
-  font: 8px var(--mono);
-  letter-spacing: 1px;
-  margin-top: 9px;
-  color: #abafb8;
-}
-.encounter .aim-description {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  flex: 1;
-  min-width: 0;
-}
-.encounter .aim-description small {
-  font: 7px var(--mono);
-  letter-spacing: 1.7px;
-  color: #989ca5;
-}
-.encounter .aim-description strong {
-  font: 500 25px var(--condensed);
-  letter-spacing: 1.2px;
-}
-.encounter .aim-description > span {
-  font: 9px/1.5 var(--mono);
-  color: #a5a9b2;
-}
-.encounter .aim-description .friendly-warning {
-  color: #ef9c87;
-}
-.encounter .target-hp {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-.encounter .target-hp-track {
-  display: flex;
-  height: 5px;
-  background: #afb3bc20;
-}
-.encounter .target-hp-track > i {
-  display: block;
-  height: 100%;
-}
-.encounter .target-hp-track .kept {
-  background: #a4a8b1;
-}
-.encounter .target-hp-track .crit {
-  background: #8a4f44;
-}
-.encounter .target-hp-track .hit {
-  background: #ef9c87;
-  animation: hp-cut 1.2s ease-in-out infinite;
-}
-.encounter .target-hp small {
-  font: 8px var(--mono);
-  letter-spacing: 1px;
-  color: #abafb8;
-}
-.encounter .lethal {
-  font-weight: inherit;
-  color: #ef9c87;
-}
-@keyframes hp-cut {
-  50% {
-    opacity: 0.45;
-  }
-}
-.encounter .targeting-main .primary {
-  width: auto;
-  min-width: 170px;
-  gap: 17px;
-  justify-content: center;
-  padding: 17px;
-  font-size: 10px;
-}
-.encounter .target-choices {
-  display: flex;
-  gap: 8px;
-  border-top: 1px solid #d9bd8525;
-  padding-top: 12px;
-}
-.encounter .target-choices button {
-  flex: 1;
-  font: 8px var(--mono);
-  padding: 9px 12px;
-  border: 1px solid #81858e44;
-  text-align: left;
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  color: #a6aab3;
-}
-.encounter .target-choices button b {
-  font-weight: 400;
-  color: #92969f;
-}
-.encounter .target-choices button.active {
-  border-color: #d9bd8577;
-  background: #d9bd8511;
-  color: var(--amber);
-}
-.encounter .grenade-adjust {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  border-top: 1px solid #d9bd8525;
-  padding-top: 12px;
-}
-.encounter .grenade-adjust > span {
-  font: 8px var(--mono);
-  letter-spacing: 0.7px;
-  color: #989ca5;
-  flex: 1;
-}
-.encounter .grenade-adjust button {
-  width: 34px;
-  height: 30px;
-  border: 1px solid #acb0b955;
-  background: #81858e10;
-  font-size: 18px;
-}
-.encounter #aim-reticle {
-  position: absolute;
-  transform: translate(-50%, -50%);
-  width: 68px;
-  height: 68px;
-  border: 1px solid #e4c58a99;
-  border-radius: 50%;
-  z-index: 4;
-  pointer-events: none;
-  box-shadow: 0 0 0 7px #e4c58a0c;
-}
-.encounter #aim-reticle:before,
-.encounter #aim-reticle:after {
-  content: "";
-  position: absolute;
-  background: #e4c58ac9;
-}
-.encounter #aim-reticle:before {
-  left: 50%;
-  top: -12px;
-  width: 1px;
-  height: 92px;
-}
-.encounter #aim-reticle:after {
-  top: 50%;
-  left: -12px;
-  height: 1px;
-  width: 92px;
-}
-.encounter #aim-reticle i {
-  position: absolute;
-  inset: 20px;
-  border: 1px solid #e4c58aaa;
-  border-radius: 50%;
-}
-@media (max-width: 1100px) {
-  .encounter #targeting-hud {
-    left: 14px;
-    right: 14px;
-    bottom: 16px;
-    padding: 13px;
-  }
-  .encounter .targeting-main {
-    gap: 13px;
-    flex-wrap: wrap;
-  }
-  .encounter .targeting-main .primary {
-    min-width: 0;
-    flex: 1;
-  }
-  .encounter .target-choices button {
-    flex-direction: column;
-    padding: 8px;
-    font-size: 7px;
-  }
-  .encounter .aim-probability {
-    font-size: 39px;
-    min-width: 50px;
-  }
-  .encounter .aim-description strong {
-    font-size: 22px;
-  }
-  .encounter .targeting-top {
-    font-size: 7px;
-  }
-  .encounter .grenade-adjust > span {
-    font-size: 6px;
-    line-height: 1.5;
-    max-width: 50%;
-  }
-}
-@media (max-width: 500px) {
-  .encounter .targeting-main .primary {
-    flex-basis: 100%;
-    padding: 13px;
-  }
-  .encounter .targeting-main {
-    padding: 12px 0;
-    gap: 12px;
-  }
-  .encounter .aim-description > span {
-    font-size: 8px;
-  }
-  .encounter .target-choices {
-    gap: 4px;
-  }
-  .encounter .targeting-top {
-    letter-spacing: 0.5px;
-  }
-  .encounter .targeting-top button {
-    font-size: 7px;
-  }
-}
-
-/* BLACK RAIN — field cinematography, not a terminal dashboard. */
-.encounter {
-  --amber: #e3ded2;
-  --amber-dark: #b7afa2;
-  --muted: #a5a9b2;
-  --red: #ed5942;
-  --mono: "Helvetica Neue", Arial, sans-serif;
-  --condensed: "Helvetica Neue", Arial, sans-serif;
-  font-family: "Helvetica Neue", Arial, sans-serif;
-  color: #e7e4da;
-  background: #12161f;
-}
-.encounter {
-  display: block;
-  position: relative;
-  height: 100dvh;
-  min-height: 740px;
-  overflow: hidden;
-}
-.encounter .workspace {
-  position: absolute;
-  inset: 0;
-  display: block;
-  overflow: hidden;
-}
-.encounter .battlefield {
-  position: absolute;
-  inset: 0;
-  height: 100%;
-  min-height: 0;
-}
-.encounter .battlefield:after {
-  display: none;
-}
-.encounter .vignette {
-  background:
-    linear-gradient(
-      180deg,
-      #07101133,
-      transparent 30%,
-      transparent 60%,
-      #0b1415ed 100%
-    ),
-    linear-gradient(90deg, #0a131866, transparent 30%);
-}
-.encounter .intel-panel {
-  display: none;
-}
-.encounter .north {
-  display: none;
-}
-.encounter #field-objectives {
-  position: absolute;
-  right: 37px;
-  top: 113px;
-  z-index: 3;
-  text-align: right;
-  pointer-events: none;
-  text-shadow: 0 2px 15px #000;
-}
-.encounter #field-objectives > small {
-  font-size: 9px;
-  letter-spacing: 1.5px;
-  color: #d66950;
-}
-.encounter #field-objectives p {
-  font-size: 12px;
-  margin: 12px 0;
-  color: #d0d4dd;
-}
-.encounter #field-objectives i {
-  display: inline-block;
-  height: 6px;
-  width: 6px;
-  border: 1px solid #b7bbc4;
-  transform: rotate(45deg);
-  margin-right: 9px;
-}
-.encounter #field-objectives i.done {
-  background: #b8bcc5;
-}
-.encounter #field-objectives b {
-  font-size: 11px;
-  font-weight: 400;
-  color: #acb0b9;
-  margin-left: 10px;
-}
-.encounter #field-objectives > span {
-  display: block;
-  font-size: 10px;
-  color: #9599a2;
-  margin-top: 22px;
-}
-.encounter .view-tools {
-  right: 35px;
-  top: auto;
-  bottom: 274px;
-  gap: 6px;
-}
-.encounter .view-tools button {
-  background: #12161f66;
-  border: 1px solid #bcc0c930;
-  height: 31px;
-  backdrop-filter: blur(6px);
-  color: #b7bbc4;
-}
-.encounter .view-tools button span {
-  font-size: 8px;
-  letter-spacing: 0.6px;
-}
-.encounter .view-tools kbd {
-  font-size: 7px;
-}
-.encounter .battlefield.targeting .view-tools {
-  bottom: auto;
-  top: 80px;
-}
-.encounter .battlefield.targeting #field-objectives {
-  opacity: 0;
-}
-.encounter .field-bottom {
-  bottom: 125px;
-  left: 37px;
-  right: 37px;
-}
-.encounter #squad-cards {
-  max-width: 720px;
-  gap: 18px;
-}
-.encounter .squad-card {
-  background: linear-gradient(90deg, transparent, #15192299);
-  backdrop-filter: none;
-  border: 0;
-  border-bottom: 1px solid #a8acb533;
-  box-shadow: none;
-  height: 88px;
-  overflow: visible;
-}
-.encounter .squad-card.selected {
-  border: 0;
-  border-bottom: 2px solid #e2daca;
-  box-shadow: none;
-  background: linear-gradient(90deg, transparent, #3d414a33);
-}
-.encounter .squad-card.selected:after {
-  display: none;
-}
-.encounter .squad-card img {
-  height: 100%;
-  width: 76px;
-  filter: saturate(0.75);
-  opacity: 1;
-  mix-blend-mode: normal;
-  mask-image: linear-gradient(90deg, black 55%, transparent);
-}
-.encounter .squad-index {
-  top: 3px;
-  left: 0;
-  font-size: 9px;
-  color: #bec2cb;
-}
-.encounter .squad-details {
-  padding: 3px 4px 3px 0;
-}
-.encounter .squad-details > small {
-  font-size: 8px;
-  letter-spacing: 0.4px;
-  color: #9fa3ac;
-}
-.encounter .squad-details > strong {
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 23px;
-  font-weight: 400;
-  letter-spacing: 0;
-  line-height: 1.6;
-}
-.encounter .squad-card.selected .squad-details > strong {
-  color: #eee6d2;
-}
-.encounter .hp-track {
-  height: 2px;
-  margin: 4px 0 7px;
-  background: #b8bcc533;
-}
-.encounter .hp-track > i,
-.encounter .squad-card.selected .hp-track > i {
-  background: #babec7;
-}
-.encounter .squad-meta {
-  font-size: 8px;
-  letter-spacing: 0;
-  color: #a1a5ae;
-}
-.encounter .ap-dots i {
-  height: 4px;
-  width: 4px;
-}
-.encounter .command-deck {
-  position: absolute;
-  bottom: 21px;
-  left: 35px;
-  right: 228px;
-  height: 85px;
-  z-index: 6;
-  background: none;
-  border: 0;
-  border-top: 1px solid #a2a6af2a;
-  padding: 14px 0 0;
-  gap: 21px;
-  display: flex;
-  align-items: center;
-  overflow: visible;
-}
-.encounter #selected-info {
-  position: absolute;
-  left: 0;
-  bottom: 62px;
-  display: none;
-}
-.encounter .action-list {
-  max-width: 640px;
-  gap: 8px;
-}
-.encounter .action-list button {
-  border: 0;
-  background: none;
-  height: 66px;
-  gap: 6px;
-  padding: 5px;
-  color: #afb3bc;
-}
-.encounter .action-list button > svg {
-  width: 23px;
-  height: 23px;
-  margin: 0 0 1px;
-}
-.encounter .action-list button > span {
-  font: 10px var(--mono);
-  letter-spacing: 0;
-  text-transform: none;
-  white-space: nowrap;
-}
-.encounter .action-list button > small {
-  font: 8px var(--mono);
-  letter-spacing: 0;
-  color: #7c8089;
-}
-.encounter .action-list button > kbd {
-  font-size: 7px;
-  top: -4px;
-  right: 2px;
-  border: 0;
-  color: #abafb8;
-}
-.encounter .action-list button.active {
-  color: #ece7d7;
-  background: none;
-  border: 0;
-}
-.encounter .action-list button.active:after {
-  background: #ed5942;
-  bottom: -1px;
-  left: 20%;
-  right: 20%;
-}
-.encounter .action-list button:not(:disabled):hover {
-  background: #caced70c;
-  color: #fff8e8;
-}
-.encounter .action-list button:disabled {
-  opacity: 0.24;
-}
-.encounter .workspace > .end-turn {
-  position: absolute;
-  right: 35px;
-  bottom: 29px;
-  margin: 0;
-  min-height: 57px;
-  min-width: 165px;
-  background: #dc4b34;
-  border: 0;
-  color: #fff0de;
-  box-shadow: none;
-  padding: 14px 17px;
-  z-index: 8;
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0;
-}
-.encounter .workspace > .end-turn small {
-  font-size: 7px;
-  letter-spacing: 1px;
-  color: #f0a08a;
-}
-.encounter .workspace > .end-turn kbd {
-  color: #f9c9b3;
-  border-color: #f5b19644;
-}
-.encounter .workspace > .end-turn:not(:disabled):hover {
-  background: #f26649;
-  color: white;
-}
-.encounter #targeting-hud {
-  left: 35px;
-  right: 35px;
-  bottom: 127px;
-  background: linear-gradient(110deg, #191d26f0, #0c1519ed);
-  border: 0;
-  border-left: 3px solid #dc4b34;
-  box-shadow: 0 12px 55px #0008;
-  padding: 20px 25px;
-}
-.encounter .targeting-top {
-  font-size: 11px;
-  letter-spacing: 0;
-  border-bottom: 1px solid #a8acb522;
-  padding-bottom: 14px;
-}
-.encounter .targeting-top button {
-  font-size: 9px;
-  letter-spacing: 0;
-}
-.encounter .targeting-main {
-  padding: 17px 0;
-}
-.encounter .aim-probability {
-  font-family: Georgia, "Times New Roman", serif;
-  font-style: italic;
-  font-size: 56px;
-  color: #e2dfce;
-}
-.encounter .aim-probability small {
-  font-style: normal;
-  font-size: 9px;
-  letter-spacing: 0.5px;
-}
-.encounter .aim-description strong {
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 28px;
-  font-weight: 400;
-  letter-spacing: 0;
-}
-.encounter .aim-description small {
-  font-size: 8px;
-  letter-spacing: 1px;
-}
-.encounter .aim-description > span {
-  font-size: 10px;
-}
-.encounter .targeting-main .primary {
-  background: #df5038;
-  color: #fff0df;
-  font: 500 12px var(--mono);
-  letter-spacing: 0;
-}
-.encounter .targeting-main .primary:hover {
-  background: #f56a4b;
-  color: white;
-}
-.encounter .target-choices {
-  border-color: #a8acb522;
-}
-.encounter .target-choices button {
-  font-size: 10px;
-  border: 0;
-  border-bottom: 1px solid #969aa344;
-  padding: 10px 0;
-  background: none;
-}
-.encounter .target-choices button.active {
-  border: 0;
-  border-bottom: 1px solid #e1d9c6;
-  background: none;
-  color: #e1d9c6;
-}
-.encounter .grenade-adjust {
-  border-color: #a8acb522;
-}
-.encounter .grenade-adjust > span {
-  font-size: 9px;
-  letter-spacing: 0;
-}
-.encounter .grenade-adjust button {
-  border-color: #969aa344;
-}
-.encounter #aim-reticle {
-  border-color: #eeeecc77;
-  box-shadow: 0 0 0 8px #dddcca08;
-  width: 48px;
-  height: 48px;
-}
-.encounter #aim-reticle:before {
-  height: 64px;
-  top: -8px;
-  background: #eee6ca99;
-}
-.encounter #aim-reticle:after {
-  width: 64px;
-  left: -8px;
-  background: #eee6ca99;
-}
-.encounter #aim-reticle i {
-  inset: 16px;
-  border-color: #ed594299;
-}
-.encounter #feedback {
-  font-size: 11px;
-  letter-spacing: 0;
-  border: 0;
-  border-left: 2px solid #ed5942;
-  background: #151922ed;
-  top: 24%;
-  color: #e1d8c5;
-}
 .encounter .loading {
-  background: #11151e;
-  color: #e5ded0;
-  letter-spacing: 1px;
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: calc(var(--u) * 4);
+  color: var(--text-secondary);
+  background: var(--background-color);
+  font: 500 var(--t-label) var(--font-mono);
+  letter-spacing: var(--track);
+  text-transform: uppercase;
 }
 .encounter .loading svg {
   width: 40px;
+  animation: hud-pulse 1.4s ease-in-out infinite;
 }
-.encounter .loading p {
-  font-size: 11px;
-}
-.encounter .modal-heading h2 {
-  font-family: Georgia, "Times New Roman", serif;
-  font-weight: 400;
-  font-size: 46px;
-}
-.encounter .modal-heading .eyebrow {
-  font-size: 10px;
-  letter-spacing: 0.8px;
-  color: #dd745b;
-}
-.encounter dialog {
-  background: #1b1f28;
-  border: 0;
-  border-top: 3px solid #dd5038;
-}
-.encounter .briefing h3 {
-  font-size: 10px;
-}
-@media (max-width: 1250px) {
-  .encounter .command-deck {
-    right: 205px;
-    gap: 10px;
-    left: 30px;
-  }
-  .encounter .workspace > .end-turn {
-    right: 30px;
-    min-width: 150px;
-  }
-  .encounter .action-list {
-    gap: 3px;
-  }
-  .encounter .action-list button > span {
-    font-size: 9px;
-  }
-  .encounter .field-bottom {
-    left: 30px;
-    right: 30px;
-  }
-  .encounter #squad-cards {
-    max-width: 650px;
-    gap: 14px;
-  }
-  .encounter .view-tools {
-    right: 30px;
-  }
-  .encounter .squad-card img {
-    width: 67px;
-  }
-}
-@media (max-width: 950px) {
-  .encounter {
-    min-height: 740px;
-  }
-  .encounter #field-objectives {
-    right: 25px;
-    top: 111px;
-  }
-  .encounter #field-objectives p {
-    font-size: 10px;
-  }
-  .encounter #field-objectives > span {
-    font-size: 9px;
-  }
-  .encounter #squad-cards {
-    grid-template-columns: repeat(4, 1fr);
-    max-width: none;
-    gap: 8px;
-  }
-  .encounter .squad-card img {
-    width: 48px;
-  }
-  .encounter .squad-details > strong {
-    font-size: 19px;
-  }
-  .encounter .squad-details > small {
-    font-size: 7px;
-  }
-  .encounter .squad-card {
-    height: 74px;
-  }
-  .encounter .field-bottom {
-    left: 25px;
-    right: 25px;
-    bottom: 155px;
-  }
-  .encounter .command-deck {
-    height: 116px;
-    bottom: 20px;
-    left: 25px;
-    right: 25px;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 7px;
-    padding-top: 9px;
-  }
-  .encounter .action-list {
-    max-width: none;
-    margin-right: 153px;
-    height: 65px;
-  }
-  .encounter .action-list button {
-    height: 65px;
-  }
-  .encounter .action-list button > span {
-    font-size: 8px;
-  }
-  .encounter .action-list button > small {
-    font-size: 6px;
-  }
-  .encounter .workspace > .end-turn {
-    bottom: 31px;
-    right: 25px;
-    min-width: 132px;
-    padding: 13px;
-    font-size: 11px;
-  }
-  .encounter .end-turn svg {
-    display: none;
-  }
-  .encounter .view-tools {
-    bottom: 277px;
-    right: 25px;
-  }
-  .encounter #targeting-hud {
-    bottom: 155px;
-    left: 25px;
-    right: 25px;
-  }
-  .encounter .targeting-main {
-    gap: 15px;
-  }
-  .encounter .targeting-main .primary {
-    font-size: 11px;
-    min-width: 145px;
-  }
-  .encounter .targeting-top {
-    font-size: 10px;
-  }
-  .encounter .aim-description > span {
-    font-size: 9px;
-  }
-  .encounter .target-choices button {
-    font-size: 9px;
-  }
-  .encounter .grenade-adjust > span {
-    max-width: none;
-  }
-}
-@media (max-width: 640px) {
-  .encounter {
-    height: 100dvh;
-    min-height: 720px;
-  }
-  .encounter #field-objectives {
-    right: 18px;
-    top: 93px;
-    max-width: 145px;
-  }
-  .encounter #field-objectives > small {
-    font-size: 7px;
-  }
-  .encounter #field-objectives p {
-    font-size: 9px;
-    line-height: 1.4;
-    margin: 9px 0;
-  }
-  .encounter #field-objectives > span {
-    font-size: 8px;
-    margin-top: 12px;
-  }
-  .encounter .field-bottom {
-    left: 17px;
-    right: 17px;
-    bottom: 174px;
-  }
-  .encounter #squad-cards {
-    grid-template-columns: repeat(4, 1fr);
-    gap: 7px;
-  }
-  .encounter .squad-card {
-    height: 90px;
-    display: block;
-    background: linear-gradient(0deg, #181c2566, transparent);
-  }
-  .encounter .squad-card img {
-    position: absolute;
-    width: 100%;
-    height: 69px;
-    left: 0;
-    top: -5px;
-    mask-image: linear-gradient(black, transparent);
-    opacity: 0.8;
-  }
-  .encounter .squad-details {
-    position: relative;
-    padding: 34px 4px 0;
-    z-index: 1;
-  }
-  .encounter .squad-details > small {
-    font-size: 6px;
-    text-shadow: 0 1px 3px #000;
-  }
-  .encounter .squad-details > strong {
-    font-size: 16px;
-    line-height: 1.5;
-  }
-  .encounter .hp-track {
-    margin: 2px 0 4px;
-    height: 2px;
-  }
-  .encounter .squad-meta {
-    font-size: 6px;
-  }
-  .encounter .squad-index {
-    font-size: 7px;
-    z-index: 2;
-  }
-  .encounter .command-deck {
-    left: 17px;
-    right: 17px;
-    bottom: 20px;
-    height: 133px;
-    display: flex;
-    position: absolute;
-    padding-top: 8px;
-    background: none;
-    box-shadow: none;
-  }
-  .encounter .action-list {
-    margin-right: 0;
-    height: 61px;
-    gap: 0;
-  }
-  .encounter .action-list button {
-    height: 61px;
-  }
-  .encounter .action-list button > svg {
-    width: 20px;
-    height: 20px;
-  }
-  .encounter .action-list button > span {
-    font-size: 8px;
-  }
-  .encounter .action-list button > small {
-    font-size: 6px;
-  }
-  .encounter .action-list button > kbd {
-    display: none;
-  }
-  .encounter .workspace > .end-turn {
-    right: 18px;
-    bottom: 8px;
-    min-height: 29px;
-    min-width: 123px;
-    height: 29px;
-    padding: 5px 12px;
-    font-size: 10px;
-  }
-  .encounter .workspace > .end-turn small,
-.encounter .workspace > .end-turn kbd {
-    display: none;
-  }
-  .encounter .view-tools {
-    bottom: 294px;
-    right: 17px;
-  }
-  .encounter .view-tools button span,
-.encounter .view-tools kbd {
-    display: none;
-  }
-  .encounter .battlefield.targeting .view-tools {
-    top: 70px;
-  }
-  .encounter #targeting-hud {
-    left: 17px;
-    right: 17px;
-    bottom: 172px;
-    padding: 14px 17px;
-  }
-  .encounter .targeting-top {
-    font-size: 9px;
-  }
-  .encounter .targeting-top button {
-    font-size: 8px;
-  }
-  .encounter .aim-probability {
-    font-size: 43px;
-  }
-  .encounter .aim-probability small {
-    font-size: 8px;
-  }
-  .encounter .aim-description strong {
-    font-size: 24px;
-  }
-  .encounter .aim-description > span {
-    font-size: 9px;
-  }
-  .encounter .targeting-main {
-    gap: 12px;
-    padding: 14px 0;
-  }
-  .encounter .targeting-main .primary {
-    flex-basis: 100%;
-    min-width: 0;
-    padding: 13px;
-  }
-  .encounter .target-choices {
-    gap: 9px;
-  }
-  .encounter .target-choices button {
-    font-size: 8px;
-  }
-  .encounter .target-choices button b {
-    font-size: 7px;
-  }
-  .encounter .grenade-adjust > span {
-    font-size: 8px;
-    line-height: 1.5;
-    max-width: 45%;
-  }
-  .encounter .grenade-adjust button {
-    width: 27px;
-    height: 28px;
-  }
-  .encounter .unit-label {
-    font-size: 7px;
+@keyframes hud-pulse {
+  50% {
+    opacity: 0.35;
   }
 }
 
-/* Keep the operator and the firing lane visible while choosing a target. */
-@media (min-width: 951px) {
-  .encounter #targeting-hud {
-    left: auto;
-    right: 35px;
-    width: 480px;
-    padding: 16px 21px;
-    bottom: 130px;
-  }
-  .encounter .targeting-main {
-    flex-wrap: wrap;
-    gap: 16px;
-    padding: 15px 0;
-  }
-  .encounter .targeting-main .primary {
-    flex: 0 0 100%;
-    padding: 13px;
-    min-height: 44px;
-  }
-  .encounter .target-choices {
-    gap: 14px;
-  }
-  .encounter .target-choices button {
-    font-size: 9px;
-  }
-  .encounter .aim-probability {
-    font-size: 48px;
-  }
-  .encounter .aim-description strong {
-    font-size: 25px;
-  }
-}
-.encounter #targeting-hud {
-  transition:
-    opacity 0.2s,
-    transform 0.2s;
-}
-.encounter .battlefield.executing #targeting-hud {
-  opacity: 0;
+/* === Glyphs: the player's own key or pad button ======================= */
+
+.encounter .hud-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-width: var(--h-s);
+  height: var(--h-s);
+  padding: 0 5px;
+  font: 600 var(--t-micro) / 1 var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-color);
   pointer-events: none;
-  transform: translateY(12px);
+}
+.encounter .hud-glyph[data-shape="key"] {
+  border: 1px solid var(--line-strong);
+  border-bottom-width: 2px;
+}
+.encounter .hud-glyph[data-shape="face"] {
+  width: var(--h-s);
+  padding: 0;
+  border-radius: 50%;
+  background: var(--text-color);
+  color: var(--background-color);
+  font-size: var(--t-label);
+}
+.encounter .hud-glyph[data-shape="face"][data-pad="ps"] {
+  font-family: system-ui, sans-serif;
+}
+.encounter .hud-glyph[data-shape="bumper"] {
+  padding: 0 7px;
+  height: 16px;
+  background: var(--text-color);
+  color: var(--background-color);
+  clip-path: polygon(14% 0, 86% 0, 100% 100%, 0 100%);
 }
 
-.encounter #performance {
-  padding: 0 10px;
-  font-size: 9px;
-  letter-spacing: 0.3px;
-  white-space: nowrap;
-}
-.encounter #performance[aria-pressed="true"] {
-  color: #d5d9e2;
-  border-color: #8b8f9877;
-}
-@media (max-width: 640px) {
-  .encounter #performance {
-    font-size: 7px;
-    padding: 0 7px;
-  }
-}
+/* === Header strip ==================================================== */
 
-/* Training is an in-world camera view, sharing the battlefield renderer. */
-@media (max-width: 800px) {
-  .encounter .view-tools {
-    gap: 4px;
-  }
-}
-
-/* The HUD is anchored to the actual viewport, including short laptop windows. */
-.encounter {
-  height: 100dvh;
-  min-height: 0;
-  width: 100%;
-}
-.encounter .command-deck,
-.encounter .action-list {
-  min-width: 0;
-}
-.encounter .action-list {
-  width: 100%;
-  max-width: none;
-}
-.encounter .action-list button > span {
-  white-space: normal;
-  line-height: 1.15;
-  text-align: center;
-}
-@media (max-width: 950px) {
-  .encounter .command-deck {
-    left: 16px;
-    right: 16px;
-    bottom: calc(23px + env(safe-area-inset-bottom));
-    height: 116px;
-    padding: 8px 0 0;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: 38px 64px;
-    gap: 6px;
-    align-items: stretch;
-  }
-  .encounter .action-list {
-    margin: 0;
-    width: 100%;
-    height: 64px;
-    gap: 2px;
-    grid-template-columns: repeat(7, minmax(0, 1fr));
-  }
-  .encounter .action-list button {
-    height: 64px;
-    padding: 3px 0;
-    gap: 3px;
-  }
-  .encounter .action-list button > span {
-    font-size: 9px;
-    min-height: 20px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .encounter .action-list button > small {
-    font-size: 7px;
-  }
-  .encounter .action-list button > kbd {
-    display: none;
-  }
-  .encounter .workspace > .end-turn {
-    left: auto;
-    right: 16px;
-    bottom: calc(97px + env(safe-area-inset-bottom));
-    width: 128px;
-    min-width: 0;
-    height: 38px;
-    min-height: 0;
-    margin: 0;
-    padding: 8px 10px;
-    font-size: 11px;
-  }
-  .encounter .workspace > .end-turn small,
-.encounter .workspace > .end-turn kbd {
-    display: none;
-  }
-  .encounter .field-bottom {
-    left: 16px;
-    right: 16px;
-    bottom: calc(155px + env(safe-area-inset-bottom));
-  }
-  .encounter .view-tools {
-    bottom: calc(278px + env(safe-area-inset-bottom));
-  }
-}
-@media (max-height: 680px) {
-  .encounter #field-objectives {
-    top: 85px;
-  }
-  .encounter .squad-card {
-    height: 66px;
-  }
-  .encounter .squad-card img {
-    height: 66px;
-  }
-  .encounter .view-tools {
-    bottom: 240px;
-  }
-}
-@media (max-width: 640px) {
-  .encounter #squad-cards {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-  .encounter .view-tools {
-    left: 16px;
-    right: 16px;
-    justify-content: flex-end;
-    gap: 4px;
-  }
-  .encounter .view-tools button {
-    flex-shrink: 0;
-  }
-}
-
-/* Avoid re-blurring the moving WebGL scene behind every small HUD control. */
-.encounter .unit-label,
-.encounter .view-tools button,
-.encounter #targeting-hud {
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-.encounter .unit-label {
-  background: rgba(17, 21, 31, 0.92);
-  will-change: transform;
-}
-.encounter .view-tools button {
-  background: rgba(18, 22, 32, 0.88);
-}
-
-/* Keep combat typography compact; display titles belong in the briefing. */
-.encounter #targeting-hud .aim-probability {
-  font: 500 28px/1 var(--mono);
-  min-width: 58px;
-}
-.encounter #targeting-hud .aim-description strong {
-  font: 500 18px/1.2 var(--mono);
-}
-
-/* Combat HUD stays compact; aiming affordances appear only after the camera settles. */
-.encounter #squad-cards {
-  max-width: 780px;
-  gap: 10px;
-}
-.encounter #squad-cards .squad-card {
-  height: 50px;
+.encounter .hud-header,
+.encounter .hud-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 10;
   display: flex;
   align-items: center;
+  gap: calc(var(--u) * 6);
+  padding: 0 calc(var(--u) * 6);
+}
+.encounter .hud-header {
+  top: 0;
+  height: var(--h-l);
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--background-color) 94%, transparent),
+    color-mix(in srgb, var(--surface-color) 82%, transparent)
+  );
+}
+.encounter .hud-where {
+  display: grid;
+  gap: var(--u);
+  min-width: 0;
+}
+.encounter .hud-where small,
+.encounter .hud-clock small,
+.encounter .hud-bar-title {
+  font: 500 var(--t-micro) / 1 var(--font-mono);
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--dim);
+  white-space: nowrap;
+}
+.encounter .hud-where strong {
+  font: 500 var(--t-label) / 1 var(--font-mono);
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.encounter .hud-where strong span {
+  margin-left: calc(var(--u) * 2);
+  color: var(--text-secondary);
+}
+.encounter .hud-where strong span[data-tone="warn"] {
+  color: var(--warn-color);
+}
+.encounter .hud-centre {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+}
+.encounter .hud-clock {
+  display: grid;
+  justify-items: center;
+  gap: var(--u);
+}
+.encounter .hud-clock strong {
+  font: 400 var(--t-title) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.encounter .hud-clock[data-tone="warn"] strong {
+  color: var(--warn-color);
+}
+.encounter .hud-right {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 6);
+  min-width: 0;
+}
+.encounter .hud-objectives {
+  display: flex;
+  gap: calc(var(--u) * 5);
+  min-width: 0;
+  font: 400 var(--t-label) / 1.2 var(--font-mono);
+  color: var(--text-secondary);
+}
+.encounter .hud-objectives li {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 2);
+  white-space: nowrap;
+}
+.encounter .hud-objectives i {
+  width: 8px;
+  height: 8px;
+  border: 1px solid var(--text-secondary);
+  transform: rotate(45deg);
+}
+.encounter .hud-objectives li[data-done] {
+  color: var(--dim);
+  text-decoration: line-through;
+}
+.encounter .hud-objectives li[data-done] i {
+  border-color: var(--accent-color);
+  background: var(--accent-color);
+}
+.encounter .hud-objectives b {
+  font-weight: 500;
+  color: var(--text-color);
+  font-variant-numeric: tabular-nums;
+}
+.encounter .hud-opponent {
+  padding-left: calc(var(--u) * 5);
+  border-left: 1px solid var(--line);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.encounter .hud-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--u);
+}
+.encounter .hud-tool {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--u) * 1.5);
+  min-width: var(--h-m);
+  height: var(--h-m);
+  padding: 0 calc(var(--u) * 2);
+  color: var(--text-secondary);
+  border: 1px solid transparent;
+  cursor: pointer;
+  list-style: none;
+}
+.encounter .hud-tool::-webkit-details-marker {
+  display: none;
+}
+.encounter .hud-tool svg {
+  width: 18px;
+  height: 18px;
+}
+.encounter .hud-tool .hud-glyph {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+}
+.encounter .hud-tool[aria-pressed="true"] {
+  color: var(--text-color);
+  border-color: var(--line-strong);
+}
+.encounter .hud-tool:disabled {
+  opacity: 0.35;
+}
+.encounter .hud-menu {
+  margin-left: calc(var(--u) * 2);
+  border-left: 1px solid var(--line);
+}
+
+/* The scene menu: time of day and weather (and, in dev builds, the asset labs). */
+.encounter .hud-scene {
+  position: relative;
+}
+.encounter .hud-scene[open] > .hud-tool {
+  color: var(--text-color);
+  border-color: var(--line-strong);
+}
+.encounter .hud-scene > section {
+  position: absolute;
+  top: calc(100% + var(--u) * 2);
+  right: 0;
+  z-index: 20;
+  display: grid;
+  gap: calc(var(--u) * 2);
+  width: calc(var(--u) * 56);
+  padding: calc(var(--u) * 4);
+  background: var(--surface-color);
+  border: 1px solid var(--line-strong);
+  border-top: 2px solid var(--text-color);
+}
+.encounter .hud-scene label {
+  font: 500 var(--t-micro) / 1 var(--font-mono);
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.encounter .hud-scene select {
+  height: var(--h-m);
+  padding: 0 calc(var(--u) * 2);
+  color: var(--text-color);
+  background: var(--background-color);
+  border: 1px solid var(--line-strong);
+  border-radius: 0;
+}
+.encounter .hud-scene section button {
+  height: var(--h-m);
+  padding: 0 calc(var(--u) * 3);
+  font: 500 var(--t-label) var(--font-mono);
+  color: var(--text-secondary);
+  border: 1px dashed var(--line-strong);
+}
+
+/* === Squad rail and the unit panel ==================================== */
+
+.encounter .hud-squad {
+  position: absolute;
+  top: calc(var(--h-l) + var(--u) * 4);
+  left: calc(var(--u) * 6);
+  z-index: 10;
+  display: grid;
+  gap: var(--u);
+  width: calc(var(--u) * 48);
+}
+.encounter .hud-member {
+  position: relative;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: calc(var(--u) * 2.5);
+  min-height: var(--h-m);
+  padding: var(--u) calc(var(--u) * 2) var(--u) var(--u);
+  background: var(--glass);
+  border: 1px solid var(--line);
+  transition: color 60ms linear;
+}
+.encounter .hud-member img {
+  width: 32px;
+  height: 32px;
+  object-fit: cover;
+  object-position: 50% 30%;
+  background: var(--raised-color);
+}
+.encounter .hud-member-text {
+  display: grid;
+  gap: calc(var(--u) * 1.5);
+  min-width: 0;
+}
+.encounter .hud-member strong {
+  font: 500 var(--t-label) / 1 var(--font-mono);
+  letter-spacing: var(--track);
+  text-transform: uppercase;
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.encounter #squad-cards .squad-card img {
-  position: static;
-  width: 42px;
-  height: 50px;
-  opacity: 1;
-  flex-shrink: 0;
-  mask-image: linear-gradient(90deg, black 70%, transparent);
+.encounter .hud-bar-track {
+  display: block;
+  height: 2px;
+  background: color-mix(in srgb, var(--text-color) 14%, transparent);
 }
-.encounter #squad-cards .squad-details {
-  padding: 0 4px;
+.encounter .hud-bar-track i {
+  display: block;
+  height: 100%;
+  background: currentColor;
+}
+.encounter .hud-member-key {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 16px;
+  height: 16px;
+  background: var(--background-color);
+  border: 1px solid var(--line-strong);
+}
+.encounter .hud-member[data-selected] {
+  color: var(--on-band);
+  background: var(--band);
+  border-color: var(--band);
+  animation: hud-band-in 110ms var(--snap);
+}
+.encounter .hud-member[data-selected] .hud-bar-track {
+  background: color-mix(in srgb, var(--on-band) 18%, transparent);
+}
+.encounter .hud-member[data-kia] {
+  opacity: 0.35;
+}
+.encounter .hud-member[data-kia] strong {
+  text-decoration: line-through;
+}
+
+/* The selected unit, above the command bar on the left. */
+.encounter .hud-unit {
+  position: absolute;
+  left: calc(var(--u) * 6);
+  bottom: calc(var(--h-l) + var(--u) * 8 + var(--u) * 4);
+  z-index: 10;
+  display: flex;
+  gap: calc(var(--u) * 3);
+  width: calc(var(--u) * 92);
+  padding: calc(var(--u) * 3);
+  background: var(--glass);
+  border: 1px solid var(--line);
+  border-top: 2px solid var(--text-color);
+}
+.encounter .hud-unit > img {
+  width: 56px;
+  height: 72px;
+  object-fit: cover;
+  object-position: 50% 25%;
+  background: var(--raised-color);
+}
+.encounter .hud-unit-body {
+  display: grid;
+  gap: calc(var(--u) * 2);
+  min-width: 0;
+  flex: 1;
+}
+.encounter .hud-unit-name {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: calc(var(--u) * 2);
+}
+.encounter .hud-unit-name strong {
+  font: 500 var(--t-body) / 1 var(--font-mono);
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+}
+.encounter .hud-unit-name small,
+.encounter .hud-unit-condition dt {
+  font: 500 var(--t-micro) / 1 var(--font-mono);
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.encounter .hud-unit-condition {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--u) * 1.5) calc(var(--u) * 4);
+}
+.encounter .hud-unit-condition > div {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 2);
+}
+.encounter .hud-unit-condition > div:first-child {
+  flex-basis: 100%;
+}
+.encounter .hud-unit-condition dd {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 2);
+  font: 400 var(--t-label) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+.encounter .hud-unit-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--u) calc(var(--u) * 3);
+  font: 400 var(--t-micro) / 1.3 var(--font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.encounter .hud-unit-stats [data-shift="up"] {
+  color: var(--accent-color);
+}
+.encounter .hud-unit-stats [data-shift="down"] {
+  color: var(--warn-color);
+}
+.encounter .hud-effects {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--u) * 2);
+}
+.encounter .hud-effects li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--u);
+  height: var(--h-s);
+  padding: 0 calc(var(--u) * 1.5);
+  font: 500 var(--t-micro) / 1 var(--font-mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--warn-color);
+  border: 1px solid color-mix(in srgb, var(--warn-color) 45%, transparent);
+}
+.encounter .hud-effects svg {
+  width: 12px;
+  height: 12px;
+}
+.encounter .hud-effects b {
+  font-weight: 600;
+  color: var(--text-color);
+}
+
+/* Pips: HP, AP, rounds. Filled squares on a hairline track. */
+.encounter .hud-pips {
+  display: inline-flex;
+  gap: 2px;
+}
+.encounter .hud-pips i {
+  width: 6px;
+  height: 6px;
+  border: 1px solid color-mix(in srgb, currentColor 45%, transparent);
+}
+.encounter .hud-pips i[data-on] {
+  background: var(--text-color);
+  border-color: var(--text-color);
+}
+.encounter .hud-pips[data-tone="warn"] i[data-on] {
+  background: var(--warn-color);
+  border-color: var(--warn-color);
+}
+.encounter .hud-member .hud-pips i {
+  width: 5px;
+  height: 5px;
+}
+.encounter .hud-member[data-selected] .hud-pips i[data-on] {
+  background: var(--on-band);
+  border-color: var(--on-band);
+}
+
+/* === The command bar ================================================= */
+
+.encounter .hud-bar {
+  bottom: 0;
+  height: calc(var(--h-l) + var(--u) * 8);
+  border-top: 1px solid var(--line);
+  background: linear-gradient(
+    0deg,
+    color-mix(in srgb, var(--background-color) 96%, transparent),
+    color-mix(in srgb, var(--surface-color) 90%, transparent)
+  );
+}
+.encounter .hud-bar-context {
+  display: grid;
+  gap: calc(var(--u) * 1.5);
   flex: 1;
   min-width: 0;
 }
-.encounter #squad-cards .squad-details > strong {
-  font: 500 13px/1.4 var(--mono);
+.encounter .hud-hint {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 2);
+  min-width: 0;
+  max-height: 2.5em;
+  font: 400 var(--t-body) / 1.25 var(--font-mono);
+  color: var(--text-secondary);
+  overflow: hidden;
 }
-.encounter #squad-cards .squad-details > small {
-  font-size: 7px;
+.encounter .hud-hint[data-deny] {
+  color: var(--warn-color);
+  animation: hud-flash 380ms steps(4, jump-none);
 }
-.encounter #squad-cards .squad-meta {
-  font-size: 7px;
+.encounter .hud-hint b {
+  font-weight: 500;
+  color: var(--warn-color);
 }
-.encounter #squad-cards .squad-index {
+@keyframes hud-flash {
+  0%,
+  50% {
+    opacity: 0.35;
+  }
+}
+.encounter .hud-warn-mark {
+  flex: none;
+  width: 10px;
+  height: 9px;
+  background: var(--warn-color);
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+.encounter .hud-bar-commands {
+  display: flex;
+  align-items: center;
+  gap: var(--u);
+  flex: none;
+}
+.encounter .hud-bar-rule {
+  width: 1px;
+  height: calc(var(--u) * 6);
+  margin: 0 calc(var(--u) * 2);
+  background: var(--line);
+}
+
+/* A unit's command: pictogram and name over glyph, cost and uses. */
+.encounter .hud-cmd {
+  position: relative;
+  display: grid;
+  align-content: center;
+  gap: calc(var(--u) * 1.5);
+  min-width: calc(var(--u) * 24);
+  height: calc(var(--h-m) + var(--u) * 2);
+  padding: 0 calc(var(--u) * 3);
+  color: var(--text-secondary);
+  border: 1px solid transparent;
+  transition:
+    background 80ms linear,
+    color 60ms linear,
+    transform 80ms linear;
+}
+.encounter .hud-cmd-head,
+.encounter .hud-cmd-meta {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 2);
+  white-space: nowrap;
+}
+.encounter .hud-cmd svg {
+  width: 16px;
+  height: 16px;
+}
+.encounter .hud-cmd-name {
+  font: 500 var(--t-label) / 1 var(--font-mono);
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+}
+.encounter .hud-cmd-meta small,
+.encounter .hud-uses {
+  font: 500 var(--t-micro) / 1 var(--font-mono);
+  letter-spacing: 0.12em;
+  color: var(--dim);
+}
+.encounter .hud-uses {
+  color: var(--text-color);
+}
+.encounter .hud-cmd .hud-glyph {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+}
+.encounter .hud-cmd .hud-glyph[data-shape="face"] {
+  width: 16px;
+  padding: 0;
+}
+/* The cursor's band: the armed command, and the one the pointer or focus is on. */
+.encounter .hud-cmd[data-armed],
+.encounter .hud-cmd:focus-visible {
+  color: var(--on-band);
+  background: var(--band);
+  animation: hud-band-in 110ms var(--snap);
+}
+.encounter .hud-cmd[data-armed] .hud-cmd-meta small,
+.encounter .hud-cmd[data-armed] .hud-uses,
+.encounter .hud-cmd:focus-visible .hud-cmd-meta small {
+  color: color-mix(in srgb, var(--on-band) 62%, var(--text-color));
+}
+.encounter .hud-cmd[data-armed] .hud-glyph[data-shape="key"],
+.encounter .hud-cmd:focus-visible .hud-glyph[data-shape="key"] {
+  color: var(--on-band);
+  border-color: color-mix(in srgb, var(--on-band) 45%, transparent);
+}
+.encounter .hud-cmd[data-armed]::before,
+.encounter .hud-cmd[data-armed]::after {
+  content: "";
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  border: 0 solid var(--text-color);
+}
+.encounter .hud-cmd[data-armed]::before {
+  top: -5px;
+  left: -5px;
+  border-width: 2px 0 0 2px;
+}
+.encounter .hud-cmd[data-armed]::after {
+  bottom: -5px;
+  right: -5px;
+  border-width: 0 2px 2px 0;
+}
+/* Refused: in place, dimmed, a dashed edge; the hint line says why. */
+.encounter .hud-cmd[data-denied] {
+  color: var(--dim);
+  border: 1px dashed var(--line);
+  background: none;
+}
+.encounter .hud-cmd[data-denied] .hud-glyph {
+  opacity: 0.4;
+}
+.encounter .hud-cmd[data-denied]:active {
+  animation: hud-deny 220ms linear;
+}
+@keyframes hud-band-in {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+@keyframes hud-deny {
+  20% {
+    transform: translateX(-4px);
+  }
+  45% {
+    transform: translateX(3px);
+  }
+  70% {
+    transform: translateX(-2px);
+  }
+}
+
+/* A bar command that isn't a unit's action: Confirm, Cancel, a target step. */
+.encounter .hud-bar-cmd {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--u) * 2.5);
+  height: var(--h-m);
+  padding: 0 calc(var(--u) * 3);
+  font: 500 var(--t-label) / 1 var(--font-mono);
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  border: 1px solid transparent;
+}
+.encounter .hud-bar-cmd svg {
+  width: 14px;
+  height: 14px;
+}
+.encounter .hud-bar-cmd:first-child svg {
+  transform: scaleX(-1);
+}
+.encounter .hud-bar-cmd[data-tone="primary"],
+.encounter .hud-end-turn {
+  min-width: calc(var(--u) * 40);
+  padding: 0 calc(var(--u) * 4);
+  color: var(--text-color);
+  border: 1px solid var(--accent-color);
+  background: color-mix(in srgb, var(--accent-color) 7%, transparent);
+}
+.encounter .hud-bar-cmd[data-tone="primary"] .hud-glyph[data-shape="face"],
+.encounter .hud-end-turn .hud-glyph[data-shape="face"] {
+  background: var(--accent-color);
+}
+.encounter .hud-bar-cmd:disabled,
+.encounter .hud-end-turn:disabled {
+  color: var(--dim);
+  border-color: var(--line);
+  border-style: dashed;
+  background: none;
+}
+.encounter .hud-bar-cmd:disabled .hud-glyph,
+.encounter .hud-end-turn:disabled .hud-glyph {
+  opacity: 0.4;
+}
+.encounter .hud-bar-cmd:focus-visible,
+.encounter .hud-end-turn:focus-visible {
+  color: var(--on-band);
+  background: var(--band);
+  border-color: var(--band);
+}
+.encounter .hud-bar-cmd:focus-visible .hud-glyph[data-shape="key"],
+.encounter .hud-end-turn:focus-visible .hud-glyph[data-shape="key"] {
+  color: var(--on-band);
+  border-color: color-mix(in srgb, var(--on-band) 45%, transparent);
+}
+.encounter .hud-nudges {
+  display: inline-grid;
+  grid-template-columns: repeat(4, var(--h-m));
+  gap: var(--u);
+}
+.encounter .hud-nudges button {
+  display: grid;
+  place-items: center;
+  height: var(--h-m);
+  font: 500 var(--t-body) / 1 var(--font-mono);
+  color: var(--text-secondary);
+  border: 1px solid var(--line);
+}
+
+/* End turn: the turn-level primary, in its own fixed slot. */
+.encounter .hud-end {
+  display: flex;
+  align-items: center;
+  padding-left: calc(var(--u) * 6);
+  border-left: 1px solid var(--line);
+  height: 100%;
+}
+.encounter .hud-end-turn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--u) * 2.5);
+  height: calc(var(--h-m) + var(--u) * 2);
+  font: 500 var(--t-label) / 1 var(--font-mono);
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* The mouse's affordance only: a faint plate, never the cursor's band. */
+@media (hover: hover) {
+  .encounter .hud-cmd:not([data-armed]):not([data-denied]):hover,
+  .encounter .hud-bar-cmd:not(:disabled):not([data-tone]):hover,
+  .encounter .hud-tool:not(:disabled):hover,
+  .encounter .hud-nudges button:not(:disabled):hover,
+  .encounter .hud-member:not([data-selected]):not(:disabled):hover {
+    color: var(--text-color);
+    background: color-mix(in srgb, var(--text-color) 8%, var(--glass));
+  }
+  .encounter .hud-bar-cmd[data-tone="primary"]:not(:disabled):hover,
+  .encounter .hud-end-turn:not(:disabled):hover {
+    background: color-mix(in srgb, var(--accent-color) 16%, transparent);
+  }
+}
+.encounter .hud-cmd:not([data-denied]):active,
+.encounter .hud-bar-cmd:not(:disabled):active,
+.encounter .hud-end-turn:not(:disabled):active {
+  transform: translateY(1px);
+}
+
+/* The aim, where the hint goes while a shot or a throw is lined up. */
+.encounter .hud-aim {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 4);
+  min-width: 0;
+}
+.encounter .hud-aim-odds {
+  font: 400 var(--t-title) / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.encounter .hud-aim-odds small {
+  margin-left: 2px;
+  font-size: var(--t-label);
+  color: var(--text-secondary);
+}
+.encounter .hud-aim-text {
+  display: grid;
+  gap: var(--u);
+  min-width: 0;
+}
+.encounter .hud-aim-target {
+  display: flex;
+  align-items: baseline;
+  gap: calc(var(--u) * 3);
+  font: 500 var(--t-label) / 1 var(--font-mono);
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.encounter .hud-aim-target small {
+  font: 400 var(--t-micro) / 1 var(--font-mono);
+  letter-spacing: 0.12em;
+  color: var(--text-secondary);
+}
+
+/* The target's readout (ui/intel), merged into the aim: just above the bar, where the unit panel was. */
+.encounter .hud-aim-intel {
+  position: absolute;
+  left: calc(var(--u) * 6);
+  bottom: calc(100% + var(--u) * 3);
+  width: calc(var(--u) * 92);
+  padding: calc(var(--u) * 3);
+  background: var(--glass);
+  border: 1px solid var(--line);
+  border-top: 2px solid var(--hostile);
+}
+.encounter .hud-aim-intel:empty {
   display: none;
 }
-.encounter #squad-cards .hp-track {
-  margin: 3px 0;
+
+/* While aiming, the chrome the eye doesn't need steps back. */
+.encounter .battlefield.targeting ~ .hud-squad {
+  opacity: 0.35;
+  pointer-events: none;
 }
-@media (max-width: 600px) {
-  .encounter #squad-cards {
-    gap: 5px;
-  }
-  .encounter #squad-cards .squad-card img {
-    display: none;
-  }
-  .encounter #squad-cards .squad-details > strong {
-    font-size: 11px;
-  }
+.encounter .battlefield.targeting ~ .hud-unit {
+  visibility: hidden;
 }
 
-/* Compact squad cards leave the play field clear above the controls. */
-.encounter .view-tools {
-  bottom: 230px;
-}
-@media (max-width: 950px) {
-  .encounter .view-tools {
-    bottom: 245px;
-  }
-}
-@media (max-width: 950px) and (max-height: 720px) {
-  .encounter .view-tools {
-    bottom: 220px;
-  }
-}
-.encounter .battlefield.targeting .view-tools {
-  bottom: auto;
-  top: 80px;
-}
+/* === Prompts: the briefing (the menus' Prompt) ======================= */
 
-/* Scene controls and squad portraits. */
-.encounter #scene-controls { flex-shrink: 0; }
-.encounter #scene-controls summary {
-  cursor: pointer; list-style: none; height: 31px; padding: 0 10px;
-  display: flex; align-items: center; font: 10px var(--mono);
-  border: 1px solid #bcc0c930; background: #121620ee; color: #b7bbc4;
+.encounter dialog {
+  color: var(--text-color);
+  font: 400 var(--t-body) / 1.5 var(--font-mono);
 }
-.encounter #scene-controls summary::-webkit-details-marker { display: none; }
-.encounter #scene-controls[open] summary { color: #d8c498; border-color: #d8c49880; }
-.encounter #scene-controls section {
-  position: absolute; right: 0; bottom: calc(100% + 9px);
-  width: min(270px, calc(100vw - 32px)); padding: 16px;
-  border: 1px solid #bcc0c940; background: #171c24;
-  box-shadow: 0 8px 25px #0006; color: #d3d5d8;
+.encounter dialog::backdrop {
+  background: color-mix(in srgb, var(--background-color) 72%, transparent);
 }
-.encounter #scene-controls label { display: block; font: 11px var(--mono); }
-.encounter #scene-controls select {
-  width: 100%; margin: 9px 0 15px; padding: 9px;
-  color: #eee9dd; background: #252b34; border: 1px solid #bcc0c940;
+.encounter .hud-prompt {
+  display: flex;
+  flex-direction: column;
+  width: min(calc(var(--u) * 160), calc(100vw - var(--u) * 12));
+  max-height: calc(100dvh - var(--h-l) * 2);
+  margin: auto;
+  padding: calc(var(--u) * 7) calc(var(--u) * 8) 0;
+  overflow: hidden;
+  background: var(--surface-color);
+  border: 1px solid var(--line-strong);
+  border-top: 2px solid var(--text-color);
 }
-.encounter #scene-controls input { accent-color: #c8ae76; width: 16px; height: 16px; }
-.encounter #scene-controls small { display: block; margin-top: 13px; font-size: 10px; color: #a5aab4; }
-.encounter #scene-controls :focus-visible { outline: 2px solid #d8c498; outline-offset: 3px; }
-.encounter .battlefield.targeting #scene-controls section { bottom: auto; top: calc(100% + 9px); }
-@media (max-width: 640px) { .encounter .view-tools { flex-wrap: wrap; } }
-/* Face-first squad identifiers: preserve both cheeks and their customization. */
-.encounter #squad-cards .squad-card img {
-  width: 50px;
-  height: 50px;
+.encounter .hud-prompt[open] {
+  animation: hud-open 170ms var(--snap);
+}
+@keyframes hud-open {
+  from {
+    clip-path: inset(48% 0 48% 0);
+    opacity: 0.4;
+  }
+}
+.encounter .hud-prompt-eyebrow {
+  display: block;
+  font: 500 var(--t-micro) / 1 var(--font-mono);
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.encounter .hud-prompt-title {
+  margin-top: calc(var(--u) * 3);
+  font: 400 var(--t-title) / 1.25 var(--font-mono);
+}
+.encounter .hud-prompt-body {
+  margin-top: calc(var(--u) * 3);
+  color: var(--text-secondary);
+}
+.encounter .hud-prompt-lines {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(calc(var(--u) * 36), 1fr));
+  gap: 0 calc(var(--u) * 6);
+  margin-top: calc(var(--u) * 5);
+  border-top: 1px solid var(--line);
+}
+.encounter .hud-prompt-lines > div {
+  display: grid;
+  align-content: center;
+  gap: calc(var(--u) * 1.5);
+  padding: calc(var(--u) * 2.5) 0;
+  border-bottom: 1px solid var(--line);
+}
+.encounter .hud-prompt-lines dt,
+.encounter .hud-prompt-scroll h3 {
+  font: 500 var(--t-micro) / 1 var(--font-mono);
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.encounter .hud-prompt-lines dd {
+  font-variant-numeric: tabular-nums;
+}
+.encounter .hud-prompt-scroll {
+  flex: 1 1 auto;
+  min-height: calc(var(--u) * 18);
+  margin-top: calc(var(--u) * 4);
+  overflow-y: auto;
+  color: var(--text-secondary);
+}
+.encounter .hud-prompt-scroll h3 {
+  display: flex;
+  justify-content: space-between;
+  margin: calc(var(--u) * 5) 0 calc(var(--u) * 2);
+}
+.encounter .hud-prompt-scroll h3:first-child {
+  margin-top: 0;
+}
+.encounter .hud-prompt-scroll p + p {
+  margin-top: calc(var(--u) * 2);
+}
+.encounter .hud-prompt-scroll b {
+  font-weight: 500;
+  color: var(--text-color);
+}
+.encounter .hud-roster {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(calc(var(--u) * 44), 1fr));
+  gap: calc(var(--u) * 2);
+}
+.encounter .hud-roster li {
+  display: flex;
+  gap: calc(var(--u) * 3);
+  align-items: center;
+  padding: calc(var(--u) * 2);
+  border: 1px solid var(--line);
+}
+.encounter .hud-roster img {
+  width: 36px;
+  height: 44px;
   object-fit: cover;
-  object-position: center;
-  mask-image: none;
-  filter: none;
-  border-right: 1px solid #ffffff14;
+  object-position: 50% 25%;
+  background: var(--raised-color);
+}
+.encounter .hud-roster div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.encounter .hud-roster b {
+  font: 500 var(--t-label) / 1.2 var(--font-mono);
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  color: var(--text-color);
+}
+.encounter .hud-roster small {
+  font: 400 var(--t-micro) / 1.3 var(--font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.encounter .hud-prompt-commands {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--u);
+  margin: calc(var(--u) * 6) calc(var(--u) * -8) 0;
+  padding: calc(var(--u) * 2) calc(var(--u) * 3);
+  border-top: 1px solid var(--line);
 }
 
-/* Keep the shooter visible above the confirmation strip at every aspect ratio. */
-.encounter #targeting-hud { padding: 10px 16px; }
-.encounter #targeting-hud .targeting-top { padding-bottom: 7px; font-size: 10px; }
-.encounter #targeting-hud .targeting-main { padding: 9px 0; gap: 14px; flex-wrap: nowrap; }
-.encounter #targeting-hud .targeting-main .primary { flex: 0 0 auto; width:auto; min-width:130px; padding: 12px 16px; min-height: 40px; }
-.encounter #targeting-hud .target-choices { gap: 10px; }
-.encounter #targeting-hud .target-choices button { padding: 6px 8px; flex-direction: row; }
-.encounter #targeting-hud .aim-description > small { display: none; }
-.encounter #targeting-hud .aim-description { gap: 3px; }
-@media(max-width:600px) {
- .encounter #targeting-hud { left:8px;right:8px;padding:8px; }
- .encounter #targeting-hud .aim-description strong {font-size:13px;}
- .encounter #targeting-hud .aim-description span {font-size:9px;}
- .encounter #targeting-hud .targeting-main .primary {font-size:9px;padding:10px;}
-}
+/* === The pad's action wheel ========================================== */
 
-
-/* Isolated destruction lab: the encounter is paused behind the native modal. */
-.encounter #scene-controls .preview-destruction {
-  margin-top: 14px; width: 100%; height: auto; padding: 10px 8px;
-  color: #e1c58e; font: 11px var(--mono); text-transform: none;
-}
-.encounter dialog.destruction-preview {
-  width: min(940px, 94vw); max-height: 94dvh; padding: 24px; border-radius: 8px;
-  background: #182127; border-color: #65736b; color: #e4e8e3; overflow: auto;
-}
-.encounter .destruction-preview header { display: flex; justify-content: space-between; align-items: center; }
-.encounter .destruction-preview header small { color: #c6ab75; font: 10px var(--mono); letter-spacing: 2px; }
-.encounter .destruction-preview h2 { margin: 6px 0 0; font-size: 30px; letter-spacing: -1px; }
-.encounter .destruction-preview p { margin: 8px 0 18px; font-size: 13px; color: #9eaeb0; }
-.encounter .destruction-preview button {
-  padding: 11px 18px; border: 1px solid #5e6a69; border-radius: 3px;
-  background: #263338; color: #e5e9e4; font: 12px var(--mono); cursor: pointer;
-}
-.encounter .destruction-preview button:hover:not(:disabled) { background: #3c4c4e; border-color: #c7b485; }
-.encounter .destruction-preview button:disabled { opacity: .35; cursor: default; }
-.encounter .destruction-preview header button { padding: 9px 13px; }
-.encounter .destruction-preview :focus-visible { outline: 2px solid #e2c68d; outline-offset: 3px; }
-.encounter .destruction-stage { position: relative; height: clamp(220px, 44dvh, 470px); overflow: hidden; border: 1px solid #465451; border-radius: 4px; }
-.encounter .destruction-stage canvas { display: block; touch-action: none; }
-.encounter .destruction-orbit, .encounter .destruction-speed { position: absolute; pointer-events: none; font: 9px var(--mono); color: #b3c2bd; letter-spacing: 1px; }
-.encounter .destruction-orbit { bottom: 15px; left: 16px; }
-.encounter .destruction-speed { top: 15px; right: 16px; color: #e3c687; }
-.encounter .destruction-loading { position: absolute; inset: 0; display: grid; place-items: center; font-size: 13px; }
-.encounter .destruction-toolbar { display: flex; align-items: center; gap: 24px; padding: 20px 0; }
-.encounter .destruction-toolbar label { font: 10px var(--mono); letter-spacing: 1px; color: #aab7b4; }
-.encounter .destruction-toolbar select { display: block; margin-top: 7px; min-width: 195px; padding: 10px; background: #263338; color: #e5e9e4; border: 1px solid #5e6a69; border-radius: 3px; font: 12px var(--mono); }
-.encounter .destruction-health { flex: 1; display: flex; flex-direction: column; gap: 7px; font: 10px var(--mono); }
-.encounter .destruction-health strong { color: #ddc38c; font-size: 12px; }
-.encounter .destruction-health progress { width: 100%; height: 5px; accent-color: #c4ad7c; }
-.encounter .destruction-health small { color: #9eafad; }
-.encounter .destruction-toolbar .destruction-slow { display: flex; align-items: center; gap: 7px; letter-spacing: 0; white-space: nowrap; }
-.encounter .destruction-slow input { accent-color: #c4ad7c; }
-.encounter .destruction-preview footer { display: flex; gap: 10px; border-top: 1px solid #42504d; padding-top: 16px; flex-wrap: wrap; }
-.encounter .destruction-preview footer small { margin-left: 10px; font-size: 9px; opacity: .6; }
-.encounter .destruction-preview .destruction-blast { background: #bba477; color: #172124; border-color: #d4c18f; }
-.encounter .destruction-preview .destruction-reset { margin-left: auto; }
-@media (max-width: 640px) {
-  .encounter dialog.destruction-preview { padding: 16px; }
-  .encounter .destruction-toolbar { flex-wrap: wrap; gap: 15px; }
-  .encounter .destruction-toolbar select { min-width: 160px; }
-  .encounter .destruction-preview button { padding: 10px 12px; }
-}
-
-/* Controller: the radial action wheel and the pad hints strip. */
 .encounter #action-wheel {
   position: absolute;
   inset: 0;
   z-index: 40;
   display: grid;
   place-items: center;
-  background: radial-gradient(circle at 50% 50%, #05060a66, #05060ac4 70%);
-  backdrop-filter: blur(2px);
+  background: radial-gradient(
+    circle at 50% 50%,
+    color-mix(in srgb, var(--background-color) 40%, transparent),
+    color-mix(in srgb, var(--background-color) 80%, transparent) 70%
+  );
 }
 .encounter .wheel-ring {
   position: relative;
-  width: 460px;
-  height: 460px;
   display: grid;
   place-items: center;
-  animation: wheel-in 0.16s ease-out;
-}
-@keyframes wheel-in {
-  from {
-    opacity: 0;
-    scale: 0.94;
-  }
+  width: 460px;
+  height: 460px;
+  animation: hud-open 160ms var(--snap);
 }
 .encounter .wheel-ring > svg {
   position: absolute;
@@ -2950,232 +1249,306 @@
 }
 .encounter .wheel-rim {
   fill: none;
-  stroke: #b9bdc61c;
-  stroke-width: 1;
+  stroke: var(--line);
   stroke-dasharray: 2 5;
 }
 .encounter .wheel-hub {
-  fill: #0a0c12f2;
-  stroke: #b9bdc628;
-  stroke-width: 1;
+  fill: var(--background-color);
+  stroke: var(--line-strong);
 }
 .encounter .wheel-seg {
-  fill: #10151cee;
-  stroke: #b9bdc622;
-  stroke-width: 1;
+  fill: var(--glass);
+  stroke: var(--line);
   cursor: pointer;
   transition:
-    fill 0.12s,
-    stroke 0.12s;
-}
-.encounter .wheel-seg.locked {
-  fill: #0b0e14d8;
+    fill 120ms,
+    stroke 120ms;
 }
 .encounter .wheel-seg.focused {
-  fill: color-mix(in srgb, var(--amber) 14%, #0e1319ee);
-  stroke: var(--amber);
+  fill: var(--band);
+  stroke: var(--band);
 }
 .encounter .wheel-seg.focused.locked {
-  fill: color-mix(in srgb, var(--amber) 7%, #0b0f15e8);
-  stroke: var(--amber-dark);
+  fill: color-mix(in srgb, var(--text-color) 22%, var(--background-color));
+  stroke: var(--line-strong);
 }
-/* The rotating piece: the arc outside the rim and the hub tick turn together. */
 .encounter .wheel-selector {
   pointer-events: none;
   transform-origin: 50% 50%;
   transform-box: view-box;
-  transition: transform 0.16s ease;
+  transition: transform 160ms ease;
 }
 .encounter .wheel-selector-arc {
   fill: none;
-  stroke: var(--amber);
+  stroke: var(--text-color);
   stroke-width: 3;
 }
 .encounter .wheel-selector-tick {
-  fill: var(--amber);
+  fill: var(--text-color);
 }
-/* Wedge content; the wedge path below is the mouse surface. */
 .encounter .wheel-ring button {
   position: absolute;
   display: grid;
   justify-items: center;
-  gap: 7px;
+  gap: calc(var(--u) * 2);
   pointer-events: none;
-  font-family: var(--mono);
-  font-size: 10px;
+  font: 500 var(--t-micro) / 1 var(--font-mono);
   letter-spacing: 0.14em;
-  color: #9da1aa;
   white-space: nowrap;
+  color: var(--text-secondary);
 }
 .encounter .wheel-ring button svg {
-  width: 21px;
-  height: 21px;
+  width: 20px;
+  height: 20px;
 }
 .encounter .wheel-ring button.locked {
-  color: #51565f;
+  color: var(--dim);
 }
 .encounter .wheel-ring button.active {
-  color: var(--amber);
-}
-.encounter .wheel-ring button.active.locked {
-  color: var(--amber-dark);
+  color: var(--on-band);
 }
 .encounter .wheel-center {
-  position: relative; /* paints above the absolutely positioned hub SVG */
+  position: relative;
   display: grid;
   justify-items: center;
-  gap: 6px;
+  gap: calc(var(--u) * 1.5);
   width: 150px;
   text-align: center;
   pointer-events: none;
 }
-.encounter .wheel-center small {
-  font: 8px/1 var(--mono);
-  letter-spacing: 0.2em;
-  color: var(--muted);
+.encounter .wheel-center small,
+.encounter .wheel-center > span {
+  font: 500 var(--t-micro) / 1.3 var(--font-mono);
+  letter-spacing: 0.16em;
+  color: var(--text-secondary);
 }
 .encounter .wheel-center strong {
-  font: 600 13px/1 var(--mono);
-  letter-spacing: 0.22em;
-  color: var(--amber);
-}
-.encounter .wheel-center > span {
-  font: 8px/1.4 var(--mono);
-  letter-spacing: 0.16em;
-  color: #9da1aa;
+  font: 500 var(--t-body) / 1 var(--font-mono);
+  letter-spacing: var(--track);
 }
 .encounter .wheel-center > span.locked {
-  color: var(--red);
+  color: var(--warn-color);
 }
 .encounter .wheel-ap {
   display: inline-flex;
-  gap: 4px;
-  margin-top: 2px;
+  gap: var(--u);
 }
 .encounter .wheel-ap i {
   width: 14px;
   height: 3px;
-  background: #3a3f47;
+  background: var(--line-strong);
 }
 .encounter .wheel-ap i.filled {
-  background: var(--amber);
+  background: var(--text-color);
 }
 @media (max-width: 560px), (max-height: 560px) {
   .encounter .wheel-ring {
     scale: 0.72;
   }
 }
-.encounter #pad-hints {
-  position: absolute;
-  right: 28px;
-  bottom: 104px;
-  z-index: 3;
-  display: flex;
-  gap: 14px;
-  font: 9px/1.2 var(--mono);
-  letter-spacing: 0.14em;
-  color: #9da1aa;
+
+/* === Development labs (dev builds only; see Hud.tsx) ================= */
+
+.encounter dialog.destruction-preview {
+  width: min(940px, 94vw);
+  max-height: 94dvh;
+  padding: calc(var(--u) * 6);
+  overflow: auto;
+  background: var(--surface-color);
+  border: 1px solid var(--line-strong);
 }
-.encounter #pad-hints span {
-  display: inline-flex;
+.encounter .destruction-preview header {
+  display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 5px;
+}
+.encounter .destruction-preview header small,
+.encounter .destruction-toolbar label,
+.encounter .destruction-orbit,
+.encounter .destruction-speed {
+  font: 500 var(--t-micro) var(--font-mono);
+  letter-spacing: 0.2em;
+  color: var(--text-secondary);
+}
+.encounter .destruction-preview h2 {
+  margin: calc(var(--u) * 1.5) 0 0;
+  font: 400 var(--t-title) var(--font-mono);
+}
+.encounter .destruction-preview p {
+  margin: calc(var(--u) * 2) 0 calc(var(--u) * 4);
+  color: var(--text-secondary);
+}
+.encounter .destruction-preview button,
+.encounter .destruction-toolbar select {
+  min-height: var(--h-m);
+  padding: 0 calc(var(--u) * 4);
+  font: 500 var(--t-label) var(--font-mono);
+  color: var(--text-color);
+  background: var(--raised-color);
+  border: 1px solid var(--line-strong);
+}
+.encounter .destruction-preview button:disabled {
+  opacity: 0.35;
+}
+.encounter .destruction-stage {
+  position: relative;
+  height: clamp(220px, 44dvh, 470px);
+  overflow: hidden;
+  border: 1px solid var(--line);
+}
+.encounter .destruction-stage canvas {
+  display: block;
+  touch-action: none;
+}
+.encounter .destruction-orbit,
+.encounter .destruction-speed {
+  position: absolute;
+  pointer-events: none;
+}
+.encounter .destruction-orbit {
+  bottom: calc(var(--u) * 4);
+  left: calc(var(--u) * 4);
+}
+.encounter .destruction-speed {
+  top: calc(var(--u) * 4);
+  right: calc(var(--u) * 4);
+}
+.encounter .destruction-loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+.encounter .destruction-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: calc(var(--u) * 6);
+  padding: calc(var(--u) * 5) 0;
+}
+.encounter .destruction-toolbar select {
+  display: block;
+  margin-top: calc(var(--u) * 2);
+  min-width: 195px;
+}
+.encounter .destruction-health {
+  flex: 1;
+  display: grid;
+  gap: calc(var(--u) * 2);
+  font: 400 var(--t-micro) var(--font-mono);
+}
+.encounter .destruction-health progress {
+  width: 100%;
+  height: 5px;
+}
+.encounter .destruction-toolbar .destruction-slow {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 2);
+}
+.encounter .destruction-preview footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--u) * 2);
+  padding-top: calc(var(--u) * 4);
+  border-top: 1px solid var(--line);
+}
+.encounter .destruction-preview .destruction-reset {
+  margin-left: auto;
+}
+
+/* === Mid-width screens: the objectives give way first ================= */
+
+@media (max-width: 1180px) {
+  .encounter .hud-objectives li:not(.hud-opponent) {
+    max-width: calc(var(--u) * 40);
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+@media (max-width: 1000px) {
+  .encounter .hud-cmd {
+    min-width: 0;
+    padding: 0 calc(var(--u) * 2);
+  }
+  .encounter .hud-cmd-name {
+    letter-spacing: 0.06em;
+  }
 }
 
 /*
  * Phones in landscape: the app sets --ui-scale on :root (index.css, 1 on
  * anything taller than 500px). The HUD roots are zoomed by it; the canvas and
  * its host never are, so rendering stays at full resolution and pointer rays
- * keep mapping. Insets scale with the zoom, which keeps the layout's
- * proportions; the notch margins are divided by the scale to stay true pixels.
+ * keep mapping. The strips are anchored left and right, so they span the glass
+ * at any zoom; notch insets are divided by the scale to stay true pixels, and touch
+ * targets are raised so they stay about 40px on the glass after the zoom.
  */
 @media (orientation: landscape) and (max-height: 500px) {
-  .encounter .command-deck,
-  .encounter .workspace > .end-turn,
-  .encounter .field-bottom,
-  .encounter .view-tools,
-  .encounter #field-objectives,
-  .encounter #pad-hints,
+  .encounter {
+    --h-m: calc(40px / var(--ui-scale, 1));
+  }
+  .encounter .hud-header,
+  .encounter .hud-bar,
+  .encounter .hud-squad,
+  .encounter .hud-unit,
   .encounter #feedback,
-  .encounter #targeting-hud,
-  .encounter .wheel-ring {
-    zoom: var(--ui-scale, 1);
-  }
-  .encounter .command-deck,
-  .encounter .field-bottom,
-  .encounter #targeting-hud {
-    margin-inline: calc(env(safe-area-inset-left, 0px) / var(--ui-scale, 1))
-      calc(env(safe-area-inset-right, 0px) / var(--ui-scale, 1));
-  }
-  .encounter .workspace > .end-turn,
-  .encounter .view-tools,
-  .encounter #field-objectives,
-  .encounter #pad-hints {
-    margin-right: calc(env(safe-area-inset-right, 0px) / var(--ui-scale, 1));
-  }
+  .encounter .wheel-ring,
   .encounter dialog {
     zoom: var(--ui-scale, 1);
-    width: min(900px, calc(90vw / var(--ui-scale, 1)));
-    max-height: calc(88dvh / var(--ui-scale, 1));
   }
-  /* The briefing caps itself in dvh (ghosts-theme.css); undo the zoom there too. */
-  .encounter dialog.briefing-modal {
-    max-height: calc(94dvh / var(--ui-scale, 1));
+  .encounter .hud-header,
+  .encounter .hud-bar {
+    padding-inline: calc(var(--u) * 4 + env(safe-area-inset-left, 0px) / var(--ui-scale, 1))
+      calc(var(--u) * 4 + env(safe-area-inset-right, 0px) / var(--ui-scale, 1));
   }
-  .encounter dialog.briefing-modal #modal-content {
-    max-height: calc(94dvh / var(--ui-scale, 1) - 84px);
+  .encounter .hud-bar {
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) / var(--ui-scale, 1));
+    height: calc(var(--h-m) + var(--u) * 6);
   }
-  /*
-   * The zoomed viewport is as wide as a laptop's, so the deck keeps its
-   * desktop arrangement (the compact 1250px one): the action bar left, End Turn
-   * to its right in the same row. The narrow-screen stack (End Turn above a
-   * second grid row) only works while the deck is taller than this.
-   */
-  .encounter .command-deck {
-    left: 30px;
-    right: 205px;
-    bottom: calc(21px + env(safe-area-inset-bottom, 0px) / var(--ui-scale, 1));
-    height: 85px;
-    padding: 14px 0 0;
-    display: flex;
-    align-items: center;
-    gap: 10px;
+  .encounter .hud-header {
+    height: calc(var(--h-m) + var(--u) * 2);
   }
-  .encounter .action-list {
-    height: 66px;
-    gap: 3px;
+  .encounter .hud-squad,
+  .encounter .hud-unit {
+    left: calc(var(--u) * 4 + env(safe-area-inset-left, 0px) / var(--ui-scale, 1));
   }
-  .encounter .action-list button {
-    height: 66px;
-    padding: 5px;
-    gap: 6px;
+  .encounter .hud-squad {
+    top: calc(var(--h-m) + var(--u) * 5);
   }
-  .encounter .action-list button > span {
-    font-size: 9px;
+  .encounter .hud-unit {
+    bottom: calc(var(--h-m) + var(--u) * 10);
   }
-  .encounter .action-list button > small {
-    font-size: 8px;
-  }
-  .encounter .action-list button > kbd {
-    display: block;
-  }
-  .encounter .workspace > .end-turn {
-    right: 30px;
-    bottom: calc(29px + env(safe-area-inset-bottom, 0px) / var(--ui-scale, 1));
+  /* The rail goes compact: portraits and pips; the name is on the plate and the panel. */
+  .encounter .hud-squad {
     width: auto;
-    min-width: 150px;
-    height: auto;
-    min-height: 57px;
-    padding: 14px 17px;
-    font-size: 12px;
   }
-  .encounter .end-turn svg {
-    display: block;
+  .encounter .hud-member {
+    grid-template-columns: 32px auto;
   }
-  .encounter .field-bottom {
-    bottom: calc(125px + env(safe-area-inset-bottom, 0px) / var(--ui-scale, 1));
+  .encounter .hud-member-text {
+    display: none;
   }
-  .encounter #targeting-hud {
-    bottom: calc(127px + env(safe-area-inset-bottom, 0px) / var(--ui-scale, 1));
+  .encounter .hud-objectives li:not(:last-child) {
+    display: none;
+  }
+  .encounter .hud-objectives li:not(.hud-opponent) {
+    max-width: none;
+  }
+  .encounter .hud-cmd {
+    height: var(--h-m);
+  }
+  .encounter .hud-prompt {
+    width: min(calc(var(--u) * 160), calc(100vw / var(--ui-scale, 1) - var(--u) * 12));
+    max-height: calc(100dvh / var(--ui-scale, 1) - var(--u) * 8);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .encounter *,
+  .encounter *::before,
+  .encounter *::after {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
   }
 }

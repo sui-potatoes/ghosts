@@ -79,7 +79,7 @@ test("rifle attacks consume remaining AP and one round; dead targets reject shot
   b.hp = 0;
   assert.equal(g.attack(a, b), null);
 });
-test("pistols cost one AP and switching guns preserves separate magazines", () => {
+test("a pistol shot spends all AP like any attack, and switching guns preserves separate magazines", () => {
   const g = new Encounter(),
     a = g.allies[0],
     b = g.enemies[0];
@@ -87,15 +87,17 @@ test("pistols cost one AP and switching guns preserves separate magazines", () =
   g.switchWeapon(a, "pistol");
   assert.equal(a.ammo, 6);
   g.attack(a, b);
-  assert.equal(a.ap, 1);
+  // `Unit.perform_attack` depletes AP whatever the weapon.
+  assert.equal(a.ap, 0);
   assert.equal(a.ammo, 5);
+  a.ap = 2;
   g.switchWeapon(a, "sniper");
   assert.equal(a.ammo, 3);
   g.switchWeapon(a, "pistol");
   assert.equal(a.ammo, 5);
   assert.ok(g.reload(a));
   assert.equal(a.ammo, 6);
-  assert.equal(a.ap, 0);
+  assert.equal(a.ap, 1);
 });
 test("reload rejects full magazine, wrong phase, and zero AP", () => {
   const g = new Encounter(),
@@ -134,12 +136,15 @@ test("grenade has bounded range, one use, armor mitigation, and friendly fire", 
   u.pos = [0, 0];
   ally.pos = [1, 0];
   enemy.pos = [2, 0];
+  assert.equal(g.throwGrenade(u, [1, 0]), false, "no grenade in the loadout");
+  u.actions.push({ kind: "Grenade", uses: 1 });
   assert.equal(g.throwGrenade(u, [8, 0]), false);
   assert.equal(u.ap, 2);
   assert.equal(g.throwGrenade(u, [1, 0]), true);
   assert.equal(u.ap, 1);
-  assert.equal(ally.hp, 7);
-  assert.equal(enemy.hp, 4);
+  // `GRENADE_DAMAGE` 4, less 1 armor.
+  assert.equal(ally.hp, 9);
+  assert.equal(enemy.hp, 6);
   assert.equal(g.throwGrenade(u, [1, 0]), false);
 });
 test("hunker and overwatch spend AP and reset next round", () => {
@@ -220,13 +225,13 @@ test("all three weapons can execute their selected target and retain independent
 test("default grenade is reachable and avoids friendly blast damage at deployment", () => {
   const g = new Encounter(),
     u = g.allies[0],
-    p = defaultGrenadeTarget(g, u);
+    p = (u.actions.push({ kind: "Grenade", uses: 1 }), defaultGrenadeTarget(g, u));
   assert.equal(grenadeBlockReason(g, u, p), null);
   assert.ok(g.allies.every((a) => distance(a.pos, p) > 2));
   assert.ok(g.throwGrenade(u, p));
   assert.equal(u.ap, 1);
-  assert.equal(u.grenade, true);
-  assert.equal(grenadeBlockReason(g, u, p), "GRENADE EXPENDED");
+  assert.deepEqual(u.actions.find((a) => a.kind === "Grenade"), { kind: "Grenade", uses: 0 });
+  assert.equal(grenadeBlockReason(g, u, p), "NONE LEFT THIS MATCH");
 });
 test("grenade targeting rejects both off-map and out-of-range tiles", () => {
   const g = new Encounter(),
@@ -238,12 +243,12 @@ test("grenade targeting rejects both off-map and out-of-range tiles", () => {
   assert.match(grenadeBlockReason(g, u, g.enemies[0].pos)!, /THROW RANGE/);
 });
 
-test("a unit with an allow-list only takes what it lists; without one nothing changes", () => {
+test("a unit only takes the actions it carries", () => {
   const g = new Encounter(), u = g.allies[0], foe = g.enemies[0];
   u.pos = [0, 0]; foe.pos = [0, -4]; u.ammo = u.clip - 1;
-  assert.equal(u.actions, undefined);
   assert.ok(g.allows(u, "fire") && g.allows(u, "overwatch"));
-  u.actions = ["move", "grenade"];
+  assert.ok(!g.allows(u, "grenade"), "no grenade without one in the loadout");
+  u.actions = [{ kind: "Move", uses: null }, { kind: "Grenade", uses: 1 }];
   assert.ok(g.allows(u, "move") && g.allows(u, "grenade"));
   for (const o of ["fire", "reload", "overwatch", "hunker", "secure"] as const) assert.ok(!g.allows(u, o), o);
   const before = g.events.length;

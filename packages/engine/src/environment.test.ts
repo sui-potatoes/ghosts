@@ -49,6 +49,7 @@ test("grenade environment damage is journaled and replays identically", () => {
   const game = new Encounter();
   const prop = game.map.props.find((p) => p.kind === "crate" && p.cover)!;
   const unit = game.allies.find((u) => Math.abs(u.pos[0] - prop.cover![0]) + Math.abs(u.pos[1] - prop.cover![1]) <= 5)!;
+  unit.actions.push({ kind: "Grenade", uses: 1 });
   const events = game.apply({ type: "grenade", unit: unit.id, at: prop.cover! });
   assert.equal(events[0].type, "grenade");
   assert(events[0].type === "grenade" && events[0].environment?.some((p) => p.id === prop.id && p.destroyed));
@@ -120,11 +121,12 @@ test("every demo cover can be destroyed through grenade commands and is restored
     const throwingCells: [number, number][] = [];
     for (let x = minX; x <= maxX; x++) for (let z = minZ; z <= maxZ; z++) {
       const distance = Math.abs(x - cell[0]) + Math.abs(z - cell[1]);
-      if (game.map.open([x, z]) && distance >= 3 && distance <= 5) throwingCells.push([x, z]);
+      if (game.map.open([x, z]) && distance >= 3 && distance <= 5 && game.map.clearThrow([x, z], cell)) throwingCells.push([x, z]);
     }
     assert(throwingCells.length >= 2);
     for (const [i, unit] of game.allies.slice(0, 2).entries()) {
       unit.pos = throwingCells[i];
+      unit.actions.push({ kind: "Grenade", uses: 1 });
       const events = game.apply({ type: "grenade", unit: unit.id, at: cell });
       assert.equal(events[0]?.type, "grenade", `${prop.kind}: grenade accepted`);
       if (!game.map.health(prop.id)) break;

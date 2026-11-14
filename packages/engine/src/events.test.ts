@@ -31,6 +31,7 @@ test("a grenade reports each casualty with the damage dealt", () => {
   const g = new Encounter(),
     [u] = g.allies,
     enemy = g.enemies[0];
+  u.actions.push({ kind: "Grenade", uses: 1 });
   enemy.hp = 3;
   enemy.pos = [u.pos[0], u.pos[1] - 4];
   const [blast] = g.apply({ type: "grenade", unit: u.id, at: enemy.pos });

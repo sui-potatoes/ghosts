@@ -248,9 +248,9 @@ export class TacticalMap {
   };
 
   /** Test the entire shot segment (world metres) against solid building footprints. */
-  clearBuildingShot(a: Point, b: Point, ignoreProp?: string) {
+  clearBuildingShot(a: Point, b: Point, ignoreProp?: string, buildingsOnly = false) {
     return !this.boxes.some((box) => {
-      if (box.prop && (box.prop === ignoreProp || !this.health(box.prop))) return false;
+      if (box.prop && (buildingsOnly || box.prop === ignoreProp || !this.health(box.prop))) return false;
       let enter = 0,
         exit = 1;
       for (const [axis, min, max] of [
@@ -271,6 +271,11 @@ export class TacticalMap {
       }
       return enter < 0.999 && exit > 0.001;
     });
+  }
+
+  /** `line_of_throw` locally: only buildings stop a throw between two cells; props and cover don't. */
+  clearThrow(from: Point, to: Point) {
+    return this.clearBuildingShot([from[0] * CELL, from[1] * CELL], [to[0] * CELL, to[1] * CELL], undefined, true);
   }
 
   /** The building whose wall `cell` stands against, if any. */

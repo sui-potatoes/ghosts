@@ -171,6 +171,7 @@ test("office grenade commands breach partitions, release movement and sight, and
   for (const x of [-6, -5, 5]) {
     const game = new Encounter(paperTrail);
     const unit = game.allies[0]; unit.pos = [x, 0];
+    unit.actions.push({ kind: "Grenade", uses: 1 });
     const wall = game.map.props.find(p => p.blocks?.some(cell => cell[0] === x && cell[1] === -4))!;
     // Two cells from the partition, matching a blast amongst the desks.
     const events = game.apply({ type: "grenade", unit: unit.id, at: [x, -2] });

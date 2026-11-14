@@ -2,11 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { action, cancelTargeting, deselect, endTurn, fire, pick, select, throwGrenade } from "./actions";
+import { GRENADE_RANGE } from "./action-registry";
 import { allows, distance } from "./game";
 import { combatActionOf, isEditable as typing, type CombatAction } from "./keys";
 import { session } from "./session";
 import { engineSettings } from "./settings";
 import { toggleGrid, toggleView } from "./ui/view";
+import { closeInspect, cycleInspect, hoverUnit, pinUnit, tapUnit } from "./ui/intel/store";
 
 export interface ControlOptions {
   /** Cancel with nothing to cancel: the host's pause menu. */
@@ -28,8 +30,15 @@ export function runCombatAction(command: CombatAction, { onPause, reverse }: Con
   // Cancel steps back: out of targeting, then off the selected operator, and
   // what nothing here wants (or anything mid-animation) to the host's pause menu.
   if (command === "cancel" && s.mode === "move") {
+    // A held unit readout closes before anything else lets go.
+    if (closeInspect()) return;
     if (s.selected && !s.busy) deselect();
     else onPause?.();
+    return;
+  }
+  // Reading the field never waits: the opponent's turn is when it is wanted most.
+  if (command === "inspect") {
+    cycleInspect(reverse ? -1 : 1);
     return;
   }
   if (s.busy) return;
@@ -77,6 +86,10 @@ export function bindControls({ onPause }: ControlOptions = {}): () => void {
       return;
     }
     if (command === "cancel" && s.mode === "move") {
+      if (closeInspect()) {
+        e.preventDefault();
+        return;
+      }
       if (s.selected && !s.busy) {
         e.preventDefault();
         deselect();
@@ -85,6 +98,11 @@ export function bindControls({ onPause }: ControlOptions = {}): () => void {
       if (!onPause) return;
       e.preventDefault();
       onPause();
+      return;
+    }
+    if (command === "inspect" && !typing(target)) {
+      e.preventDefault();
+      runCombatAction("inspect", { reverse: e.shiftKey });
       return;
     }
     if (s.busy) {
@@ -116,7 +134,17 @@ export function bindControls({ onPause }: ControlOptions = {}): () => void {
 /** Picks and hovers on the 3D field. */
 function bindField() {
   const { battlefield } = session;
-  battlefield.onPick = (p, id) => void pick(p, id);
+  battlefield.onPick = (p, id) => {
+    void pick(p, id);
+    // The unit readout: a tap opens it (a tap elsewhere closes it), a click on a hostile pins it.
+    if (battlefield.lastPointer === "touch") tapUnit(id ?? null);
+    else if (id && session.game.unit(id)?.enemy) pinUnit(id);
+  };
+  battlefield.onMiss = () => {
+    if (battlefield.lastPointer === "touch") tapUnit(null);
+  };
+  battlefield.onUnitHover = hoverUnit;
+  battlefield.onUnitHold = pinUnit;
   battlefield.onHover = (p) => {
     const s = session;
     if (s.busy) return;
@@ -126,7 +154,7 @@ function bindField() {
       const path = battlefield.previewPath(p);
       battlefield.setHover(!!path);
       battlefield.showPath(path);
-    } else if (s.mode === "grenade" && distance(u.pos, p) <= 5 && !s.grenadeTarget) {
+    } else if (s.mode === "grenade" && distance(u.pos, p) <= GRENADE_RANGE && !s.grenadeTarget) {
       battlefield.setHover(true);
       battlefield.showPath([u.pos, p], true);
     }

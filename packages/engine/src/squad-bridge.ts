@@ -4,7 +4,10 @@
 import { initialSquad } from "@ghosts/squad/model";
 import { DEFAULT_ARMOR_COLORS } from "@ghosts/squad/armor-colors";
 import type { Appearance, ArmorColors, Recruit } from "@ghosts/squad/types";
+import items from "../../catalog/items.json" with { type: "json" };
+import { loadoutActions, type UnitAction } from "./action-registry.ts";
 import type { Unit } from "./game.ts";
+import type { Scenario } from "./scenario.ts";
 
 export interface DeploymentLook {
   appearance: Appearance;
@@ -46,5 +49,53 @@ export function applyDeploymentNames(units: Unit[], looks: Map<string, Deploymen
     const look = looks.get(unit.id);
     if (look?.name) unit.full = look.name;
     if (look?.callsign) unit.name = look.callsign;
+  }
+}
+
+/** The squad catalog's utilities by the chain item that stands for them (`items.json`). */
+const UTILITY_ITEMS: Record<string, string> = { frag: "frag-grenade" };
+
+/** What a carried utility grants, from `items.json`; nothing for one with no chain item. */
+function utilityActions(id: string | null): UnitAction[] {
+  const item = id ? items.items.find((i) => i.id === UTILITY_ITEMS[id]) : undefined;
+  return (item?.actions ?? []).map((a) => ({ kind: a.kind, uses: a.uses ?? null }));
+}
+
+/**
+ * The demo's actions for each ally, from the loadout it deployed with, as
+ * `Unit::from_recruit` builds a chain unit's: no primary weapon, no Attack or
+ * Reload; no grenade, no Grenade. Matched to units like `deploymentLooks`; a
+ * chain match keeps what the chain says and is never given these.
+ */
+export function deploymentLoadouts(
+  recruits: readonly Recruit[] | null,
+  units: Unit[],
+  scenario: Scenario,
+): Map<string, UnitAction[]> {
+  const roster = recruits?.length ? recruits : initialSquad().recruits;
+  let allies = 0;
+  const out = new Map<string, UnitAction[]>();
+  for (const unit of units) {
+    if (unit.enemy) continue;
+    const recruit = roster.find((r) => r.id === unit.id) ?? roster[allies];
+    allies++;
+    if (!recruit) continue;
+    out.set(
+      unit.id,
+      loadoutActions({
+        armed: !!recruit.equipment.primary,
+        utilities: [utilityActions(recruit.equipment.utility)],
+        demo: { extract: !scenario.versus },
+      }),
+    );
+  }
+  return out;
+}
+
+/** Give each unit its loadout's actions (fresh copies: uses are spent per encounter). */
+export function applyLoadouts(units: Unit[], loadouts: Map<string, UnitAction[]>) {
+  for (const unit of units) {
+    const actions = loadouts.get(unit.id);
+    if (actions) unit.actions = actions.map((a) => ({ ...a }));
   }
 }

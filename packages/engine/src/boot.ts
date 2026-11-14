@@ -14,7 +14,7 @@ import { loadDestruction } from "./scene/destruction";
 import { mapView } from "./scene/maps";
 import type { Recruit } from "@ghosts/squad/types";
 import type { Session } from "./session";
-import { deploymentLooks } from "./squad-bridge";
+import { applyLoadouts, deploymentLoadouts, deploymentLooks } from "./squad-bridge";
 import { provideSettings, type EngineSettings } from "./settings";
 
 export interface BootOptions {
@@ -71,6 +71,11 @@ export function boot(options: BootOptions): () => void {
   void (async () => {
     try {
       if (import.meta.env.DEV) placeReviewUnits(s);
+      // The demo's units carry what their loadout gives them; a chain match's carry what the chain says.
+      if (!s.game.scenario.versus) {
+        s.loadouts = deploymentLoadouts(squad, s.game.units, s.game.scenario);
+        applyLoadouts(s.game.units, s.loadouts);
+      }
       const renderer = Battlefield.createRenderer();
       cleanups.push(() => {
         if (!s.battlefield) renderer.dispose();

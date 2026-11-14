@@ -98,8 +98,8 @@ with the tests, the build, lint and a play-through green.
 - **More maps.** Kōra (`district.ts`) and the office (`office/scene.ts`) have
   scenery; a further map needs its own entry in the `views` table, and a
   surface beyond the street grid's curbs and cuts if it is not a street.
-- **Legacy view code.** `humans.ts`, `district.ts`, `mpfb-characters.js` and
-  `style.css` are still the migrated originals in their dense style; the
-  debrief still renders HTML strings into its dialog.
+- **Legacy view code.** `humans.ts`, `district.ts` and `mpfb-characters.js`
+  are still the migrated originals in their dense style; the debrief still
+  renders HTML strings into its dialog.
 - **Copy.** Static explanatory text is gone from the HUD; scenario prose
   (briefing, rules of engagement) remains as authored.

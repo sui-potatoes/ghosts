@@ -21,6 +21,16 @@ export { localDriver, type DriverFactory, type EncounterDriver } from "./driver"
 export type { Command, GameEvent } from "./events";
 export { replayEncounter, type Encounter as EncounterRules, type UnitOrder } from "./game";
 export { defaultSettings, type AudioLevels, type EngineSettings } from "./settings";
+export type { Unit as EncounterUnit } from "./game";
+export {
+  baseIntel,
+  weaponLabel,
+  type IntelSource,
+  type ModKind,
+  type OpponentIntel,
+  type UnitIntel,
+  type WeaponMod,
+} from "./intel";
 
 /** A fresh encounter with the same squad, back at the deployment briefing. */
 export function restartEncounter() {

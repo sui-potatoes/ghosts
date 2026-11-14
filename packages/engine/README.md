@@ -112,17 +112,34 @@ Session and UI:
 - `boot.ts`: loads the squad and map, builds and warms the scene, takes
   portraits, binds controls, opens the deployment briefing; returns the
   teardown.
-- `ui/`: `Encounter.tsx` (root), `Field.tsx` (overlays on the field),
-  `Panels.tsx` (intel panel, command deck), `Dialogs.tsx` (briefing, debrief
-  host), `DestructionPreview.tsx` and `OfficePreview.tsx` (the Scene labs).
+- `action-registry.ts`: every action kind in one table (catalog id and tag,
+  name, description and AP cost from `packages/catalog/actions.json`,
+  pictogram, key, targeting, and the availability checks in the contract's
+  assert order). A unit carries `actions: UnitAction[]` (the chain's
+  `vector<Action>`: kind and uses); `commandsOf` is what the command bar, the
+  pad wheel, the keys and the tests read. A kind the client doesn't know shows
+  by its catalog name, refused as "not supported". Adding an action is one
+  entry here and its catalog row. The demo's units get their actions from the
+  deployed loadout (`squad-bridge.ts`, `loadoutActions`), like chain units.
+- `status-effects.ts`: the status effects a unit will carry (`effects`), the
+  effect table (empty until the contract has effects), effective stats on top
+  of untouched base stats, and the view rows for the unit panel and the plate.
+- `ui/`: `Encounter.tsx` (root), `Hud.tsx` (the HUD chrome in the menus'
+  interface language: header strip, squad rail, unit panel, and the command
+  bar that is the command deck), `Field.tsx` (the field's overlays: plates,
+  reticle, the pad's wheel, the status line), `Dialogs.tsx` (the briefing as a
+  framed prompt, the debrief host), `DestructionPreview.tsx` and
+  `OfficePreview.tsx` (asset labs, only under the dev server).
 - `audio.ts`, `voice.ts`, `sfx.ts`: effects and voice lines from `/sounds/`,
   levelled master × effects and master × dialogue; kinds without a recording
   keep a synthesized tone at the effects level. Only voices listed in
   `RECORDED` play (male-01 and female-01 today). `sounds.ts` lists the files
   for hosts (the app's settings previews).
-- `style.css`, `ghosts-theme.css` (with `fonts.css`), `host-reset.css`,
-  `aftermath/reveal.css`: the sheets, scoped under `.encounter`, so they
-  never reach the host page.
+- `tokens.css` (with `fonts.css`): the scale and tints, the values of the
+  menus' `app/src/ui/gui.css` (four type sizes, one spacing unit, control
+  heights), derived from the host's theme colours. `style.css` (the field and
+  the `hud-` chrome), `host-reset.css`, `aftermath/reveal.css`: the sheets,
+  scoped under `.encounter`, so they never reach the host page.
 
 ## Debrief
 

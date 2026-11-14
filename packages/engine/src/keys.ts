@@ -23,7 +23,8 @@ export type CombatAction =
   | "grid"
   | "focus"
   | "rotate-left"
-  | "rotate-right";
+  | "rotate-right"
+  | "inspect";
 
 export type CombatBindings = Record<CombatAction, string[]>;
 
@@ -43,6 +44,7 @@ export const COMBAT_ACTIONS: CombatAction[] = [
   "focus",
   "rotate-left",
   "rotate-right",
+  "inspect",
 ];
 
 export const COMBAT_LABELS: Record<CombatAction, string> = {
@@ -61,6 +63,7 @@ export const COMBAT_LABELS: Record<CombatAction, string> = {
   focus: "Focus operator",
   "rotate-left": "Rotate left",
   "rotate-right": "Rotate right",
+  inspect: "Inspect unit",
 };
 
 export const DEFAULT_COMBAT_BINDINGS: CombatBindings = {
@@ -79,6 +82,7 @@ export const DEFAULT_COMBAT_BINDINGS: CombatBindings = {
   focus: ["f"],
   "rotate-left": ["q"],
   "rotate-right": ["e"],
+  inspect: ["i"],
 };
 
 type KeyLike = { key: string; altKey: boolean; ctrlKey: boolean; metaKey: boolean };

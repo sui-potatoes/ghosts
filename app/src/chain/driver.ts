@@ -38,11 +38,11 @@ import {
 import {
     activeSide,
     blastCells,
+    TURN_LIMIT_MS,
+    turnStartedAt,
     canDo,
-    engineActions,
     encodePath,
     gameEvents,
-    hasUsesLeft,
     hitChance,
     isOver,
     lineOfSight,
@@ -51,6 +51,7 @@ import {
     toCell,
     toTile,
     coverBonus,
+    unitActions,
     unitsOnMap,
     type Bounds,
     type Cell,
@@ -133,9 +134,8 @@ function syncUnits(rules: EncounterRules, game: ChainGame) {
         u.range = stats.range;
         u.mobility = stats.mobility;
         u.damage = stats.damage;
-        // the engine's flag is the throw spent: no grenade action with a use left
-        u.grenade = !hasUsesLeft(unit, "Grenade");
-        u.actions = engineActions(unit.actions);
+        // what the unit carries, with the uses left: the command bar offers exactly these
+        u.actions = unitActions(unit.actions);
     }
 }
 
@@ -206,9 +206,17 @@ export function chainDriver({
             },
         };
 
+        /** When the turn in play runs out, for the command bar's clock and its refusals. */
+        const deadline = (game: ChainGame) => {
+            const started = turnStartedAt(game);
+            rules.turnDeadline = started ? started + TURN_LIMIT_MS : undefined;
+        };
+        deadline(start);
+
         /** A fresher read of the game: for the odds here, and for the screen. */
         const note = (game: ChainGame) => {
             latest = game;
+            deadline(game);
             onGame?.(game);
         };
 

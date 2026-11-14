@@ -1,6 +1,7 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
+import { GRENADE_RANGE, usesLeft } from "../action-registry.ts";
 import * as T from "three";
 import { Line2 } from "three/addons/lines/Line2.js";
 import { LineGeometry } from "three/addons/lines/LineGeometry.js";
@@ -175,12 +176,12 @@ export class Overlays {
   /** Tiles within throwing distance of `u`. */
   showGrenadeRange(u: Unit) {
     clearGroup(this.range);
-    if (u.ap <= 0 || u.grenade) return;
+    if (u.ap <= 0 || usesLeft(u, "Grenade") === 0) return;
     const points: Cell[] = [];
     const b = this.space.map.bounds;
     for (let x = b.minX; x <= b.maxX; x++)
       for (let z = b.minZ; z <= b.maxZ; z++)
-        if (Math.abs(x - u.pos[0]) + Math.abs(z - u.pos[1]) <= 5) points.push([x, z]);
+        if (Math.abs(x - u.pos[0]) + Math.abs(z - u.pos[1]) <= GRENADE_RANGE) points.push([x, z]);
     const tiles = new T.InstancedMesh(
       new T.PlaneGeometry(CELL * 0.93, CELL * 0.93),
       flat(0xe7ac66, 0.16),
