@@ -34,86 +34,7 @@
     stroke-width: 0.6px;
 }
 
-/* === Deploy: the three-podium diorama ================================ */
-
-/* The scene is the screen: no panel frame, the canvas fills the body. */
-.uis-diorama {
-    position: relative;
-    min-height: 0;
-    overflow: hidden;
-}
-
-.uis-diorama-canvas {
-    position: absolute;
-    inset: 0;
-    --squad-studio-background: var(--background-color);
-}
-
-.uis-diorama-canvas canvas {
-    display: block;
-    width: 100% !important;
-    height: 100% !important;
-}
-
-/* A podium: a cursor target over the figure, down to its plate. No fill of its own. */
-.uis-podium {
-    position: absolute;
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-end;
-    transition: opacity 160ms ease;
-}
-
-.gui [data-pointer].uis-podium:not([data-focused]):hover {
-    background: none;
-}
-
-.uis-podium[data-dim] {
-    opacity: 0.45;
-}
-
-.uis-plate-mount {
-    display: flex;
-    justify-content: center;
-    padding: 0 calc(var(--u) * 2) calc(var(--u) * 2);
-}
-
-/* The base plate: an engraved strip on the plinth's front, not a card. */
-.uis-plate-engraved {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: calc(var(--u) * 1);
-    min-width: calc(var(--u) * 40);
-    padding: calc(var(--u) * 2) calc(var(--u) * 3);
-    border-top: 1px solid var(--line-strong);
-    border-bottom: 1px solid var(--line);
-    background: linear-gradient(color-mix(in srgb, var(--text-color) 4%, transparent), transparent);
-    color: var(--text-secondary);
-    text-align: center;
-}
-
-.uis-podium[data-focused] .uis-plate-engraved {
-    border-top-color: var(--accent-color);
-    color: var(--text-color);
-}
-
-.uis-plate-head {
-    display: flex;
-    align-items: baseline;
-    gap: calc(var(--u) * 2);
-}
-
-.uis-plate-name {
-    font: 500 var(--t-body) / 1 var(--font-mono);
-    letter-spacing: 0.24em;
-    text-transform: uppercase;
-    color: var(--text-color);
-}
-
-.uis-plate-engraved[data-vacant] .uis-plate-name {
-    color: var(--disabled-color);
-}
+/* === Deploy: the sample's extras on the shared diorama (../squad-view) == */
 
 .uis-plate-marker {
     font: 500 var(--t-micro) / 1 var(--font-mono);
@@ -129,7 +50,6 @@
     border-color: color-mix(in srgb, var(--accent-color) 50%, transparent);
 }
 
-.uis-plate-line,
 .uis-plate-cost {
     display: flex;
     align-items: center;
@@ -150,124 +70,11 @@
     color: var(--warn-color);
 }
 
-.uis-plate-kit {
-    display: flex;
-    align-items: center;
-    gap: calc(var(--u) * 3);
-    color: var(--text-secondary);
-}
-
-.uis-plate-kit > span {
-    display: inline-flex;
-    align-items: center;
-    gap: calc(var(--u) * 1);
-}
-
-.uis-plate-kit > span[data-empty] {
-    color: var(--disabled-color);
-    opacity: 0.5;
-}
-
-.uis-plate-kit b {
-    font: 500 var(--t-micro) / 1 var(--font-mono);
-}
-
-.uis-pips {
-    display: inline-flex;
-    gap: 2px;
-}
-
-.uis-pips {
-    align-items: flex-end;
-}
-
-/* One pip per upgrade slot; a fitted upgrade fills it by its tier (no text). */
-.uis-pips i {
-    position: relative;
-    width: 5px;
-    height: 12px;
-    border: 1px solid var(--line-strong);
-}
-
-.uis-pips i[data-tier] {
-    border-color: var(--text-secondary);
-}
-
-.uis-pips i[data-tier]::after {
-    content: "";
-    position: absolute;
-    inset: auto 0 0;
-    height: calc(var(--fill) * 100%);
-    background: var(--text-secondary);
-}
-
-.uis-pips i[data-tier="1"] {
-    --fill: 0.34;
-}
-.uis-pips i[data-tier="2"] {
-    --fill: 0.67;
-}
-.uis-pips i[data-tier="3"] {
-    --fill: 1;
-}
-
 .uis-cap {
     position: absolute;
     top: calc(var(--u) * 3);
     left: calc(var(--u) * 3);
     width: calc(var(--u) * 72);
-}
-
-/* Deploy: a stencilled plaque at the top-right, the screen's primary. */
-.uis-deploy {
-    position: absolute;
-    top: calc(var(--u) * 3);
-    right: calc(var(--u) * 3);
-    min-width: calc(var(--u) * 40);
-    height: var(--h-m);
-    border: 1px solid var(--accent-color);
-    font: 500 var(--t-label) / 1 var(--font-mono);
-    letter-spacing: 0.3em;
-    text-transform: uppercase;
-    text-align: center;
-    color: var(--accent-color);
-}
-
-.uis-deploy[data-refused] {
-    border-color: var(--line-strong);
-    color: var(--disabled-color);
-}
-
-.uis-deploy[data-focused] {
-    background: var(--accent-color);
-    color: var(--background-color);
-}
-
-.uis-deploy[data-focused][data-refused] {
-    background: var(--band-locked);
-    color: var(--on-band);
-}
-
-.uis-deploy-picker {
-    position: absolute;
-    top: calc(var(--u) * 3);
-    right: calc(var(--u) * 3);
-    bottom: calc(var(--u) * 3);
-    width: calc(var(--u) * 80);
-    z-index: 2;
-    background: var(--surface-color);
-    animation: gui-swap 160ms var(--snap);
-}
-
-@media (orientation: landscape) and (max-height: 500px) {
-    .uis-plate-kit,
-    .uis-plate-line {
-        display: none;
-    }
-    .uis-plate-engraved {
-        min-width: 0;
-        padding: calc(var(--u) * 1) calc(var(--u) * 2);
-    }
 }
 
 /* === Squad presets: a shelf of engraved plaques ===================== */
@@ -444,19 +251,19 @@
 }
 
 /* KIA: the quiet, disabled tone; no red, nothing else marks it. */
-.uis-plate-engraved[data-kia] {
+.sqv-plate-engraved[data-kia] {
     border-top-style: dashed;
     border-top-color: var(--line);
     background: none;
     animation: uis-settle 600ms var(--snap) both;
 }
 
-.uis-plate-engraved[data-kia] .uis-plate-name,
-.uis-plate-engraved[data-kia] .uis-plate-line {
+.sqv-plate-engraved[data-kia] .sqv-plate-name,
+.sqv-plate-engraved[data-kia] .sqv-plate-line {
     color: var(--disabled-color);
 }
 
-.uis-podium[data-focused] .uis-plate-engraved[data-kia] {
+.sqv-podium[data-focused] .sqv-plate-engraved[data-kia] {
     border-top-color: var(--line-strong);
 }
 
@@ -536,20 +343,20 @@
     }
 }
 
-.uis-diorama[data-instant] .uis-xp-gain,
-.uis-diorama[data-instant] .uis-rank-now,
-.uis-diorama[data-instant] .uis-plate-engraved[data-kia] {
+.sqv-diorama[data-instant] .uis-xp-gain,
+.sqv-diorama[data-instant] .uis-rank-now,
+.sqv-diorama[data-instant] .sqv-plate-engraved[data-kia] {
     animation: none;
 }
 
-.uis-diorama[data-instant] .uis-rank-was {
+.sqv-diorama[data-instant] .uis-rank-was {
     display: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
     .uis-xp-gain,
     .uis-rank-now,
-    .uis-plate-engraved[data-kia] {
+    .sqv-plate-engraved[data-kia] {
         animation: none !important;
     }
     .uis-rank-was {
@@ -559,10 +366,10 @@
 
 @media (orientation: landscape) and (max-height: 500px) {
     /* The result plates keep the rank line on a phone: it is the result. */
-    .uis-diorama[data-debrief] .uis-plate-line {
+    .sqv-diorama[data-debrief] .sqv-plate-line {
         display: flex;
     }
-    .uis-diorama[data-debrief] .uis-rank-swap {
+    .sqv-diorama[data-debrief] .uis-rank-swap {
         display: grid;
     }
     .uis-outcome {

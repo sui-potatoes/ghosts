@@ -2,11 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Three podiums in one scene: the squad as figurines on lit plinths, for
- * mission prep and the debrief. One renderer, one camera, three characters
- * built with the game's own `CharacterAssets` (shared parts cache) and their
- * rifles from `EquipmentAssets`, mounted in the hand the way the recruit
- * studio does it. Used read-only: nothing in `@ghosts/squad` is changed.
+ * A row of podiums in one scene: the squad as figurines on lit plinths, for
+ * the match's squad selection and the `/ui-sample` deploy and debrief. One
+ * renderer, one camera, one character per podium built with the game's own
+ * `CharacterAssets` (shared parts cache) as a "figurine" (baked pose, merged
+ * draws; see `CreateOptions`) and its rifle from `EquipmentAssets` at the
+ * field units' low detail, with the recruit's finish, mounted in the hand the
+ * way the recruit studio does it.
  *
  * Renders on demand: a frame per change, and a short run of frames only while
  * a transition eases (a figure stepping forward, a light going out); a still
@@ -18,13 +20,52 @@ import { CharacterAssets, type Character } from "@ghosts/squad/studio/character-
 import { EquipmentAssets } from "@ghosts/squad/studio/equipment-assets";
 import { mountHandEquipment } from "@ghosts/squad/studio/held-equipment";
 import type { Recruit } from "@ghosts/squad/types";
+import { MeshoptSimplifier } from "meshoptimizer";
 import * as T from "three";
 
+/** Podiums when the caller does not say: a match deploys three a side on Black Rain. */
 export const PODIUMS = 3;
 const SPACING = 1.5;
 const PLINTH_TOP = 0.32;
 
 export type Anchor = { x: number; top: number; base: number; width: number };
+
+/** The figurine parts worth simplifying: closed surfaces (no hair cards, no eyes). */
+const REDUCED = new Set(["skin", "field-kit", "armor"]);
+/** The most a reduced mesh may deviate, relative to its size: well under a pixel on a podium. */
+const REDUCE_ERROR = 0.002;
+/** Keep at most this share of a reduced mesh's triangles. */
+const REDUCE_TO = 0.35;
+
+/**
+ * A figurine's closed surfaces with fewer triangles: the index buffer is
+ * simplified within `REDUCE_ERROR` (meshoptimizer), every vertex and its
+ * attributes stay, borders and UV seams are locked. Only for still, baked
+ * figures (`detail: "figurine"`): a skinned mesh is left as it is.
+ */
+async function reduce(root: T.Object3D) {
+    await MeshoptSimplifier.ready;
+    root.traverse((o) => {
+        if (!(o instanceof T.Mesh) || o instanceof T.SkinnedMesh) return;
+        if (!REDUCED.has(o.userData.nativePart)) return;
+        const g = o.geometry as T.BufferGeometry;
+        const position = g.attributes.position;
+        if (!g.index || !(position.array instanceof Float32Array) || position.itemSize !== 3)
+            return;
+        const indices = Uint32Array.from(g.index.array);
+        const target = Math.floor((indices.length * REDUCE_TO) / 3) * 3;
+        const [reduced] = MeshoptSimplifier.simplify(
+            indices,
+            position.array,
+            3,
+            target,
+            REDUCE_ERROR,
+            ["LockBorder"],
+        );
+        if (reduced.length >= indices.length) return;
+        g.setIndex(new T.BufferAttribute(reduced, 1));
+    });
+}
 
 export interface PodiumScene {
     /** Who stands on each podium (null: a bare plinth). Rebuilds only what changed. */
@@ -41,6 +82,8 @@ export interface PodiumScene {
     anchors(): Anchor[];
     /** The last frame's cost. */
     stats(): { triangles: number; calls: number; frames: number };
+    /** What the figures on the podiums are made of, by part (for measuring). */
+    breakdown(): Record<string, { meshes: number; triangles: number; skinned: number }>;
     dispose(): void;
 }
 
@@ -59,9 +102,17 @@ type Slot = {
     lit: boolean;
 };
 
+export type PodiumSceneOptions = {
+    /** How many podiums stand in the row. */
+    count?: number;
+    /** Full-detail characters and guns (as the studio builds them): for comparing costs. */
+    full?: boolean;
+};
+
 export function createPodiumScene(
     host: HTMLElement,
     onLayout: (anchors: Anchor[]) => void,
+    { count = PODIUMS, full = false }: PodiumSceneOptions = {},
 ): PodiumScene {
     const renderer = new T.WebGLRenderer({
         antialias: true,
@@ -104,9 +155,9 @@ export function createPodiumScene(
     const plinthGeometry = new T.CylinderGeometry(0.52, 0.58, PLINTH_TOP, 40);
     const rimGeometry = new T.TorusGeometry(0.53, 0.006, 4, 64);
     const slots: Slot[] = [];
-    for (let i = 0; i < PODIUMS; i++) {
+    for (let i = 0; i < count; i++) {
         const group = new T.Group();
-        group.position.x = (i - 1) * SPACING;
+        group.position.x = (i - (count - 1) / 2) * SPACING;
         const plinth = new T.Mesh(
             plinthGeometry,
             new T.MeshStandardMaterial({ color: raised, roughness: 0.55, metalness: 0.45 }),
@@ -135,7 +186,7 @@ export function createPodiumScene(
     }
 
     const assets = new CharacterAssets();
-    const equipment = new EquipmentAssets();
+    const equipment = new EquipmentAssets(full ? "high" : "low");
     let focused: number | null = null;
     let inspected: number | null = null;
     let raf = 0;
@@ -153,7 +204,8 @@ export function createPodiumScene(
             slot.forward[1] = on ? 0.38 : 0;
             // At rest the outer figures stand three-quarter, turned toward the
             // centre; the one under the cursor faces the camera.
-            slot.yaw[1] = on ? 0 : i === 0 ? 0.42 : i === 2 ? -0.42 : 0;
+            const x = slot.group.position.x;
+            slot.yaw[1] = on ? 0 : x < -1e-3 ? 0.42 : x > 1e-3 ? -0.42 : 0;
             slot.light[1] = !slot.lit
                 ? inspected === i
                     ? LIGHT_GLANCE
@@ -235,8 +287,8 @@ export function createPodiumScene(
         );
         renderer.setSize(width, height, false);
         camera.aspect = width / height;
-        // Fit the row of three (and their height) whatever the aspect.
-        const halfW = SPACING + 0.8;
+        // Fit the row (and the figures' height) whatever the aspect.
+        const halfW = ((count - 1) / 2) * SPACING + 0.8;
         const halfH = 1.78;
         const tanV = Math.tan(T.MathUtils.degToRad(camera.fov / 2));
         const distance = Math.max(halfH / tanV, halfW / (tanV * camera.aspect));
@@ -262,21 +314,34 @@ export function createPodiumScene(
             "idle",
             "operative",
             primary?.model,
+            { detail: full ? "full" : "figurine" },
         );
         figure.setArmorColors(recruit.armorColors);
+        if (!full) await reduce(figure.root);
         const fitted = Object.fromEntries(
             Object.entries(recruit.attachments ?? {}).filter(([, id]) =>
                 ATTACHMENTS.some((a) => a.id === id),
             ),
         );
-        const gun = primary ? await equipment.get(primary.model, fitted) : undefined;
+        const gun = primary
+            ? await equipment.get(primary.model, fitted, recruit.weaponSkin)
+            : undefined;
         if (gun) mountHandEquipment(gun, figure.hand, figure.mount);
         return { figure, gun };
     }
 
     const cache = new Map<string, { figure: Character; gun?: T.Group }>();
     const keyOf = (r: Recruit | null) =>
-        r ? JSON.stringify([r.id, r.appearance, r.equipment, r.attachments, r.armorColors]) : "";
+        r
+            ? JSON.stringify([
+                  r.id,
+                  r.appearance,
+                  r.equipment,
+                  r.attachments,
+                  r.armorColors,
+                  r.weaponSkin,
+              ])
+            : "";
 
     return {
         async setFigures(figures) {
@@ -345,6 +410,26 @@ export function createPodiumScene(
             draw();
         },
         anchors,
+        breakdown() {
+            const parts: Record<string, { meshes: number; triangles: number; skinned: number }> =
+                {};
+            for (const slot of slots) {
+                slot.group.traverse((o) => {
+                    if (!(o instanceof T.Mesh) || o === slot.plinth || o === slot.rim) return;
+                    let part = o.userData.nativePart as string | undefined;
+                    for (let p: T.Object3D | null = o; !part && p; p = p.parent)
+                        if (p === slot.gun) part = "gun";
+                    part ??= "other";
+                    const g = o.geometry as T.BufferGeometry;
+                    const triangles = (g.index ? g.index.count : g.attributes.position.count) / 3;
+                    const entry = (parts[part] ??= { meshes: 0, triangles: 0, skinned: 0 });
+                    entry.meshes++;
+                    entry.triangles += triangles;
+                    if (o instanceof T.SkinnedMesh) entry.skinned++;
+                });
+            }
+            return parts;
+        },
         stats() {
             return {
                 triangles: renderer.info.render.triangles,
@@ -362,6 +447,12 @@ export function createPodiumScene(
             equipment.dispose();
             plinthGeometry.dispose();
             rimGeometry.dispose();
+            floor.geometry.dispose();
+            (floor.material as T.Material).dispose();
+            for (const slot of slots) {
+                (slot.plinth.material as T.Material).dispose();
+                (slot.rim.material as T.Material).dispose();
+            }
             renderer.dispose();
             renderer.forceContextLoss();
             renderer.domElement.remove();

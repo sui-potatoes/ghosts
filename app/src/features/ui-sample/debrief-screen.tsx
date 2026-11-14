@@ -49,8 +49,8 @@ import {
     type Plate,
     type Replacement,
 } from "./debrief";
-import type { Anchor } from "./podium-scene";
-import { Podium, PodiumCanvas } from "./podiums";
+import type { Anchor } from "../squad-view/podium-scene";
+import { Podium, PodiumCanvas } from "../squad-view/podiums";
 
 /** The pause before the first podium resolves, and between the next ones (ms). */
 const FIRST_BEAT = 700;
@@ -222,7 +222,7 @@ export function Debrief({ state, roster, podiums, rank, glyphs, frame, onContinu
             overlay={frame.overlay}
         >
             <section
-                className="uis-diorama"
+                className="sqv-diorama"
                 data-debrief=""
                 data-instant={instant || undefined}
                 onPointerDown={revealing ? skip : undefined}
@@ -323,25 +323,25 @@ function plateHint(plate: Plate, done: boolean): string | undefined {
 function ResultPlate({ plate, done }: { plate: Plate; done: boolean }) {
     if (plate.kind === "vacant")
         return (
-            <div className="uis-plate-engraved" data-vacant>
-                <span className="uis-plate-name">Vacant</span>
+            <div className="sqv-plate-engraved" data-vacant>
+                <span className="sqv-plate-name">Vacant</span>
             </div>
         );
     if (plate.kind === "kia" || !done) {
         const kia = plate.kind === "kia" && done;
         const r = plate.kind === "kia" ? plate.rank : plate.rankBefore;
         return (
-            <div className="uis-plate-engraved" data-kia={kia || undefined}>
-                <span className="uis-plate-head">
-                    <span className="uis-plate-name">{plate.name}</span>
+            <div className="sqv-plate-engraved" data-kia={kia || undefined}>
+                <span className="sqv-plate-head">
+                    <span className="sqv-plate-name">{plate.name}</span>
                     {kia && <span className="uis-plate-marker">KIA</span>}
                 </span>
-                <span className="uis-plate-line">
+                <span className="sqv-plate-line">
                     <Icon name={rankIcon(r)} size={12} />
                     {r}
                 </span>
                 {kia ? (
-                    <span className="uis-plate-line uis-plate-fate">
+                    <span className="sqv-plate-line uis-plate-fate">
                         {plate.turn ? `Turn ${plate.turn} · ` : ""}Vacant
                     </span>
                 ) : (
@@ -353,11 +353,11 @@ function ResultPlate({ plate, done }: { plate: Plate; done: boolean }) {
     const band = plate.band;
     const style = band ? ({ "--from": band.from, "--to": band.to } as CSSProperties) : undefined;
     return (
-        <div className="uis-plate-engraved" data-promoted={plate.promoted || undefined}>
-            <span className="uis-plate-head">
-                <span className="uis-plate-name">{plate.name}</span>
+        <div className="sqv-plate-engraved" data-promoted={plate.promoted || undefined}>
+            <span className="sqv-plate-head">
+                <span className="sqv-plate-name">{plate.name}</span>
             </span>
-            <span className="uis-plate-line uis-rank-swap">
+            <span className="sqv-plate-line uis-rank-swap">
                 {plate.promoted && (
                     <span className="uis-rank-was">
                         <Icon name={rankIcon(plate.rankBefore)} size={12} />
@@ -450,7 +450,7 @@ function Plaque({
         // Once, as the reveal starts.
     }, []);
     return (
-        <button type="button" tabIndex={-1} className="uis-deploy" {...props}>
+        <button type="button" tabIndex={-1} className="sqv-plaque" {...props}>
             {label}
         </button>
     );
