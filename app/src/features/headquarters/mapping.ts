@@ -90,6 +90,8 @@ function callsignOf(name: string, taken: Set<string>): string {
 /**
  * The studio's recruit shape for each on-chain recruit, in roster order, with
  * the (draft) look of the selected one swapped in by the caller as needed.
+ * `skins` (weapon id to finish, `useWeaponSkins()` to follow changes) puts
+ * each carried weapon's finish on the recruit.
  */
 export function toLocalRecruits(
     recruits: ChainRecruit[],
@@ -98,8 +100,6 @@ export function toLocalRecruits(
     const taken = new Set<string>();
     return recruits.map((r, i) => {
         const look = lookOf(r);
- * `skins` (weapon id to finish, `useWeaponSkins()` to follow changes) puts
- * each carried weapon's finish on the recruit.
         return {
             id: r.objectId,
             name: r.metadata.name,
@@ -114,12 +114,12 @@ export function toLocalRecruits(
                 utility: r.utilities[0] ? (utilityModel(r.utilities[0]) ?? null) : null,
             },
             attachments: attachmentsOf(r.weapon),
+            ...(r.weapon && skins[r.weapon.id] ? { weaponSkin: skins[r.weapon.id] } : {}),
         };
     });
 }
 
 /**
-            ...(r.weapon && skins[r.weapon.id] ? { weaponSkin: skins[r.weapon.id] } : {}),
  * Hand the on-chain squad to the local playtest: `/demo` reads its roster
  * from the squad storage key. The utility follows what each recruit carries;
  * the demo keeps its own sidearm, which the chain does not mint yet. Invalid
