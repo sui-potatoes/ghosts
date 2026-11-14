@@ -3,7 +3,7 @@
 
 import { useCurrentAccount, useCurrentClient, useDAppKit } from "@mysten/dapp-kit-react";
 import { formatAddress, MIST_PER_SUI } from "@mysten/sui/utils";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { retireSessionKey, useBalance, useSessionRows, type SessionTermination } from "../chain";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -13,6 +13,7 @@ import { useSignInMethod } from "../hooks/useSignInMethod";
 import { NameDialog } from "../NameDialog";
 import { requestSignIn } from "../signIn";
 import { Kbd, Keys } from "./controls";
+import { useFullscreen } from "./fullscreen";
 import { previewDialogue, previewEffect } from "../audio";
 import { onAction } from "../input";
 import {
@@ -318,48 +319,6 @@ export function AudioPanel() {
     ];
 
     return <SettingList rows={rows} />;
-}
-
-/**
- * Local type for the optional navigator.keyboard lock and unlock methods.
- */
-type KeyboardLock = { lock(keys?: string[]): Promise<void>; unlock(): void };
-
-function keyboardLock(): KeyboardLock | null {
-    const keyboard = (navigator as Navigator & { keyboard?: KeyboardLock }).keyboard;
-    return keyboard && "lock" in keyboard ? keyboard : null;
-}
-
-// Release the Esc capture whenever fullscreen ends, however it was left.
-if (typeof document !== "undefined") {
-    document.addEventListener("fullscreenchange", () => {
-        if (!document.fullscreenElement) keyboardLock()?.unlock();
-    });
-}
-
-/**
- * Live browser fullscreen state. Not part of the settings store: browsers
- * only enter fullscreen from a user gesture, so it cannot be restored at
- * startup, and the system UI can flip it at any time.
- */
-function useFullscreen(): [boolean, (on: boolean) => void] {
-    const on = useSyncExternalStore(
-        (onChange) => {
-            document.addEventListener("fullscreenchange", onChange);
-            return () => document.removeEventListener("fullscreenchange", onChange);
-        },
-        () => document.fullscreenElement !== null,
-    );
-    const set = (next: boolean) => {
-        if (next === (document.fullscreenElement !== null)) return;
-        if (next)
-            document.documentElement
-                .requestFullscreen()
-                .then(() => keyboardLock()?.lock(["Escape"]))
-                .catch(() => {});
-        else document.exitFullscreen().catch(() => {});
-    };
-    return [on, set];
 }
 
 export function DisplayPanel() {

@@ -7,6 +7,7 @@ import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 
 import MainMenu from "./screens/MainMenu";
 import Settings from "./screens/Settings";
+import SettingsClassic from "./screens/SettingsClassic";
 // Headquarters brings the squad's three.js studio; load it with the route,
 // or ahead of it once a player is signed in (see `useHeadquartersAhead`).
 const loadHeadquarters = () => import("./screens/Headquarters");
@@ -117,6 +118,7 @@ export function App() {
                     }
                 />
                 <Route path="/settings" element={<Settings />} />
+                <Route path="/settings-classic" element={<SettingsClassic />} />
                 <Route
                     path="/headquarters"
                     element={

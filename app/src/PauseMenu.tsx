@@ -7,7 +7,7 @@ import { PadHints } from "./components/PadHints";
 import { useBack } from "./hooks/useBack";
 import { useFitScale } from "./hooks/useFitScale";
 import { useMenuNav } from "./hooks/useMenuNav";
-import { SettingsOverlay } from "./settings/SettingsView";
+import { SettingsOptions } from "./screens/Settings";
 
 type Props = {
     open: boolean;
@@ -73,8 +73,7 @@ export function PauseMenu({
                 className={
                     view === "menu"
                         ? "pause-card fit-root flex max-h-[92vh] w-full max-w-md flex-col gap-6 overflow-y-auto border border-line bg-surface px-8 py-7"
-                        : // No padding here: SettingsOverlay carries it inside its
-                          // smoke root, so the smoke reaches the screen edges.
+                        : // No padding here: the options screen fills the whole frame.
                           "flex h-full min-h-0 w-full flex-col"
                 }
                 onClick={(e) => e.stopPropagation()}
@@ -116,7 +115,7 @@ export function PauseMenu({
                         />
                     </>
                 ) : (
-                    <SettingsOverlay onBack={() => setView("menu")} />
+                    <SettingsOptions onBack={() => setView("menu")} />
                 )}
             </div>
         </div>

@@ -571,6 +571,9 @@ export function TextField({ label, value, onChange, onSubmit, maxLength = 24 }: 
                 spellCheck={false}
                 onChange={(e) => onChange(e.target.value)}
                 onFocus={(e) => e.currentTarget.select()}
+                // The prompt block keeps the mouse from moving focus; in the
+                // field it has to place the caret and select text.
+                onMouseDown={(e) => e.stopPropagation()}
                 onKeyDown={(e) => {
                     if (e.key !== "Enter") return;
                     e.preventDefault();

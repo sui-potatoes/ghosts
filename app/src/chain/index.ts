@@ -53,4 +53,10 @@ export {
 export { useAssignedName, useSubmitNameChange } from "./names";
 export { canSendTransactions, sendTransaction, TransactionSender } from "./sender";
 export { trackSaving, useSaving } from "./saving";
-export { useSessionRows, type SessionTermination } from "./sessions";
+export {
+    useSessionRows,
+    useSessions,
+    type SessionItem,
+    type Sessions,
+    type SessionTermination,
+} from "./sessions";

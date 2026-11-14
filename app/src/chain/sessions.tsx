@@ -119,16 +119,49 @@ export type SessionTermination = {
     run: () => void;
 };
 
+/** One authorized device key, as the Sessions list shows it. */
+export type SessionItem = {
+    /** The key's address. */
+    id: string;
+    /** "This device" or the short address. */
+    label: string;
+    local: boolean;
+    /** "5m ago", or null when no action was seen. */
+    last: string | null;
+    /** Days left on this browser's own key; null for the others. */
+    left: number | null;
+    /** No action for two weeks or more. */
+    old: boolean;
+    /** The termination, for a confirmation to run. */
+    termination: SessionTermination;
+};
+
 /**
- * The Sessions rows for the account panel: the on-chain alias set with
- * last-action times, termination on each, and authorization of this device.
- * Termination is irreversible for the removed key, so activating a session
- * row hands `confirmTermination` the request instead of sending it; the
- * removal runs only when the panel's confirmation calls `run`.
+ * The device sessions as data: the on-chain alias set with last-action times,
+ * a termination for each (run only once the player confirms) and the
+ * authorization of this device while it is not authorized yet.
  */
-export function useSessionRows(
-    confirmTermination: (termination: SessionTermination) => void,
-): SettingRow[] {
+export type Sessions = {
+    /** False: this browser cannot hold a session key; null while it is checked. */
+    supported: boolean | null;
+    /** A removal or an authorization is under way. */
+    busy: boolean;
+    /** The last attempt's failure. */
+    fault: string | null;
+    items: SessionItem[];
+    /** Null once this device is authorized. */
+    authorize: { firstTime: boolean; run: () => void } | null;
+};
+
+const NO_SESSIONS: Sessions = {
+    supported: null,
+    busy: false,
+    fault: null,
+    items: [],
+    authorize: null,
+};
+
+export function useSessions(): Sessions {
     const account = useCurrentAccount();
     const client = useCurrentClient();
     const owner = account?.address ?? null;
@@ -173,20 +206,9 @@ export function useSessionRows(
 
     const localAddress = local ? sessionAddress(local) : null;
 
-    return useMemo((): SettingRow[] => {
-        if (!owner) return [];
-        const rows: SettingRow[] = [{ kind: "section", id: "sessions", label: "Sessions" }];
-        if (supported === false) {
-            rows.push({
-                kind: "static",
-                id: "sessions-unsupported",
-                label: "Device sessions",
-                value: <span className="text-warn">unavailable in this browser</span>,
-                description:
-                    "This browser cannot hold a session key safely; transactions keep using the passkey directly.",
-            });
-            return rows;
-        }
+    return useMemo((): Sessions => {
+        if (!owner) return NO_SESSIONS;
+        if (supported === false) return { ...NO_SESSIONS, supported };
 
         const run = (work: () => Promise<void>) => {
             if (busy) return;
@@ -205,6 +227,7 @@ export function useSessionRows(
                 });
         };
 
+        const items: SessionItem[] = [];
         for (const alias of aliases) {
             // The owner's own entry is the module's bookkeeping, not a session;
             // it is never listed and never offered for removal.
@@ -214,77 +237,57 @@ export function useSessionRows(
             const lastAt =
                 activity.data?.get(alias) ??
                 (isLocal ? (local?.lastUsedAt ?? local?.createdAt) : undefined);
-            const last = ago(lastAt);
-            const old = lastAt !== undefined && Date.now() - lastAt > STALE_DAYS * 86400_000;
-            const left =
-                isLocal && local
-                    ? Math.max(
-                          0,
-                          Math.ceil((local.createdAt + SESSION_TTL_MS - Date.now()) / 86400_000),
-                      )
-                    : null;
-            rows.push({
-                kind: "action",
-                id: `session-${alias}`,
+            items.push({
+                id: alias,
                 label,
-                value: (
-                    <span className={old ? "text-warn" : undefined}>
-                        {busy
-                            ? "working…"
-                            : `${last ?? "no action seen"}${left !== null ? ` · ${left}d left` : ""} · terminate`}
-                    </span>
-                ),
-                description: `Activate to terminate this session: a confirmation asks first, then one passkey signature removes it from the alias set${
-                    isLocal ? " and wipes the key here" : ""
-                }.`,
-                onConfirm: () => {
-                    if (busy) return;
-                    confirmTermination({
-                        label,
-                        local: isLocal,
-                        run: () =>
-                            run(async () => {
-                                await sendTransaction(
-                                    removeTx(await aliasesRef(client, aliasesId!), alias),
-                                    { passkey: true },
-                                );
-                                if (isLocal) await clearSessionKey();
-                                forgetSessionStatus();
-                            }),
-                    });
+                local: isLocal,
+                last: ago(lastAt),
+                old: lastAt !== undefined && Date.now() - lastAt > STALE_DAYS * 86400_000,
+                left:
+                    isLocal && local
+                        ? Math.max(
+                              0,
+                              Math.ceil(
+                                  (local.createdAt + SESSION_TTL_MS - Date.now()) / 86400_000,
+                              ),
+                          )
+                        : null,
+                termination: {
+                    label,
+                    local: isLocal,
+                    run: () =>
+                        run(async () => {
+                            await sendTransaction(
+                                removeTx(await aliasesRef(client, aliasesId!), alias),
+                                { passkey: true },
+                            );
+                            if (isLocal) await clearSessionKey();
+                            forgetSessionStatus();
+                        }),
                 },
             });
         }
 
         const authorized = !!localAddress && aliases.includes(localAddress);
-        if (!authorized) {
-            rows.push({
-                kind: "action",
-                id: "session-authorize",
-                label: "Authorize this device",
-                value: busy ? (
-                    "working…"
-                ) : fault ? (
-                    <span className="text-warn">failed — activate to retry</span>
-                ) : enabled ? (
-                    "one passkey prompt"
-                ) : (
-                    "two prompts, first time"
-                ),
-                description: fault
-                    ? `The last attempt failed: ${fault.slice(0, 110)}`
-                    : "Creates a session key that never leaves this browser and authorizes it on chain: play then needs no passkey per transaction.",
-                onConfirm: () =>
-                    run(async () => {
-                        await authorizeDevice(client, owner, async (tx) => {
-                            const sent = sendTransaction(tx, { passkey: true });
-                            if (!sent) throw new Error("Sign in to authorize this device.");
-                            await sent;
-                        });
-                    }),
-            });
-        }
-        return rows;
+        return {
+            supported,
+            busy,
+            fault,
+            items,
+            authorize: authorized
+                ? null
+                : {
+                      firstTime: !enabled,
+                      run: () =>
+                          run(async () => {
+                              await authorizeDevice(client, owner, async (tx) => {
+                                  const sent = sendTransaction(tx, { passkey: true });
+                                  if (!sent) throw new Error("Sign in to authorize this device.");
+                                  await sent;
+                              });
+                          }),
+                  },
+        };
     }, [
         owner,
         supported,
@@ -298,6 +301,78 @@ export function useSessionRows(
         client,
         aliasesId,
         enabled,
-        confirmTermination,
     ]);
+}
+
+/**
+ * The Sessions rows for the classic account panel, built from `useSessions`.
+ * Termination is irreversible for the removed key, so activating a session
+ * row hands `confirmTermination` the request instead of sending it; the
+ * removal runs only when the panel's confirmation calls `run`.
+ */
+export function useSessionRows(
+    confirmTermination: (termination: SessionTermination) => void,
+): SettingRow[] {
+    const owner = useCurrentAccount()?.address ?? null;
+    const { supported, busy, fault, items, authorize } = useSessions();
+
+    return useMemo((): SettingRow[] => {
+        if (!owner) return [];
+        const rows: SettingRow[] = [{ kind: "section", id: "sessions", label: "Sessions" }];
+        if (supported === false) {
+            rows.push({
+                kind: "static",
+                id: "sessions-unsupported",
+                label: "Device sessions",
+                value: <span className="text-warn">unavailable in this browser</span>,
+                description:
+                    "This browser cannot hold a session key safely; transactions keep using the passkey directly.",
+            });
+            return rows;
+        }
+
+        for (const item of items) {
+            rows.push({
+                kind: "action",
+                id: `session-${item.id}`,
+                label: item.label,
+                value: (
+                    <span className={item.old ? "text-warn" : undefined}>
+                        {busy
+                            ? "working…"
+                            : `${item.last ?? "no action seen"}${item.left !== null ? ` · ${item.left}d left` : ""} · terminate`}
+                    </span>
+                ),
+                description: `Activate to terminate this session: a confirmation asks first, then one passkey signature removes it from the alias set${
+                    item.local ? " and wipes the key here" : ""
+                }.`,
+                onConfirm: () => {
+                    if (busy) return;
+                    confirmTermination(item.termination);
+                },
+            });
+        }
+
+        if (authorize) {
+            rows.push({
+                kind: "action",
+                id: "session-authorize",
+                label: "Authorize this device",
+                value: busy ? (
+                    "working…"
+                ) : fault ? (
+                    <span className="text-warn">failed — activate to retry</span>
+                ) : authorize.firstTime ? (
+                    "two prompts, first time"
+                ) : (
+                    "one passkey prompt"
+                ),
+                description: fault
+                    ? `The last attempt failed: ${fault.slice(0, 110)}`
+                    : "Creates a session key that never leaves this browser and authorizes it on chain: play then needs no passkey per transaction.",
+                onConfirm: authorize.run,
+            });
+        }
+        return rows;
+    }, [owner, supported, busy, fault, items, authorize, confirmTermination]);
 }

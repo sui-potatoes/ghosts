@@ -22,7 +22,8 @@ type PromptProps = {
     hint?: string;
     /** `danger` turns the frame and the confirm amber: it destroys something. */
     tone?: "default" | "danger";
-    confirm: { label: string; run: () => void };
+    /** `deny`: shown but refused (an invalid name); the command bar says why, in amber. */
+    confirm: { label: string; run: () => void; deny?: string };
     cancel: { label: string; run: () => void };
     /** A third answer on Reset (X / R): Discard beside Save. Always drawn amber. */
     alternate?: { label: string; run: () => void };
@@ -76,6 +77,7 @@ function PromptBlock({
             action: "confirm",
             label: confirm.label,
             tone: tone === "danger" ? "danger" : "primary",
+            deny: confirm.deny,
             run: confirm.run,
         },
         { action: "back", label: cancel.label, run: cancel.run },
