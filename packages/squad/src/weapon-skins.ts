@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import type { Equipment } from "./types.ts";
+import { SKIN_RECIPES } from "./skin-recipes.ts";
 
 /**
  * Weapon finishes (skins): baked colour, roughness and metalness for a gun's
- * texture atlas, shown on the Armory stage. Local to the device for now —
+ * texture atlas, from one recipe per skin (`skin-recipes.ts`), shown on the
+ * Armory stage and in a recruit's hands at Headquarters. Local to the device for now —
  * nothing about a skin is on chain. "factory" is the gun as built, untextured.
  * No three.js here, so screens can list skins without loading a renderer.
  */
@@ -24,26 +26,39 @@ const FACTORY: WeaponSkin = {
   swatch: ["#2e3133", "#272f33", "#4b5256"],
 };
 
-/** Skins per weapon model, after Factory. Only the service rifle has any yet. */
+const hex = (n: number) => `#${n.toString(16).padStart(6, "0")}`;
+/** The recipe's paint and pattern tones, for the picker's swatch. */
+function swatch(id: string): string[] {
+  const r = SKIN_RECIPES[id];
+  const tones = r.pattern?.tones.map((t) => t.color) ?? [
+    r.shell.color,
+    r.frame.color,
+  ];
+  return [...new Set([...tones, r.wear?.color ?? r.ink])].map(hex);
+}
+const skin = (id: string, name: string): WeaponSkin => ({
+  id,
+  name,
+  swatch: swatch(id),
+});
+
+/** The finishes every long gun wears, after Factory: one recipe each
+ * (`skin-recipes.ts`), baked per gun. */
+const LONG_GUN_SKINS: WeaponSkin[] = [
+  skin("standard", "Standard"),
+  skin("camo", "Woodland"),
+  skin("desert", "Desert"),
+  skin("urban", "Urban"),
+  skin("arctic", "Arctic"),
+  skin("worn", "Worn Steel"),
+  skin("hardtest", "Hard Test"),
+];
+
+/** Skins per weapon model, after Factory. The sidearm has none. */
 const SKINS: Partial<Record<Equipment["model"], WeaponSkin[]>> = {
-  rifle: [
-    {
-      id: "standard",
-      name: "Standard",
-      swatch: ["#3d4246", "#2b3338", "#8a9196"],
-    },
-    {
-      id: "camo",
-      name: "Camo",
-      swatch: ["#4a4d3c", "#6f6a55", "#232520", "#5a6462"],
-    },
-    {
-      id: "hardtest",
-      name: "Hard Test",
-      swatch: ["#d9d4c7", "#c8551e", "#111316"],
-    },
-    { id: "heavy", name: "Heavy", swatch: ["#3d4246", "#a3a8aa", "#2b3338"] },
-  ],
+  rifle: LONG_GUN_SKINS,
+  sniper: LONG_GUN_SKINS,
+  plasma: LONG_GUN_SKINS,
 };
 
 /** Every finish a model can wear, Factory first; just Factory when it has no skins. */

@@ -38,6 +38,7 @@ import {
 import { ATTACHMENT_SLOTS, attachmentById } from "../catalog.ts";
 import type { AttachmentSlot, Equipment, WeaponAttachments } from "../types.ts";
 import type { ArmorySkin } from "./armory-skins.ts";
+import { SKIN_SLOT } from "./skin-paint.ts";
 
 /**
  * The redesigned long guns for the Armory stage. Recruits, encounters and the
@@ -48,7 +49,9 @@ import type { ArmorySkin } from "./armory-skins.ts";
  * material in the weapon frame (+X muzzle, +Y up), built once per
  * (gun, fittings) and shared by reference count. With a skin
  * (`armory-skins.ts`) the body and the standard clip and stock are the skinned
- * game mesh instead; upgrade fittings stay built, in their own finish.
+ * game mesh instead; upgrade fittings stay built and wear the skin live: their
+ * shell and frame pieces merge into one mesh in the skin's paint, the rest
+ * (steel, rubber, glass, emitters) keep the gun's finish.
  */
 
 export type ArmoryGun = "rifle" | "sniper" | "plasma";
@@ -143,11 +146,20 @@ function collect(
   into.set(material, list);
 }
 
+/** Where a build's geometry ends up, for the skin's live paint: a key naming
+ * the frame and the map from it back to the weapon frame. */
+export interface PaintFrame {
+  key: string;
+  toWeapon: T.Matrix4;
+}
+const ARMORY_FRAME: PaintFrame = { key: "armory", toWeapon: new T.Matrix4() };
+
 function build(
   gun: ArmoryGun,
   fits: [AttachmentSlot, 1 | 2 | 3][],
   skin?: ArmorySkin,
   beam = true,
+  frame = ARMORY_FRAME,
 ): T.Group {
   const spec = GUNS[gun],
     m = spec.finish(),
@@ -156,6 +168,8 @@ function build(
     // The skinned game mesh replaces the built body; its pieces are already
     // in the weapon frame and sized.
     collect(parts, skin.material, skin.pieces.body.clone());
+    const glow = skin.pieces.glow?.body;
+    if (glow) collect(parts, m.light, glow.toNonIndexed());
   } else {
     const g = new WeaponGeometry();
     spec.body(g, m);
@@ -186,8 +200,11 @@ function build(
       }
     }
     if (root) seat(root, spec.mounts[slot], parts);
-    else if (skin) collect(parts, skin.material, skin.pieces[slot].clone());
-    else {
+    else if (skin) {
+      collect(parts, skin.material, skin.pieces[slot].clone());
+      const glow = skin.pieces.glow?.[slot];
+      if (glow) collect(parts, m.light, glow.toNonIndexed());
+    } else {
       // Standard furniture is authored in the weapon frame behind WEAPON_BASIS too.
       seat(spec.standard(slot, m), spec.mounts[slot], parts);
     }
@@ -201,9 +218,33 @@ function build(
         parts,
       );
   }
+  // Under a skin, the fittings' shell and frame pieces are one painted mesh.
+  const paint = skin?.paint?.(frame.key, frame.toWeapon);
+  if (paint) {
+    const painted: T.BufferGeometry[] = [];
+    [m.shell, m.metal].forEach((material, k) => {
+      for (const geometry of parts.get(material) ?? []) {
+        const count = geometry.attributes.position.count;
+        geometry.setAttribute(
+          SKIN_SLOT,
+          new T.BufferAttribute(new Float32Array(count).fill(k), 1),
+        );
+        painted.push(geometry);
+      }
+      parts.delete(material);
+    });
+    if (painted.length) parts.set(paint, painted);
+  }
   const group = new T.Group();
   group.name = `armory-${gun}`;
   for (const [material, geometries] of parts) {
+    // Skin glow pieces carry no UVs: merge on the attributes all pieces share.
+    const shared = Object.keys(geometries[0].attributes).filter((a) =>
+      geometries.every((g) => a in g.attributes),
+    );
+    for (const g of geometries)
+      for (const a of Object.keys(g.attributes))
+        if (!shared.includes(a)) g.deleteAttribute(a);
     const geometry = mergeGeometries(geometries)!;
     geometries.forEach((x) => x.dispose());
     const mesh = new T.Mesh(geometry, material);
@@ -229,8 +270,9 @@ export function buildArmoryWeapon(
   gun: ArmoryGun,
   attachments: WeaponAttachments,
   skin: ArmorySkin,
+  frame?: PaintFrame,
 ): T.Group {
-  return build(gun, fitting(attachments), skin, false);
+  return build(gun, fitting(attachments), skin, false, frame);
 }
 
 interface Entry {
