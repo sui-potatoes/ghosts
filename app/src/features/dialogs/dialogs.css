@@ -1,0 +1,77 @@
+/* Copyright (c) Sui Potatoes
+   SPDX-License-Identifier: MIT */
+
+/* The shell's dialogs (DialogHost): a frame of their own over whatever screen
+   is up — the whole viewport dimmed, one block in the middle, the command bar
+   over the screen's own. Scoped by `gui-dialog`. */
+
+.gui.gui-dialog {
+    z-index: 210;
+    grid-template-rows: minmax(0, 1fr) var(--h-l);
+    background: color-mix(in srgb, var(--background-color) 74%, transparent);
+    animation: gui-fade 140ms ease-out;
+}
+
+.gui-dialog-stage {
+    display: grid;
+    place-items: center;
+    min-height: 0;
+    padding: calc(var(--u) * 6);
+}
+
+/* The prompt's block, holding rows instead of a sentence. */
+.gui-dialog-block {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: min(calc(var(--u) * 120), 100%);
+    max-height: 100%;
+    padding: calc(var(--u) * 7) calc(var(--u) * 8) calc(var(--u) * 6);
+    background: var(--surface-color);
+    border: 1px solid var(--line-strong);
+    border-top: 2px solid var(--text-color);
+    animation: gui-open 170ms var(--snap);
+}
+
+.gui-dialog-rows {
+    display: flex;
+    flex-direction: column;
+    margin-top: calc(var(--u) * 5);
+    border-top: 1px solid var(--line);
+}
+
+.gui-dialog-rows > .gui-row {
+    min-height: calc(var(--u) * 13);
+    border-bottom: 1px solid var(--line);
+}
+
+.gui-dialog-rows > .gui-row .gui-row-name {
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+}
+
+/* Pause entries are single-line commands: the plain row height. */
+.gui-dialog-rows[data-compact] > .gui-row {
+    min-height: var(--h-m);
+}
+
+.gui-dialog-glyph {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: calc(var(--u) * 6);
+    color: var(--text-secondary);
+}
+
+.gui-row[data-focused] .gui-dialog-glyph {
+    color: var(--on-band);
+}
+
+.gui-dialog-error {
+    display: flex;
+    align-items: center;
+    gap: calc(var(--u) * 2);
+    margin-top: calc(var(--u) * 4);
+    font: 400 var(--t-body) / 1.4 var(--font-mono);
+    color: var(--warn-color);
+}

@@ -1,0 +1,215 @@
+/*
+ * The match result's diorama (./Debrief.tsx): the outcome header, the plates'
+ * experience bars and rank swap, the KIA tone. It sits on the shared podium
+ * diorama (../squad-view/squad-view.css, `sqv-`) and the shared interface
+ * (src/ui/gui.css). Classes keep the `dbf-` prefix.
+ */
+
+.dbf-plate-marker {
+    font: 500 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: var(--track);
+    text-transform: uppercase;
+    color: var(--disabled-color);
+    padding: 2px 4px;
+    border: 1px solid var(--line);
+}
+
+.dbf-plate-cost {
+    display: flex;
+    align-items: center;
+    gap: calc(var(--u) * 1.5);
+    font: 400 var(--t-label) / 1 var(--font-mono);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+
+.dbf-plate-cost b {
+    font-weight: 500;
+    color: var(--text-color);
+    font-variant-numeric: tabular-nums;
+}
+
+.dbf-outcome {
+    position: absolute;
+    top: calc(var(--u) * 3);
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: calc(var(--u) * 2);
+    pointer-events: none;
+}
+
+.dbf-outcome-title {
+    font: 300 var(--t-title) / 1 var(--font-mono);
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    color: var(--text-color);
+}
+
+.dbf-outcome[data-tone="loss"] .dbf-outcome-title,
+.dbf-outcome[data-tone="blame"] .dbf-outcome-title {
+    color: var(--warn-color);
+}
+
+.dbf-outcome[data-tone="draw"] .dbf-outcome-title {
+    color: var(--text-secondary);
+}
+
+.dbf-outcome-line {
+    font: 400 var(--t-label) / 1 var(--font-mono);
+    letter-spacing: var(--track);
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+
+.dbf-outcome-line b {
+    font-weight: 500;
+    color: var(--text-color);
+    font-variant-numeric: tabular-nums;
+}
+
+.dbf-outcome[data-tone="loss"] .dbf-outcome-line b {
+    color: var(--warn-color);
+}
+
+/* KIA: the quiet, disabled tone; no red, nothing else marks it. */
+.sqv-plate-engraved[data-kia] {
+    border-top-style: dashed;
+    border-top-color: var(--line);
+    background: none;
+    animation: dbf-settle 600ms var(--snap) both;
+}
+
+.sqv-plate-engraved[data-kia] .sqv-plate-name,
+.sqv-plate-engraved[data-kia] .sqv-plate-line {
+    color: var(--disabled-color);
+}
+
+.sqv-podium[data-focused] .sqv-plate-engraved[data-kia] {
+    border-top-color: var(--line-strong);
+}
+
+/* Experience: the band of the rank held after the match, filling from where it stood. */
+.dbf-xp {
+    position: relative;
+    display: block;
+    width: calc(var(--u) * 32);
+    height: 4px;
+    background: var(--line);
+    overflow: hidden;
+}
+
+.dbf-xp[data-full] {
+    background: var(--text-secondary);
+}
+
+.dbf-xp i {
+    position: absolute;
+    inset: 0 auto 0 0;
+}
+
+.dbf-xp-was {
+    width: calc(var(--from) * 100%);
+    background: var(--text-secondary);
+}
+
+.dbf-xp-gain {
+    width: calc(var(--to) * 100%);
+    background: var(--accent-color);
+    animation: dbf-xp-fill 900ms 150ms var(--snap) both;
+}
+
+@keyframes dbf-xp-fill {
+    from {
+        width: calc(var(--from) * 100%);
+    }
+}
+
+/* A promotion: the old insignia gives way to the new once the bar has filled. */
+.dbf-rank-swap {
+    display: grid;
+    justify-items: center;
+}
+
+.dbf-rank-swap > span {
+    grid-area: 1 / 1;
+    display: inline-flex;
+    align-items: center;
+    gap: calc(var(--u) * 1.5);
+}
+
+[data-promoted] .dbf-rank-now {
+    color: var(--accent-color);
+    animation: dbf-fade-in 280ms 1100ms both;
+}
+
+.dbf-rank-was {
+    animation: dbf-fade-out 200ms 1050ms both;
+}
+
+@keyframes dbf-fade-in {
+    from {
+        opacity: 0;
+    }
+}
+
+@keyframes dbf-fade-out {
+    to {
+        opacity: 0;
+    }
+}
+
+@keyframes dbf-settle {
+    from {
+        opacity: 0.3;
+    }
+}
+
+.sqv-diorama[data-instant] .dbf-xp-gain,
+.sqv-diorama[data-instant] .dbf-rank-now,
+.sqv-diorama[data-instant] .sqv-plate-engraved[data-kia] {
+    animation: none;
+}
+
+.sqv-diorama[data-instant] .dbf-rank-was {
+    display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .dbf-xp-gain,
+    .dbf-rank-now,
+    .sqv-plate-engraved[data-kia] {
+        animation: none !important;
+    }
+    .dbf-rank-was {
+        display: none;
+    }
+}
+
+@media (orientation: landscape) and (max-height: 500px) {
+    /* The result plates keep the rank line on a phone: it is the result. */
+    .sqv-diorama[data-debrief] .sqv-plate-line {
+        display: flex;
+    }
+    .sqv-diorama[data-debrief] .dbf-rank-swap {
+        display: grid;
+    }
+    .dbf-outcome {
+        gap: calc(var(--u) * 1);
+    }
+    .dbf-xp {
+        width: calc(var(--u) * 24);
+    }
+}
+
+.dbf-outcome-lines {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: calc(var(--u) * 1) calc(var(--u) * 4);
+    max-width: calc(var(--u) * 120);
+}

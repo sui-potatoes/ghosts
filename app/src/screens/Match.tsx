@@ -13,6 +13,7 @@ import {
     useChainRecruits,
     useGhostsAccount,
     fetchPendingSeats,
+    hireRecruitsTx,
     useCurrentGame,
     useGhostsAction,
     type ChainAccount,
@@ -21,7 +22,7 @@ import {
 } from "../chain";
 import type { ChainGame } from "../chain/bcs";
 import { chainDriver, matchScenario } from "../chain/driver";
-import { useMatchIntel } from "../chain/useMatchIntel";
+import { useMatchIntel, useOpponentName } from "../chain/useMatchIntel";
 import {
     abandonGameTx,
     completeGameTx,
@@ -51,6 +52,9 @@ import {
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { LoadingSpinner } from "../components/LoadingSpinner";
 import { engineSettings } from "../engineSettings";
+import { MatchDebrief } from "../features/debrief/MatchDebrief";
+import { figuresOf } from "../features/debrief/figures";
+import { deployedOf, type MatchResult } from "../features/debrief/result";
 import { RecruitCard } from "../features/headquarters/components/RecruitCard";
 import { toLocalRecruits } from "../features/headquarters/mapping";
 import { useRecruitPortraits } from "../features/squad/useRecruitPortraits";
@@ -67,6 +71,13 @@ import "../features/headquarters/headquarters.css";
  * it replaced (`SquadPick` below), kept until the new one is signed off.
  */
 const PODIUM_SQUAD_SELECT = true;
+
+/**
+ * How a match ends. `true`: the result on the podium diorama
+ * (`src/features/debrief/`), with the field unmounted behind it. `false`: the
+ * card (`Result` below) over the field, kept until the new one is signed off.
+ */
+const PODIUM_RESULT = true;
 
 /** How often the game is re-read here; the driver follows the opponent's turn on its own. */
 const POLL_MS = 2_000;
@@ -425,6 +436,49 @@ const WINS: (Outcome | Settled | "ended")[] = [
 ];
 
 /**
+ * Wrapping a finished game up: the winner sends it after a short grace, the
+ * other side steps in later, and the player can send it at once. A seat the
+ * other player never accepted is accepted on the way.
+ */
+function useWrapUp({
+    gone,
+    wins,
+    gameId,
+    players,
+    action,
+}: {
+    gone: boolean;
+    wins: boolean;
+    gameId: string;
+    players: string[];
+    action: Action;
+}): () => void {
+    const { run } = action;
+    const send = () =>
+        void run([
+            async () =>
+                completeGameTx(
+                    gameId,
+                    players,
+                    await fetchPendingSeats(action.client, gameId, players),
+                ),
+        ]);
+    const sent = useRef(false);
+    useEffect(() => {
+        if (gone || sent.current) return;
+        const timer = window.setTimeout(
+            () => {
+                sent.current = true;
+                send();
+            },
+            wins ? WINNER_GRACE_MS : LOSER_GRACE_MS,
+        );
+        return () => window.clearTimeout(timer);
+    }, [gone, wins, gameId, players]);
+    return send;
+}
+
+/**
  * How it ended. The game is wrapped up and deleted behind this, by whoever gets
  * to it first; `gone` once it is. A player who misses the last few polls has
  * nothing left to read, and gets the plain `ended`.
@@ -452,21 +506,7 @@ function Result({
     const [title, detail] = HEADLINES[outcome];
     const wins = WINS.includes(outcome);
 
-    const { run } = action;
-    // a seat the other player never accepted is accepted on the way to wrapping up
-    const pending = () => fetchPendingSeats(action.client, gameId, players);
-    const sent = useRef(false);
-    useEffect(() => {
-        if (gone || sent.current) return;
-        const timer = window.setTimeout(
-            () => {
-                sent.current = true;
-                void run([async () => completeGameTx(gameId, players, await pending())]);
-            },
-            wins ? WINNER_GRACE_MS : LOSER_GRACE_MS,
-        );
-        return () => window.clearTimeout(timer);
-    }, [gone, wins, gameId, players]);
+    const wrapUp = useWrapUp({ gone, wins, gameId, players, action });
 
     return (
         <Panel>
@@ -503,15 +543,97 @@ function Result({
             <button
                 className="btn self-start"
                 disabled={!gone && action.busy}
-                onClick={() =>
-                    gone
-                        ? navigate("/")
-                        : void run([async () => completeGameTx(gameId, players, await pending())])
-                }
+                onClick={() => (gone ? navigate("/") : wrapUp())}
             >
                 {gone ? "Continue" : "Wrap up"}
             </button>
         </Panel>
+    );
+}
+
+/**
+ * The result on the podium diorama. The squad is every recruit of this side
+ * the app saw in the game (the game lets go of the fallen, so `seen` keeps
+ * them), the fallen are the `UnitKIA` records, the experience before is what
+ * the game took them in with, and what they came home with is read from the
+ * `Account` once the game is wrapped up.
+ */
+function ResultScreen({
+    game,
+    side,
+    gameId,
+    outcome,
+    over,
+    gone,
+    seen,
+    home,
+    rating,
+    action,
+    onHire,
+}: {
+    game: ChainGame;
+    side: number;
+    gameId: string;
+    outcome: MatchResult["outcome"];
+    over: boolean;
+    gone: boolean;
+    seen: ChainRecruit[];
+    /** The `Account`'s recruits as read now. */
+    home: ChainRecruit[];
+    rating: [number, number] | null;
+    action: Action;
+    onHire: () => void;
+}) {
+    const opponent = useOpponentName(game, side);
+    const wins = WINS.includes(outcome);
+    const wrapUp = useWrapUp({ gone, wins, gameId, players: game.players, action });
+
+    const { result, figures } = useMemo(() => {
+        const alive = squadOf(game, side);
+        const fallen = fallenOf(game, side, seen).map((r) => r.objectId);
+        const squad = deployedOf(seen, game.players[side], alive, fallen);
+        const figs = figuresOf(squad);
+        const byId = new Map(home.map((r) => [r.objectId, r]));
+        // Home is only believed once every survivor is there: the read can be a poll behind.
+        const homeReady = gone && alive.every((id) => byId.has(id));
+        const result: MatchResult = {
+            outcome,
+            earned: over ? experienceFor(game, side) : null,
+            rating,
+            squad: squad.map((r, i) => ({
+                objectId: r.objectId,
+                name: figs[i].callsign,
+                rank: r.rank.$kind,
+                xp: Number(r.xp),
+            })),
+            fallen,
+            history: game.history,
+            home: homeReady
+                ? Object.fromEntries(
+                      alive.flatMap((id) => {
+                          const r = byId.get(id);
+                          return r ? [[id, { rank: r.rank.$kind, xp: Number(r.xp) }]] : [];
+                      }),
+                  )
+                : null,
+            recruitsHome: homeReady ? home.length : null,
+            opponent,
+        };
+        return { result, figures: figs };
+        // `rating` is a new pair on every render: its numbers stand for it.
+    }, [game, side, seen, home, gone, outcome, over, rating?.[0], rating?.[1], opponent]);
+
+    return (
+        <MatchDebrief
+            result={result}
+            figures={figures}
+            gone={gone}
+            busy={action.busy}
+            error={action.error}
+            clearError={action.clearError}
+            onWrapUp={wrapUp}
+            onHire={onHire}
+        />
     );
 }
 
@@ -540,6 +662,7 @@ export default function Match() {
     // every recruit seen in the game, the fallen too: the game lets go of them
     const seen = useRef(new Map<string, ChainRecruit>());
     for (const recruit of inGame.data ?? []) seen.current.set(recruit.objectId, recruit);
+    const seenList = useMemo(() => [...seen.current.values()], [inGame.data]);
     const [confirming, setConfirming] = useState(false);
     const [abandoned, setAbandoned] = useState(false);
     const [played, setPlayed] = useState(false);
@@ -648,9 +771,26 @@ export default function Match() {
             }
           : undefined;
 
+    const podiumResult = PODIUM_RESULT && showResult;
+
     return (
         <>
-            {deploying ? (
+            {podiumResult && (
+                <ResultScreen
+                    game={game.data}
+                    side={side}
+                    gameId={gameId}
+                    outcome={outcome}
+                    over={over}
+                    gone={gone}
+                    seen={seenList}
+                    home={recruits.data ?? []}
+                    rating={rating}
+                    action={action}
+                    onHire={() => void action.run([() => hireRecruitsTx(accountId.data!)])}
+                />
+            )}
+            {podiumResult ? null : deploying ? (
                 !finished &&
                 (PODIUM_SQUAD_SELECT ? (
                     <SquadSelect
@@ -702,7 +842,7 @@ export default function Match() {
             ) : (
                 !finished && <LoadingSpinner />
             )}
-            {showResult && (
+            {showResult && !PODIUM_RESULT && (
                 <Result
                     outcome={outcome}
                     gone={gone}

@@ -12,7 +12,7 @@ import { screenOwnsBack, subscribeScreenBack } from "./ui/back";
 
 /** Screens that handle the back action themselves: the menu has nowhere to
  * go, the encounter opens its pause menu, and the editor asks before leaving. */
-const OWN_BACK = new Set(["/", "/demo", "/demo-2", "/editor", "/match"]);
+const OWN_BACK = new Set(["/", "/menu-classic", "/demo", "/demo-2", "/editor", "/match"]);
 
 /**
  * The back action (Escape by default) on any other screen goes up to the

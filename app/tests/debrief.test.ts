@@ -6,14 +6,15 @@ import { test } from "node:test";
 
 import {
     debriefOf,
+    deployedOf,
     fallTurns,
-    fixtureResult,
     promotionBonus,
     replacementFor,
     xpBand,
     type MatchResult,
     type ResultRecruit,
-} from "../src/features/ui-sample/debrief.ts";
+} from "../src/features/debrief/result.ts";
+import { fixtureResult } from "../src/features/ui-sample/debrief.ts";
 
 const SQUAD: ResultRecruit[] = [
     { objectId: "0xa", name: "VEX", rank: "Sergeant", xp: 19 },
@@ -148,4 +149,135 @@ test("fixtures: win keeps everyone, costly loses one, wipe loses all", () => {
     assert.equal(wipe.tone, "loss");
     assert.deepEqual(wipe.replacement, { call: "hire_recruits", count: 3 });
     for (const p of wipe.plates) assert.ok(p.kind === "kia" && p.turn !== null);
+});
+
+// === The real match: what Match.tsx hands over ============================
+
+test("a survivor's experience comes from the Account once home", () => {
+    // Corporal 13 earned 2 on the field and is Sergeant at home.
+    const d = debriefOf(
+        result({
+            squad: [{ objectId: "0xc", name: "KITE", rank: "Corporal", xp: 13 }],
+            home: { "0xc": { rank: "Sergeant", xp: 15 } },
+        }),
+    );
+    const kite = d.plates[0];
+    assert.ok(kite.kind === "home");
+    assert.equal(kite.xpAfter, 15);
+    assert.equal(kite.gained, 2);
+    assert.equal(kite.rankAfter, "Sergeant");
+    assert.equal(kite.promoted, true);
+});
+
+test("an Account a poll behind (old experience, pay due) falls back to the rules", () => {
+    const d = debriefOf(
+        result({
+            squad: [{ objectId: "0xc", name: "KITE", rank: "Corporal", xp: 13 }],
+            home: { "0xc": { rank: "Corporal", xp: 13 } },
+        }),
+    );
+    const kite = d.plates[0];
+    assert.ok(kite.kind === "home");
+    assert.equal(kite.xpAfter, 15);
+    assert.equal(kite.promoted, true);
+});
+
+test("a game gone before it was read: home says what was earned, else nothing", () => {
+    const squad = [{ objectId: "0xa", name: "VEX", rank: "Sergeant", xp: 19 }];
+    const home = debriefOf(
+        result({
+            outcome: "settled-win",
+            earned: null,
+            squad,
+            home: { "0xa": { rank: "Sergeant", xp: 21 } },
+        }),
+    ).plates[0];
+    assert.ok(home.kind === "home");
+    assert.equal(home.gained, 2);
+    const unknown = debriefOf(result({ outcome: "settled-win", earned: null, squad })).plates[0];
+    assert.ok(unknown.kind === "home");
+    assert.equal(unknown.gained, null);
+    assert.equal(unknown.band, null);
+});
+
+test("a walkover or blame pays nothing: survivors come home with +0", () => {
+    const d = debriefOf(result({ outcome: "abandoned", earned: 0 }));
+    for (const p of d.plates) assert.ok(p.kind === "home" && p.gained === 0 && !p.promoted);
+    assert.equal(d.tone, "blame");
+    assert.match(d.note ?? "", /minute/);
+});
+
+test("each ending names itself", () => {
+    const of = (outcome: MatchResult["outcome"]) => {
+        const d = debriefOf(result({ outcome }));
+        return [d.title, d.tone, d.note];
+    };
+    assert.deepEqual(of("victory"), ["Victory", "win", null]);
+    assert.deepEqual(of("defeat"), ["Defeat", "loss", null]);
+    assert.deepEqual(of("opponent-abandoned"), ["Victory", "win", "Opponent abandoned the match"]);
+    assert.deepEqual(of("opponent-forfeited"), ["Victory", "win", "Opponent stopped playing"]);
+    assert.deepEqual(of("stalemate"), ["Draw", "draw", "Turn limit reached"]);
+    assert.equal(of("forfeited")[1], "blame");
+    assert.equal(of("no-show")[0], "No squad deployed");
+    assert.deepEqual(of("ended"), ["Match over", "draw", null]);
+});
+
+test("the opponent's name is carried when known", () => {
+    assert.equal(debriefOf(result({ opponent: "NOVA" })).opponent, "NOVA");
+    assert.equal(debriefOf(result({})).opponent, null);
+});
+
+test("nobody deployed: every podium is vacant", () => {
+    const d = debriefOf(result({ outcome: "no-show", squad: [], earned: 0 }));
+    assert.deepEqual(
+        d.plates.map((p) => p.kind),
+        ["vacant", "vacant", "vacant"],
+    );
+});
+
+test("a squad of four gets four podiums", () => {
+    const four = [...SQUAD, { objectId: "0xd", name: "ASH", rank: "Rookie", xp: 0 }];
+    assert.equal(debriefOf(result({ squad: four })).plates.length, 4);
+});
+
+test("fallen detection: the deployed squad is what was seen, mine, standing or fallen", () => {
+    const seen = [
+        { objectId: "0xa", leader: "me" },
+        { objectId: "0xb", leader: "me" },
+        { objectId: "0xx", leader: "them" },
+        { objectId: "0xe", leader: "me" }, // left home: never on the map
+    ];
+    const squad = deployedOf(seen, "me", ["0xa"], ["0xb"]);
+    assert.deepEqual(
+        squad.map((r) => r.objectId),
+        ["0xa", "0xb"],
+    );
+    const d = debriefOf(
+        result({
+            squad: squad.map((r) => ({
+                objectId: r.objectId,
+                name: r.objectId,
+                rank: "Rookie",
+                xp: 0,
+            })),
+            fallen: ["0xb"],
+            history: [
+                { $kind: "NextTurn", NextTurn: 4 },
+                { $kind: "UnitKIA", UnitKIA: ["0xb", 1, 1] },
+            ],
+        }),
+    );
+    assert.deepEqual(
+        d.plates.map((p) => p.kind),
+        ["home", "kia", "vacant"],
+    );
+});
+
+test("hiring waits for the wrap-up and counts what the Account holds", () => {
+    const fell = { fallen: ["0xb"] };
+    assert.ok("deny" in debriefOf(result({ ...fell, recruitsHome: null })).replacement!);
+    assert.deepEqual(debriefOf(result({ ...fell, recruitsHome: 2 })).replacement, {
+        call: "hire_recruits",
+        count: 2,
+    });
 });

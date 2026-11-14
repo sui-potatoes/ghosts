@@ -2,10 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import { useCurrentAccount } from "@mysten/dapp-kit-react";
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 
+import { CLASSIC_TITLE } from "./classicTitle";
+import { SignInDialog } from "./features/dialogs/SignInDialog";
 import MainMenu from "./screens/MainMenu";
+// The title before the shared interface language, kept until the new one is signed off.
+const MainMenuClassic = lazy(() => import("./screens/MainMenuClassic"));
 import Settings from "./screens/Settings";
 import SettingsClassic from "./screens/SettingsClassic";
 // Headquarters brings the squad's three.js studio; load it with the route,
@@ -25,6 +29,10 @@ const Match = lazy(() => import("./screens/Match"));
 const Editor = lazy(() => import("./screens/Editor"));
 // A design sample of the shared menu language; no menu entry, no account.
 const UiSample = lazy(() => import("./features/ui-sample/UiSample"));
+// QA only: the match result over fixtures, registered in `VITE_RESULT_QA=1` builds.
+const ResultQa = import.meta.env.VITE_RESULT_QA
+    ? lazy(() => import("./features/debrief/qa"))
+    : null;
 import { SquadPreload, TransactionSender } from "./chain";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { LoadingSpinner } from "./components/LoadingSpinner";
@@ -41,6 +49,7 @@ function MenuMusic() {
     const { pathname } = useLocation();
     const menu =
         pathname === "/" ||
+        pathname === "/menu-classic" ||
         pathname.startsWith("/settings") ||
         pathname.startsWith("/headquarters");
     useEffect(() => {
@@ -73,6 +82,7 @@ function useHeadquartersAhead() {
 /** Shell: routes plus the one dialog every screen can summon. */
 export function App() {
     const [signInOpen, setSignInOpen] = useState(false);
+    const closeSignIn = useCallback(() => setSignInOpen(false), []);
 
     useEffect(() => onSignInRequest(() => setSignInOpen(true)), []);
     // The one input binding: keyboard and controller onto the action bus.
@@ -83,6 +93,14 @@ export function App() {
         <>
             <Routes>
                 <Route index path="/" element={<MainMenu />} />
+                <Route
+                    path="/menu-classic"
+                    element={
+                        <Suspense fallback={<LoadingSpinner />}>
+                            <MainMenuClassic />
+                        </Suspense>
+                    }
+                />
                 <Route
                     path="/demo"
                     element={
@@ -159,6 +177,16 @@ export function App() {
                         </Suspense>
                     }
                 />
+                {ResultQa && (
+                    <Route
+                        path="/qa/match-result"
+                        element={
+                            <Suspense fallback={<LoadingSpinner />}>
+                                <ResultQa />
+                            </Suspense>
+                        }
+                    />
+                )}
                 <Route path="/squad" element={<Navigate to="/headquarters" replace />} />
                 <Route path="/barracks" element={<Navigate to="/headquarters" replace />} />
             </Routes>
@@ -168,7 +196,11 @@ export function App() {
             <SaveIndicator />
             <MatchStatus />
             <EscapeBack />
-            <SignInModal open={signInOpen} onClose={() => setSignInOpen(false)} />
+            {CLASSIC_TITLE ? (
+                <SignInModal open={signInOpen} onClose={closeSignIn} />
+            ) : (
+                <SignInDialog open={signInOpen} onClose={closeSignIn} />
+            )}
         </>
     );
 }

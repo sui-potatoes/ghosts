@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { SEARCH_TIMEOUT_MS, useMatchmakingDriver, useMatchSearch } from "../chain";
+import { CLASSIC_TITLE } from "../classicTitle";
 import { usePadActive } from "./PadHints";
 
 /** Time since `sinceMs`, ticking once a second. */
@@ -74,13 +75,14 @@ export function MatchStatus() {
     useMatchmakingDriver();
 
     if (["/demo", "/editor", "/match"].some((path) => pathname.startsWith(path))) return null;
-    // Headquarters shows the search in its own header.
+    // Headquarters and the title show the search in their own header.
     if (pathname === "/headquarters") return null;
+    if (pathname === "/" && !CLASSIC_TITLE) return null;
     if (!searching && !playing) return null;
 
     return (
         <div
-            className={`match-status ${pad ? "above-pad" : ""} ${pathname === "/" ? "on-menu" : ""}`}
+            className={`match-status ${pad ? "above-pad" : ""} ${pathname === "/" || pathname === "/menu-classic" ? "on-menu" : ""}`}
             role="status"
             aria-live="polite"
         >

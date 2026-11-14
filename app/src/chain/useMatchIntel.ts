@@ -35,3 +35,9 @@ export function useMatchIntel(game: ChainGame, recruits: readonly ChainRecruit[]
     );
     return { intel, opponent };
 }
+
+/** The opposing player's assigned name, once read. */
+export function useOpponentName(game: ChainGame, side: number): string | null {
+    const account = useGhostsAccount(game.players[1 - side]).data;
+    return useAssignedName(account?.owner) ?? null;
+}
