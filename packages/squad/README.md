@@ -69,8 +69,6 @@ gun files' constants. `acquireHeldWeapon` shares one build per (gun, fittings,
 detail): Squad, the title screens and inventory thumbnails use `"high"`,
 combat's field units `"low"` (service rifle about 9.5k triangles, marksman
 about 20k; five draws each). Combat tracers start at `userData.muzzle`.
-`long-guns.ts` and `weapon-attachments.ts` are the previous generation and its
-GLB pipeline (`app/scripts/weapons/`); nothing at runtime loads them now.
 `studio/field-supplies.ts` builds the grenade and sewn trauma case in four batches.
 Equipment tests check dimensions, finite geometry, muzzle/optic alignment, and
 palm fit for both sexes through five weapon motions.
