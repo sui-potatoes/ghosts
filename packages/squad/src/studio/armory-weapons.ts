@@ -40,9 +40,9 @@ import type { AttachmentSlot, Equipment, WeaponAttachments } from "../types.ts";
 import type { ArmorySkin } from "./armory-skins.ts";
 
 /**
- * The redesigned long guns for the Armory stage only. Recruits, encounters and
- * the engine keep loading the baked GLB weapons through `EquipmentAssets`;
- * nothing here is reachable from them.
+ * The redesigned long guns for the Armory stage. Recruits, encounters and the
+ * engine hold the guns `held-weapons.ts` builds; a recruit's skinned gun
+ * (`held-skins.ts`) is the one exception, built here and moved into the hand.
  *
  * A model is the gun plus its four furniture fittings, merged to one mesh per
  * material in the weapon frame (+X muzzle, +Y up), built once per
@@ -147,6 +147,7 @@ function build(
   gun: ArmoryGun,
   fits: [AttachmentSlot, 1 | 2 | 3][],
   skin?: ArmorySkin,
+  beam = true,
 ): T.Group {
   const spec = GUNS[gun],
     m = spec.finish(),
@@ -211,13 +212,25 @@ function build(
   }
   // The laser's beam: its own unlit mesh, never merged with the gun finish.
   const laser = tiers.get("laser");
-  if (laser) {
+  if (laser && beam) {
     const muzzle = spec.muzzle();
     group.add(
       createLaserTrace(laser, spec.mounts.laser, muzzle + spec.trace, muzzle),
     );
   }
   return group;
+}
+
+/** A fresh, uncached build in the weapon frame (sized), without the
+ * laser's beam: the caller owns its geometry and the fittings' materials (a
+ * skin's material stays the skin's). The held skinned gun
+ * (`held-skins.ts`) is this build brought into the hand socket. */
+export function buildArmoryWeapon(
+  gun: ArmoryGun,
+  attachments: WeaponAttachments,
+  skin: ArmorySkin,
+): T.Group {
+  return build(gun, fitting(attachments), skin, false);
 }
 
 interface Entry {

@@ -1,6 +1,8 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
+import { useSyncExternalStore } from "react";
+
 import { FACTORY_SKIN } from "@ghosts/squad/weapon-skins";
 
 /**
@@ -51,5 +53,44 @@ export function saveWeaponSkin(
     } catch {
         // full or blocked: the choice still holds for this visit
     }
+    if (store === deviceStorage()) {
+        session = next;
+        listeners.forEach((listener) => listener());
+    }
     return next;
+}
+
+/** This visit's view of the device's choices; written through on save, so a
+ * blocked storage still keeps them until the page closes. */
+let session: Record<string, string> | null = null;
+const listeners = new Set<() => void>();
+
+/** The finish chosen for a weapon object, or undefined for Factory. */
+export function skinForWeapon(weaponId: string): string | undefined {
+    return currentWeaponSkins()[weaponId];
+}
+
+/** Every choice on this device, as a stable object between changes. */
+export function currentWeaponSkins(): Record<string, string> {
+    return (session ??= readWeaponSkins());
+}
+
+/** Calls `listener` when a choice changes, here or in another tab. */
+export function subscribeWeaponSkins(listener: () => void): () => void {
+    const fromTab = (e: StorageEvent) => {
+        if (e.key !== WEAPON_SKINS_KEY && e.key !== null) return;
+        session = readWeaponSkins();
+        listener();
+    };
+    listeners.add(listener);
+    globalThis.addEventListener?.("storage", fromTab);
+    return () => {
+        listeners.delete(listener);
+        globalThis.removeEventListener?.("storage", fromTab);
+    };
+}
+
+/** Every choice, re-rendering on change: pass it to `toLocalRecruits`. */
+export function useWeaponSkins(): Record<string, string> {
+    return useSyncExternalStore(subscribeWeaponSkins, currentWeaponSkins);
 }

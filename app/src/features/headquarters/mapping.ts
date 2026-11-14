@@ -24,6 +24,7 @@ import type {
 } from "@ghosts/squad/types";
 
 import type { ChainRecruit, ChainWeapon } from "../../chain";
+import { currentWeaponSkins } from "./skins";
 
 /** What a recruit without a weapon object fights with: `weapon::default`. */
 export const DEFAULT_PRIMARY = "mx4";
@@ -90,10 +91,15 @@ function callsignOf(name: string, taken: Set<string>): string {
  * The studio's recruit shape for each on-chain recruit, in roster order, with
  * the (draft) look of the selected one swapped in by the caller as needed.
  */
-export function toLocalRecruits(recruits: ChainRecruit[]): LocalRecruit[] {
+export function toLocalRecruits(
+    recruits: ChainRecruit[],
+    skins: Record<string, string> = currentWeaponSkins(),
+): LocalRecruit[] {
     const taken = new Set<string>();
     return recruits.map((r, i) => {
         const look = lookOf(r);
+ * `skins` (weapon id to finish, `useWeaponSkins()` to follow changes) puts
+ * each carried weapon's finish on the recruit.
         return {
             id: r.objectId,
             name: r.metadata.name,
@@ -113,6 +119,7 @@ export function toLocalRecruits(recruits: ChainRecruit[]): LocalRecruit[] {
 }
 
 /**
+            ...(r.weapon && skins[r.weapon.id] ? { weaponSkin: skins[r.weapon.id] } : {}),
  * Hand the on-chain squad to the local playtest: `/demo` reads its roster
  * from the squad storage key. The utility follows what each recruit carries;
  * the demo keeps its own sidearm, which the chain does not mint yet. Invalid

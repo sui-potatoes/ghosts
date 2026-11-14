@@ -4,6 +4,8 @@
 const channel = typeof MessageChannel === "undefined" ? null : new MessageChannel();
 const waiting: (() => void)[] = [];
 if (channel) channel.port1.onmessage = () => waiting.shift()?.();
+// Node (tests importing the studio) would otherwise stay alive on the open port.
+(channel?.port1 as { unref?(): void } | undefined)?.unref?.();
 
 /**
  * A pause between the long steps of a build or a capture, so the browser can

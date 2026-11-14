@@ -7,7 +7,9 @@ import { createGLTFLoader } from "./gltf-loader.ts";
 import type { ArmoryGun } from "./armory-weapons.ts";
 
 /**
- * Skinned guns for the Armory stage. A skin is a baked texture set over the
+ * Skinned guns, for the Armory stage and for recruits holding a skinned gun
+ * (`held-skins.ts`): one loader, so both share the mesh and each skin's maps.
+ * A skin is a baked texture set over the
  * gun's game mesh (low detail, one UV atlas, normal map and AO baked from the
  * authored model): `weapons/skins/<gun>.glb` holds the body and the standard
  * clip and stock as separate meshes in the Armory weapon frame, sharing one

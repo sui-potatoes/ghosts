@@ -3,6 +3,8 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { register } from "node:module";
 import * as T from "three";
 import {
     HELD_GRIP,
@@ -23,6 +25,20 @@ import {
     RIFLE_BORE,
 } from "../../packages/squad/src/studio/service-rifle.ts";
 import { ATTACHMENTS } from "../../packages/squad/src/catalog.ts";
+import { WEAPON_BASIS } from "../../packages/squad/src/studio/gear-geometry.ts";
+import { WEAPON_SCALE, WeaponGeometry } from "../../packages/squad/src/studio/weapon-finish.ts";
+import { familyFinish } from "../../packages/squad/src/studio/rifle-shapes.ts";
+import {
+    createServiceFurniture,
+    serviceRifle,
+} from "../../packages/squad/src/studio/service-rifle.ts";
+import {
+    ARMORY_TO_SOCKET,
+    acquireSkinnedHeldWeapon,
+    createSkinnedHeldWeapon,
+    skinnedHeldCache,
+} from "../../packages/squad/src/studio/held-skins.ts";
+import type { ArmorySkin, SkinPieces } from "../../packages/squad/src/studio/armory-skins.ts";
 
 const GUNS: HeldGun[] = ["rifle", "sniper", "plasma"];
 const holder = (p: T.Vector3) => p.clone().applyMatrix4(HOLDER_BASIS);
@@ -169,4 +185,279 @@ test("acquired guns share one build per (gun, fittings, detail)", () => {
     a.release();
     b.release();
     c.release();
+});
+
+// ---- Skinned held guns (held-skins.ts) ----
+
+/** The skin mesh's body, clip and stock, read straight from the GLB (node
+ * has no image decoder, so the embedded maps are skipped). */
+function skinPieces(): SkinPieces {
+    const b = readFileSync("public/squad/weapons/skins/rifle.glb");
+    const length = b.readUInt32LE(12),
+        json = JSON.parse(b.subarray(20, 20 + length).toString()),
+        bin = 20 + length + 8;
+    const read = (i: number) => {
+        const a = json.accessors[i],
+            view = json.bufferViews[a.bufferView];
+        const n = ({ SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4 } as Record<string, number>)[a.type];
+        const float = a.componentType === 5126,
+            size = float ? 4 : a.componentType === 5125 ? 4 : 2,
+            stride = view.byteStride ?? n * size;
+        const out = float ? new Float32Array(a.count * n) : new Uint32Array(a.count * n);
+        const data = new DataView(
+            b.buffer,
+            b.byteOffset + bin + (view.byteOffset ?? 0) + (a.byteOffset ?? 0),
+        );
+        for (let k = 0; k < a.count; k++)
+            for (let c = 0; c < n; c++) {
+                const at = k * stride + c * size;
+                out[k * n + c] = float
+                    ? data.getFloat32(at, true)
+                    : size === 4
+                      ? data.getUint32(at, true)
+                      : data.getUint16(at, true);
+            }
+        return new T.BufferAttribute(out, n);
+    };
+    const pieces: Partial<SkinPieces> = {};
+    for (const mesh of json.meshes) {
+        const p = mesh.primitives[0],
+            g = new T.BufferGeometry();
+        g.setAttribute("position", read(p.attributes.POSITION));
+        g.setAttribute("normal", read(p.attributes.NORMAL));
+        g.setAttribute("uv", read(p.attributes.TEXCOORD_0));
+        g.setAttribute("tangent", read(p.attributes.TANGENT));
+        g.setIndex(read(p.indices));
+        pieces[mesh.name as keyof SkinPieces] = g;
+    }
+    return pieces as SkinPieces;
+}
+
+/** A skin as `loadArmorySkin` hands it out, counting its references. */
+function fakeSkin(name: string, pieces = skinPieces()) {
+    const material = new T.MeshStandardMaterial();
+    material.userData.armorySkin = `rifle:${name}`;
+    let disposed = false;
+    material.addEventListener("dispose", () => (disposed = true));
+    const skin = {
+        key: `rifle:${name}`,
+        pieces,
+        material,
+        refs: 0,
+        retain() {
+            skin.refs++;
+        },
+        release() {
+            skin.refs--;
+        },
+        get disposed() {
+            return disposed;
+        },
+    };
+    return skin satisfies ArmorySkin;
+}
+
+const boxOf = (geometries: T.BufferGeometry[]) => {
+    const box = new T.Box3();
+    for (const g of geometries) {
+        g.computeBoundingBox();
+        box.union(g.boundingBox!);
+    }
+    return box;
+};
+const gap = (a: T.Box3, b: T.Box3) =>
+    Math.max(
+        ...a.min.clone().sub(b.min).toArray().map(Math.abs),
+        ...a.max.clone().sub(b.max).toArray().map(Math.abs),
+    );
+const meshesOf = (g: T.Object3D) => g.children.filter((c) => c instanceof T.Mesh) as T.Mesh[];
+
+test("skinned rifle: body, clip and stock sit where the procedural ones do in the hand", () => {
+    const pieces = skinPieces();
+    // The skin's frame to the socket agrees with the held gun's own tables.
+    for (const p of [
+        [0, 0, 0],
+        [RIFLE_MUZZLE, RIFLE_BORE, 0],
+        [-0.114, -0.045, 0.03],
+        ...Object.values(RIFLE_MOUNTS),
+    ]) {
+        const sized = new T.Vector3(...p)
+            .multiplyScalar(WEAPON_SCALE)
+            .applyMatrix4(ARMORY_TO_SOCKET);
+        assert.ok(sized.distanceTo(heldPoint(p)) < 1e-9);
+    }
+    // Each piece against the procedural build of the same piece, both in the
+    // hand socket. The skin is a bake of the authored gun at game density, so
+    // its outline differs by well under a millimetre, not by a transform.
+    const m = familyFinish(),
+        sized = new T.Matrix4().makeScale(WEAPON_SCALE, WEAPON_SCALE, WEAPON_SCALE),
+        unbasis = WEAPON_BASIS.clone().invert();
+    const g = new WeaponGeometry();
+    serviceRifle(g, m, "high");
+    const procedural = {
+        body: meshesOf(g.finish("body")).map((x) =>
+            x.geometry.applyMatrix4(sized).applyMatrix4(ARMORY_TO_SOCKET),
+        ),
+        ...Object.fromEntries(
+            (["clip", "stock"] as const).map((slot) => {
+                const at = new T.Matrix4().makeTranslation(
+                    ...(RIFLE_MOUNTS[slot].map((v) => v * WEAPON_SCALE) as [
+                        number,
+                        number,
+                        number,
+                    ]),
+                );
+                return [
+                    slot,
+                    meshesOf(createServiceFurniture(slot, m, "high")).map((x) =>
+                        x.geometry
+                            .applyMatrix4(unbasis)
+                            .applyMatrix4(at)
+                            .applyMatrix4(ARMORY_TO_SOCKET),
+                    ),
+                ];
+            }),
+        ),
+    } as Record<keyof SkinPieces, T.BufferGeometry[]>;
+    for (const piece of ["body", "clip", "stock"] as const) {
+        const skinned = boxOf([pieces[piece].clone().applyMatrix4(ARMORY_TO_SOCKET)]);
+        const d = gap(boxOf(procedural[piece]), skinned);
+        assert.ok(d < 0.0008, `${piece}: ${(d * 1000).toFixed(2)} mm`);
+    }
+    // The whole held build, and its interface, against the factory gun.
+    const skin = fakeSkin("align", pieces),
+        skinned = createSkinnedHeldWeapon("rifle", {}, skin),
+        factory = createHeldWeapon("rifle", {}, "high");
+    const d = gap(new T.Box3().setFromObject(factory), new T.Box3().setFromObject(skinned));
+    assert.ok(d < 0.0008, `whole gun: ${(d * 1000).toFixed(2)} mm`);
+    assert.deepEqual(skinned.userData.muzzle, factory.userData.muzzle);
+    for (const slot of ["scope", "laser", "clip", "stock"])
+        assert.ok(
+            skinned
+                .getObjectByName(`mount_${slot}`)!
+                .position.equals(factory.getObjectByName(`mount_${slot}`)!.position),
+        );
+    // One draw for body, clip and stock; a fraction of the authored triangles.
+    assert.equal(meshesOf(skinned).length, 1);
+    assert.equal(meshesOf(skinned)[0].material, skin.material);
+    assert.ok(heldTriangles(skinned) < 8000, `${heldTriangles(skinned)} triangles`);
+    assert.ok(heldTriangles(factory) > 4 * heldTriangles(skinned));
+});
+
+test("skinned rifle: mirrored into the socket like the procedural gun, faces still outward", () => {
+    // Same handedness as the held frame (both mirror, the socket reflects back).
+    assert.ok(ARMORY_TO_SOCKET.determinant() < 0);
+    const g = createSkinnedHeldWeapon("rifle", {}, fakeSkin("winding")),
+        geometry = meshesOf(g)[0].geometry,
+        index = geometry.index!.array,
+        p = geometry.attributes.position,
+        n = geometry.attributes.normal;
+    // Rewound after the mirror: each face's winding agrees with its normals.
+    let agree = 0;
+    const a = new T.Vector3(),
+        b = new T.Vector3(),
+        c = new T.Vector3(),
+        normal = new T.Vector3();
+    for (let t = 0; t < index.length; t += 3) {
+        a.fromBufferAttribute(p, index[t]);
+        b.fromBufferAttribute(p, index[t + 1]);
+        c.fromBufferAttribute(p, index[t + 2]);
+        normal.fromBufferAttribute(n, index[t]);
+        const face = b.sub(a).cross(c.sub(a));
+        if (face.dot(normal) > 0) agree++;
+    }
+    assert.ok(agree / (index.length / 3) > 0.95, `${agree} of ${index.length / 3}`);
+    // Tangents keep their handedness sign (the socket's reflection restores it).
+    const source = skinPieces().body.attributes.tangent,
+        moved = geometry.attributes.tangent;
+    for (let i = 0; i < source.count; i += 97) assert.equal(moved.getW(i), source.getW(i));
+});
+
+test("skinned rifle: upgrades stay procedural beside the skinned body", () => {
+    const skin = fakeSkin("fitted"),
+        fits = { scope: "scope-1", laser: "laser-1", clip: "clip-2" },
+        g = createSkinnedHeldWeapon("rifle", fits, skin),
+        factory = createHeldWeapon("rifle", fits, "high");
+    const materials = meshesOf(g).map((x) => x.material as T.Material);
+    assert.ok(materials.includes(skin.material));
+    assert.ok(
+        materials.some((x) => x !== skin.material),
+        "fittings in their own finish",
+    );
+    // No laser beam on a held gun, as on the procedural one.
+    assert.equal(meshesOf(g).length, meshesOf(factory).length);
+    const d = gap(new T.Box3().setFromObject(factory), new T.Box3().setFromObject(g));
+    assert.ok(d < 0.0008, `fitted gun: ${(d * 1000).toFixed(2)} mm`);
+    assert.equal(g.getObjectByName("mount_scope")!.userData.tier, 1);
+});
+
+test("skinned builds are shared per (gun, fittings, skin) and hold their skin", () => {
+    const pieces = skinPieces(),
+        camo = fakeSkin("camo-cache", pieces),
+        heavy = fakeSkin("heavy-cache", pieces);
+    const a = acquireSkinnedHeldWeapon("rifle", {}, camo),
+        b = acquireSkinnedHeldWeapon("rifle", {}, camo),
+        c = acquireSkinnedHeldWeapon("rifle", {}, heavy),
+        d = acquireSkinnedHeldWeapon("rifle", { scope: "scope-1" }, camo);
+    const geometry = (g: T.Group) => meshesOf(g)[0].geometry;
+    assert.equal(geometry(a.model), geometry(b.model));
+    assert.notEqual(geometry(a.model), geometry(c.model));
+    assert.equal(a.model.userData.skin, "rifle:camo-cache");
+    // One reference on the skin per build, not per holder.
+    assert.equal(camo.refs, 2);
+    assert.equal(heavy.refs, 1);
+    for (const h of [a, b, c, d]) h.release();
+    a.release();
+    // Idle builds are kept a little while, then let go of their skin.
+    const fillers = ["f1", "f2", "f3", "f4"].map((n) => fakeSkin(n, pieces));
+    for (const f of fillers) acquireSkinnedHeldWeapon("rifle", {}, f).release();
+    assert.equal(camo.refs, 0);
+    assert.equal(heavy.refs, 0);
+    assert.ok(!camo.disposed, "the skin's material is the loader's to dispose");
+    assert.ok(skinnedHeldCache().every((e) => e.refs === 0));
+});
+
+test("EquipmentAssets: a skin that fails to load gives the factory gun", async () => {
+    // EquipmentAssets imports without extensions, as the bundler resolves them.
+    register(
+        "data:text/javascript," +
+            encodeURIComponent(`export async function resolve(s, c, next) {
+                if (s.startsWith(".") && !/\\.[a-z]+$/.test(s))
+                    try { return await next(s + ".ts", c); } catch {}
+                return next(s, c);
+            }`),
+    );
+    const { EquipmentAssets } = await import("../../packages/squad/src/studio/equipment-assets.ts");
+    const calls: string[] = [];
+    const failing = new EquipmentAssets("high", async (_gun, _fits, skin) => {
+        calls.push(skin);
+        throw Error("offline");
+    });
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+        const gun = await failing.get("rifle", {}, "camo");
+        assert.equal(gun.userData.skin, undefined);
+        assert.equal(heldTriangles(gun), heldTriangles(createHeldWeapon("rifle", {}, "high")));
+        // Forgotten, so the next request retries.
+        await failing.get("rifle", {}, "camo");
+        assert.deepEqual(calls, ["camo", "camo"]);
+        // Factory, no skin, unknown skins and guns without skins never load one.
+        await failing.get("rifle", {}, "factory");
+        await failing.get("rifle", {});
+        await failing.get("rifle", {}, "nonsense");
+        await failing.get("sniper", {}, "camo");
+        assert.equal(calls.length, 2);
+    } finally {
+        console.warn = warn;
+        failing.dispose();
+    }
+    const skin = fakeSkin("assets");
+    const working = new EquipmentAssets("high", async (gun, fits) =>
+        acquireSkinnedHeldWeapon(gun, fits, skin),
+    );
+    const gun = await working.get("rifle", {}, "camo");
+    assert.equal(gun.userData.skin, "rifle:assets");
+    assert.ok(gun.userData.center && gun.userData.muzzle);
+    working.dispose();
 });

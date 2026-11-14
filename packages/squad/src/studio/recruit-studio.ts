@@ -299,7 +299,11 @@ export function createRecruitStudio(
             pistol ? currentRecruit.equipment.sidearm : currentRecruit.equipment.primary,
         );
         const gun = item
-            ? await equipment.get(item.model, pistol ? {} : currentRecruit.attachments)
+            ? await equipment.get(
+                  item.model,
+                  pistol ? {} : currentRecruit.attachments,
+                  pistol ? undefined : currentRecruit.weaponSkin,
+              )
             : undefined;
         if (gun) await prepare(gun, camera, scene);
         if (disposed || ticket !== motionEpoch || person !== current) return;
@@ -310,7 +314,7 @@ export function createRecruitStudio(
             const ticket = ++epoch;
             const key = JSON.stringify([recruit.id, appearance, recruit.equipment, look]);
             const base = JSON.stringify([recruit.id, recruit.equipment, look]);
-            const attachmentKey = JSON.stringify(recruit.attachments ?? {});
+            const attachmentKey = JSON.stringify([recruit.attachments ?? {}, recruit.weaponSkin]);
             // Colour and tint edits restyle the built character instead of building anew.
             if (
                 current &&
@@ -327,7 +331,7 @@ export function createRecruitStudio(
                     const item =
                         look === "office-worker" ? undefined : itemById(recruit.equipment.primary);
                     const gun = item
-                        ? await equipment.get(item.model, recruit.attachments)
+                        ? await equipment.get(item.model, recruit.attachments, recruit.weaponSkin)
                         : undefined;
                     if (gun) await prepare(gun, camera, scene);
                     if (disposed || ticket !== epoch || person !== current) return;
@@ -337,6 +341,12 @@ export function createRecruitStudio(
                 draw();
                 return;
             }
+            const item = look === "office-worker" ? undefined : itemById(recruit.equipment.primary);
+            // The gun (and a skin's maps) load while the character does.
+            const pendingGun = item
+                ? equipment.get(item.model, recruit.attachments, recruit.weaponSkin)
+                : Promise.resolve(undefined);
+            pendingGun.catch(() => {});
             const next = await assets.create(
                 appearance,
                 recruit.equipment.armor,
@@ -348,8 +358,7 @@ export function createRecruitStudio(
                 next.dispose();
                 return;
             }
-            const item = look === "office-worker" ? undefined : itemById(recruit.equipment.primary);
-            const gun = item ? await equipment.get(item.model, recruit.attachments) : undefined;
+            const gun = await pendingGun;
             if (disposed || ticket !== epoch) {
                 next.dispose();
                 return;
