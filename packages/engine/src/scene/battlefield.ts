@@ -139,7 +139,7 @@ export class Battlefield {
     this.scene.fog = new T.FogExp2(0x252b3b, 0.019);
     renderer.setPixelRatio(1);
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = T.PCFSoftShadowMap;
+    renderer.shadowMap.type = T.PCFShadowMap;
     renderer.toneMapping = T.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.12;
     viewport.append(renderer.domElement);

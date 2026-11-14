@@ -37,7 +37,7 @@ export function createTitleCity(
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.15;
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
     renderer.shadowMap.autoUpdate = false;
     host.append(renderer.domElement);
     const scene = new THREE.Scene();

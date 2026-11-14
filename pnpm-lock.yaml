@@ -51,8 +51,8 @@ importers:
         specifier: ^7.18.5
         version: 7.18.5(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       three:
-        specifier: ^0.174.0
-        version: 0.174.0
+        specifier: ^0.187.0
+        version: 0.187.0
     devDependencies:
       '@eslint/js':
         specifier: ^10.0.1
@@ -73,8 +73,8 @@ importers:
         specifier: ^19.3.0
         version: 19.3.0(@types/react@19.3.0)
       '@types/three':
-        specifier: ^0.174.0
-        version: 0.174.0
+        specifier: ^0.187.0
+        version: 0.187.0
       '@vitejs/plugin-react-swc':
         specifier: ^4.3.3
         version: 4.3.3(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0))
@@ -125,8 +125,8 @@ importers:
         version: 4.6.7
     devDependencies:
       '@types/node':
-        specifier: ^22.20.5
-        version: 22.20.5
+        specifier: ^26.6.6
+        version: 26.6.6
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -137,7 +137,7 @@ importers:
     dependencies:
       '@dgreenheck/three-pinata':
         specifier: ^2.0.1
-        version: 2.0.1(three@0.174.0)
+        version: 2.0.1(three@0.187.0)
       '@dimforge/rapier3d-compat':
         specifier: ^0.21.0
         version: 0.21.0
@@ -145,15 +145,15 @@ importers:
         specifier: workspace:*
         version: link:../squad
       three:
-        specifier: ^0.174.0
-        version: 0.174.0
+        specifier: ^0.187.0
+        version: 0.187.0
     devDependencies:
       '@types/react':
         specifier: ^19.3.0
         version: 19.3.0
       '@types/three':
-        specifier: ^0.174.0
-        version: 0.174.0
+        specifier: ^0.187.0
+        version: 0.187.0
       react:
         specifier: ^19.3.1
         version: 19.3.1
@@ -167,15 +167,15 @@ importers:
   packages/squad:
     dependencies:
       three:
-        specifier: ^0.174.0
-        version: 0.174.0
+        specifier: ^0.187.0
+        version: 0.187.0
     devDependencies:
       '@types/node':
-        specifier: ^22.20.5
-        version: 22.20.5
+        specifier: ^26.6.6
+        version: 26.6.6
       '@types/three':
-        specifier: ^0.174.0
-        version: 0.174.0
+        specifier: ^0.187.0
+        version: 0.187.0
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -320,6 +320,9 @@ packages:
     resolution: {integrity: sha512-1pQU68B5xguxvRryl6nxZBARDqOW+/lXf7Xpz8QZ87awadSpN85mDNChTEdA4fPfJYyrft+thHS6Ooe7E5rdFA==}
     peerDependencies:
       three: '>=0.158.0'
+
+  '@dimforge/rapier3d-compat@0.12.0':
+    resolution: {integrity: sha512-uekIGetywIgopfD97oDL5PfeezkFpNhwlzlaEYNOA0N6ghdsOvh/HYjSMek5Q2O1PYvRSDFcqFVJl4r4ZBwOow==}
 
   '@dimforge/rapier3d-compat@0.21.0':
     resolution: {integrity: sha512-tCl1HPGwOhn5aCQbgqWbOH+Nx/5fnr3IPAnzQuR7zIhC/raqi2yxC6LhvZqjdI2El5hQgY5RDAwDrAjAi2FdPA==}
@@ -1233,9 +1236,6 @@ packages:
   '@types/ndarray@1.1.0':
     resolution: {integrity: sha512-go+C6vHBUuO9jH6Tj6qEZ63JEGoMSxFdmd+6QAtthGD6xumBfIz3RbNDDs2aoRVLf9naH8lk5jnWy2UHHKgYQQ==}
 
-  '@types/node@22.20.5':
-    resolution: {integrity: sha512-U2+DNr+wSjpsTS/wZGYHq7GcwfuSmKiKvoPvK22zwTlRhU91yOniN4qRR5KhIjvif7ysw/dz/hKmfDH0Ris4aA==}
-
   '@types/node@26.6.6':
     resolution: {integrity: sha512-MzQj+8Kx3XI40OmUAE6Qoh58ZMNstNNMwn2nfd3qWsfe7nDNSqJNzes4njhz6AHwrSHOffSLwXU6yb474Q4aog==}
 
@@ -1250,8 +1250,8 @@ packages:
   '@types/stats.js@0.17.4':
     resolution: {integrity: sha512-jIBvWWShCvlBqBNIZt0KAshWpvSjhkwkEu4ZUcASoAvhmrgAUI2t1dXrjSL4xXVLB4FznPrIsX3nKXFl/Dt4vA==}
 
-  '@types/three@0.174.0':
-    resolution: {integrity: sha512-De/+vZnfg2aVWNiuy1Ldu+n2ydgw1osinmiZTAn0necE++eOfsygL8JpZgFjR2uHmAPo89MkxBj3JJ+2BMe+Uw==}
+  '@types/three@0.187.0':
+    resolution: {integrity: sha512-v+vKNarUtk4n2QRZ4+CN5ygMM0ARUjXjIQl0R/unMUfmStFeVqGbgqarbrpoGTXRZoulSH16ePrVJVxPJEbMUA==}
 
   '@types/trusted-types@2.0.7':
     resolution: {integrity: sha512-ScaPdn1dQczgbl0QFTeTOmVHFULt394XJgOQNoyVhZ6r2vLnMLJfBPd53SB52T/3G36VI1/g2MZaX0cwDuXsfw==}
@@ -1371,9 +1371,6 @@ packages:
 
   '@webcomponents/scoped-custom-element-registry@0.0.10':
     resolution: {integrity: sha512-wP4LF28aysE2Pq3NQRNQxko7Q0vOOwcoOSMg8FFI4S6z76UuXkYIc5ndC31dJMwso1/vSteL75LW2CEKedAJbA==}
-
-  '@webgpu/types@0.1.74':
-    resolution: {integrity: sha512-lgiI4hbuLcI9unnm2cL/tvCaQU45dp0xcLWJh5uB/9MBGvIA4F8XIk7nSiBeg+K4xWGYwgZKn80LmERI5CxoTA==}
 
   accepts@2.0.0:
     resolution: {integrity: sha512-5cvg6CtKwfgdmVqY1WIiXKc3Q1bkRqGLi+2W/6ao+6Y7gu/RCwRuAhGEzh5B4KlszSuTLgZYuqFqo5bImjNKng==}
@@ -1960,8 +1957,8 @@ packages:
     resolution: {integrity: sha512-Snk314V5ayFLhp3fkUREub6WtjBfPdCPY1Ln8/8munuLuiYhsABgBVWsozAG+MWMbVEvcdcpbi9R7ww22l9Q3g==}
     engines: {node: '>=18'}
 
-  meshoptimizer@0.18.1:
-    resolution: {integrity: sha512-ZhoIoL7TNV4s5B6+rx5mC//fw8/POGyNxS/DZyCJeiZ12ScLfVwRE/GfsxwiTkMYYD5DmK2/JXnEVXqL4rF+Sw==}
+  meshoptimizer@1.1.1:
+    resolution: {integrity: sha512-oRFNWJRDA/WTrVj7NWvqa5HqE1t9MYDj2VaWirQCzCCrAd2GHrqR/sQezCxiWATPNlKTcRaPRHPJwIRoPBAp5g==}
 
   meshoptimizer@1.3.0:
     resolution: {integrity: sha512-2oZqMAcEEiCtXWUjIGtZ71oPx1B0ZxYGTqIKsXB1wzWFhleNsCFxQuUJzgCV706bRcwPWtMGf1odmQvAcqKkIw==}
@@ -2248,8 +2245,8 @@ packages:
     resolution: {integrity: sha512-NHFiWnAbMJxNNpBwiO7jJVGDuqMxT9/oV8v57RR+fgBQShkJil5inGD8/xWy0hjLyHQyX1tu27QANhlz3KBqCg==}
     engines: {node: '>=6'}
 
-  three@0.174.0:
-    resolution: {integrity: sha512-p+WG3W6Ov74alh3geCMkGK9NWuT62ee21cV3jEnun201zodVF4tCE5aZa2U122/mkLRmhJJUQmLLW1BH00uQJQ==}
+  three@0.187.0:
+    resolution: {integrity: sha512-Qiu7R+Cmh8CstZsY1uJOSWnVlfo7ZtNLV7mF8Jltk3LB3AtDu9cRZlcnRKkAk8Y4z6KKw35z7Y7Urd7jWY8etA==}
 
   tinyglobby@0.2.17:
     resolution: {integrity: sha512-wXR/dYpcqKmfWpEdZjiKJOwCNFndD0DMnrW/cYjVGttEkBfVgcLFHoNrlj47mjOVic9yyNu65alsgF4NQyTa2g==}
@@ -2287,9 +2284,6 @@ packages:
     resolution: {integrity: sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw==}
     engines: {node: '>=14.17'}
     hasBin: true
-
-  undici-types@6.21.0:
-    resolution: {integrity: sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==}
 
   undici-types@8.9.0:
     resolution: {integrity: sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg==}
@@ -2589,9 +2583,11 @@ snapshots:
     dependencies:
       '@jridgewell/trace-mapping': 0.3.9
 
-  '@dgreenheck/three-pinata@2.0.1(three@0.174.0)':
+  '@dgreenheck/three-pinata@2.0.1(three@0.187.0)':
     dependencies:
-      three: 0.174.0
+      three: 0.187.0
+
+  '@dimforge/rapier3d-compat@0.12.0': {}
 
   '@dimforge/rapier3d-compat@0.21.0': {}
 
@@ -3358,14 +3354,9 @@ snapshots:
 
   '@types/ndarray@1.1.0': {}
 
-  '@types/node@22.20.5':
-    dependencies:
-      undici-types: 6.21.0
-
   '@types/node@26.6.6':
     dependencies:
       undici-types: 8.9.0
-    optional: true
 
   '@types/react-dom@19.3.0(@types/react@19.3.0)':
     dependencies:
@@ -3377,14 +3368,14 @@ snapshots:
 
   '@types/stats.js@0.17.4': {}
 
-  '@types/three@0.174.0':
+  '@types/three@0.187.0':
     dependencies:
+      '@dimforge/rapier3d-compat': 0.12.0
       '@tweenjs/tween.js': 23.1.3
       '@types/stats.js': 0.17.4
       '@types/webxr': 0.5.24
-      '@webgpu/types': 0.1.74
       fflate: 0.8.3
-      meshoptimizer: 0.18.1
+      meshoptimizer: 1.1.1
 
   '@types/trusted-types@2.0.7': {}
 
@@ -3546,8 +3537,6 @@ snapshots:
       '@wallet-standard/base': 1.1.1
 
   '@webcomponents/scoped-custom-element-registry@0.0.10': {}
-
-  '@webgpu/types@0.1.74': {}
 
   accepts@2.0.0:
     dependencies:
@@ -4138,7 +4127,7 @@ snapshots:
 
   merge-descriptors@2.0.0: {}
 
-  meshoptimizer@0.18.1: {}
+  meshoptimizer@1.1.1: {}
 
   meshoptimizer@1.3.0: {}
 
@@ -4462,7 +4451,7 @@ snapshots:
 
   tapable@2.3.4: {}
 
-  three@0.174.0: {}
+  three@0.187.0: {}
 
   tinyglobby@0.2.17:
     dependencies:
@@ -4501,10 +4490,7 @@ snapshots:
 
   typescript@6.0.3: {}
 
-  undici-types@6.21.0: {}
-
-  undici-types@8.9.0:
-    optional: true
+  undici-types@8.9.0: {}
 
   undici@7.30.1: {}
 

@@ -152,7 +152,7 @@ export class EditorScene {
     this.renderer = renderer;
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = T.PCFSoftShadowMap;
+    renderer.shadowMap.type = T.PCFShadowMap;
     renderer.toneMapping = T.ACESFilmicToneMapping;
     renderer.domElement.style.display = "block";
     host.appendChild(renderer.domElement);

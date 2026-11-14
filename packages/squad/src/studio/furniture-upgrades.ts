@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import * as T from "three";
+import "./extrude.ts";
 import { WEAPON_BASIS } from "./gear-geometry.ts";
 import {
   WeaponGeometry,

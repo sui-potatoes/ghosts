@@ -9,16 +9,9 @@ updates:
       minor-and-patch:
         update-types: [minor, patch]
     ignore:
-      # Poses and hand clearance are calibrated against this three.js release;
-      # upgrading needs a pose re-check, so it is done by hand.
-      - dependency-name: three
-      - dependency-name: "@types/three"
       # typescript-eslint does not support TypeScript 7 yet.
       - dependency-name: typescript
         versions: [">=7"]
-      # Follows the Node version CI runs, not the newest typings.
-      - dependency-name: "@types/node"
-        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /

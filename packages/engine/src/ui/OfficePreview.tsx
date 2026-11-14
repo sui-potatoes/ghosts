@@ -31,7 +31,7 @@ export function OfficePreview({ onClose }: { onClose(): void }) {
       cleanups.push(() => { renderer.dispose(); renderer.domElement.remove(); });
       renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
       renderer.toneMapping = T.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.25;
-      renderer.shadowMap.enabled = true; renderer.shadowMap.type = T.PCFSoftShadowMap;
+      renderer.shadowMap.enabled = true; renderer.shadowMap.type = T.PCFShadowMap;
       renderer.domElement.setAttribute("aria-label", "Rotatable office asset preview");
       host.append(renderer.domElement);
       const scene = new T.Scene(); scene.background = new T.Color(0x202c32);

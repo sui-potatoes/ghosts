@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import * as T from "three";
+import "./extrude.ts";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 
 /** Static, metre-scale details, collapsed to one draw per finish at construction. */

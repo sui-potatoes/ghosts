@@ -57,7 +57,7 @@ export function DestructionPreview({ onClose, initialKind = "crate" }: { onClose
       const renderer = new T.WebGLRenderer({ antialias: true, alpha: false });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
       renderer.shadowMap.enabled = true;
-      renderer.shadowMap.type = T.PCFSoftShadowMap;
+      renderer.shadowMap.type = T.PCFShadowMap;
       renderer.toneMapping = T.ACESFilmicToneMapping;
       renderer.toneMappingExposure = 1.45;
       host.append(renderer.domElement);

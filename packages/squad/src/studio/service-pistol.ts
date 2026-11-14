@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import * as T from "three";
+import "./extrude.ts";
 import type { WeaponGeometry, WeaponFinish } from "./weapon-finish.ts";
 import {
   X,
