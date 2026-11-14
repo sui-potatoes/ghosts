@@ -1631,3 +1631,171 @@ fun bench_h_complete() {
     complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
     fixture.finish();
 }
+
+// Read with `sui move test -s bench_size`: one armed recruit a side on an empty
+// square map, Alice at (0, 0) and Bob in the far corner, deployed and then ten
+// or twenty turns played. The difference between `deploy` and `next_turn_x10`
+// at each size is what ten turns cost there, and between `x10` and `x20` what
+// ten more cost once the game is under way.
+
+/// `setup` on an empty square map of `size` tiles a side.
+fun setup_on_empty(size: u8): Fixture {
+    setup_on!(
+        |id| map::new(id, size as u16),
+        vector[vector[0, 0], vector[size - 1, size - 1]],
+        |acc, ctx| hire(acc, ctx),
+    )
+}
+
+/// Deploy on an empty map of `size`, then play `turns` turns.
+fun bench_size(size: u8, turns: u64) {
+    let mut fixture = setup_on_empty(size);
+    let f = &mut fixture;
+    let mut game = f.start();
+    f.deploy(&mut game);
+    turns.do!(|i| {
+        f.ts.next_tx(if (i % 2 == 0) ALICE else BOB);
+        let acc = if (i % 2 == 0) &f.alice else &f.bob;
+        next_turn(&mut game, acc, &f.clock, f.ts.ctx());
+    });
+    transfer::share_object(game);
+    fixture.finish();
+}
+
+#[test]
+fun bench_size_07_deploy() { bench_size(7, 0) }
+
+#[test]
+fun bench_size_07_next_turn_x10() { bench_size(7, 10) }
+
+#[test]
+fun bench_size_16_deploy() { bench_size(16, 0) }
+
+#[test]
+fun bench_size_16_next_turn_x10() { bench_size(16, 10) }
+
+#[test]
+fun bench_size_30_deploy() { bench_size(30, 0) }
+
+#[test]
+fun bench_size_30_next_turn_x10() { bench_size(30, 10) }
+
+#[test]
+fun bench_size_07_next_turn_x20() { bench_size(7, 20) }
+
+#[test]
+fun bench_size_30_next_turn_x20() { bench_size(30, 20) }
+
+// === Unit Index ===
+
+/// `Map.units` list exactly the tiles a walk of the grid finds, and each
+/// side's `squad` is what a walk would give.
+fun check_index(game: &Game) {
+    use std::unit_test::assert_eq;
+
+    game.map.assert_units_match_grid();
+    let (first, second) = game.squads();
+    assert_eq!(first, squad_by_walk(game, 0));
+    assert_eq!(second, squad_by_walk(game, 1));
+    assert_eq!(game.squad(0), first);
+    assert_eq!(game.squad(1), second);
+}
+
+/// A side's `squad` as a walk of the whole grid finds it.
+fun squad_by_walk(game: &Game, side: u64): vector<ID> {
+    game.map.units_of_by_walk(game.players[side]).filter!(|id| game.recruits.contains(*id))
+}
+
+#[test]
+/// Deploy, moves, a grenade and turns on Black Rain, three a side: `Map.units`
+/// stays in step, and every new turn gives the side starting it its AP back.
+fun test_unit_index_on_black_rain() {
+    use grid::direction::{down, left};
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    let mut game = f.start();
+    check_index(&game);
+    f.deploy_black_rain(&mut game);
+    check_index(&game);
+    assert_eq!(game.map.unit_tiles().length(), 6);
+
+    f.advance_black_rain(&mut game);
+    check_index(&game);
+    perform_grenade(&mut game, &f.alice, &f.rng, &f.clock, 6, 10, 4, 11, f.ts.ctx());
+    check_index(&game);
+
+    next_turn(&mut game, &f.alice, &f.clock, f.ts.ctx());
+    check_index(&game);
+    let bob = game.players[1];
+    game.map.unit_tiles().do!(|tile| {
+        let (_, cols) = game.map.size();
+        let unit = game.map.unit(tile / cols, tile % cols).borrow();
+        if (unit.owner() == bob) assert_eq!(unit.ap(), 2);
+    });
+
+    // Bob walks from (3, 6) down and left to (5, 5)
+    f.ts.next_tx(BOB);
+    move_unit(&mut game, &f.bob, &f.clock, vector[3, 6, down!(), down!(), left!()], f.ts.ctx());
+    check_index(&game);
+    next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());
+    check_index(&game);
+
+    f.ts.next_tx(ALICE);
+    abandon_game(&mut game, &f.alice, f.ts.ctx());
+    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    fixture.finish();
+}
+
+#[test]
+/// `test_full_game` with `Map.units` checked after every call, through the kill
+/// that ends it and the turn that buries the fallen.
+fun test_unit_index_through_a_full_game() {
+    use grid::direction::{up, left};
+
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut game = f.start();
+    f.deploy(&mut game);
+    check_index(&game);
+
+    next_turn(&mut game, &f.alice, &f.clock, f.ts.ctx());
+    check_index(&game);
+    f.ts.next_tx(BOB);
+    let path = vector[6, 5, up!(), up!(), left!(), left!(), left!(), left!(), up!()];
+    move_unit(&mut game, &f.bob, &f.clock, path, f.ts.ctx());
+    check_index(&game);
+    perform_attack(&mut game, &f.bob, &f.rng, &f.clock, 3, 1, 0, 3, f.ts.ctx());
+    check_index(&game);
+
+    while (!game.is_over()) {
+        let (acc, other, from, to) = if (game.active_side() == 1) {
+            (&f.bob, ALICE, vector[0u16, 3], vector[3u16, 1])
+        } else (&f.alice, BOB, vector[3u16, 1], vector[0u16, 3]);
+        next_turn(&mut game, acc, &f.clock, f.ts.ctx());
+        check_index(&game);
+        f.ts.next_tx(other);
+        let acc = if (other == ALICE) &f.alice else &f.bob;
+        if (game.map.unit(from[0], from[1]).borrow().ammo() == 0) {
+            perform_reload(&mut game, acc, &f.clock, from[0], from[1], f.ts.ctx());
+        };
+        perform_attack(
+            &mut game,
+            acc,
+            &f.rng,
+            &f.clock,
+            from[0],
+            from[1],
+            to[0],
+            to[1],
+            f.ts.ctx(),
+        );
+        check_index(&game);
+    };
+
+    assert!(game.map.unit_tiles().length() == 1);
+    f.ts.next_tx(CAROL);
+    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    fixture.finish();
+}

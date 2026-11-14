@@ -4,20 +4,48 @@
 #[test_only]
 extend module ghosts::map;
 
-/// Kill the unit of the `recruit`, the way an attack does: off its tile and into
-/// `fallen`, until `bury`.
+/// Kill the unit of the `recruit`, the way an attack does: off its tile and
+/// `Map.units`, and into `fallen`, until `bury`.
 public fun kill_for_testing(map: &mut Map, recruit: ID): Record {
-    let (rows, cols) = map.size();
-    let mut record = option::none();
-    rows.do!(|x| cols.do!(|y| {
-        if (map.grid[x, y].unit.is_some_and!(|unit| unit.recruit_id() == recruit)) {
-            let unit = map.grid[x, y].unit.extract();
-            map.fallen.push_back(unit);
-            record.fill(history::new_kia(recruit, x, y));
-        }
-    }));
-    record.destroy_some()
+    let cols = map.grid.cols();
+    let at = map.units.find_index!(|tile| {
+        map.grid[*tile / cols, *tile % cols].unit.borrow().recruit_id() == recruit
+    });
+    let tile = map.units.remove(at.destroy_some());
+    let (x, y) = (tile / cols, tile % cols);
+    let unit = map.grid[x, y].unit.extract();
+    map.fallen.push_back(unit);
+    history::new_kia(recruit, x, y)
 }
+
+// === Unit Index ===
+
+/// The tiles holding a unit as a walk of the whole grid finds them, as row-major
+/// indices: what `Map.units` must always be.
+public fun units_by_walk(map: &Map): vector<u16> {
+    let (rows, cols) = map.size();
+    let mut units = vector[];
+    rows.do!(|x| cols.do!(|y| if (map.grid[x, y].unit.is_some()) units.push_back(x * cols + y)));
+    units
+}
+
+/// The recruits of `owner` as a walk of the whole grid finds them: what
+/// `units_of` gave before `Map.units`.
+public fun units_of_by_walk(map: &Map, owner: ID): vector<ID> {
+    let mut units = vector[];
+    map.grid.do_ref!(|tile| tile.unit.do_ref!(|unit| {
+        if (unit.owner() == owner) units.push_back(unit.recruit_id());
+    }));
+    units
+}
+
+/// Abort unless `Map.units` lists exactly the tiles a walk of the grid finds.
+public fun assert_units_match_grid(map: &Map) {
+    std::unit_test::assert_eq!(map.units, map.units_by_walk());
+}
+
+/// The tiles in `Map.units`.
+public fun unit_tiles(map: &Map): vector<u16> { map.units }
 
 // === Demo Maps ===
 
@@ -494,4 +522,304 @@ fun test_grenade_without_line_of_throw_fails() {
     map.place_recruit(&recruit, 0, 0);
     map.perform_grenade(&mut rng, 0, 0, 0, 4);
     abort
+}
+
+// === Unit Index Tests ===
+
+const ALICE: address = @0xA;
+const BOB: address = @0xB;
+
+/// A default recruit of the `Account` `owner`.
+fun recruit_of(owner: address, ctx: &mut TxContext): ghosts::recruit::Recruit {
+    let mut recruit = ghosts::recruit::default(ctx);
+    recruit.set_leader(owner);
+    recruit
+}
+
+/// A recruit of `owner` with 4 HP: a grenade kills it.
+fun frail_of(owner: address, ctx: &mut TxContext): ghosts::recruit::Recruit {
+    let mut recruit = recruit_of(owner, ctx);
+    let armor = ghosts::stats::new(0, 0, 0x80 + 6, 0, 0);
+    recruit.add_armor(ghosts::armor::new(b"Frail".to_string(), armor, ctx));
+    recruit
+}
+
+/// A recruit of `owner` whose weapon always hits for `damage`, in an area of
+/// `radius` that cannot be dodged.
+fun shooter_of(
+    owner: address,
+    damage: u8,
+    radius: u8,
+    ctx: &mut TxContext,
+): ghosts::recruit::Recruit {
+    let mut recruit = recruit_of(owner, ctx);
+    let stats = ghosts::stats_builder::new()
+        .aim(35)
+        .damage(damage)
+        .spread(0)
+        .crit_chance(0)
+        .area_size(radius)
+        .can_be_dodged(0)
+        .build_weapon();
+    recruit.add_weapon(ghosts::weapon::new(b"Test".to_string(), stats, ctx));
+    recruit
+}
+
+/// `units_of` for both owners agrees with a walk of the grid, and so do `Map.units`.
+fun assert_index(map: &Map) {
+    use std::unit_test::assert_eq;
+
+    map.assert_units_match_grid();
+    let (alice, bob) = (ALICE.to_id(), BOB.to_id());
+    assert_eq!(map.units_of(alice), map.units_of_by_walk(alice));
+    assert_eq!(map.units_of(bob), map.units_of_by_walk(bob));
+    let (a, b) = map.units_of_both(alice, bob);
+    assert_eq!(a, map.units_of_by_walk(alice));
+    assert_eq!(b, map.units_of_by_walk(bob));
+}
+
+#[test]
+/// Placing and moving units keeps `Map.units` sorted and in step with the grid;
+/// `reset_ap` finds only the owner's units through it.
+fun units_follow_placement_and_moves() {
+    use grid::direction::{up, down};
+    use std::unit_test::{assert_eq, destroy};
+
+    let ctx = &mut tx_context::dummy();
+    let mut map = new(@0.to_id(), 6);
+    let (a1, a2) = (recruit_of(ALICE, ctx), recruit_of(ALICE, ctx));
+    let (b1, b2) = (recruit_of(BOB, ctx), recruit_of(BOB, ctx));
+
+    map.place_recruit(&a1, 3, 3);
+    assert_eq!(map.unit_tiles(), vector[21]);
+    map.place_recruit(&b1, 0, 5);
+    map.place_recruit(&a2, 5, 0);
+    map.place_recruit(&b2, 0, 1);
+    assert_eq!(map.unit_tiles(), vector[1, 5, 21, 30]);
+    assert_index(&map);
+    assert_eq!(map.units_of(ALICE.to_id()), vector[object::id(&a1), object::id(&a2)]);
+    assert_eq!(map.units_of(BOB.to_id()), vector[object::id(&b2), object::id(&b1)]);
+
+    // a1 walks from (3, 3) to (0, 3), ahead of b1 in the walk order
+    map.move_unit(vector[3, 3, up!(), up!(), up!()]);
+    assert_eq!(map.unit_tiles(), vector[1, 3, 5, 30]);
+    assert_index(&map);
+
+    // b2 steps from (0, 1) down to (1, 1), now behind a1 and b1
+    map.move_unit(vector[0, 1, down!()]);
+    assert_eq!(map.unit_tiles(), vector[3, 5, 7, 30]);
+    assert_index(&map);
+    assert_eq!(map.units_of(BOB.to_id()), vector[object::id(&b1), object::id(&b2)]);
+
+    // Alice's turn: her units get their AP back, Bob's do not
+    map.reset_ap(ALICE.to_id());
+    assert!(map.unit(0, 3).is_some_and!(|u| u.ap() == 2));
+    assert!(map.unit(1, 1).is_some_and!(|u| u.ap() == 1));
+    map.reset_ap(BOB.to_id());
+    assert!(map.unit(1, 1).is_some_and!(|u| u.ap() == 2));
+    assert_index(&map);
+
+    destroy(vector[a1, a2, b1, b2]);
+    map.destroy();
+}
+
+#[test]
+/// A kill by a single shot takes the tile out of `Map.units`; `bury` leaves them.
+fun units_follow_kill_by_attack() {
+    use std::unit_test::{assert_eq, destroy};
+
+    let ctx = &mut tx_context::dummy();
+    let mut rng = sui::random::new_generator_from_seed_for_testing(vector[1]);
+    let mut map = new(@0.to_id(), 6);
+    let shooter = shooter_of(ALICE, 99, 0, ctx);
+    let (target, other) = (recruit_of(BOB, ctx), recruit_of(BOB, ctx));
+
+    map.place_recruit(&shooter, 0, 0);
+    map.place_recruit(&target, 1, 1);
+    map.place_recruit(&other, 2, 2);
+    assert_eq!(map.unit_tiles(), vector[0, 7, 14]);
+
+    let history = map.perform_attack(&mut rng, 0, 0, 1, 1);
+    assert_eq!(history::list_kia(&history).length(), 1);
+    assert_eq!(map.unit_tiles(), vector[0, 14]);
+    assert_index(&map);
+
+    assert_eq!(map.bury(), vector[object::id(&target)]);
+    assert_eq!(map.unit_tiles(), vector[0, 14]);
+    assert_index(&map);
+
+    destroy(vector[shooter, target, other]);
+    map.destroy();
+}
+
+#[test]
+/// A grenade killing several units at once, the thrower's own among them, takes
+/// every one of their tiles out of `Map.units`, and only theirs.
+fun units_follow_grenade_kills() {
+    use std::unit_test::{assert_eq, destroy};
+
+    let ctx = &mut tx_context::dummy();
+    let mut rng = sui::random::new_generator_from_seed_for_testing(vector[1]);
+    let mut map = new(@0.to_id(), 6);
+    let mut thrower = recruit_of(ALICE, ctx);
+    thrower.add_utility(ghosts::items::frag_grenade(ctx));
+    let near = recruit_of(BOB, ctx); // survives with 6 HP
+    let own = frail_of(ALICE, ctx);
+    let (foe_1, foe_2) = (frail_of(BOB, ctx), frail_of(BOB, ctx));
+    let far = frail_of(BOB, ctx); // out of the radius
+
+    map.place_recruit(&thrower, 0, 0);
+    map.place_recruit(&near, 0, 1);
+    map.place_recruit(&own, 0, 2);
+    map.place_recruit(&foe_1, 1, 1);
+    map.place_recruit(&foe_2, 2, 0);
+    map.place_recruit(&far, 3, 3);
+    assert_eq!(map.unit_tiles(), vector[0, 1, 2, 7, 12, 21]);
+
+    // target (1, 1): every unit but `far` is within 2 tiles
+    let history = map.perform_grenade(&mut rng, 0, 0, 1, 1);
+    assert_eq!(history::list_kia(&history).length(), 3);
+    assert_eq!(map.unit_tiles(), vector[0, 1, 21]);
+    assert_index(&map);
+
+    assert_eq!(map.bury().length(), 3);
+    assert_index(&map);
+
+    destroy(vector[thrower, near, own, foe_1, foe_2, far]);
+    map.destroy();
+}
+
+#[test]
+/// An area weapon killing several units at once takes their tiles out of
+/// `Map.units`.
+fun units_follow_area_attack_kills() {
+    use std::unit_test::{assert_eq, destroy};
+
+    let ctx = &mut tx_context::dummy();
+    let mut rng = sui::random::new_generator_from_seed_for_testing(vector[1]);
+    let mut map = new(@0.to_id(), 6);
+    let shooter = shooter_of(ALICE, 99, 1, ctx);
+    let (one, two, three) = (recruit_of(BOB, ctx), recruit_of(BOB, ctx), recruit_of(ALICE, ctx));
+    let far = recruit_of(BOB, ctx);
+
+    // target (2, 2): (2, 1), (2, 3) and (3, 2) are in the radius, the shooter is not
+    map.place_recruit(&shooter, 1, 1);
+    map.place_recruit(&one, 2, 1);
+    map.place_recruit(&two, 2, 3);
+    map.place_recruit(&three, 3, 2);
+    map.place_recruit(&far, 5, 5);
+    assert_eq!(map.unit_tiles(), vector[7, 13, 15, 20, 35]);
+
+    let history = map.perform_attack(&mut rng, 1, 1, 2, 2);
+    assert_eq!(history::list_kia(&history).length(), 3);
+    assert_eq!(map.unit_tiles(), vector[7, 35]);
+    assert_index(&map);
+
+    destroy(vector[shooter, one, two, three, far]);
+    map.destroy();
+}
+
+#[test]
+/// A map with two units a side survives a BCS round trip, `Map.units` included,
+/// which trail the encoding as a `vector<u16>`. Bytes without them, as the
+/// presets are, decode to the same map.
+fun units_bcs_round_trip() {
+    use std::unit_test::{assert_eq, destroy};
+
+    let ctx = &mut tx_context::dummy();
+    let mut map = new(@1.to_id(), 4);
+    let (a1, a2) = (recruit_of(ALICE, ctx), recruit_of(ALICE, ctx));
+    let (b1, b2) = (recruit_of(BOB, ctx), recruit_of(BOB, ctx));
+    map.place_recruit(&a1, 0, 0);
+    map.place_recruit(&a2, 0, 3);
+    map.place_recruit(&b1, 3, 0);
+    map.place_recruit(&b2, 3, 3);
+
+    let bytes = bcs::to_bytes(&map);
+    let restored = from_bytes(bytes);
+    assert_eq!(bcs::to_bytes(&restored), bytes);
+    assert_eq!(restored.unit_tiles(), vector[0, 3, 12, 15]);
+    assert_index(&restored);
+
+    // `fallen` is empty (`00`), then the four tiles: length 4, each a u16 LE
+    let tail = x"0004000003000c000f00";
+    let (len, tail_len) = (bytes.length(), tail.length());
+    assert_eq!(bytes.skip(len - tail_len), tail);
+
+    // without `Map.units` they are rebuilt from the grid
+    let old = bytes.take(len - tail_len + 1);
+    let rebuilt = from_bytes(old);
+    assert_eq!(bcs::to_bytes(&rebuilt), bytes);
+
+    destroy(vector[a1, a2, b1, b2]);
+    restored.destroy();
+    rebuilt.destroy();
+    map.destroy();
+}
+
+#[test, expected_failure(abort_code = EUnitIndexMismatch)]
+/// Decoded `Map.units` must list the tiles holding a unit: none listed is wrong.
+fun units_bcs_mismatch_fails() {
+    let ctx = &mut tx_context::dummy();
+    let mut map = new(@1.to_id(), 4);
+    let recruit = recruit_of(ALICE, ctx);
+    map.place_recruit(&recruit, 1, 2);
+
+    let mut bytes = bcs::to_bytes(&map);
+    bytes.pop_back(); // the tile, 6
+    bytes.pop_back();
+    bytes.pop_back(); // the length, 1
+    bytes.push_back(0); // nothing listed
+    from_bytes(bytes).destroy();
+    abort
+}
+
+#[test]
+/// The presets have no units: their bytes are the encoding of the `Map` without
+/// the trailing `Map.units`, an empty vector, one `00` byte.
+fun presets_decode_without_units() {
+    use std::unit_test::assert_eq;
+
+    vector[black_rain(@1.to_id()), demo_1(@1.to_id()), demo_2(@1.to_id())].destroy!(|map| {
+        assert!(map.unit_tiles().is_empty());
+        let mut bytes = bcs::to_bytes(&map);
+        assert_eq!(bytes.pop_back(), 0);
+        assert_eq!(bytes.pop_back(), 0); // nobody has fallen
+        bytes.push_back(0);
+        let decoded = from_bytes(bytes);
+        assert_eq!(bcs::to_bytes(&decoded), bcs::to_bytes(&map));
+        decoded.destroy();
+        map.destroy();
+    });
+}
+
+#[test]
+/// A frag grenade does not roll: it cannot be dodged and its damage is fixed, so
+/// whatever the seed, it ends the same way at the same cost. A thrower cannot
+/// abort to choose an outcome, its own units in the radius included.
+fun grenade_outcome_does_not_roll() {
+    use std::unit_test::{assert_eq, destroy};
+
+    let ctx = &mut tx_context::dummy();
+    let mut thrower = recruit_of(ALICE, ctx);
+    thrower.add_utility(ghosts::items::frag_grenade(ctx));
+    let (own, foe, near) = (frail_of(ALICE, ctx), frail_of(BOB, ctx), recruit_of(BOB, ctx));
+
+    let mut outcome = option::none();
+    10u8.do!(|seed| {
+        let mut rng = sui::random::new_generator_from_seed_for_testing(vector[seed]);
+        let mut map = new(@0.to_id(), 6);
+        map.place_recruit(&thrower, 0, 0);
+        map.place_recruit(&own, 0, 2);
+        map.place_recruit(&foe, 1, 1);
+        map.place_recruit(&near, 2, 1);
+        let history = map.perform_grenade(&mut rng, 0, 0, 1, 1);
+        assert_eq!(history::list_kia(&history).length(), 2);
+        let mut bytes = bcs::to_bytes(&map);
+        bytes.append(bcs::to_bytes(&history));
+        if (outcome.is_none()) outcome.fill(bytes) else assert_eq!(*outcome.borrow(), bytes);
+        map.destroy();
+    });
+
+    destroy(vector[thrower, own, foe, near]);
 }

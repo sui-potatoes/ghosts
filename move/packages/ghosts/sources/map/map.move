@@ -31,6 +31,8 @@ const ETileOutOfBounds: u64 = 7;
 const ETileIsWall: u64 = 8;
 /// No line of sight (or throw) from the attacker to the target.
 const ENoLineOfSight: u64 = 9;
+/// Decoded `Map.units` do not list exactly the tiles holding a unit.
+const EUnitIndexMismatch: u64 = 10;
 
 #[allow(unused_const)]
 /// Constant for no cover in the `TileType::Cover`.
@@ -93,6 +95,11 @@ public struct Map has store {
     /// in the `Map` until then so that a kill never frees storage in the call
     /// that rolled it: an attacker cannot tell a kill from a hit by its gas.
     fallen: vector<Unit>,
+    /// The tiles holding a unit, every side's, as row-major tile indices
+    /// `x * cols + y`, in ascending order: the order a walk of the grid meets
+    /// them in. Kept in step by every call that places, moves or kills a unit,
+    /// so that finding the units never walks the grid.
+    units: vector<u16>,
 }
 
 public fun new(id: ID, size: u16): Map {
@@ -107,6 +114,7 @@ public fun new(id: ID, size: u16): Map {
             },
         ),
         fallen: vector[],
+        units: vector[],
     }
 }
 
@@ -126,7 +134,9 @@ public fun destroy(map: Map): vector<ID> {
 public fun id(map: &Map): ID { map.id }
 
 /// Clone the `Map`.
-public(package) fun clone(map: &Map): Map { Map { id: map.id, grid: map.grid, fallen: map.fallen } }
+public(package) fun clone(map: &Map): Map {
+    Map { id: map.id, grid: map.grid, fallen: map.fallen, units: map.units }
+}
 
 // === Actions ===
 
@@ -139,44 +149,65 @@ public fun place_recruit(map: &mut Map, recruit: &Recruit, x: u16, y: u16): Reco
     assert!(target_tile.tile_type != TileType::Wall, ETileIsWall);
 
     map.grid[x, y].unit.fill(recruit.to_unit());
+    map.add_to_index(x, y);
     history::new_recruit_placed(x, y)
 }
 
-/// The recruits of the `Account` `owner` still on the map.
+/// The recruits of the `Account` `owner` still on the map, in row-major order of
+/// their tiles.
 public fun units_of(map: &Map, owner: ID): vector<ID> {
     let mut units = vector[];
-    map.grid.do_ref!(|tile| tile.unit.do_ref!(|unit| {
-        if (unit.owner() == owner) units.push_back(unit.recruit_id());
-    }));
+    map.units_do!(|unit| if (unit.owner() == owner) units.push_back(unit.recruit_id()));
     units
 }
 
 /// The recruits of the `Account`s `first` and `second` still on the map, as
-/// `units_of` gives them for each, in a single walk of the grid.
+/// `units_of` gives them for each, in a single pass over `Map.units`.
 public(package) fun units_of_both(map: &Map, first: ID, second: ID): (vector<ID>, vector<ID>) {
     let (mut a, mut b) = (vector[], vector[]);
-    map.grid.do_ref!(|tile| tile.unit.do_ref!(|unit| {
+    map.units_do!(|unit| {
         let owner = unit.owner();
         if (owner == first) a.push_back(unit.recruit_id());
         if (owner == second) b.push_back(unit.recruit_id());
-    }));
+    });
     (a, b)
 }
 
 /// Give the units of the `Account` `owner` their action points back: their turn
-/// begins. The grid is read to find them, and borrowed mutably only where they
-/// stand.
+/// begins. `Map.units` says where the units stand; only those tiles are read.
 public fun reset_ap(map: &mut Map, owner: ID) {
-    let (mut xs, mut ys) = (vector[], vector[]);
-    let rows = map.grid.inner();
-    rows.length().do!(|x| {
-        let row = &rows[x];
-        row.length().do!(|y| row[y].unit.do_ref!(|unit| if (unit.owner() == owner) {
-            xs.push_back(x as u16);
-            ys.push_back(y as u16);
-        }));
+    let cols = map.grid.cols();
+    map.units.length().do!(|i| {
+        let tile = map.units[i];
+        let unit = map.grid[tile / cols, tile % cols].unit.borrow_mut();
+        if (unit.owner() == owner) unit.reset_ap();
     });
-    xs.zip_do!(ys, |x, y| map.grid[x, y].unit.borrow_mut().reset_ap());
+}
+
+/// Call `$f` with the unit on every tile in `Map.units`, in their order.
+macro fun units_do($map: &Map, $f: |&Unit|) {
+    let map = $map;
+    let cols = map.grid.cols();
+    map.units.do_ref!(|tile| $f(map.grid[*tile / cols, *tile % cols].unit.borrow()));
+}
+
+/// List the tile `(x, y)`, which a unit has just entered, in `Map.units`.
+fun add_to_index(map: &mut Map, x: u16, y: u16) {
+    let tile = x * map.grid.cols() + y;
+    let at = map.units.find_index!(|t| *t > tile).destroy_or!(map.units.length());
+    map.units.insert(tile, at);
+}
+
+/// Take the tile `(x, y)`, which a unit has just left, out of `Map.units`.
+fun remove_from_index(map: &mut Map, x: u16, y: u16) {
+    let tile = x * map.grid.cols() + y;
+    unlist(&mut map.units, tile);
+}
+
+/// Take the `tile`, which is listed, out of the `units` of a `Map`.
+fun unlist(units: &mut vector<u16>, tile: u16) {
+    let (_, at) = units.index_of(&tile);
+    units.remove(at);
 }
 
 /// Reload the unit's weapon. It costs 1 AP.
@@ -204,6 +235,8 @@ public fun move_unit(map: &mut Map, path: vector<u8>): Record {
     let mut unit = map.grid[x0, y0].unit.extract();
     unit.perform_move(distance as u8);
     map.grid[x1, y1].unit.fill(unit);
+    map.remove_from_index(x0, y0);
+    map.add_to_index(x1, y1);
 
     history::new_move(path)
 }
@@ -226,8 +259,8 @@ public fun move_unit(map: &mut Map, path: vector<u8>): Record {
 ///
 /// What is worse for the attacker never takes more storage than what is better:
 /// a miss and a dodge are one record of the same size, a hit a larger one, a
-/// kill adds another and leaves the unit in `fallen`. A gas budget cannot be
-/// set to let through only the good outcomes.
+/// kill adds another and leaves the unit in `fallen`, its tile taken out of
+/// `Map.units`. A gas budget cannot be set to let through only the good outcomes.
 public fun perform_attack(
     map: &mut Map,
     rng: &mut RandomGenerator,
@@ -288,13 +321,14 @@ public fun perform_attack(
     if (is_kia) {
         history.push_back(history::new_kia(target.recruit_id(), x1, y1));
         map.fallen.push_back(target);
+        map.remove_from_index(x1, y1);
     } else map.grid[x1, y1].unit.fill(target);
 
     history
 }
 
 /// Take the units killed since the last call out of the `Map`. Returns the IDs
-/// of their recruits.
+/// of their recruits. `Map.units` lost their tiles when they fell.
 public fun bury(map: &mut Map): vector<ID> {
     let mut fallen = vector[];
     while (!map.fallen.is_empty()) fallen.push_back(map.fallen.pop_back().destroy());
@@ -442,6 +476,7 @@ fun explode(
 ): vector<Record> {
     let mut history = vector[history::new_explosion(x, y, radius)];
     let mut cells = map.grid.von_neumann_neighbors(cell::new(x, y), radius);
+    let cols = map.grid.cols();
 
     cells.push_back(cell::new(x, y));
     cells.do!(|p| {
@@ -460,6 +495,7 @@ fun explode(
             else {
                 history.push_back(history::new_kia(unit.recruit_id(), x, y));
                 map.fallen.push_back(unit);
+                unlist(&mut map.units, x * cols + y);
             };
         };
 
@@ -734,38 +770,63 @@ public fun black_rain_positions(): vector<vector<u8>> {
 
 // === Compatibility / Conversion ===
 
-/// Deserializes the `Map` from the given bytes, all of them.
+/// Deserializes the `Map` from the given bytes, all of them. `Map.units` may be
+/// left out, as the map presets do: it is then rebuilt from the grid. When it
+/// is there, it must list exactly the tiles holding a unit.
 public fun from_bytes(bytes: vector<u8>): Map {
     let mut bcs = bcs::new(bytes);
-    let map = from_bcs(&mut bcs);
-    assert!(bcs.into_remainder_bytes().is_empty());
+    let map = peel_without_units(&mut bcs);
+    let rest = bcs.into_remainder_bytes();
+    if (!rest.is_empty()) {
+        let mut bcs = bcs::new(rest);
+        map.check_units(&mut bcs);
+        assert!(bcs.into_remainder_bytes().is_empty());
+    };
     map
 }
 
-/// Deserialize the `Map` from the `BCS` instance.
+/// Deserialize the `Map` from the `BCS` instance, `Map.units` included, which
+/// must list exactly the tiles holding a unit.
 public(package) fun from_bcs(bcs: &mut BCS): Map {
+    let map = peel_without_units(bcs);
+    map.check_units(bcs);
+    map
+}
+
+/// Peel `Map.units` and check they are the ones rebuilt from the grid.
+fun check_units(map: &Map, bcs: &mut BCS) {
+    let units = bcs.peel_vec!(|bcs| bcs.peel_u16());
+    assert!(units == map.units, EUnitIndexMismatch);
+}
+
+/// Deserialize every field of the `Map` but `units`, and rebuild them from the
+/// tiles as they are peeled.
+fun peel_without_units(bcs: &mut BCS): Map {
     let id = bcs.peel_address().to_id();
+    let (mut units, mut tile) = (vector[], 0u64);
     let grid = grid::from_bcs!(bcs, |bcs| {
-        Tile {
-            tile_type: match (bcs.peel_u8()) {
-                0 => TileType::Empty,
-                1 => TileType::Cover {
-                    left: bcs.peel_u8(),
-                    top: bcs.peel_u8(),
-                    right: bcs.peel_u8(),
-                    bottom: bcs.peel_u8(),
-                },
-                2 => TileType::Unwalkable,
-                3 => TileType::Wall,
-                _ => abort,
+        let tile_type = match (bcs.peel_u8()) {
+            0 => TileType::Empty,
+            1 => TileType::Cover {
+                left: bcs.peel_u8(),
+                top: bcs.peel_u8(),
+                right: bcs.peel_u8(),
+                bottom: bcs.peel_u8(),
             },
-            unit: bcs.peel_option!(|bcs| unit::from_bcs(bcs)),
-        }
+            2 => TileType::Unwalkable,
+            3 => TileType::Wall,
+            _ => abort,
+        };
+        let unit = bcs.peel_option!(|bcs| unit::from_bcs(bcs));
+
+        // tiles come row by row, so the count is the row-major index
+        if (unit.is_some()) units.push_back(tile as u16);
+        tile = tile + 1;
+        Tile { tile_type, unit }
     });
 
     let fallen = bcs.peel_vec!(|bcs| unit::from_bcs(bcs));
-
-    Map { id, grid, fallen }
+    Map { id, grid, fallen, units }
 }
 
 /// Implements the `Grid.to_string` method due to `Tile` implementing
