@@ -20,35 +20,32 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 import { useNavigate } from "react-router-dom";
 
 import { stopPreview, uiTick } from "../../../audio";
+import { FREE_RECRUITS, type ChainRecruit, type RecruitEdit } from "../../../chain";
 import {
-    FREE_RECRUITS,
-    SEARCH_TIMEOUT_MS,
-    type ChainRecruit,
-    type RecruitEdit,
-} from "../../../chain";
-import {
-    CommandBar,
-    EmptyState,
     FocusRoot,
-    headerClick,
     List,
     ListRow,
     Panel,
     Prompt,
-    ScreenFrame,
     StagePanel,
     StatusChip,
     Tabs,
     Thumb,
     useFocusState,
-    useFocusStore,
     useGlyphSet,
     type Command,
-    type GlyphSet,
     type TabDef,
 } from "../../../ui";
 import { useRecruitPortraits } from "../../squad/useRecruitPortraits";
 import { useEquipmentImages } from "../equipmentImages";
+import {
+    HqFrame,
+    HqGateView,
+    MatchChip,
+    SearchPrompt,
+    useLeave,
+    type FrameBits as SharedFrameBits,
+} from "../frame";
 import {
     armorModel,
     syncDemoRoster,
@@ -71,12 +68,12 @@ import {
     type Draft,
     type Drafts,
 } from "./drafts";
-import { utilityStats } from "./gear";
+import { utilityStats, weaponName } from "./gear";
 import { GearPicker, LoadoutRows } from "./Loadout";
 import { Offstage, Portrait, RankMark, SquadStats } from "./parts";
 import { Deck } from "./Recruitment";
 import { hireOffer, type GearSlot } from "./rules";
-import type { HqData, HqGate, HqOps } from "./types";
+import type { HqData, HqOps } from "./types";
 import "./squad.css";
 
 type Tab = "loadout" | "stats" | "appearance" | "dossier";
@@ -86,11 +83,6 @@ const TABS: TabDef[] = [
     { id: "stats", label: "Stats" },
     { id: "appearance", label: "Appearance" },
     { id: "dossier", label: "Dossier" },
-];
-
-const SECTIONS = [
-    { id: "squad", label: "Squad" },
-    { id: "armory", label: "Armory" },
 ];
 
 const ARMORY = "/headquarters/armory";
@@ -192,11 +184,7 @@ export function HeadquartersView({ data, ops }: { data: HqData; ops: HqOps }) {
         if (edits.length) setPrompt({ kind: "leave", go });
         else go();
     };
-    const leave = () => {
-        const idx = (window.history.state as { idx?: number } | null)?.idx ?? 0;
-        if (idx > 0) navigate(-1);
-        else navigate("/", { replace: true });
-    };
+    const leave = useLeave();
     const toArmory = (itemId?: string) =>
         guard(() => navigate(itemId ? `${ARMORY}?item=${itemId}` : ARMORY));
 
@@ -302,22 +290,14 @@ export function HeadquartersView({ data, ops }: { data: HqData; ops: HqOps }) {
                 onCancel={() => setPrompt(null)}
             />
         ) : prompt?.kind === "search" ? (
-            <Prompt
-                id="prompt-search"
-                eyebrow="Matchmaking"
-                title="Stop searching?"
-                confirm={{
-                    label: "Stop",
-                    run: () => {
-                        setPrompt(null);
-                        data.match.cancel();
-                    },
-                }}
-                cancel={{ label: "Keep searching", run: () => setPrompt(null) }}
+            <SearchPrompt
                 glyphs={glyphs}
-            >
-                The squad leaves the queue.
-            </Prompt>
+                onStop={() => {
+                    setPrompt(null);
+                    data.match.cancel();
+                }}
+                onKeep={() => setPrompt(null)}
+            />
         ) : null;
 
     const onTab = (step: 1 | -1) => {
@@ -332,7 +312,7 @@ export function HeadquartersView({ data, ops }: { data: HqData; ops: HqOps }) {
         overlay,
         glyphs,
         onLeave: () => guard(leave),
-        onArmory: () => toArmory(),
+        onSwitch: () => toArmory(),
         error: data.error,
         clearError: data.clearError,
     };
@@ -344,7 +324,7 @@ export function HeadquartersView({ data, ops }: { data: HqData; ops: HqOps }) {
             onSection={() => toArmory()}
         >
             {mode === "gate" ? (
-                <GateView gate={data.gate!} frame={frame} onSignIn={ops.signIn} />
+                <HqGateView section="squad" gate={data.gate!} frame={frame} onSignIn={ops.signIn} />
             ) : mode === "deck" ? (
                 <Frame frame={frame} columns="minmax(0, 1fr)" focus="deck">
                     <Deck
@@ -398,214 +378,12 @@ export function HeadquartersView({ data, ops }: { data: HqData; ops: HqOps }) {
     );
 }
 
-// === Frame, bar, gates ======================================================
+// === Frame ===================================================================
 
-type FrameBits = {
-    status: ReactNode;
-    overlay: ReactNode;
-    glyphs: GlyphSet;
-    onLeave: () => void;
-    onArmory: () => void;
-    error: string;
-    clearError: () => void;
-};
+type FrameBits = SharedFrameBits;
 
-function Frame({
-    frame,
-    tabs,
-    columns,
-    focus,
-    children,
-}: {
-    frame: FrameBits;
-    tabs?: ReactNode;
-    columns: string;
-    /** The group the cursor starts in. */
-    focus?: string;
-    children: ReactNode;
-}) {
-    const store = useFocusStore();
-    useLayoutEffect(() => {
-        if (focus) store.focusGroup(focus, true);
-    }, [store, focus]);
-    return (
-        <ScreenFrame
-            location={["HQ", "Squad"]}
-            onLocation={frame.onLeave}
-            siblings={{
-                sections: SECTIONS,
-                active: "squad",
-                onSelect: (id) => id === "armory" && frame.onArmory(),
-                glyphs: frame.glyphs,
-            }}
-            tabs={tabs}
-            status={frame.status}
-            columns={columns}
-            commands={
-                <HqCommandBar
-                    glyphs={frame.glyphs}
-                    error={frame.error}
-                    clearError={frame.clearError}
-                />
-            }
-            overlay={frame.overlay}
-        >
-            {children}
-        </ScreenFrame>
-    );
-}
-
-/**
- * The shared command bar, plus the last write's failure as its amber line
- * until the cursor moves on (the module's refusal style, no banner).
- */
-function HqCommandBar({
-    glyphs,
-    error,
-    clearError,
-}: {
-    glyphs: GlyphSet;
-    error: string;
-    clearError: () => void;
-}) {
-    const store = useFocusState();
-    const node = store.node(store.focused);
-    const commands = node?.commands ?? [];
-    const confirm = commands.find((c) => c.action === "confirm");
-    const clear = useRef(clearError);
-    clear.current = clearError;
-    const shownAt = useRef<string | null>(null);
-    useEffect(() => {
-        if (!error) return;
-        if (shownAt.current === null) shownAt.current = store.focused;
-        else if (shownAt.current !== store.focused) {
-            shownAt.current = null;
-            clear.current();
-        }
-    }, [error, store.focused]);
-    if (!error) shownAt.current = null;
-    const pulse = store.pulse;
-    return (
-        <CommandBar
-            title={node?.title}
-            hint={node?.hint}
-            deny={confirm?.deny ?? (error || undefined)}
-            denyKey={store.denies + (error ? 1 : 0)}
-            commands={commands.filter((c) => c.action !== "back")}
-            back={store.command("back")!}
-            glyphs={glyphs}
-            pressed={pulse?.kind === "press" ? pulse.action : null}
-            onRun={(command) => store.run(command)}
-        />
-    );
-}
-
-function GateView({
-    gate,
-    frame,
-    onSignIn,
-}: {
-    gate: Exclude<HqGate, null>;
-    frame: FrameBits;
-    onSignIn: () => void;
-}) {
-    const error = typeof gate === "object" ? gate.error : "";
-    return (
-        <Frame
-            frame={{ ...frame, error: error || frame.error }}
-            columns="minmax(0, 1fr)"
-            focus={gate === "signed-out" ? "gate" : undefined}
-        >
-            {gate === "signed-out" ? (
-                <EmptyState
-                    id="gate-sign-in"
-                    instant
-                    group="gate"
-                    headline="Identification required"
-                    action="Sign in"
-                    title="Sign in"
-                    hint="Your squad is kept with your account"
-                    commands={[
-                        { action: "confirm", label: "Sign in", tone: "primary", run: onSignIn },
-                    ]}
-                >
-                    Sign in to see your squad.
-                </EmptyState>
-            ) : (
-                <div className="gui-empty">
-                    <span className="gui-void-mark" aria-hidden />
-                    {error ? (
-                        <>
-                            <span className="gui-empty-headline">Squad unavailable</span>
-                            <p className="gui-empty-body">
-                                This version of the game can't read your squad.
-                            </p>
-                        </>
-                    ) : (
-                        gate === "disabled" && (
-                            <span className="gui-empty-headline">Headquarters is closed</span>
-                        )
-                    )}
-                </div>
-            )}
-        </Frame>
-    );
-}
-
-/** Ticks once a second while mounted. */
-function useNow(): number {
-    const [now, setNow] = useState(() => Date.now());
-    useEffect(() => {
-        const timer = window.setInterval(() => setNow(Date.now()), 1000);
-        return () => window.clearInterval(timer);
-    }, []);
-    return now;
-}
-
-/**
- * The match search in the header (the shell's floating chip stands aside on
- * this screen). A click on it is the mouse's way to stop searching or back
- * into a game in progress.
- */
-function MatchChip({ match, onSearch }: { match: HqData["match"]; onSearch: () => void }) {
-    const store = useFocusStore();
-    const navigate = useNavigate();
-    if (match.searchingSince === null && !match.playing) return null;
-    return (
-        <MatchChipBody
-            match={match}
-            onClick={() => {
-                if (!headerClick(store)) return;
-                if (match.playing) navigate("/match");
-                else onSearch();
-            }}
-        />
-    );
-}
-
-function MatchChipBody({ match, onClick }: { match: HqData["match"]; onClick: () => void }) {
-    const now = useNow();
-    const elapsed = match.searchingSince === null ? 0 : now - match.searchingSince;
-    const seconds = Math.floor(Math.min(Math.max(0, elapsed), SEARCH_TIMEOUT_MS) / 1000);
-    const clock = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
-    const timedOut = elapsed > SEARCH_TIMEOUT_MS;
-    return (
-        <button
-            type="button"
-            tabIndex={-1}
-            className="hqs-chip-button"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={timedOut ? match.cancel : onClick}
-        >
-            {match.playing ? (
-                <StatusChip label="Match" value="In progress" state="live" />
-            ) : timedOut ? (
-                <StatusChip label="Match" value="None found" tone="warn" />
-            ) : (
-                <StatusChip label="Match" value={`Searching ${clock}`} state="live" />
-            )}
-        </button>
-    );
+function Frame(props: Omit<Parameters<typeof HqFrame>[0], "section">) {
+    return <HqFrame section="squad" {...props} />;
 }
 
 // === The workspace ==========================================================
@@ -741,7 +519,7 @@ function Squad(props: SquadProps) {
                             tagTone="warn"
                             selected={current}
                             title={r.metadata.name}
-                            hint={`${r.weapon?.name ?? "Unarmed"} · ${r.armor?.name ?? "No armor"}`}
+                            hint={`${r.weapon ? weaponName(r.weapon) : "Unarmed"} · ${r.armor?.name ?? "No armor"}`}
                             commands={[
                                 current
                                     ? {
@@ -826,11 +604,11 @@ function Squad(props: SquadProps) {
                 return (
                     <SquadStats
                         recruit={onStage}
-                        weaponName={recruit.weapon?.name ?? "Unarmed"}
+                        weaponName={recruit.weapon ? weaponName(recruit.weapon) : "Unarmed"}
                         armed={!!recruit.weapon}
                         names={{
                             ...(recruit.weapon && {
-                                [weaponModel(recruit.weapon)]: recruit.weapon.name,
+                                [weaponModel(recruit.weapon)]: weaponName(recruit.weapon),
                             }),
                             ...(recruit.armor && {
                                 [armorModel(recruit.armor)]: recruit.armor.name,

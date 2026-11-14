@@ -526,6 +526,39 @@ export function equipUtilityTx(
     return tx;
 }
 
+/**
+ * Move a utility from one recruit to another in one transaction: off `fromId`,
+ * onto `toId`; a carried one passed as `replaceId` comes off `toId` first and
+ * goes to the armory.
+ */
+export function moveUtilityTx(
+    accountId: string,
+    fromId: string,
+    toId: string,
+    utilityId: string,
+    replaceId?: string,
+) {
+    const tx = new Transaction();
+    const acc = tx.object(accountId);
+    withRecruit(tx, acc, fromId, (from) => {
+        const [item] = tx.moveCall({
+            target: target("unequip_utility"),
+            arguments: [from, tx.pure.id(utilityId)],
+        });
+        withRecruit(tx, acc, toId, (to) => {
+            if (replaceId) {
+                const [old] = tx.moveCall({
+                    target: target("unequip_utility"),
+                    arguments: [to, tx.pure.id(replaceId)],
+                });
+                tx.transferObjects([old], accountId);
+            }
+            tx.moveCall({ target: target("equip_utility"), arguments: [to, item] });
+        });
+    });
+    return tx;
+}
+
 /** The utility kinds of `ghosts::items`. */
 export const UTILITY_KINDS = { fragGrenade: 0 } as const;
 

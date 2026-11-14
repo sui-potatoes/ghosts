@@ -1536,12 +1536,13 @@ span.gui-cmd {
     display: block;
 }
 
+/* One row size across a screen: a gear thumbnail stands as tall as a roster portrait. */
 .gui-thumb {
     flex: none;
     display: grid;
     place-items: center;
-    width: calc(var(--u) * 12);
-    height: calc(var(--u) * 7);
+    width: calc(var(--u) * 16);
+    height: calc(var(--u) * 12);
     color: var(--text-secondary);
 }
 
@@ -1551,13 +1552,13 @@ span.gui-cmd {
     object-fit: contain;
 }
 
-.gui-slot .gui-thumb {
-    width: calc(var(--u) * 10);
-    height: calc(var(--u) * 6);
+.gui-row[data-thumb] {
+    min-height: calc(var(--u) * 14);
+    padding-left: calc(var(--u) * 1.5);
 }
 
-.gui-row[data-thumb] {
-    padding-left: calc(var(--u) * 1.5);
+.gui-slot:has(> .gui-thumb) {
+    min-height: calc(var(--u) * 14);
 }
 
 /* On the band, a thumbnail's dark backdrop would read as a hole: blend it. */
@@ -2043,12 +2044,31 @@ span.gui-cmd {
     .gui-stat-bar {
         margin-top: calc(var(--u) * 1);
     }
+    /* Thumbnail rows step down with the roster's portrait rows. */
+    .gui-thumb {
+        width: calc(var(--u) * 13);
+        height: calc(var(--u) * 10);
+    }
+    .gui-row[data-thumb],
+    .gui-slot:has(> .gui-thumb) {
+        min-height: calc(var(--u) * 11);
+    }
 }
 
-/* A thumbnail is an inset picture: its own dark plate whether or not the row is lit. */
+/* A thumbnail is an inset picture on its own plate whether or not the row is lit:
+   a lifted plate with a top rim for a picture (the gear renders are transparent),
+   the page's dark for a pictogram. */
 .gui-thumb {
     background: var(--background-color);
     color: var(--text-secondary);
+}
+.gui-thumb[data-kind="image"] {
+    background: radial-gradient(
+        ellipse at 50% 35%,
+        color-mix(in srgb, var(--text-color) 16%, var(--raised-color)),
+        color-mix(in srgb, var(--text-color) 5%, var(--raised-color)) 75%
+    );
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-color) 18%, transparent);
 }
 .gui-row[data-focused] .gui-thumb,
 .gui-slot[data-focused] .gui-thumb {

@@ -10,6 +10,8 @@ import { actionLines } from "../../squad/utilities";
 import { modifierParts } from "../fittings";
 import type { GearSlot } from "./rules";
 
+export { weaponName } from "./rules";
+
 export const SLOT_NAMES: Record<GearSlot, string> = {
     primary: "Rifle",
     armor: "Armor",

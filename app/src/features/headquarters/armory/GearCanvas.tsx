@@ -2,27 +2,30 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * The sample's gear turntable (`weapon-stage.ts`), hosted by the shared
- * `StagePanel` (src/ui/stage.tsx). The character canvas is Headquarters'
- * own (`features/headquarters/squad/CharacterCanvas.tsx`).
+ * The gear turntable (`gear-stage.ts`), hosted by the shared `StagePanel`
+ * (src/ui/stage.tsx): the Armory's stage for weapons, mods and utilities, and
+ * the `/ui-sample` reference's. Armor is shown worn, on Headquarters'
+ * `CharacterCanvas` (`../squad/CharacterCanvas.tsx`).
  */
 
 import type { Equipment, WeaponAttachments } from "@ghosts/squad/types";
 import { useEffect, useRef, useState } from "react";
 
-import { useStageAttach } from "../../ui";
-import { useWireframe, wireframeColors } from "../squad/useWireframe";
-import type { WeaponStage } from "./weapon-stage";
+import { useStageAttach } from "../../../ui";
+import { useWireframe, wireframeColors } from "../../squad/useWireframe";
+import type { WeaponStage } from "./gear-stage";
 
 type GearCanvasProps = {
     /** Undefined empties the turntable; the canvas stays up for the next item. */
     model?: Equipment["model"];
     attachments?: WeaponAttachments;
+    /** A weapon finish id; Factory when unset. */
+    skin?: string;
     onState: (state: { loading: boolean; error?: string }) => void;
 };
 
-/** The Armory's gun builds on a bare turntable (`weapon-stage.ts`). */
-export function GearCanvas({ model, attachments, onState }: GearCanvasProps) {
+/** The Armory's gear on a bare turntable (`gear-stage.ts`). */
+export function GearCanvas({ model, attachments, skin, onState }: GearCanvasProps) {
     const attach = useStageAttach();
     const host = useRef<HTMLDivElement>(null);
     const stage = useRef<WeaponStage | null>(null);
@@ -35,7 +38,7 @@ export function GearCanvas({ model, attachments, onState }: GearCanvasProps) {
         let cancelled = false;
         let detach: (() => void) | undefined;
         report.current({ loading: true });
-        void import("./weapon-stage")
+        void import("./gear-stage")
             .then(({ createWeaponStage }) => {
                 if (cancelled || !host.current) return;
                 const view = createWeaponStage(host.current);
@@ -79,7 +82,7 @@ export function GearCanvas({ model, attachments, onState }: GearCanvasProps) {
         }
         report.current({ loading: true });
         void stage.current
-            ?.show(model, JSON.parse(fit))
+            ?.show(model, JSON.parse(fit), skin)
             .then(() => !cancelled && report.current({ loading: false }))
             .catch(
                 (e) =>
@@ -92,12 +95,12 @@ export function GearCanvas({ model, attachments, onState }: GearCanvasProps) {
         return () => {
             cancelled = true;
         };
-    }, [ready, model, fit]);
+    }, [ready, model, fit, skin]);
 
     useEffect(() => {
         if (ready && host.current)
             stage.current?.wireframe(wireframe, wireframeColors(host.current));
-    }, [ready, wireframe, model, fit]);
+    }, [ready, wireframe, model, fit, skin]);
 
     return <div ref={host} className="gui-stage-canvas" data-kind="gear" />;
 }

@@ -12,6 +12,7 @@ import Settings from "./screens/Settings";
 const loadHeadquarters = () => import("./screens/Headquarters");
 // The screen before the shared interface language, kept until the new one is signed off.
 const HeadquartersClassic = lazy(() => import("./screens/HeadquartersClassic"));
+const ArmoryClassic = lazy(() => import("./screens/ArmoryClassic"));
 const loadArmory = () => import("./screens/Armory");
 const Headquarters = lazy(loadHeadquarters);
 const Armory = lazy(loadArmory);
@@ -137,6 +138,14 @@ export function App() {
                     element={
                         <Suspense fallback={<LoadingSpinner />}>
                             <Armory />
+                        </Suspense>
+                    }
+                />
+                <Route
+                    path="/headquarters/armory-classic"
+                    element={
+                        <Suspense fallback={<LoadingSpinner />}>
+                            <ArmoryClassic />
                         </Suspense>
                     }
                 />

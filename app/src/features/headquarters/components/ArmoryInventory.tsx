@@ -11,6 +11,7 @@ import {
 import type { ChainUtility } from "../../../chain";
 import { fitOf, type Gear, type Held } from "../armory";
 import { armorModel, weaponModel } from "../mapping";
+import { weaponName } from "../squad/rules";
 import { utilityActions } from "../utilities";
 
 export type Category = "weapons" | "armor" | "mods" | "utilities";
@@ -73,7 +74,7 @@ export function ArmoryInventory(props: Props) {
                             <Row
                                 key={item.id}
                                 image={model && images[model.id]}
-                                name={item.name}
+                                name={weaponName(item)}
                                 status={
                                     carrier
                                         ? `Issued · ${firstName(carrier.metadata.name)}`

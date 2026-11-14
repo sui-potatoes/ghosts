@@ -10,7 +10,7 @@ import { previewVoice } from "../../../audio";
 import { FREE_RECRUITS, VOICES, type ChainRecruit } from "../../../chain";
 import { ActionRow, Prompt, ReadoutLine, Stepper, type Command, type GlyphSet } from "../../../ui";
 import type { Write } from "./Loadout";
-import { dismissalNote } from "./rules";
+import { dismissalNote, weaponName } from "./rules";
 import { RankProgress } from "./parts";
 
 export function Dossier({
@@ -93,7 +93,7 @@ export function DismissPrompt({
     onCancel: () => void;
 }) {
     const gear = [
-        recruit.weapon?.name,
+        recruit.weapon && weaponName(recruit.weapon),
         recruit.armor?.name,
         ...recruit.utilities.map((u) => u.name),
     ]

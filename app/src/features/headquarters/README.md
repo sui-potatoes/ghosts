@@ -32,9 +32,37 @@ character editor from `src/features/squad/components/`, backed by chain data.
   voice); Dismiss asks first, then `dismiss_recruit` returns the recruit's
   gear to the armory and frees the slot.
 
-## Armory (`src/screens/Armory.tsx`)
+## Armory in the shared interface language (`armory/`)
 
-Every weapon and armor the account holds — on the racks or issued — in an
+`/headquarters/armory` is `src/screens/Armory.tsx` feeding `armory/ArmoryView.tsx`
+(`ArmoryData` / `ArmoryOps` in `armory/types.ts`, so fixtures can drive it). Both
+sections draw the same frame (`frame.tsx`: breadcrumb with the Squad · Armory
+switch, the command bar with a failed write on its amber line, the match chip,
+the gates), so they read as one screen.
+
+- Tabs Weapons / Armor / Mods / Utilities; the list holds what the account has,
+  carried first (the carrier's first name as the row's tag), with Requisition
+  at its foot: the supply catalog in the same list, free, into storage.
+- The stage (`armory/GearCanvas.tsx` + `gear-stage.ts`, shared with `/ui-sample`):
+  rifles with their fitted or drafted mods, laser trace and finish; mods on a
+  rifle; the frag grenade. Armor is worn on the game's existing sets by its
+  carrier, by the recruit the issue picker points at, or the first recruit.
+- Bench: stats (the delta is the mods, or the draft while drafting), four mod
+  slots each opening a picker of tiers (fitted, ×n in storage, or requisitioned
+  free on Apply), the draft's Fitted / Draft / Off lines, Apply (one
+  `fittingsTx`) and Discard, Finish (a grid of the gun's skins, kept on the
+  device), and Carried by → Issue (a recruit picker: Issue or Swap; the one
+  utility slot swaps in one transaction) or Return.
+- Mods tab: storage count and where each is fitted; Try on drafts it on a rifle
+  and opens that rifle's bench.
+- `?item=<object id>` opens the item's tab with it selected.
+- Pure rules in `armory/rules.ts`, tested in `tests/hq-armory.test.ts`.
+- Leaving or switching to Squad with drafted mods asks: Apply / Discard / Keep fitting.
+
+## Armory classic (`src/screens/ArmoryClassic.tsx`)
+
+The screen before the shared language, at `/headquarters/armory-classic` until
+the new one is signed off. Every weapon and armor the account holds — on the racks or issued — in an
 inventory (Weapons / Armor / Mods), a full-size 3D stage and a bench.
 `ArmoryView` takes its data as props; `Armory` feeds it from the chain.
 
@@ -82,9 +110,10 @@ inventory (Weapons / Armor / Mods), a full-size 3D stage and a bench.
 The chain enforces the same rule: `weapon::add_upgrade` takes at most three
 upgrades, one of each `kind` (set by the `ghosts::items` mint functions).
 
-Thumbnails come from `equipmentImages.ts`, shared by both sections: a
-short-lived studio in an offscreen host (themed via `.squad-screen`) renders
-the catalog once, and `src/features/squad/imageStore.ts` keeps it in the
+Thumbnails come from `equipmentImages.ts`, shared by both sections:
+`gear-thumbnails.ts` draws the catalog once under product lighting, on a
+transparent background that the row's lifted plate shows through (rows with a
+thumbnail stand as tall as a roster row), and `src/features/squad/imageStore.ts` keeps it in the
 browser until the gear models change. Recruit portraits use the same store
 (keyed by look), so a return visit builds only the character on the stage.
 Character models are decoded once per session and shared by every 3D view
@@ -145,5 +174,10 @@ the screen maps every op onto the same transaction builders as before.
   swap, the free top-up to four, the dismissal note).
 - A recruit without a weapon object is shown unarmed (no attack in the field,
   `unit::from_recruit`); the demo mirror keeps its own default rifle.
+- An owned weapon with a fitted upgrade is named with a trailing " +"
+  (`weaponName` in `rules.ts`) wherever it is listed; drafts and catalog
+  entries never take it.
+- Appearance styles (hair, brows, skin texture, tattoo) are steppers; only the
+  starting identity, which rewrites the face, is a grid.
 - Every slot is symmetric: Remove (Reset) on a filled slot and a None row at the
   top of its picker send the item back to the armory.
