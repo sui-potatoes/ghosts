@@ -34,7 +34,6 @@
     "./studio/held-weapons": "./src/studio/held-weapons.ts",
     "./studio/recruit-studio": "./src/studio/recruit-studio.ts",
     "./studio/wireframe": "./src/studio/wireframe.ts",
-    "./studio/long-guns": "./src/studio/long-guns.ts",
     "./studio/sidearm": "./src/studio/sidearm.ts",
     "./types": "./src/types.ts",
     "./weapon-skins": "./src/weapon-skins.ts",

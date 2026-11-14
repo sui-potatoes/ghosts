@@ -10,7 +10,7 @@
         "prettify": "prettier . --write",
         "preview": "vite preview",
         "test:motion": "node --experimental-strip-types --test tests/motion.test.ts tests/smoking.test.ts tests/clearance.test.ts tests/armor-deformation.test.ts tests/office-worker.test.ts tests/body-shape.test.ts",
-        "test:equipment": "node --experimental-strip-types --test tests/sidearm.test.ts tests/held-weapons.test.ts tests/long-guns.test.ts tests/support-grip.test.ts tests/equipment-poses.test.ts tests/gear-collision.test.ts",
+        "test:equipment": "node --experimental-strip-types --test tests/sidearm.test.ts tests/held-weapons.test.ts tests/support-grip.test.ts tests/equipment-poses.test.ts tests/gear-collision.test.ts",
         "test": "pnpm test:motion && pnpm test:equipment && pnpm test:title-motion && pnpm test:match && pnpm test:gui",
         "test:gui": "node --experimental-strip-types --test tests/gui-focus.test.ts tests/gui-list.test.ts tests/gui-back.test.ts tests/squad-build.test.ts tests/debrief.test.ts tests/hq-squad.test.ts tests/hq-armory.test.ts",
         "test:match": "node --experimental-strip-types --test tests/match-rules.test.ts tests/rpc-url.test.ts tests/sw-cache.test.ts tests/fittings.test.ts tests/weapon-skins.test.ts",
