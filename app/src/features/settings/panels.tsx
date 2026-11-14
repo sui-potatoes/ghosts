@@ -75,12 +75,12 @@ import {
 import { KeyCaps, PadCaps, ValueRow } from "./parts";
 import { SettingsFrame, useSettingsContext, type Line } from "./SettingsView";
 
-/** One centred column. */
-const ONE = "minmax(0, 1fr) minmax(0, 640px) minmax(0, 1fr)";
-/** Two columns side by side, centred. */
-const TWO = "minmax(0, 1fr) minmax(0, 520px) minmax(0, 560px) minmax(0, 1fr)";
-/** Rows beside a wide visual. */
-const WIDE = "minmax(0, 1fr) minmax(0, 460px) minmax(0, 760px) minmax(0, 1fr)";
+/** One column from the left edge; the rest of the page stays free. */
+const ONE = "minmax(0, 640px) minmax(0, 1fr)";
+/** Two columns side by side from the left edge. */
+const TWO = "minmax(0, 520px) minmax(0, 560px) minmax(0, 1fr)";
+/** Rows beside a wide visual, from the left edge. */
+const WIDE = "minmax(0, 460px) minmax(0, 760px) minmax(0, 1fr)";
 
 const CHANGE: Command = { action: "nav", label: "Change", glyph: "lr" };
 
@@ -158,21 +158,28 @@ function RestorePrompt({
 function SignInGate({ what }: { what: string }) {
     const { account } = useSettingsContext();
     return (
-        <SettingsFrame columns="minmax(0, 1fr)">
-            <EmptyState
-                id="gate-sign-in"
-                group="rows"
-                instant
-                headline="Identification required"
-                action="Sign in"
-                title="Sign in"
-                hint="With a passkey or a provider"
-                commands={[
-                    { action: "confirm", label: "Sign in", tone: "primary", run: account.signIn },
-                ]}
-            >
-                Sign in to see {what}.
-            </EmptyState>
+        <SettingsFrame columns={ONE}>
+            <Panel className="gset-c2 gset-fit">
+                <EmptyState
+                    id="gate-sign-in"
+                    group="rows"
+                    instant
+                    headline="Identification required"
+                    action="Sign in"
+                    title="Sign in"
+                    hint="With a passkey or a provider"
+                    commands={[
+                        {
+                            action: "confirm",
+                            label: "Sign in",
+                            tone: "primary",
+                            run: account.signIn,
+                        },
+                    ]}
+                >
+                    Sign in to see {what}.
+                </EmptyState>
+            </Panel>
         </SettingsFrame>
     );
 }
