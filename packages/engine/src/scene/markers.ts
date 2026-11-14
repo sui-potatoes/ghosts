@@ -4,6 +4,7 @@
 import * as T from "three";
 import type { Unit } from "../game";
 import { escapeHTML } from "../html";
+import { effectsTag } from "../status-effects";
 
 const LABEL_OFFSET = new T.Vector3(0, 2.05, 0);
 
@@ -41,6 +42,7 @@ export class UnitMarkers {
       scene.add(contact);
       const label = document.createElement("button");
       label.className = `unit-label ${u.enemy ? "hostile" : ""}`;
+      label.dataset.unit = u.id;
       label.setAttribute("aria-label", `Select ${u.name}`);
       label.innerHTML = `<span>${u.enemy ? "◇" : "◆"} ${escapeHTML(u.name)}</span><i></i><em class="aim-readout" hidden></em>`;
       label.onclick = () => onPick(u.id);
@@ -53,6 +55,9 @@ export class UnitMarkers {
   sync(u: Unit, selected: boolean) {
     const label = this.labels.get(u.id)!;
     label.classList.toggle("selected", selected);
+    // Status effects over the unit, drawn by the sheet from the attribute; "" without.
+    const effects = effectsTag(u.effects);
+    if ((label.dataset.effects ?? "") !== effects) label.dataset.effects = effects;
     label.querySelector("i")!.style.setProperty("--health", `${(u.hp / u.maxHp) * 100}%`);
     if (u.hp > 0) label.hidden = false;
   }

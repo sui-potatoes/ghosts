@@ -39,6 +39,7 @@ test("grenade credits multiple hostile casualties but never friendly fire or exi
     g.allies[1].pos = [1, 0];
     g.allies[1].hp = 1;
     g.enemies[2].hp = 0;
+    a.actions.push({ kind: "Grenade", uses: 1 });
     assert.equal(g.throwGrenade(a, [1, 0]), true);
     assert.equal(g.kills[a.id], 2);
     assert.equal(g.throwGrenade(a, [1, 0]), false);

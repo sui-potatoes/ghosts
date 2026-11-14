@@ -21,6 +21,7 @@ import {
 } from "../chain";
 import type { ChainGame } from "../chain/bcs";
 import { chainDriver, matchScenario } from "../chain/driver";
+import { useMatchIntel } from "../chain/useMatchIntel";
 import {
     abandonGameTx,
     completeGameTx,
@@ -345,6 +346,7 @@ function Field({
     useBack(() => setPaused(true));
 
     // The unit readout: names, rank and gear from the recruits already read, the opponent's line.
+    const { intel, opponent } = useMatchIntel(game, recruits, side);
 
     return (
         <div className="fixed inset-0 h-dvh w-full bg-surface">
@@ -356,6 +358,8 @@ function Field({
                 paused={paused}
                 onPause={() => setPaused(true)}
                 onQuit={() => navigate("/")}
+                intel={intel}
+                opponent={opponent}
             />
             <TurnClock
                 game={game}

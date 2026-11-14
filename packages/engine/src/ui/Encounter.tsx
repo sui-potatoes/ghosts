@@ -11,11 +11,13 @@ import { newSession } from "../session";
 import { defaultSettings, type EngineSettings } from "../settings";
 import { Briefing, Debrief } from "./Dialogs";
 import { Field, type FieldRefs } from "./Field";
-import { CommandDeck, IntelPanel } from "./Panels";
+import { CommandBar, HudHeader, SquadRail, UnitPanel } from "./Hud";
 import { useSession } from "./useSession";
+import type { IntelSource, OpponentIntel } from "../intel";
+import { inspect } from "./intel/store";
 import "../host-reset.css";
+import "../tokens.css";
 import "../style.css";
-import "../ghosts-theme.css";
 
 export interface EncounterProps {
   /** What to play; Operation Black Rain when omitted. */
@@ -32,6 +34,10 @@ export interface EncounterProps {
   onPause?: () => void;
   /** Back to the host's menu from the debrief. */
   onQuit?: () => void;
+  /** What the host knows about units (names, rank, gear) over the engine's own reading; read live. */
+  intel?: IntelSource;
+  /** The opposing player in a match: the hostile readout's commander line. */
+  opponent?: OpponentIntel | null;
 }
 
 /**
@@ -48,6 +54,8 @@ export function Encounter({
   paused = false,
   onPause,
   onQuit,
+  intel,
+  opponent = null,
 }: EncounterProps) {
   const refs: FieldRefs = {
     viewport: useRef<HTMLDivElement>(null),
@@ -58,6 +66,11 @@ export function Encounter({
   const [session] = useState(() => newSession(scenario, driver));
   const hooks = useRef({ onPause, onQuit });
   hooks.current = { onPause, onQuit };
+  inspect.source = intel;
+  useEffect(() => {
+    inspect.opponent = opponent;
+    inspect.changed();
+  }, [opponent]);
 
   useEffect(
     () =>
@@ -88,18 +101,38 @@ export function Encounter({
     session.battlefield?.setPaused(paused);
   }, [session, paused]);
 
-  return <EncounterView refs={refs} onQuit={() => hooks.current.onQuit?.()} hasQuit={!!onQuit} />;
+  // The header's menu button: the same way out as Cancel with nothing to cancel, for touch.
+  const menu = onPause
+    ? () => {
+        session.paused = true;
+        hooks.current.onPause?.();
+      }
+    : undefined;
+
+  return <EncounterView refs={refs} onQuit={() => hooks.current.onQuit?.()} hasQuit={!!onQuit} onMenu={menu} />;
 }
 
-function EncounterView({ refs, onQuit, hasQuit }: { refs: FieldRefs; onQuit: () => void; hasQuit: boolean }) {
+function EncounterView({
+  refs,
+  onQuit,
+  hasQuit,
+  onMenu,
+}: {
+  refs: FieldRefs;
+  onQuit: () => void;
+  hasQuit: boolean;
+  onMenu?: () => void;
+}) {
   const s = useSession();
   const ready = s.state === "ready";
   return (
     <div className="encounter">
       <main className="workspace">
         <Field refs={refs} />
-        {ready && <IntelPanel />}
-        {ready && <CommandDeck />}
+        {ready && <HudHeader onMenu={onMenu} />}
+        {ready && <SquadRail />}
+        {ready && <UnitPanel />}
+        {ready && <CommandBar />}
       </main>
       {ready &&
         (s.debrief ? (

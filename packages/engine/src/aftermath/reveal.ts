@@ -52,7 +52,7 @@ export function revealEncounter(
     </header>
     <div class="debrief-meta"><span>${h(sector.toUpperCase())}</span><span>${pad2(report.turns)} TURNS <i>·</i> ${report.survivors} / ${report.recruits.length} RETURNED${lost ? ` <i>·</i> ${lost} LOST` : ""}</span></div>
     <ol class="record-deck">${report.recruits.map((r, i) => card(r, i, portraits.get(r.id))).join("")}</ol>
-    <footer class="debrief-footer"><p class="debrief-summary" role="status" aria-live="polite">OPENING FIELD RECORDS…</p><div><button type="button" data-skip>REVEAL ALL</button><button type="button" data-redeploy disabled>REDEPLOY SQUAD <span>→</span></button>${onQuit ? '<button type="button" data-quit>BACK TO MENU</button>' : ""}</div></footer>
+    <footer class="debrief-footer"><p class="debrief-summary" role="status" aria-live="polite">OPENING FIELD RECORDS…</p><div><button type="button" class="hud-bar-cmd" data-skip><span>Reveal all</span></button>${onQuit ? '<button type="button" class="hud-bar-cmd" data-quit><span>Back to menu</span></button>' : ""}<button type="button" class="hud-bar-cmd" data-tone="primary" data-redeploy disabled><span>Redeploy squad</span></button></div></footer>
   </div>`;
     const slots = Array.from(dialog.querySelectorAll<HTMLElement>(".record-slot"));
     const skip = dialog.querySelector<HTMLButtonElement>("[data-skip]")!;

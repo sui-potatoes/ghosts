@@ -3,12 +3,13 @@
 
 import { audio } from "./audio";
 import type { Command, GameEvent } from "./events";
-import { allows, Encounter, type Cell, type UnitOrder } from "./game";
-import { applyDeploymentNames } from "./squad-bridge";
+import { ACTIONS, hasKind, REFUSAL_TEXT, refusalOf } from "./action-registry";
+import { allows, Encounter, type Cell } from "./game";
+import { applyDeploymentNames, applyLoadouts } from "./squad-bridge";
 // @ts-ignore Native editor adapter is shared JavaScript.
 import { deployment } from "./mpfb-characters.js";
 import { present, presentShot, presentThrow } from "./presenter";
-import { session } from "./session";
+import { session, type Mode } from "./session";
 import { bestShotTarget, damagePreview, defaultGrenadeTarget, grenadeBlockReason } from "./targeting";
 
 /**
@@ -239,11 +240,11 @@ export async function throwGrenade() {
   });
 }
 
-const STANDING_ORDERS = ["reload", "hunker", "overwatch", "secure"] as const;
-
-/** Orders the bundled rules have and a game against a player does not. */
-const VERSUS_OFF = ["overwatch", "hunker", "secure"];
-
+/**
+ * Arm or carry out one of the selected unit's actions, by its engine order. What
+ * the unit doesn't carry is never offered and does nothing; what it carries and
+ * can't take now says why (the same reason the command bar shows).
+ */
 export async function action(name: string) {
   const s = session;
   const u = s.selectedUnit();
@@ -252,12 +253,17 @@ export async function action(name: string) {
     notify("NO OPERATOR SELECTED");
     return;
   }
-  if (!s.game.canAct(u)) return;
-  if (s.game.scenario.versus && VERSUS_OFF.includes(name)) return;
+  const spec = ACTIONS.find((a) => a.order === name);
   // Never offered to this unit: no key, button or wheel entry gets past here.
-  if (!allows(u, name as UnitOrder)) return;
+  if (!spec || !hasKind(u, spec.id)) return;
+  const refusal = refusalOf(s.game, u, spec.id);
+  if (refusal) {
+    audio.tone("click");
+    notify(REFUSAL_TEXT[refusal].toUpperCase(), "miss");
+    return;
+  }
   audio.tone("click");
-  if (name === "move" || name === "fire" || name === "grenade") {
+  if (spec.targeting.mode !== "none") {
     if (name === "fire" && s.mode === "fire") {
       await fire();
       return;
@@ -266,7 +272,7 @@ export async function action(name: string) {
       await throwGrenade();
       return;
     }
-    s.mode = name;
+    s.mode = name as Mode;
     s.grenadeTarget = name === "grenade" ? defaultGrenadeTarget(s.game, u) : null;
     if (name === "fire") {
       s.target = bestShotTarget(s.game, u)?.id ?? "";
@@ -275,8 +281,8 @@ export async function action(name: string) {
     refresh();
     return;
   }
-  const type = STANDING_ORDERS.find((o) => o === name);
-  if (type) await perform(() => order({ type, unit: u.id }).then(() => {}));
+  const type = spec.order as "reload" | "hunker" | "overwatch" | "secure";
+  await perform(() => order({ type, unit: u.id }).then(() => {}));
 }
 
 /** A click on the field: a tile to move to or aim at, or a unit marker. */
@@ -359,6 +365,7 @@ export function reset() {
   s.game = new Encounter(s.game.scenario);
   s.driver = s.makeDriver(s.game);
   applyDeploymentNames(s.game.units, deployment);
+  applyLoadouts(s.game.units, s.loadouts);
   s.battlefield.redeploy(s.game);
   s.resetSelection();
   s.battlefield.select(s.selected);

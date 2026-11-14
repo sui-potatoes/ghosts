@@ -13,7 +13,6 @@ import {
     decodePath,
     experienceFor,
     encodePath,
-    engineActions,
     gameEvents,
     hasUsesLeft,
     hitChance,
@@ -25,6 +24,7 @@ import {
     terrainAt,
     toCell,
     toTile,
+    unitActions,
     type Bounds,
     type FieldView,
 } from "../src/chain/match-rules.ts";
@@ -417,16 +417,22 @@ test("a unit can do what its actions list, and nothing else", () => {
     assert.ok(!canDo(game, "nobody", "Move"));
 });
 
-test("chain actions map to the engine's orders, Attack being fire", () => {
-    const of = (...kinds: string[]) => engineActions(kinds.map(($kind) => ({ kind: { $kind } })));
-    assert.deepEqual(of("Move", "Attack", "Reload", "Grenade"), [
-        "move",
-        "fire",
-        "reload",
-        "grenade",
+test("chain actions reach the engine as they are: kind, uses and order", () => {
+    const action = (kind: string, uses: number | null) => ({ uses, kind: { $kind: kind } });
+    assert.deepEqual(
+        unitActions([action("Move", null), action("Attack", null), action("Reload", null), action("Grenade", 1)]),
+        [
+            { kind: "Move", uses: null },
+            { kind: "Attack", uses: null },
+            { kind: "Reload", uses: null },
+            { kind: "Grenade", uses: 1 },
+        ],
+    );
+    assert.deepEqual(unitActions([action("Move", null), action("Grenade", 0)]), [
+        { kind: "Move", uses: null },
+        { kind: "Grenade", uses: 0 },
     ]);
-    assert.deepEqual(of("Move", "Grenade"), ["move", "grenade"]);
-    assert.deepEqual(of(), []);
+    assert.deepEqual(unitActions([]), []);
 });
 
 test("a grenade is available while an action of its kind has a use left", () => {

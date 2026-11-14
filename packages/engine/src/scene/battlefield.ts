@@ -26,6 +26,8 @@ import { Precipitation, type Weather } from "./precipitation";
 import { Space } from "./space";
 import type { AimReadout } from "./markers";
 import { Units } from "./units";
+import { ThreatOverlay } from "./threat";
+import type { ThreatArea } from "../intel";
 import { StreetReflections } from "./puddles";
 
 export interface BattlefieldOptions {
@@ -71,6 +73,18 @@ export class Battlefield {
   onHover: (p: Cell) => void = () => {};
   /** The pointer left the field, taking the preview with it. */
   onLeave: () => void = () => {};
+  /** The unit under the pointer changed (null: none); mouse and pen only. */
+  onUnitHover: (id: string | null) => void = () => {};
+  /** A click or tap that hit neither a unit nor the map. */
+  onMiss: () => void = () => {};
+  /** A touch held still on a unit: the readout pins. */
+  onUnitHold: (id: string) => void = () => {};
+  /** The pointer kind of the last pick: a tap and a click open the readout differently. */
+  lastPointer = "mouse";
+  /** Run after units and plates are placed each rendered frame (the readout follows its unit). */
+  readonly frameHooks = new Set<() => void>();
+  private hoveredUnit: string | null = null;
+  private threat!: ThreatOverlay;
 
   private readonly space: Space;
   private readonly units: Units;
@@ -155,6 +169,12 @@ export class Battlefield {
     renderer.shadowMap.autoUpdate = false;
     renderer.shadowMap.needsUpdate = true;
     this.overlays = new Overlays(this.scene, this.space);
+    const tone = (name: string, fallback: string) =>
+      getComputedStyle(viewport).getPropertyValue(name).trim() || fallback;
+    this.threat = new ThreatOverlay(this.scene, this.space, {
+      hostile: tone("--red", "#c98177"),
+      friendly: tone("--text-secondary", "#a4b5bc"),
+    });
     this.units = new Units({
       scene: this.scene,
       labels,
@@ -169,6 +189,16 @@ export class Battlefield {
       },
     });
     this.listen();
+    // A unit's name plate counts as the unit for the readout.
+    const plate = (e: PointerEvent) =>
+      e.pointerType === "touch" ? undefined : (e.target as Element | null)?.closest?.<HTMLElement>("[data-unit]")?.dataset.unit;
+    labels.addEventListener("pointerover", (e) => {
+      const id = plate(e);
+      if (id) this.hoverUnit(id);
+    });
+    labels.addEventListener("pointerout", (e) => {
+      if (plate(e)) this.hoverUnit(null);
+    });
     document.addEventListener("visibilitychange", this.onVisibility);
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(viewport);
@@ -227,11 +257,28 @@ export class Battlefield {
   private listen() {
     const host = this.host;
     let down = [0, 0];
+    // A touch held still on a unit pins its readout; the release is then not a pick.
+    let press = 0;
+    let pressed = false;
     host.addEventListener("pointerdown", (e) => {
       down = [e.clientX, e.clientY];
+      pressed = false;
+      clearTimeout(press);
+      if (e.pointerType === "touch") {
+        const id = this.unitAtScreen(e.clientX, e.clientY);
+        if (id)
+          press = window.setTimeout(() => {
+            pressed = true;
+            this.onUnitHold(id);
+          }, 450);
+      }
       this.invalidate();
     });
+    host.addEventListener("pointercancel", () => clearTimeout(press));
     host.addEventListener("pointerup", (e) => {
+      clearTimeout(press);
+      if (pressed) return;
+      this.lastPointer = e.pointerType;
       if (e.button !== 0 || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 5) return;
       const ray = this.pointerRay(e);
       const unit = this.units.pick(ray);
@@ -241,9 +288,12 @@ export class Battlefield {
       }
       const p = this.pick(e, ray);
       if (p) this.onPick(p, this.game.units.find((u) => u.hp > 0 && key(u.pos) === key(p))?.id);
+      else this.onMiss();
     });
     host.addEventListener("pointermove", (e) => {
+      if (e.pointerType === "touch" && Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 8) clearTimeout(press);
       if (e.buttons || this.draggingCamera || this.cameraMotion || this.aimKey) return;
+      if (e.pointerType !== "touch") this.hoverUnit(this.unitAtScreen(e.clientX, e.clientY));
       const p = this.pick(e);
       if (p && this.overlays.hoverAt(p)) {
         this.invalidate();
@@ -254,10 +304,81 @@ export class Battlefield {
       }
     });
     host.addEventListener("pointerleave", () => {
+      this.hoverUnit(null);
       this.overlays.leave();
       this.onLeave();
       this.invalidate();
     });
+  }
+
+  private hoverUnit(id: string | null) {
+    if (id === this.hoveredUnit) return;
+    this.hoveredUnit = id;
+    this.onUnitHover(id);
+  }
+
+  /**
+   * A unit's body on screen, in CSS pixels within the viewport: from the boots
+   * to over the head, as wide as a standing figure. Null when it is behind the
+   * camera, down, or not loaded. Projection only — no raycast, cheap enough
+   * for every pointer move.
+   */
+  unitBox(id: string): { x: number; y: number; w: number; h: number } | null {
+    const u = this.game.unit(id);
+    const rig = this.units.rig(id);
+    if (!u || u.hp <= 0 || !rig) return null;
+    const feet = this.boxPoint.copy(rig.root.position).project(this.camera);
+    if (feet.z > 1) return null;
+    const fx = (feet.x * 0.5 + 0.5) * this.viewportWidth,
+      fy = (-feet.y * 0.5 + 0.5) * this.viewportHeight;
+    const head = this.boxPoint.copy(rig.root.position).setY(rig.root.position.y + 1.9).project(this.camera);
+    const hx = (head.x * 0.5 + 0.5) * this.viewportWidth,
+      hy = (-head.y * 0.5 + 0.5) * this.viewportHeight;
+    const h = Math.max(12, fy - hy);
+    const w = h * 0.42;
+    return { x: (fx + hx) / 2 - w / 2, y: hy, w, h };
+  }
+  private readonly boxPoint = new T.Vector3();
+
+  /** A living unit's horizontal screen position, undefined when it is out of view. */
+  screenX(id: string): number | undefined {
+    const box = this.unitBox(id);
+    if (!box) return undefined;
+    const x = box.x + box.w / 2,
+      y = box.y + box.h / 2;
+    return x < 0 || x > this.viewportWidth || y < 0 || y > this.viewportHeight ? undefined : x;
+  }
+
+  get viewSize() {
+    return { w: this.viewportWidth, h: this.viewportHeight };
+  }
+
+  /** The living unit whose body is under a client point, the nearest to the camera first. */
+  unitAtScreen(clientX: number, clientY: number): string | null {
+    const rect = this.host.getBoundingClientRect();
+    const x = clientX - rect.left,
+      y = clientY - rect.top;
+    let best: string | null = null,
+      nearest = Infinity;
+    for (const u of this.game.units) {
+      const box = this.unitBox(u.id);
+      if (!box) continue;
+      // A far-off figure is a few pixels wide: the target is never smaller than a fingertip.
+      const w = Math.max(box.w + 8, 28),
+        h = Math.max(box.h + 8, 44);
+      const cx = box.x + box.w / 2,
+        cy = box.y + box.h / 2;
+      if (Math.abs(x - cx) > w / 2 || Math.abs(y - cy) > h / 2) continue;
+      const d = this.units.rig(u.id)!.root.position.distanceToSquared(this.camera.position);
+      if (d < nearest) [best, nearest] = [u.id, d];
+    }
+    return best;
+  }
+
+  /** The inspected unit's reach on the ground; null clears. */
+  showThreat(area: ThreatArea | null, hostile = true) {
+    this.threat.show(area, hostile);
+    this.invalidate();
   }
 
   private pointerRay(e: PointerEvent): T.Raycaster {
@@ -747,10 +868,11 @@ export class Battlefield {
     this.destruction.update(elapsed, this.camera);
     this.host.dataset.destruction = JSON.stringify(this.destruction.stats);
     this.updateUnits(elapsed, now / 1000);
+    for (const hook of this.frameHooks) hook();
     this.updateReticle();
     if (this.reflectionsDirty && !this.indoors) {
       // Probe only scenery: moving actors and ground HUD should never be baked into puddles.
-      const excluded = [...this.overlays.reflectionExcluded, this.precipitation.group, this.effects.group,
+      const excluded = [...this.overlays.reflectionExcluded, this.threat.object, this.precipitation.group, this.effects.group,
         ...this.game.units.flatMap((u) => { const rig = this.units.rig(u.id); return rig ? [rig.root] : []; })];
       const excludedVisibility = excluded.map((object) => object.visible);
       excluded.forEach((object) => { object.visible = false; });

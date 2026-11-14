@@ -8,36 +8,36 @@
     margin: auto;
     padding: 0;
     overflow: auto;
-    color: #ffffff;
-    border: 1px solid #22262d;
-    background: #101215;
-    box-shadow: 0 40px 120px #000b;
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    background: var(--surface-color);
+    box-shadow: 0 40px 120px color-mix(in srgb, var(--background-color) 73%, transparent);
     font-family: var(--mono);
 }
 .encounter #modal.encounter-rewards::backdrop {
-    background: #0a0b0ddc;
+    background: color-mix(in srgb, var(--background-color) 86%, transparent);
     backdrop-filter: blur(9px);
 }
 .encounter .debrief-shell {
     padding: 26px 32px 20px;
 }
 .encounter .debrief-eyebrow {
-    font-size: 9px;
+    font-size: var(--t-micro);
     letter-spacing: 0.18em;
-    color: #5c616a;
+    color: var(--disabled-color);
     margin: 0 0 14px;
 }
 .encounter .debrief-eyebrow span {
     margin-left: 24px;
-    color: #c9cdd4;
+    color: var(--text-secondary);
 }
 .encounter .debrief-header h2 {
-    font: 500 clamp(22px, 2.6vw, 30px) / 1.1 var(--mono);
+    font: 500 var(--t-title) / 1.1 var(--mono);
     letter-spacing: 0.12em;
     margin: 0;
 }
 .encounter .debrief-header h2.is-defeat {
-    color: #d9a452;
+    color: var(--warn-color);
 }
 .encounter .debrief-meta {
     display: flex;
@@ -45,9 +45,9 @@
     gap: 10px;
     margin: 18px 0 16px;
     padding-top: 12px;
-    border-top: 1px solid #22262d;
-    color: #5c616a;
-    font-size: 9px;
+    border-top: 1px solid var(--border-color);
+    color: var(--disabled-color);
+    font-size: var(--t-micro);
     letter-spacing: 0.09em;
 }
 .encounter .debrief-meta i {
@@ -66,8 +66,8 @@
     min-width: 0;
 }
 .encounter .recruit-record {
-    border: 1px solid #22262d;
-    background: #161920;
+    border: 1px solid var(--border-color);
+    background: var(--raised-color);
     opacity: 0;
     transform: translateY(14px);
     transition:
@@ -84,31 +84,31 @@
     align-items: baseline;
     gap: 4px;
     padding: 10px 12px;
-    font-size: 8px;
-    color: #5c616a;
+    font-size: var(--t-micro);
+    color: var(--disabled-color);
     letter-spacing: 0.08em;
 }
 .encounter .record-rank {
-    color: #c9cdd4;
+    color: var(--text-secondary);
 }
 .encounter .record-rank b {
-    font-size: 14px;
+    font-size: var(--t-body);
     font-weight: 500;
-    color: #ffffff;
+    color: var(--text-color);
 }
 .encounter .record-portrait {
     position: relative;
     height: clamp(115px, 14vw, 165px);
     overflow: hidden;
-    background: #0a0b0d;
-    border-top: 1px solid #22262d;
-    border-bottom: 1px solid #22262d;
+    background: var(--background-color);
+    border-top: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--border-color);
 }
 .encounter .record-portrait::after {
     content: "";
     position: absolute;
     inset: 0;
-    background: linear-gradient(transparent 62%, #161920);
+    background: linear-gradient(transparent 62%, var(--raised-color));
     pointer-events: none;
 }
 .encounter .record-portrait img {
@@ -120,35 +120,36 @@
     filter: saturate(0.6);
 }
 .encounter .record-silhouette {
+    /* A drawn placeholder, not type: the pictogram where a portrait would be. */
     font-size: 90px;
     line-height: 1.6;
     text-align: center;
-    color: #22262d;
+    color: var(--border-color);
 }
 .encounter .record-status {
     position: absolute;
     z-index: 1;
     left: 12px;
     bottom: 9px;
-    font-size: 8px;
+    font-size: var(--t-micro);
     letter-spacing: 0.12em;
-    color: #5c616a;
+    color: var(--disabled-color);
 }
 .encounter .record-identity {
     padding: 12px 12px 8px;
 }
 .encounter .record-identity h3 {
-    font: 500 15px/1 var(--mono);
+    font: 500 var(--t-body)/1 var(--mono);
     letter-spacing: 0.14em;
     margin: 0;
-    color: #ffffff;
+    color: var(--text-color);
 }
 .encounter .record-identity p {
     margin: 7px 0 0;
-    font-size: 9px;
+    font-size: var(--t-micro);
     line-height: 1.4;
     letter-spacing: 0.04em;
-    color: #5c616a;
+    color: var(--disabled-color);
     min-height: 13px;
     overflow-wrap: anywhere;
 }
@@ -158,45 +159,45 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-top: 1px solid #22262d;
-    font-size: 8px;
-    color: #5c616a;
+    border-top: 1px solid var(--border-color);
+    font-size: var(--t-micro);
+    color: var(--disabled-color);
     letter-spacing: 0.08em;
 }
 .encounter .record-service strong {
-    font-size: 13px;
+    font-size: var(--t-body);
     font-weight: 400;
-    color: #c9cdd4;
+    color: var(--text-secondary);
 }
 .encounter .record-experience,
 .encounter .record-memorial {
     margin: 0 12px;
     padding: 9px 0 14px;
-    border-top: 1px solid #22262d;
+    border-top: 1px solid var(--border-color);
     min-height: 58px;
 }
 .encounter .record-experience > div:first-child {
     display: flex;
     justify-content: space-between;
     gap: 3px;
-    font-size: 8px;
+    font-size: var(--t-micro);
     letter-spacing: 0.08em;
-    color: #5c616a;
+    color: var(--disabled-color);
 }
 .encounter .record-experience strong {
     font-weight: 500;
-    color: #c9cdd4;
+    color: var(--text-secondary);
 }
 .encounter .record-xp {
     height: 3px;
-    background: #22262d;
+    background: var(--border-color);
     margin-top: 11px;
     overflow: hidden;
 }
 .encounter .record-xp i {
     display: block;
     height: 100%;
-    background: #7fe3ef;
+    background: var(--accent-color);
     transform-origin: left;
     transform: scaleX(0);
 }
@@ -205,53 +206,53 @@
     display: flex;
     justify-content: space-between;
     gap: 4px;
-    font-size: 7px;
+    font-size: var(--t-micro);
     letter-spacing: 0.08em;
-    color: #5c616a;
+    color: var(--disabled-color);
 }
 /* Promotion is what the accent is for. */
 .encounter .is-promoted .recruit-record {
-    border-color: #7fe3ef66;
+    border-color: color-mix(in srgb, var(--accent-color) 40%, transparent);
 }
 .encounter .is-promoted .record-status,
 .encounter .is-promoted .record-rank,
 .encounter .is-promoted .record-rank b,
 .encounter .is-promoted .record-experience strong {
-    color: #7fe3ef;
+    color: var(--accent-color);
 }
 .encounter .is-promoted .record-rank b {
     animation: rank-step 0.5s ease-out;
 }
 /* Loss is what amber is for. */
 .encounter .is-kia .recruit-record {
-    background: #101215;
+    background: var(--surface-color);
 }
 .encounter .is-kia .record-portrait img {
     filter: grayscale(1) brightness(0.55);
 }
 .encounter .is-kia .record-portrait::after {
     background:
-        linear-gradient(transparent, #101215),
-        repeating-linear-gradient(0deg, #0003 0 1px, transparent 1px 4px);
+        linear-gradient(transparent, var(--surface-color)),
+        repeating-linear-gradient(0deg, color-mix(in srgb, var(--background-color) 20%, transparent) 0 1px, transparent 1px 4px);
 }
 .encounter .is-kia .record-identity h3 {
-    color: #5c616a;
+    color: var(--disabled-color);
 }
 .encounter .is-kia .record-status {
-    color: #d9a452;
+    color: var(--warn-color);
 }
 .encounter .is-kia .record-rank,
 .encounter .is-kia .record-rank b,
 .encounter .is-kia .record-service strong {
-    color: #5c616a;
+    color: var(--disabled-color);
 }
 .encounter .record-memorial strong {
     display: block;
     padding-top: 3px;
-    font-size: 9px;
+    font-size: var(--t-micro);
     letter-spacing: 0.12em;
     font-weight: 400;
-    color: #d9a452;
+    color: var(--warn-color);
 }
 .encounter .debrief-footer {
     display: flex;
@@ -259,12 +260,12 @@
     justify-content: space-between;
     gap: 20px;
     margin-top: 18px;
-    border-top: 1px solid #22262d;
+    border-top: 1px solid var(--border-color);
     padding-top: 14px;
 }
 .encounter .debrief-summary {
-    color: #5c616a;
-    font-size: 9px;
+    color: var(--disabled-color);
+    font-size: var(--t-micro);
     letter-spacing: 0.09em;
     line-height: 1.5;
     margin: 0;
@@ -276,38 +277,9 @@
     justify-content: flex-end;
     gap: 10px;
 }
-.encounter .debrief-footer button {
-    padding: 11px 14px;
-    font: 9px var(--mono);
-    letter-spacing: 0.08em;
-    color: #c9cdd4;
-    background: transparent;
-    border: 1px solid #22262d;
-    cursor: pointer;
-}
-.encounter .debrief-footer button:hover:not(:disabled) {
-    color: #ffffff;
-    border-color: #5c616a;
-}
-.encounter .debrief-footer button span {
-    margin-left: 12px;
-}
-.encounter .debrief-footer button[data-redeploy] {
-    border-color: #7fe3ef;
-    color: #7fe3ef;
-}
-.encounter .debrief-footer button[data-redeploy]:hover:not(:disabled) {
-    background: rgba(127, 227, 239, 0.08);
-    color: #7fe3ef;
-    border-color: #7fe3ef;
-}
-.encounter .debrief-footer button:disabled {
-    opacity: 0.25;
-    cursor: default;
-}
-.encounter .debrief-footer button[data-quit] {
-    border-color: transparent;
-    color: #5c616a;
+/* The footer's commands are the HUD's bar commands (style.css `.hud-bar-cmd`); Redeploy is the primary. */
+.encounter .debrief-footer .hud-bar-cmd span {
+    margin-left: 0;
 }
 .encounter #modal.reveal-immediately .recruit-record {
     transition: none;

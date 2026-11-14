@@ -76,13 +76,19 @@ export const Armor = bcs.struct("Armor", {
 /** `ghosts::param::Param`. */
 const Param = bcs.struct("Param", { value: bcs.u16(), maxValue: bcs.u16() });
 
-/** `ghosts::action::ActionKind`: variant order is the tag; new variants are appended. */
+/**
+ * `ghosts::action::ActionKind`: variant order is the tag; new variants are appended.
+ * Tags past the known ones read as `Unknown<tag>` instead of failing the whole
+ * game: a unit with a newer contract's action still loads, and the HUD shows
+ * that action as not supported (`unitActions`).
+ */
 const ActionKind = bcs.enum("ActionKind", {
     Move: null,
     Attack: null,
     Reload: null,
     Grenade: null,
-});
+    ...Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`Unknown${i + 4}`, null])),
+} as { Move: null; Attack: null; Reload: null; Grenade: null } & Record<`Unknown${number}`, null>);
 
 /** `ghosts::action::Action`: a kind and how many uses are left of it, `null` for unlimited. */
 const Action = bcs.struct("Action", { uses: bcs.option(bcs.u8()), kind: ActionKind });

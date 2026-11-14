@@ -4,11 +4,14 @@
 import { action, endTurn, pick, select } from "./actions";
 import { audio } from "./audio";
 import { runCombatAction, type ControlOptions } from "./controls";
-import { allows, type Cell } from "./game";
+import { actionName, actionSpec, REFUSAL_TEXT, unitKinds } from "./action-registry";
+import { allows, type Cell, type UnitOrder } from "./game";
+import type { IconName } from "./ui/icons";
 import { cancelDialog, onPad, padActive, type PadDir, type PadInput } from "./gamepad";
 import { PAD_COMBAT_ACTIONS, type PadBindable, type PadCombatAction, type PadCombatBindings } from "./keys";
 import { session } from "./session";
 import { engineSettings } from "./settings";
+import { closeInspect, cycleInspect, inspect, inspectHeld } from "./ui/intel/store";
 
 /**
  * The controller on the field. Buttons map to the same `CombatAction`s the
@@ -22,15 +25,27 @@ import { engineSettings } from "./settings";
  * nothing; paused or behind a host dialog it yields the pad back.
  */
 
-export const WHEEL_ACTIONS = [
-  { id: "fire", label: "FIRE" },
-  { id: "grenade", label: "GRENADE" },
-  { id: "reload", label: "RELOAD" },
-  { id: "overwatch", label: "OVERWATCH" },
-  { id: "hunker", label: "HUNKER" },
-  { id: "secure", label: "EXTRACT" },
-  { id: "end-turn", label: "END TURN" },
-] as const;
+/** A wheel entry: one of the selected unit's actions (by catalog kind), or ending the turn. */
+export interface WheelEntry {
+  id: string;
+  label: string;
+  /** The engine order it runs; undefined for a kind this client can't perform. */
+  order?: UnitOrder;
+  icon?: IconName;
+}
+
+/**
+ * The wheel: the selected unit's actions but Move (A walks the cursor), in its
+ * own order, from the action registry, then End turn. Nobody selected, End turn only.
+ */
+export function wheelEntries(): WheelEntry[] {
+  const u = session.selectedUnit();
+  const kinds = u ? unitKinds(u).filter((k) => k !== "Move") : [];
+  return [
+    ...kinds.map((k) => ({ id: k, label: actionName(k).toUpperCase(), order: actionSpec(k)?.order, icon: actionSpec(k)?.icon })),
+    { id: "end-turn", label: "END TURN" },
+  ];
+}
 
 export function closeWheel() {
   session.wheel = false;
@@ -39,11 +54,12 @@ export function closeWheel() {
 
 /** Run the wheel entry and close the wheel; the pad and the mouse both land here. */
 export function confirmWheel(index: number) {
-  const choice = WHEEL_ACTIONS[index]?.id;
+  const choice = wheelEntries()[index];
   closeWheel();
   if (!choice) return;
-  if (choice === "end-turn") void endTurn();
-  else void action(choice);
+  if (choice.id === "end-turn") void endTurn();
+  else if (choice.order) void action(choice.order);
+  else session.notify(REFUSAL_TEXT.unsupported.toUpperCase(), "miss");
 }
 
 const DELTAS: Record<PadDir, Cell> = {
@@ -82,7 +98,7 @@ function dialogInput(pad: PadInput) {
 
 function wheelInput(pad: PadInput, close: PadBindable | "") {
   const s = session;
-  const n = WHEEL_ACTIONS.length;
+  const n = wheelEntries().length;
   if (pad.pressed("b") || (close && pad.pressed(close))) {
     closeWheel();
     return;
@@ -202,6 +218,18 @@ export function bindPadCombat({ onPause }: ControlOptions = {}): () => void {
     else if (ry) battlefield.dolly(1 + ry * ZOOM_SPEED * dt);
     if (free) freeCamera(pad, binds, dt);
 
+    // Inspect (L3, fixed like the sticks) walks the units in view, even through the
+    // other side's turn; while it holds one, the d-pad steps and B lets go.
+    if (!s.wheel && pad.pressed("l3")) {
+      runCombatAction("inspect");
+      return true;
+    }
+    if (!s.wheel && s.mode === "move" && inspect.hold === "cycle" && inspectHeld()) {
+      if (pad.pressed("b")) closeInspect();
+      else if (pad.pressed("left")) cycleInspect(-1);
+      else if (pad.pressed("right")) cycleInspect(1);
+      if (pad.pressed("b") || pad.pressed("left") || pad.pressed("right")) return true;
+    }
     if (s.busy || s.resolving) {
       if (free) battlefield.markTile(null);
       return true;

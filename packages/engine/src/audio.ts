@@ -73,6 +73,38 @@ export class CombatAudio {
     source.start();
   }
 
+  private lockedAt = 0;
+  private paused = false;
+
+  /**
+   * The unit readout locking on: two short, quiet pips on the effects level.
+   * Sweeping the pointer across a squad plays it at most every 150 ms.
+   */
+  lock() {
+    const level = effects();
+    const now = performance.now();
+    if (level <= 0 || this.paused || now - this.lockedAt < 150) return;
+    this.lockedAt = now;
+    const audio = (this.context ??= new AudioContext());
+    void audio.resume();
+    const start = audio.currentTime;
+    for (const [at, frequency] of [
+      [0, 1480],
+      [0.055, 2220],
+    ]) {
+      const osc = audio.createOscillator();
+      osc.type = "sine";
+      osc.frequency.value = frequency;
+      const gain = audio.createGain();
+      gain.gain.setValueAtTime(0.0001, start + at);
+      gain.gain.exponentialRampToValueAtTime(0.022 * level, start + at + 0.006);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + at + 0.045);
+      osc.connect(gain).connect(audio.destination);
+      osc.start(start + at);
+      osc.stop(start + at + 0.05);
+    }
+  }
+
   /** Silence everything and release the audio context; the next encounter starts fresh. */
   stop() {
     this.voice.dispose();
@@ -84,6 +116,7 @@ export class CombatAudio {
   }
 
   setPaused(paused: boolean) {
+    this.paused = paused;
     this.voice.setPaused(paused);
     this.sfx.setPaused(paused);
     if (!this.context) return;

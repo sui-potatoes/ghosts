@@ -7,7 +7,7 @@ import { encounterReport } from "../aftermath/report";
 import { revealEncounter } from "../aftermath/reveal";
 import { weapons } from "../game";
 import { pad2 } from "../html";
-import { Icon } from "./icons";
+import { Glyph } from "./Hud";
 import { useSession } from "./useSession";
 
 /** Scenario copy marks order names as `*word*`. */
@@ -49,76 +49,69 @@ export function Briefing({ deploy }: { deploy: boolean }) {
     <dialog
       id="modal"
       ref={ref}
-      className="briefing-modal"
+      className="hud-prompt briefing-modal"
+      aria-labelledby="briefing-title"
       onClick={(e) => {
         if (e.target === e.currentTarget) ref.current?.close();
       }}
     >
-      <div id="modal-content">
-        <button className="modal-close" aria-label="Close panel" onClick={() => ref.current?.close()}>
-          <Icon name="close" />
-        </button>
-        <div className="modal-heading">
-          <div className="eyebrow">{b.issuer}</div>
-          <h2>{b.title}</h2>
-          <p>{b.setting}</p>
-        </div>
-        <div className="briefing">
-          <div>
-            <h3>THE CONTRACT</h3>
-            {b.contract.map((p, i) => (
-              <p key={i}>
-                <Emphasis text={p} />
-              </p>
-            ))}
-            <h3>RULES OF ENGAGEMENT</h3>
-            <p>
-              <Emphasis text={b.rules} />
-            </p>
+      <small className="hud-prompt-eyebrow">{b.issuer}</small>
+      <h2 className="hud-prompt-title" id="briefing-title">
+        {b.title}
+      </h2>
+      <p className="hud-prompt-body">{b.setting}</p>
+      <dl className="hud-prompt-lines">
+        {b.facts.map(([label, value]) => (
+          <div key={label}>
+            <dt>{label}</dt>
+            <dd>{value}</dd>
           </div>
-          <div className="briefing-facts">
-            {b.facts.map(([label, value]) => (
-              <span key={label}>
-                {label}
-                <b>{value}</b>
-              </span>
-            ))}
-          </div>
-        </div>
+        ))}
+      </dl>
+      <div className="hud-prompt-scroll">
+        <h3>The contract</h3>
+        {b.contract.map((p, i) => (
+          <p key={i}>
+            <Emphasis text={p} />
+          </p>
+        ))}
+        <h3>Rules of engagement</h3>
+        <p>
+          <Emphasis text={b.rules} />
+        </p>
         {deploy && (
           <>
-            <div className="deploy-squad">
-              <h3>
-                <span>DEPLOYED SQUAD</span>
-                <span>{pad2(allies.length)} OPERATIVES</span>
-              </h3>
-              <ol className="deploy-roster">
-                {allies.map((u) => {
-                  const portrait = s.portraits.get(u.id);
-                  return (
-                    <li key={u.id}>
-                      {portrait && <img src={portrait} alt="" />}
-                      <div>
-                        <span>{u.role}</span>
-                        <b>{u.name}</b>
-                        <small>{u.full}</small>
-                        <p>
-                          {weapons[u.weapon].label}
-                          <br />
-                          HP {u.maxHp} · ARMOR {u.armor} · AIM {u.aim}
-                        </p>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ol>
-            </div>
-            <div className="deploy-actions">
-              <button ref={go} type="button" className="deploy-go" onClick={() => ref.current?.close()}>
-                DEPLOY SQUAD <span>→</span>
-              </button>
-            </div>
+            <h3>
+              Deployed squad <span>{pad2(allies.length)}</span>
+            </h3>
+            <ol className="hud-roster">
+              {allies.map((u) => {
+                const portrait = s.portraits.get(u.id);
+                return (
+                  <li key={u.id}>
+                    {portrait && <img src={portrait} alt="" />}
+                    <div>
+                      <b>{u.name}</b>
+                      <small>{u.role}</small>
+                      <small>{weapons[u.weapon].label}</small>
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
           </>
+        )}
+      </div>
+      <div className="hud-prompt-commands">
+        <button type="button" className="hud-bar-cmd" onClick={() => ref.current?.close()}>
+          <Glyph action="cancel" pad="b" />
+          <span>{deploy ? "Close" : "Back"}</span>
+        </button>
+        {deploy && (
+          <button ref={go} type="button" className="hud-bar-cmd" data-tone="primary" onClick={() => ref.current?.close()}>
+            <Glyph action="confirm" pad="a" />
+            <span>Deploy squad</span>
+          </button>
         )}
       </div>
     </dialog>

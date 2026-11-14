@@ -8,7 +8,7 @@
  * is `[x, z]` around its center. Mirrors `ghosts::ghosts`.
  */
 
-import type { GameEvent, UnitOrder } from "@ghosts/engine";
+import type { GameEvent } from "@ghosts/engine";
 
 import type { ChainGame, ChainRecord } from "./bcs";
 
@@ -378,20 +378,18 @@ export const hasUsesLeft = (
     action: UnitAction,
 ) => unit.actions.some(({ kind, uses }) => kind.$kind === action && (uses === null || uses > 0));
 
-/** The engine's name for each chain action; the engine's other orders have no chain counterpart. */
-const ENGINE_ORDER = {
-    Move: "move",
-    Attack: "fire",
-    Reload: "reload",
-    Grenade: "grenade",
-} as const;
-
-/** A unit's chain actions as the engine's allow-list. */
-export function engineActions(actions: readonly { kind: { $kind: string } }[]): UnitOrder[] {
-    const orders = actions.flatMap(({ kind: { $kind } }) =>
-        $kind in ENGINE_ORDER ? [ENGINE_ORDER[$kind as keyof typeof ENGINE_ORDER]] : [],
-    );
-    return [...new Set(orders)];
+/**
+ * A unit's chain actions as the engine carries them: each kind by its catalog id
+ * (the `ActionKind` variant name), with its uses left, in the unit's order.
+ */
+export function unitActions(
+    actions: readonly { uses: number | null; kind: { $kind: string } }[],
+): { kind: string; uses: number | null }[] {
+    // a tag this client's schema doesn't name yet goes on as `#<tag>`
+    return actions.map(({ uses, kind }) => ({
+        kind: kind.$kind.replace(/^Unknown(\d+)$/, "#$1"),
+        uses,
+    }));
 }
 
 /** The units on the map with the tiles they stand on. */

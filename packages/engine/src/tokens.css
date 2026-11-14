@@ -1,0 +1,45 @@
+@import "./fonts.css";
+
+/*
+ * The encounter's scale and tints: the one token source for the engine's HUD,
+ * its prompts, the unit readout and the debrief. The values are the menus'
+ * (app/src/ui/gui.css, `.gui`): four type sizes, one spacing unit, three
+ * control heights, the same derived tints. Colours come from the host's theme
+ * tokens (--text-color, --accent-color, --warn-color, …); every tint here is a
+ * color-mix of them, never a new hex. The one hue the menus don't have is the
+ * hostile marker.
+ */
+.encounter {
+  /* One spacing unit; everything is a multiple of it. */
+  --u: 4px;
+
+  /* Four type sizes; emphasis is weight and colour, not size. */
+  --t-micro: 10px; /* stencil captions, eyebrows, tags */
+  --t-label: 11px; /* labels, commands, chips */
+  --t-body: 13px; /* names, values, body copy */
+  --t-title: 22px; /* a prompt's question, the aim's odds */
+
+  /* Three control heights. */
+  --h-s: 20px; /* glyphs, tags */
+  --h-m: 40px; /* rows, commands, touch targets */
+  --h-l: 56px; /* the header and command strips */
+
+  --track: 0.18em; /* uppercase tracking */
+
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --mono: var(--font-mono);
+
+  /* Derived tints, no new hues. */
+  --line: var(--border-color);
+  --line-strong: color-mix(in srgb, var(--text-color) 20%, transparent);
+  --fill: color-mix(in srgb, var(--surface-color) 88%, transparent);
+  --glass: color-mix(in srgb, var(--background-color) 84%, transparent);
+  --band: var(--text-color);
+  --on-band: var(--background-color);
+  --dim: var(--disabled-color);
+  --snap: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* The hostile marker on the field: the one hue the menus don't use. */
+  --hostile: #d67c73;
+  --red: var(--hostile);
+}

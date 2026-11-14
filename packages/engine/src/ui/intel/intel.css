@@ -1,0 +1,496 @@
+/*
+ * The unit readout: a lock-on, a leader line and a scan card over the field.
+ * Its own sheet and prefix (`intel-`), scoped under `.encounter`. Colours are
+ * the encounter's tokens (hostile: --red, the danger tone on the field; own:
+ * the cold accent, spent on the marker only); tints are color-mix of them.
+ * Four type sizes, as in the menus: 10 / 11 / 13 / 22.
+ */
+.encounter .intel-layer,
+.encounter .intel-card.is-aim {
+  --intel-t-micro: var(--t-micro, 10px);
+  --intel-t-label: var(--t-label, 11px);
+  --intel-t-body: var(--t-body, 13px);
+  --intel-t-title: var(--t-title, 22px);
+  --intel-tone: var(--accent-color);
+  --intel-ink: var(--text-color);
+  --intel-dim: var(--text-secondary);
+  --intel-line: color-mix(in srgb, var(--intel-tone) 42%, transparent);
+  --intel-bg: color-mix(in srgb, var(--background-color) 86%, transparent);
+}
+.encounter .intel-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  overflow: hidden;
+  font-family: var(--mono);
+}
+.encounter .intel-layer.is-hostile {
+  --intel-tone: var(--red);
+}
+.encounter .intel-layer[data-visible="false"] {
+  visibility: hidden;
+}
+
+/* Lock-on: four corner brackets on the unit's body and one scan line through it. */
+.encounter .intel-lock {
+  position: absolute;
+  left: 0;
+  top: 0;
+  will-change: transform;
+}
+.encounter .intel-lock i {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  border: 0 solid var(--intel-tone);
+}
+.encounter .intel-lock i:nth-child(1) { left: -4px; top: -4px; border-width: 2px 0 0 2px; }
+.encounter .intel-lock i:nth-child(2) { right: -4px; top: -4px; border-width: 2px 2px 0 0; }
+.encounter .intel-lock i:nth-child(3) { left: -4px; bottom: -4px; border-width: 0 0 2px 2px; }
+.encounter .intel-lock i:nth-child(4) { right: -4px; bottom: -4px; border-width: 0 2px 2px 0; }
+.encounter .intel-sweep {
+  position: absolute;
+  left: -4px;
+  right: -4px;
+  top: 0;
+  height: 1px;
+  background: var(--intel-tone);
+  box-shadow: 0 0 6px var(--intel-tone);
+  opacity: 0;
+}
+
+.encounter .intel-leader {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.encounter .intel-leader line {
+  stroke: var(--intel-line);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+
+/* The card: a hairline frame with bracketed corners, no rounding, no drop shadow. */
+.encounter .intel-card {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: max-content;
+  min-width: 196px;
+  max-width: 252px;
+  padding: 8px 10px 9px;
+  background: var(--intel-bg);
+  border: 1px solid color-mix(in srgb, var(--intel-tone) 22%, var(--border-color));
+  color: var(--intel-ink);
+  font: 400 var(--intel-t-label) / 1.25 var(--mono);
+  letter-spacing: 0.04em;
+  will-change: transform;
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+}
+.encounter .intel-card::before,
+.encounter .intel-card::after {
+  content: "";
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border: 0 solid var(--intel-tone);
+}
+.encounter .intel-card::before { left: -1px; top: -1px; border-width: 2px 0 0 2px; }
+.encounter .intel-card::after { right: -1px; bottom: -1px; border-width: 0 2px 2px 0; }
+.encounter .intel-card.is-held {
+  border-color: color-mix(in srgb, var(--intel-tone) 45%, var(--border-color));
+}
+
+.encounter .intel-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 18px;
+}
+.encounter .intel-line + .intel-line {
+  margin-top: 4px;
+}
+.encounter .intel-icon {
+  flex: none;
+  color: var(--intel-dim);
+}
+.encounter .intel-key,
+.encounter .intel-stat small,
+.encounter .intel-tag,
+.encounter .intel-side,
+.encounter .intel-rank-tag,
+.encounter .intel-record {
+  font-size: var(--intel-t-micro);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--intel-dim);
+}
+.encounter .intel-num {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--intel-ink);
+}
+.encounter .intel-num small {
+  font-size: var(--intel-t-micro);
+  color: var(--intel-dim);
+  font-weight: 400;
+}
+.encounter .intel-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Identity */
+.encounter .intel-head {
+  gap: 10px;
+}
+.encounter .intel-side {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--intel-tone);
+}
+.encounter .intel-side .intel-icon {
+  color: var(--intel-tone);
+}
+.encounter .intel-rank-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  color: var(--intel-ink);
+}
+.encounter .intel-rank-tag .intel-icon {
+  color: var(--intel-ink);
+}
+.encounter .intel-id {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+}
+.encounter .intel-id strong {
+  font: 600 var(--intel-t-body) / 1.1 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.encounter .intel-id small {
+  font-size: var(--intel-t-micro);
+  color: var(--intel-dim);
+  letter-spacing: 0.06em;
+}
+.encounter .intel-cmdr {
+  gap: 6px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
+}
+.encounter .intel-cmdr .intel-num {
+  margin-left: auto;
+}
+
+/* Condition: pips, then the number where it is acted on. */
+.encounter .intel-cond {
+  flex-wrap: wrap;
+  column-gap: 12px;
+  row-gap: 4px;
+}
+.encounter .intel-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.encounter .intel-armor {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 2px;
+}
+.encounter .intel-pips {
+  display: inline-flex;
+  gap: 2px;
+}
+.encounter .intel-pips i {
+  width: 4px;
+  height: 9px;
+  background: color-mix(in srgb, var(--intel-dim) 22%, transparent);
+}
+.encounter .intel-pips i.on {
+  background: var(--intel-ink);
+}
+.encounter .intel-pips.is-hp i.on {
+  background: var(--intel-tone);
+}
+.encounter .intel-layer.is-friendly .intel-pips.is-hp i.on,
+.encounter .intel-card.is-friendly .intel-pips.is-hp i.on {
+  background: var(--intel-ink);
+}
+.encounter .intel-pips.is-ap i {
+  width: 7px;
+  height: 7px;
+  transform: rotate(45deg);
+}
+.encounter .intel-pips.is-empty i {
+  background: color-mix(in srgb, var(--warn-color) 30%, transparent);
+}
+.encounter .intel-pips.is-bar {
+  gap: 0;
+}
+.encounter .intel-pips.is-bar i {
+  width: 3px;
+}
+
+/* Loadout */
+.encounter .intel-gear {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+  padding-top: 5px;
+  border-top: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
+}
+.encounter .intel-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 16px;
+}
+.encounter .intel-row.is-void .intel-name,
+.encounter .intel-row.is-spent .intel-name {
+  color: var(--intel-dim);
+}
+.encounter .intel-row.is-void .intel-name {
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: var(--intel-t-micro);
+}
+.encounter .intel-mods {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: auto;
+}
+.encounter .intel-ammo {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+}
+.encounter .intel-pips.is-ammo i {
+  width: 3px;
+  height: 8px;
+}
+.encounter .intel-mods i {
+  display: grid;
+  place-items: center;
+  width: 11px;
+  height: 11px;
+  border: 1px solid color-mix(in srgb, var(--intel-dim) 45%, transparent);
+  font: 500 8px / 1 var(--mono);
+  font-style: normal;
+  color: var(--background-color);
+}
+.encounter .intel-mods i.on {
+  background: var(--intel-ink);
+  border-color: var(--intel-ink);
+}
+.encounter .intel-row .intel-pips,
+.encounter .intel-row .intel-tag {
+  margin-left: auto;
+}
+.encounter .intel-tag.is-alert {
+  color: var(--warn-color);
+}
+
+/* Fight stats: icon, number, micro label, three to a row. */
+.encounter .intel-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px 10px;
+  padding-top: 5px;
+  border-top: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
+}
+.encounter .intel-stat {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  column-gap: 5px;
+}
+.encounter .intel-stat b {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  font-size: var(--intel-t-body);
+}
+.encounter .intel-stat small {
+  grid-column: 1 / -1;
+  letter-spacing: 0.12em;
+}
+
+/* Its odds against the selected unit: the line that needs attention. */
+.encounter .intel-threat {
+  gap: 6px;
+  padding: 3px 6px;
+  background: color-mix(in srgb, var(--intel-tone) 14%, transparent);
+  color: var(--intel-ink);
+}
+.encounter .intel-threat .intel-icon {
+  color: var(--intel-tone);
+}
+.encounter .intel-threat .intel-num {
+  margin-left: auto;
+  font-size: var(--intel-t-body);
+  color: var(--intel-tone);
+}
+.encounter .intel-threat.is-safe {
+  background: color-mix(in srgb, var(--intel-dim) 10%, transparent);
+}
+.encounter .intel-threat.is-safe .intel-num,
+.encounter .intel-threat.is-safe .intel-icon {
+  color: var(--intel-dim);
+}
+.encounter .intel-layer.is-friendly .intel-threat .intel-num {
+  color: var(--intel-ink);
+}
+
+.encounter .intel-effects {
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.encounter .intel-void {
+  font-size: var(--intel-t-micro);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--intel-dim);
+}
+
+/* Merged into the aim readout: no frame of its own. */
+.encounter .intel-card.is-aim {
+  position: static;
+  min-width: 0;
+  max-width: none;
+  padding: 0;
+  margin-top: 6px;
+  background: none;
+  border: 0;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  --intel-tone: var(--red);
+  --intel-ink: var(--text-color);
+  --intel-dim: var(--text-secondary);
+}
+.encounter .intel-card.is-aim.is-friendly {
+  --intel-tone: var(--accent-color);
+}
+.encounter .intel-card.is-aim::before,
+.encounter .intel-card.is-aim::after {
+  content: none;
+}
+
+/* The lock: brackets close in, a line sweeps the body, the card resolves line by line (under 300 ms). */
+.encounter .intel-layer.is-locking .intel-lock i {
+  animation: intel-snap 110ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.encounter .intel-layer.is-locking .intel-lock i:nth-child(1) { --intel-from: -9px -9px; }
+.encounter .intel-layer.is-locking .intel-lock i:nth-child(2) { --intel-from: 9px -9px; }
+.encounter .intel-layer.is-locking .intel-lock i:nth-child(3) { --intel-from: -9px 9px; }
+.encounter .intel-layer.is-locking .intel-lock i:nth-child(4) { --intel-from: 9px 9px; }
+.encounter .intel-layer.is-locking .intel-sweep {
+  animation: intel-sweep 190ms linear 40ms both;
+}
+.encounter .intel-layer.is-locking .intel-leader line {
+  animation: intel-draw 120ms linear 50ms both;
+  stroke-dasharray: 400;
+}
+.encounter .intel-layer.is-locking .intel-card {
+  animation: intel-frame 90ms steps(3) 60ms both;
+}
+.encounter .intel-layer.is-locking .intel-card > .intel-line {
+  animation: intel-resolve 110ms steps(4) both;
+}
+.encounter .intel-layer.is-locking .intel-card > .intel-line:nth-child(1) { animation-delay: 80ms; }
+.encounter .intel-layer.is-locking .intel-card > .intel-line:nth-child(2) { animation-delay: 100ms; }
+.encounter .intel-layer.is-locking .intel-card > .intel-line:nth-child(3) { animation-delay: 120ms; }
+.encounter .intel-layer.is-locking .intel-card > .intel-line:nth-child(4) { animation-delay: 140ms; }
+.encounter .intel-layer.is-locking .intel-card > .intel-line:nth-child(5) { animation-delay: 160ms; }
+.encounter .intel-layer.is-locking .intel-card > .intel-line:nth-child(6) { animation-delay: 175ms; }
+.encounter .intel-layer.is-locking .intel-card > .intel-line:nth-child(n + 7) { animation-delay: 185ms; }
+
+@keyframes intel-snap {
+  from {
+    opacity: 0;
+    translate: var(--intel-from);
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+@keyframes intel-sweep {
+  0% {
+    opacity: 0.9;
+    top: 0;
+  }
+  85% {
+    opacity: 0.7;
+  }
+  100% {
+    opacity: 0;
+    top: 100%;
+  }
+}
+@keyframes intel-draw {
+  from {
+    stroke-dashoffset: 400;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes intel-frame {
+  from {
+    opacity: 0;
+    clip-path: inset(0 0 100% 0);
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(0);
+  }
+}
+@keyframes intel-resolve {
+  from {
+    opacity: 0.15;
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(0);
+  }
+}
+
+/* Reduced motion: the readout is there at once. */
+@media (prefers-reduced-motion: reduce) {
+  .encounter .intel-layer.is-locking *,
+  .encounter .intel-layer.is-locking .intel-card {
+    animation: none !important;
+  }
+}
+:root[data-reduce-motion="on"] .encounter .intel-layer.is-locking *,
+:root[data-reduce-motion="on"] .encounter .intel-layer.is-locking .intel-card {
+  animation: none !important;
+}
+
+/* Phone landscape: the same card, tighter. */
+@media (max-height: 500px) {
+  .encounter .intel-card:not(.is-aim) {
+    min-width: 172px;
+    max-width: 214px;
+    padding: 6px 8px 7px;
+  }
+  .encounter .intel-line + .intel-line {
+    margin-top: 3px;
+  }
+  .encounter .intel-stat small {
+    display: none;
+  }
+}
