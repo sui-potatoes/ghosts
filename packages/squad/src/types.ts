@@ -80,6 +80,10 @@ export interface Recruit {
     equipment: Record<Slot, string | null>;
     /** Attachments fitted to the primary weapon; absent in older saves. */
     attachments?: WeaponAttachments;
+    /** The primary weapon's finish (`weapon-skins.ts`), kept on the device;
+     * absent or unknown means Factory. Stages that draw the recruit holding
+     * the gun show it; the field does not. */
+    weaponSkin?: string;
 }
 export interface SquadState {
     version: 1;
