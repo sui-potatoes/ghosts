@@ -83,14 +83,14 @@ test("a landed save clears its draft unless the player edited on meanwhile", () 
 });
 
 test("issuing into an empty slot issues; a filled one swaps", () => {
-    assert.deepEqual(issuePlan("primary", [], 1), { verb: "Issue" });
+    assert.deepEqual(issuePlan("primary", [], 1), { verb: "Equip" });
     assert.deepEqual(issuePlan("armor", [{ id: "x" }], 1), { verb: "Swap" });
-    assert.deepEqual(issuePlan("utility", [], 1), { verb: "Issue" });
+    assert.deepEqual(issuePlan("utility", [], 1), { verb: "Equip" });
     assert.deepEqual(issuePlan("utility", [{ id: "frag" }], 1), {
         verb: "Swap",
         replace: "frag",
     });
-    assert.deepEqual(issuePlan("utility", [{ id: "frag" }], 2), { verb: "Issue" });
+    assert.deepEqual(issuePlan("utility", [{ id: "frag" }], 2), { verb: "Equip" });
 });
 
 test("hiring: a free top-up below four, nothing to hire at four", () => {

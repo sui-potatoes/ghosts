@@ -11,10 +11,13 @@ import {
     issueTo,
     LIMIT_REASON,
     planSummary,
+    rowOf,
     sameFit,
+    stackRows,
     type Holder,
+    type StackInput,
 } from "../src/features/headquarters/armory/rules.ts";
-import { weaponName } from "../src/features/headquarters/squad/rules.ts";
+import { holdingRifle, weaponName } from "../src/features/headquarters/squad/rules.ts";
 
 test("a draft takes one tier per kind: a new tier replaces the old one", () => {
     const next = draftMod({ scope: 1 }, "scope", 3);
@@ -75,7 +78,7 @@ const holder = (id: string, holding: { id: string; name: string }[] = []): Holde
 });
 
 test("issuing to an empty slot issues; to a held one swaps the piece back to storage", () => {
-    assert.deepEqual(issueTo("weapon", "w1", null, holder("a")), { verb: "Issue", from: null });
+    assert.deepEqual(issueTo("weapon", "w1", null, holder("a")), { verb: "Equip", from: null });
     assert.deepEqual(
         issueTo("armor", "x1", "b", holder("a", [{ id: "x0", name: "Light Armor" }])),
         { verb: "Swap", from: "b", returns: "Light Armor" },
@@ -84,7 +87,7 @@ test("issuing to an empty slot issues; to a held one swaps the piece back to sto
 
 test("the carrier is already carrying it", () => {
     assert.deepEqual(issueTo("weapon", "w1", "a", holder("a", [{ id: "w1", name: "R" }])), {
-        verb: "Carrying",
+        verb: "Equipped",
     });
 });
 
@@ -97,7 +100,7 @@ test("a full utility slot swaps its utility out in the same move", () => {
         1,
     );
     assert.deepEqual(plan, { verb: "Swap", from: "b", replace: "u1", returns: "Frag Grenade" });
-    assert.deepEqual(issueTo("utility", "u2", null, holder("a"), 1), { verb: "Issue", from: null });
+    assert.deepEqual(issueTo("utility", "u2", null, holder("a"), 1), { verb: "Equip", from: null });
 });
 
 test("a weapon with a fitted upgrade is named with a plus; without, as is", () => {
@@ -108,4 +111,93 @@ test("a weapon with a fitted upgrade is named with a plus; without, as is", () =
     assert.equal(weaponName({ name: "Standard Rifle", upgrades: [] }), "Standard Rifle");
     // A catalog entry has no upgrades at all.
     assert.equal(weaponName({ name: "Plasma Rifle" }), "Plasma Rifle");
+});
+
+const loose = (id: string, name = "Standard Rifle"): StackInput => ({ id, name, loose: true });
+const held = (id: string, name = "Standard Rifle"): StackInput => ({ id, name, loose: false });
+
+test("identical loose items stack into one row with every id, acting with the lowest", () => {
+    const rows = stackRows("weapon", [loose("0x3"), loose("0x1"), loose("0x2")]);
+    assert.equal(rows.length, 1);
+    assert.deepEqual(rows[0], {
+        key: "stack-weapon-Standard Rifle",
+        ids: ["0x1", "0x2", "0x3"],
+        acting: "0x1",
+    });
+});
+
+test("modded, finished and equipped items are rows of their own", () => {
+    const rows = stackRows("weapon", [
+        held("0xc"), // equipped
+        loose("0x1"),
+        held("0x5", "Standard Rifle +"), // modded
+        held("0x6"), // a finish chosen
+        loose("0x2"),
+        loose("0x9", "Plasma Rifle"),
+    ]);
+    assert.deepEqual(
+        rows.map((r) => [r.key, r.ids.length]),
+        [
+            ["item-0xc", 1],
+            ["stack-weapon-Standard Rifle", 2],
+            ["item-0x5", 1],
+            ["item-0x6", 1],
+            ["stack-weapon-Plasma Rifle", 1],
+        ],
+    );
+});
+
+test("a stack keeps its row id as its count changes", () => {
+    const before = stackRows("utility", [
+        loose("0x4", "Frag Grenade"),
+        loose("0x7", "Frag Grenade"),
+    ]);
+    // Requisitioned one more, then equipped the acting one.
+    const more = stackRows("utility", [
+        loose("0x4", "Frag Grenade"),
+        loose("0x7", "Frag Grenade"),
+        loose("0x8", "Frag Grenade"),
+    ]);
+    const after = stackRows("utility", [
+        held("0x4", "Frag Grenade"),
+        loose("0x7", "Frag Grenade"),
+        loose("0x8", "Frag Grenade"),
+    ]);
+    assert.equal(before[0].key, more[0].key);
+    assert.equal(more[0].ids.length, 3);
+    assert.equal(more[0].acting, "0x4");
+    const stack = after.find((r) => r.key === before[0].key)!;
+    assert.deepEqual(stack.ids, ["0x7", "0x8"]);
+    assert.equal(stack.acting, "0x7");
+    assert.equal(rowOf(after, "0x4")!.key, "item-0x4");
+});
+
+test("a linked object in a stack is the one acted on", () => {
+    const rows = stackRows("armor", [loose("0x1", "Heavy Armor"), loose("0x2", "Heavy Armor")], {
+        "stack-armor-Heavy Armor": "0x2",
+    });
+    assert.equal(rows[0].acting, "0x2");
+    assert.equal(rowOf(rows, "0x2")!.key, "stack-armor-Heavy Armor");
+    // A preference for an object no longer in the stack falls back to the lowest id.
+    const gone = stackRows("armor", [loose("0x1", "Heavy Armor")], {
+        "stack-armor-Heavy Armor": "0x2",
+    });
+    assert.equal(gone[0].acting, "0x1");
+});
+
+test("a recruit previewing another rifle wears that rifle's finish, not their own", () => {
+    const skins = { A: "camo" };
+    const vex = {
+        equipment: { primary: "mx4" as string | null },
+        attachments: {},
+        weaponSkin: "camo", // their own rifle A
+    };
+    const plain = holdingRifle(vex, { id: "C", model: "mx4", attachments: {} }, skins);
+    assert.equal(plain.weaponSkin, undefined);
+    assert.equal(plain.equipment.primary, "mx4");
+    const own = holdingRifle(vex, { id: "A", model: "mx4", attachments: {} }, skins);
+    assert.equal(own.weaponSkin, "camo");
+    const empty = holdingRifle(vex, null, skins);
+    assert.equal(empty.equipment.primary, null);
+    assert.equal(empty.weaponSkin, undefined);
 });

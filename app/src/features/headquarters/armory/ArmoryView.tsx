@@ -129,7 +129,7 @@ type Picker =
     | null;
 
 const rowId = (e: Entry | SupplyEntry) =>
-    e.kind === "supply" ? `supply-${e.id}` : e.kind === "mod" ? `mod-${e.id}` : `item-${e.id}`;
+    e.kind === "supply" ? `supply-${e.id}` : e.kind === "mod" ? `mod-${e.id}` : e.key;
 
 const signedText = (n: number, unit?: string) =>
     `${n < 0 ? "−" : "+"}${Math.abs(n)}${unit === "%" ? "%" : ""}`;
@@ -145,10 +145,21 @@ export function ArmoryView({ data, ops }: { data: ArmoryData; ops: ArmoryOps }) 
     const [drafts, setDrafts] = useState<Record<string, Fit>>({});
     const [prompt, setPrompt] = useState<Prompted>(null);
     const [focusItem, setFocusItem] = useState<string | null>(data.initialItem ?? null);
+    // Finishes are kept on this device per weapon object.
+    const [skins, setSkins] = useState(() => readWeaponSkins());
+    // A stack's object a deep link named, so the action that follows takes that one.
+    const [prefer, setPrefer] = useState<Record<string, string>>({});
 
+    // Loose items stack: no draft and no finish (`heldEntries` checks storage and mods).
     const held = useMemo(
-        () => heldEntries(data.storage, data.recruits),
-        [data.storage, data.recruits],
+        () =>
+            heldEntries(
+                data.storage,
+                data.recruits,
+                (kind, id) => kind !== "weapon" || (!drafts[id] && !skins[id]),
+                prefer,
+            ),
+        [data.storage, data.recruits, drafts, skins, prefer],
     );
     const mods = useMemo(
         () => modEntries(data.storage.upgrades ?? [], held.weapons),
@@ -157,14 +168,19 @@ export function ArmoryView({ data, ops }: { data: ArmoryData; ops: ArmoryOps }) 
 
     // A deep link (`?item=`) opens the tab its item is on, once it is read.
     if (focusItem && !supply) {
-        const on: Tab | undefined = held.weapons.some((e) => e.id === focusItem)
+        const has = (list: HeldEntry[]) => list.find((e) => e.ids.includes(focusItem));
+        const on: Tab | undefined = has(held.weapons)
             ? "weapons"
-            : held.armors.some((e) => e.id === focusItem)
+            : has(held.armors)
               ? "armor"
-              : held.utilities.some((e) => e.id === focusItem)
+              : has(held.utilities)
                 ? "utilities"
                 : undefined;
         if (on && on !== tab) setTab(on);
+        // Linked into a stack: that very object is the one acted on.
+        const row = has(held.weapons) ?? has(held.armors) ?? has(held.utilities);
+        if (row && row.ids.length > 1 && row.id !== focusItem)
+            setPrefer((p) => ({ ...p, [row.key]: focusItem }));
     }
 
     // Drafts that differ from what the weapon has; a weapon gone takes its draft along.
@@ -315,11 +331,14 @@ export function ArmoryView({ data, ops }: { data: ArmoryData; ops: ArmoryOps }) 
                     setDrafts={setDrafts}
                     focusItem={focusItem}
                     onFocused={() => setFocusItem(null)}
+                    skins={skins}
+                    setSkins={setSkins}
                     jumpTo={(id) => {
                         setSupply(false);
                         setFocusItem(id);
                         setTab("weapons");
                     }}
+                    follow={setFocusItem}
                 />
             )}
         </FocusRoot>
@@ -342,7 +361,11 @@ type WorkspaceProps = {
     setDrafts: (change: (drafts: Record<string, Fit>) => Record<string, Fit>) => void;
     focusItem: string | null;
     onFocused: () => void;
+    skins: Record<string, string>;
+    setSkins: (skins: Record<string, string>) => void;
     jumpTo: (weaponId: string) => void;
+    /** Select the row an object is in, once it is there (an item that just left a stack). */
+    follow: (id: string) => void;
 };
 
 /** A stand-in wearer when the squad is empty: the first preset, unarmed. */
@@ -370,7 +393,7 @@ function Workspace(props: WorkspaceProps) {
     const { portraits, studioHost } = useRecruitPortraits(locals);
     const [stage, setStage] = useState<{ loading: boolean; error?: string }>({ loading: true });
     const [picker, setPicker] = useState<Picker>(null);
-    const [skins, setSkins] = useState(() => readWeaponSkins());
+    const { skins, setSkins, follow } = props;
     const [skinPreview, setSkinPreview] = useState<string | null>(null);
     const pending = data.busy;
 
@@ -397,10 +420,18 @@ function Workspace(props: WorkspaceProps) {
         setPicker(null);
         if (!focusItem) store.focusGroup("list");
     }, [store, tab, supply]);
-    // A linked item takes the cursor once its row is there (its data may come later).
+    // A linked item's row (or its stack) becomes the selection once it is
+    // there (its data may come later); an item that just left a stack keeps
+    // the cursor where it was working, in the bench.
     useLayoutEffect(() => {
-        if (!focusItem || !store.node(`item-${focusItem}`)) return;
-        store.focus(`item-${focusItem}`, false);
+        if (!focusItem) return;
+        const row = entries.find(
+            (e) => e.kind !== "supply" && e.kind !== "mod" && e.ids.includes(focusItem),
+        );
+        if (!row || !store.node(rowId(row))) return;
+        const inBench = store.node(store.focused)?.group === "detail";
+        store.focus(rowId(row), false);
+        if (inBench) store.focusGroup("detail", true);
         onFocused();
     });
     // A new item closes the picker and ends a finish preview.
@@ -444,7 +475,12 @@ function Workspace(props: WorkspaceProps) {
         if ("fit" in next) shownFit = next.fit;
     }
     const dirty = !!weapon && !sameFit(fitted, draft);
-    const setDraft = (fit: Fit) => weapon && setDrafts((d) => ({ ...d, [weapon.id]: fit }));
+    const setDraft = (fit: Fit) => {
+        if (!weapon) return;
+        setDrafts((d) => ({ ...d, [weapon.id]: fit }));
+        // Drafted, it leaves its stack: its own row takes the selection.
+        if (weapon.ids.length > 1) follow(weapon.id);
+    };
     const discard = () =>
         weapon &&
         setDrafts((d) => {
@@ -537,12 +573,12 @@ function Workspace(props: WorkspaceProps) {
                     ? "Requisition"
                     : wearer && wearerName
                       ? current.kind === "armor" && current.carrier?.objectId === wearerId
-                          ? `Worn by ${wearerName}`
+                          ? `Equipped by ${wearerName}`
                           : `On ${wearerName}`
                       : current.kind === "mod"
                         ? `On the ${tryOn?.name ?? "Standard Rifle"}`
                         : carrierOf(current)
-                          ? `Carried by ${carrierOf(current)!.metadata.name}`
+                          ? `Equipped by ${carrierOf(current)!.metadata.name}`
                           : "In storage"}
             </span>
             <span className="gui-stage-title" key={currentRow}>
@@ -642,7 +678,7 @@ function Workspace(props: WorkspaceProps) {
                     thumb={<Thumb src={images[e.id]} icon={thumbIcon} />}
                     name={e.name}
                     kind={modifierSummary(unpack(e.attachment.packed))}
-                    tag={e.stock ? `×${e.stock}` : "Fitted"}
+                    tag={e.stock > 1 ? `×${e.stock}` : e.stock ? undefined : "Fitted"}
                     tagTone={e.stock ? "default" : "accent"}
                     selected={id === currentRow}
                     title={e.name}
@@ -672,14 +708,24 @@ function Workspace(props: WorkspaceProps) {
                         ? `${count} ${count === 1 ? "mod" : "mods"}`
                         : undefined
                 }
-                tag={isDrafted ? "Draft" : e.carrier?.metadata.name.split(/\s+/)[0]}
-                tagTone={isDrafted ? "warn" : "accent"}
+                tag={
+                    isDrafted
+                        ? "Draft"
+                        : e.carrier
+                          ? e.carrier.metadata.name.split(/\s+/)[0]
+                          : e.ids.length > 1
+                            ? `×${e.ids.length}`
+                            : undefined
+                }
+                tagTone={isDrafted ? "warn" : e.carrier ? "accent" : "default"}
                 selected={id === currentRow}
                 title={e.name}
                 hint={
                     e.carrier
-                        ? `${e.kind === "armor" ? "Worn" : "Carried"} by ${e.carrier.metadata.name}`
-                        : "In storage"
+                        ? `Equipped by ${e.carrier.metadata.name}`
+                        : e.ids.length > 1
+                          ? `${e.ids.length} in storage`
+                          : "In storage"
                 }
                 commands={[select(e)]}
             />
@@ -715,7 +761,7 @@ function Workspace(props: WorkspaceProps) {
                     hint="New gear into storage, free"
                     commands={[openSupply]}
                 >
-                    Requisition gear to fit and issue it.
+                    Requisition gear to fit and equip it.
                 </EmptyState>
             )}
         </Panel>
@@ -737,9 +783,15 @@ function Workspace(props: WorkspaceProps) {
                   : r.utilities.map((u) => ({ id: u.id, name: u.name })),
     });
 
-    /** Who carries it, Issue (a picker) and Return; refused while a weapon has a draft. */
+    // While a weapon has unapplied mods, Apply is the bench's primary and Discard
+    // its secondary on every row whose own action waits on them.
+    const applyCommand = write("Apply mods", () => apply(), { short: "Apply" });
+    const discardCommand: Command = { action: "reset", label: "Discard", run: discard };
+    const benchCommands = (own: Command[]): Command[] =>
+        dirty ? [applyCommand, discardCommand, toList] : own;
+
+    /** Who has it equipped, Equip (a picker) and Unequip; refused while a weapon has a draft. */
     const carrierRow = (e: HeldEntry) => {
-        const lock = dirty ? "Apply or discard the mods first" : undefined;
         const ret = () =>
             e.kind === "utility"
                 ? ops.unequipUtility(e.carrier!.objectId, e.id)
@@ -747,36 +799,31 @@ function Workspace(props: WorkspaceProps) {
         return (
             <SlotRow
                 id="bench-carrier"
-                instant
+                instant={!dirty}
                 group="detail"
-                slot={e.carrier ? (e.kind === "armor" ? "Worn by" : "Carried by") : "Storage"}
+                slot={e.carrier ? "Equipped by" : "Storage"}
                 image={e.carrier ? portraits[e.carrier.objectId] : undefined}
-                item={e.carrier?.metadata.name ?? "Not issued"}
+                item={e.carrier?.metadata.name ?? "Not equipped"}
                 title={e.carrier ? e.carrier.metadata.name : "In storage"}
                 hint={
-                    e.carrier
-                        ? "Issue to another recruit, or return it to storage"
-                        : "Issue to a recruit"
+                    dirty
+                        ? "Apply or discard the mods first"
+                        : e.carrier
+                          ? "Equip on another recruit, or unequip it"
+                          : "Equip on a recruit"
                 }
-                commands={[
+                commands={benchCommands([
                     ...(e.carrier
-                        ? [
-                              write("Return", ret, {
-                                  action: "reset",
-                                  tone: undefined,
-                                  deny: lock ?? (pending ? "Still saving" : undefined),
-                              }),
-                          ]
+                        ? [write("Unequip", ret, { action: "reset", tone: undefined })]
                         : []),
                     {
                         action: "confirm",
-                        label: "Issue",
+                        label: "Equip",
                         tone: "primary",
-                        deny: lock,
                         run: () => setPicker({ kind: "issue" }),
                     },
                     toList,
-                ]}
+                ])}
             />
         );
     };
@@ -832,7 +879,7 @@ function Workspace(props: WorkspaceProps) {
                         max={row.max}
                         title={row.label}
                         hint={parts.join(" · ")}
-                        commands={[toList]}
+                        commands={benchCommands([toList])}
                     />
                 );
             });
@@ -932,7 +979,7 @@ function Workspace(props: WorkspaceProps) {
                 </div>
             );
         }
-        // A weapon: stats, the four mod slots, the draft's changes, finish, carrier.
+        // A weapon: the four mod slots and the draft (Apply on screen), stats, finish, carrier.
         const w = current;
         const profile = weaponView(w.gear!, shownFit);
         const drafting = !sameFit(fitted, shownFit);
@@ -945,8 +992,6 @@ function Workspace(props: WorkspaceProps) {
         const skinName = finishes.find((s) => s.id === savedSkin)?.name;
         return (
             <List label="Bench" key={currentRow}>
-                {weaponRows(profile.base, profile.now, profile.next, drafting)}
-                <div className="hqs-gap" />
                 <Eyebrow meta={`${fitCount(draft)} / ${MAX_FITTINGS}`}>Mods</Eyebrow>
                 {MOD_SLOTS.map((slot) => {
                     const a = draft[slot] ? attachmentFor(slot, draft[slot]!) : undefined;
@@ -994,37 +1039,44 @@ function Workspace(props: WorkspaceProps) {
                     );
                 })}
                 {dirty && (
-                    <>
-                        {lines.map((l) => (
-                            <ReadoutLine
-                                key={`${l.state}-${l.name}`}
-                                label={
-                                    l.state === "fitted"
-                                        ? "Fitted"
-                                        : l.state === "drafted"
-                                          ? "Draft"
-                                          : "Off"
-                                }
-                            >
-                                <span className="hqa-line" data-state={l.state}>
-                                    {l.name} · {modifierSummary(l.modifier)}
-                                </span>
-                            </ReadoutLine>
-                        ))}
+                    <div className="hqa-draft">
+                        {lines
+                            .filter((l) => l.state !== "fitted")
+                            .map((l) => (
+                                <ReadoutLine
+                                    key={`${l.state}-${l.name}`}
+                                    label={l.state === "drafted" ? "On" : "Off"}
+                                >
+                                    <span className="hqa-line" data-state={l.state}>
+                                        {l.name} · {modifierSummary(l.modifier)}
+                                    </span>
+                                </ReadoutLine>
+                            ))}
+                        <div className="hqa-apply">
+                            <ActionRow
+                                id="bench-apply"
+                                group="detail"
+                                label="Apply mods"
+                                title="Apply mods"
+                                hint={planSummary(plan)}
+                                commands={[applyCommand, discardCommand, toList]}
+                            />
+                        </div>
                         <ActionRow
-                            id="bench-apply"
+                            id="bench-discard"
                             group="detail"
-                            label="Apply mods"
-                            title="Apply mods"
-                            hint={planSummary(plan)}
+                            label="Discard"
+                            title="Discard"
+                            hint="The mods stay as they are"
                             commands={[
-                                write("Apply", apply),
-                                { action: "reset", label: "Discard", run: discard },
+                                { action: "confirm", label: "Discard", run: discard },
                                 toList,
                             ]}
                         />
-                    </>
+                    </div>
                 )}
+                <div className="hqs-gap" />
+                {weaponRows(profile.base, profile.now, profile.next, drafting)}
                 {finishes.length > 1 && (
                     <>
                         <div className="hqs-gap" />
@@ -1070,6 +1122,8 @@ function Workspace(props: WorkspaceProps) {
                     onPick={(id) => {
                         setSkins(saveWeaponSkin(weapon.id, id));
                         closePicker();
+                        // A finish makes it its own row (the choice is per object).
+                        if (weapon.ids.length > 1 && id !== "factory") follow(weapon.id);
                     }}
                     onClose={closePicker}
                 />
@@ -1222,9 +1276,12 @@ function Workspace(props: WorkspaceProps) {
         }
         if (picker.kind === "issue" && current.kind !== "mod" && current.kind !== "supply") {
             const e = current;
-            const done = (run: () => Promise<boolean>) => () => {
+            // The item, once moved, is selected in its own row.
+            const done = (run: () => Promise<boolean>) => async () => {
                 closePicker();
-                return run();
+                const ok = await run();
+                if (ok) follow(e.id);
+                return ok;
             };
             const ret = () =>
                 e.kind === "utility"
@@ -1235,8 +1292,8 @@ function Workspace(props: WorkspaceProps) {
             return (
                 <FocusScope id="picker" back={back}>
                     <div className="hqs-stack">
-                        <Eyebrow>Issue to</Eyebrow>
-                        <List label="Issue to">
+                        <Eyebrow>Equip on</Eyebrow>
+                        <List label="Equip on">
                             {e.carrier && (
                                 <ListRow
                                     id="pick-to-storage"
@@ -1251,7 +1308,7 @@ function Workspace(props: WorkspaceProps) {
                                     name="Storage"
                                     title="Storage"
                                     hint={`Off ${e.carrier.metadata.name}, back into storage`}
-                                    commands={[write("Return", done(ret)), back]}
+                                    commands={[write("Unequip", done(ret)), back]}
                                 />
                             )}
                             {recruits.map((r) => {
@@ -1264,7 +1321,7 @@ function Workspace(props: WorkspaceProps) {
                                     MAX_UTILITIES,
                                 );
                                 const run = () =>
-                                    plan.verb === "Carrying"
+                                    plan.verb === "Equipped"
                                         ? Promise.resolve(true)
                                         : e.kind === "utility"
                                           ? ops.issueUtility(
@@ -1275,8 +1332,8 @@ function Workspace(props: WorkspaceProps) {
                                             )
                                           : ops.issue(e.kind, e.id, plan.from, r.objectId);
                                 const hint =
-                                    plan.verb === "Carrying"
-                                        ? "Carrying it now"
+                                    plan.verb === "Equipped"
+                                        ? "Equipped now"
                                         : [
                                               plan.from
                                                   ? `Off ${e.carrier!.metadata.name}`
@@ -1298,13 +1355,13 @@ function Workspace(props: WorkspaceProps) {
                                         }
                                         name={r.metadata.name}
                                         kind={holder.holding.map((h) => h.name).join(", ") || none}
-                                        tag={plan.verb === "Carrying" ? "Carrying" : undefined}
+                                        tag={plan.verb === "Equipped" ? "Equipped" : undefined}
                                         tagTone="accent"
-                                        selected={plan.verb === "Carrying"}
+                                        selected={plan.verb === "Equipped"}
                                         title={r.metadata.name}
                                         hint={hint}
                                         commands={
-                                            plan.verb === "Carrying"
+                                            plan.verb === "Equipped"
                                                 ? [back]
                                                 : [write(plan.verb, done(run)), back]
                                         }

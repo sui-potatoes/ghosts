@@ -107,14 +107,14 @@ export function FocusRoot({ back, onTab, onSection, children }: RootProps) {
                     case "back":
                         store.invoke(action);
                         return true;
+                    // A picker never swallows the header: it closes and the switch goes on.
                     case "prev-tab":
                     case "next-tab":
-                        if (store.scope.id === "root")
-                            tab.current?.(action === "next-tab" ? 1 : -1);
+                        if (store.clearForHeader()) tab.current?.(action === "next-tab" ? 1 : -1);
                         return true;
                     case "prev-section":
                     case "next-section":
-                        if (store.scope.id === "root")
+                        if (store.clearForHeader())
                             section.current?.(action === "next-section" ? 1 : -1);
                         return true;
                     default:
@@ -134,13 +134,7 @@ export function FocusRoot({ back, onTab, onSection, children }: RootProps) {
  * Returns false when the click must be ignored.
  */
 export function headerClick(store: FocusStore): boolean {
-    if (store.blocked) return false;
-    for (let i = 0; i < 4 && store.scope.id !== "root"; i++) {
-        const id = store.scope.id;
-        store.scope.back.run?.();
-        if (store.scope.id === id) break;
-    }
-    return true;
+    return store.clearForHeader();
 }
 
 /**

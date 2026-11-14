@@ -12,8 +12,8 @@ export type GearSlot = "primary" | "armor" | "utility";
 
 /** What issuing a stored item into a slot does. */
 export interface IssuePlan {
-    /** `Issue` into an empty slot, `Swap` when the slot's own piece goes back to storage. */
-    verb: "Issue" | "Swap";
+    /** `Equip` into an empty slot, `Swap` when the slot's own piece goes back to storage. */
+    verb: "Equip" | "Swap";
     /** A utility carried in a full slot, returned in the same transaction. */
     replace?: string;
 }
@@ -28,8 +28,8 @@ export function issuePlan(
     carried: { id: string }[],
     utilitySlots: number,
 ): IssuePlan {
-    if (slot !== "utility") return { verb: carried.length ? "Swap" : "Issue" };
-    if (carried.length < utilitySlots) return { verb: "Issue" };
+    if (slot !== "utility") return { verb: carried.length ? "Swap" : "Equip" };
+    if (carried.length < utilitySlots) return { verb: "Equip" };
     return { verb: "Swap", replace: carried[0].id };
 }
 
@@ -56,4 +56,28 @@ export function dismissalNote(size: number): string {
  */
 export function weaponName(weapon: { name: string; upgrades?: readonly unknown[] }): string {
     return weapon.upgrades?.length ? `${weapon.name} +` : weapon.name;
+}
+
+/**
+ * A recruit holding another rifle (a picker's candidate): its model and
+ * fittings, and the finish chosen for THAT weapon object — never the
+ * holder's own. Finishes are kept per weapon id (`skins.ts`); a weapon with
+ * none is drawn in its factory finish. `weapon` null empties the hands.
+ */
+export function holdingRifle<
+    R extends { equipment: { primary: string | null }; attachments?: object; weaponSkin?: string },
+>(
+    recruit: R,
+    weapon: { id: string; model: string; attachments: object } | null,
+    skins: Record<string, string>,
+): R {
+    const { weaponSkin: _own, ...rest } = recruit;
+    void _own;
+    const skin = weapon ? skins[weapon.id] : undefined;
+    return {
+        ...rest,
+        equipment: { ...recruit.equipment, primary: weapon?.model ?? null },
+        attachments: weapon?.attachments ?? {},
+        ...(skin ? { weaponSkin: skin } : {}),
+    } as R;
 }

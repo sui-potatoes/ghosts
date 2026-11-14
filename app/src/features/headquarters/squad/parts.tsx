@@ -4,7 +4,7 @@
 /**
  * Squad pieces in the shared interface language, used by Headquarters and the
  * `/ui-sample` reference alike: the roster portrait, the rank insignia and
- * progress, the stat block and the "if issued" changes, and the off-screen
+ * progress, the stat block and the "if equipped" changes, and the off-screen
  * host the portrait studio draws in.
  */
 
@@ -134,7 +134,7 @@ export function SquadStats({
 export function StatChanges({
     before,
     after,
-    label = "If issued",
+    label = "If equipped",
 }: {
     before: Stats;
     after: Stats;

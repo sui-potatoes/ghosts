@@ -1,7 +1,7 @@
 /*
  * Squad pieces on top of the shared interface (src/ui/gui.css), used by
  * Headquarters and the /ui-sample reference: roster portraits, rank marks,
- * the inspector's stacks, stat groups, the "if issued" lines and the
+ * the inspector's stacks, stat groups, the "if equipped" lines and the
  * recruitment deck. Classes keep the `hqs-` prefix; scoped under `.gui`.
  */
 

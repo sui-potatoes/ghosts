@@ -77,7 +77,7 @@ export function ArmoryInventory(props: Props) {
                                 name={weaponName(item)}
                                 status={
                                     carrier
-                                        ? `Issued · ${firstName(carrier.metadata.name)}`
+                                        ? `Equipped · ${firstName(carrier.metadata.name)}`
                                         : "In armory"
                                 }
                                 selected={isSelected(s)}
@@ -126,7 +126,7 @@ export function ArmoryInventory(props: Props) {
                                 name={item.name}
                                 status={
                                     carrier
-                                        ? `Carried · ${firstName(carrier.metadata.name)}`
+                                        ? `Equipped · ${firstName(carrier.metadata.name)}`
                                         : "In armory"
                                 }
                                 selected={isSelected(s)}
