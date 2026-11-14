@@ -12,3 +12,5 @@ interface ImportMeta {
   /** Present only under the dev server; stateful modules reload the page on edit. */
   readonly hot?: { accept(callback: () => void): void };
 }
+
+declare module "*.css";

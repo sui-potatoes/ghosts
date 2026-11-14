@@ -348,8 +348,8 @@ export function humanTextureStats() {
       }
   });
   return [...textures].map((t) => ({
-    width: t.image.width,
-    height: t.image.height,
+    width: (t.image as { width: number }).width,
+    height: (t.image as { height: number }).height,
     format: t.format,
     compressed: !!(t as T.CompressedTexture).isCompressedTexture,
     bytes: (t.mipmaps ?? []).reduce(

@@ -184,7 +184,10 @@ export function clearEquipment(
         return {
             target: root.getObjectByName(name)!,
             property,
-            interpolant: track.createInterpolant(),
+            // Set at runtime by `setInterpolation`; missing from newer typings.
+            interpolant: (
+                track as typeof track & { createInterpolant(): T.Interpolant }
+            ).createInterpolant(),
         };
     });
     const frames = Math.ceil(source.duration * 60);

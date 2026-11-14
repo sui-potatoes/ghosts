@@ -156,6 +156,7 @@ export function useSubmitNameChange(): {
                 const message = e instanceof Error ? e.message : String(e);
                 throw new Error(
                     refusal(message) ?? "The change didn't go through; the name is as it was.",
+                    { cause: e },
                 );
             } finally {
                 setPending(false);

@@ -119,6 +119,7 @@ export function optimizeModels(): Plugin {
                         } catch (error) {
                             throw new Error(
                                 `model optimization failed for ${relative(outDir, path)}: ${error}`,
+                                { cause: error },
                             );
                         }
                     }

@@ -31,7 +31,14 @@ export class WeaponCarry {
                     node.quaternion.clone(),
                     node.scale.clone(),
                 ]);
-            const value = track.createInterpolant().evaluate(0);
+            // Set at runtime by `setInterpolation`; missing from newer typings.
+            const value = (
+                track as typeof track & {
+                    createInterpolant(): { evaluate(time: number): ArrayLike<number> };
+                }
+            )
+                .createInterpolant()
+                .evaluate(0);
             if (property === "position") node.position.fromArray(value);
             else if (property === "quaternion") node.quaternion.fromArray(value);
             else if (property === "scale") node.scale.fromArray(value);
