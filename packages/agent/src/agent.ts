@@ -28,6 +28,7 @@ import {
     type GameRecord,
     type GameState,
     type Receipt,
+    type UnitActionEntry,
 } from "./types.ts";
 import { pollingWake, type Wake } from "./wake.ts";
 
@@ -71,6 +72,8 @@ export interface ObservedUnit {
     ap: number;
     ammo: string;
     grenade: boolean;
+    /** Every action the unit has, with the uses it has left (`null`: unlimited). */
+    actions: UnitActionEntry[];
     mobility: number;
     aim: number;
     range: number;
@@ -397,6 +400,7 @@ export class GhostsAgent {
                         ap: unit.ap,
                         ammo: `${unit.ammo}/${unit.ammoMax}`,
                         grenade: hasUsesLeft(unit, "grenade"),
+                        actions: unit.actions,
                         mobility: unit.stats.mobility,
                         aim: unit.stats.aim,
                         range: unit.stats.range,

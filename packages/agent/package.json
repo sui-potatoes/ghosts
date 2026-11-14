@@ -11,11 +11,13 @@
     "bin": {
         "ghosts-mcp": "./src/bin/mcp.ts",
         "ghosts-bot": "./src/bin/bot.ts",
-        "ghosts-fleet": "./src/bin/fleet.ts"
+        "ghosts-fleet": "./src/bin/fleet.ts",
+        "ghosts-play": "./src/bin/play.ts"
     },
     "scripts": {
         "mcp": "node --experimental-strip-types src/bin/mcp.ts",
         "bot": "node --experimental-strip-types src/bin/bot.ts",
+        "play": "node --no-warnings --experimental-strip-types src/bin/play.ts",
         "fleet": "node --no-warnings --experimental-strip-types src/bin/fleet.ts",
         "test": "node --experimental-strip-types --test tests/*.test.ts",
         "typecheck": "tsc -p ."

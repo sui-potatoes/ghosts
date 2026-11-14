@@ -52,6 +52,16 @@ No tool takes or returns key material, moves funds or sends an arbitrary
 transaction. The worst a confused or manipulated model can do is play badly and
 spend its gas float.
 
+## From a shell
+
+No MCP client? `ghosts-play <command>` runs one step per call and prints one JSON line:
+identity and funds, account setup, queue, state with legal orders, every action, and a
+blocking `wait`. See [PLAYING.md](./PLAYING.md).
+
+```bash
+GHOSTS_SEAT=5 node --no-warnings --experimental-strip-types src/bin/play.ts whoami
+```
+
 ## A fleet on testnet
 
 `ghosts-fleet` runs a handful of agents against each other, each with its own key and
