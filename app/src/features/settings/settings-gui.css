@@ -1,0 +1,200 @@
+/* Copyright (c) Sui Potatoes
+   SPDX-License-Identifier: MIT */
+
+/* Settings in the shared interface language (src/ui/README.md): only what the
+   module has no part for — the panel columns, the label/value row, key caps
+   on a row, the controller diagram and the button test. Scoped by `gset-`. */
+
+/* One body row the panels cap at, so a long list scrolls inside its panel. */
+.gui-body:has(> .gset-c2) {
+    grid-template-rows: minmax(0, 1fr);
+}
+
+.gset-c2 {
+    grid-column: 2;
+}
+
+.gset-c3 {
+    grid-column: 3;
+}
+
+/* A short panel hugs its rows instead of standing a full screen tall. */
+.gset-fit {
+    align-self: start;
+    max-height: 100%;
+}
+
+/* === Rows =========================================================== */
+
+.gset-row {
+    justify-content: space-between;
+}
+
+/* Row labels and chooser labels read alike on this screen. */
+.gset-row-label,
+.gset-c2 .gui-chooser-label {
+    flex: 1;
+    min-width: 0;
+    font: 500 var(--t-micro) / 1.2 var(--font-mono);
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: left;
+}
+
+.gset-row-value {
+    display: inline-flex;
+    align-items: center;
+    gap: calc(var(--u) * 2);
+    max-width: 62%;
+    font: 500 var(--t-body) / 1.2 var(--font-mono);
+    color: var(--text-color);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.gset-row-value[data-tone="warn"] {
+    color: var(--warn-color);
+}
+.gset-row-value[data-tone="dim"] {
+    color: var(--disabled-color);
+}
+.gset-row-value[data-tone="accent"] {
+    color: var(--accent-color);
+}
+
+.gset-row[data-focused] .gset-row-label,
+.gset-row[data-focused] .gset-row-value,
+.gset-c2 .gui-chooser[data-focused] .gui-chooser-label {
+    color: var(--on-band);
+}
+.gset-row[data-focused] .gset-row-value[data-tone="warn"] {
+    color: var(--nerf-on-band);
+}
+.gset-row[data-focused] .gset-row-value[data-tone="dim"] {
+    color: var(--on-band-soft);
+}
+
+.gset-note {
+    font: 400 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--disabled-color);
+}
+.gset-row[data-focused] .gset-note {
+    color: var(--on-band-soft);
+}
+
+.gset-warn {
+    color: var(--warn-color);
+}
+
+.gset-caps {
+    display: inline-flex;
+    gap: calc(var(--u) * 1);
+}
+
+.gset-row[data-focused] .gui-glyph[data-shape="key"] {
+    color: var(--on-band);
+    border-color: color-mix(in srgb, var(--on-band) 40%, transparent);
+}
+
+.gset-pad {
+    font: 500 var(--t-label) / 1 var(--font-mono);
+    letter-spacing: 0.12em;
+    white-space: pre;
+}
+
+/* Choosers on this screen: a wide label, the control at the trailing edge. */
+.gset-c2 .gui-chooser {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 220px);
+}
+.gset-c2 .gui-chooser[data-kind="slider"] {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 220px) calc(var(--u) * 8);
+}
+
+/* The restore row sits with the list, not apart from it. */
+.gset-c2 .gui-action-row,
+.gset-c3 .gui-action-row {
+    margin-top: calc(var(--u) * 2);
+    flex: none;
+}
+
+/* === Controller diagram ============================================= */
+
+.gset-diagram-panel {
+    align-self: stretch;
+    justify-content: center;
+}
+
+.gui .gset-diagram {
+    flex: 1 1 0;
+    width: 100%;
+    min-height: 0;
+    max-width: none;
+}
+
+/* === Button test ==================================================== */
+
+.gset-test {
+    min-width: min(560px, 90%);
+}
+
+.gset-test-line {
+    min-height: calc(var(--u) * 6);
+    margin-top: calc(var(--u) * 3);
+    font: 500 var(--t-body) / 1.4 var(--font-mono);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent-color);
+}
+
+.gset-test-line[data-idle] {
+    color: var(--disabled-color);
+}
+
+.gset-test-hold {
+    display: block;
+    height: 3px;
+    margin-top: calc(var(--u) * 3);
+    background: var(--line);
+}
+
+.gset-test-hold i {
+    display: block;
+    width: 0;
+    height: 100%;
+    background: var(--accent-color);
+}
+
+/* === Phone landscape ================================================ */
+
+/* Seven categories and the breadcrumb share one strip: on a phone the tabs
+   close up and the breadcrumb keeps only where you are. `.gset-frame` marks
+   this screen's frame (SettingsFrame). */
+@media (orientation: landscape) and (max-height: 500px) {
+    .gui:has(.gset-frame) .gui-tab {
+        padding: 0 calc(var(--u) * 2);
+    }
+    .gui:has(.gset-frame) .gui-tab[data-active]::after {
+        left: calc(var(--u) * 2);
+        right: calc(var(--u) * 2);
+    }
+    .gui:has(.gset-frame) .gui-tabs > .gui-glyph:first-child {
+        margin-right: calc(var(--u) * 1);
+    }
+    .gui:has(.gset-frame) .gui-tabs > .gui-glyph:last-child {
+        margin-left: calc(var(--u) * 1);
+    }
+    .gui:has(.gset-frame) .gui-crumb:not([data-here]) {
+        display: none;
+    }
+}
+
+.gset-frame {
+    display: none;
+}
