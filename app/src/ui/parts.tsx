@@ -65,6 +65,8 @@ type Focus = {
     instant?: boolean;
     /** The primary is on offer to the mouse as a labelled button on the row, armed or not. */
     offered?: boolean;
+    /** The stage previews it while the cursor is on it, hovered or not (`store.preview`). */
+    previews?: boolean;
 };
 
 /** A small picture at a row's leading edge: a rendered thumbnail, or a pictogram. */

@@ -247,6 +247,13 @@ changed; never run an idle loop.
   click does. Back, a key or pad move, a click elsewhere or a scope change
   remove it; a refused (`deny`) primary is never armed. Gear equips and
   unequips are `instant` (one press); commit rows are for what spends or destroys.
+- **Pickers start on what is chosen, and preview what the pointer is on.**
+  `<FocusScope start="pick-current">` opens a picker with the cursor and the
+  subject on the equipped row (never merely its first row, None). Rows a click
+  acts on (`previews`, set on every gear picker row and grid tile) feed the
+  stage from the hovered row: read `store.preview`, not `store.subject`. A bar
+  command still acts on the subject, so a pointer crossing rows on its way to
+  the bar changes the stage, never what the bar runs.
 - Inline chips (`InlineCommands`) are for **secondary** commands only (Reset:
   Remove, Manage). A target whose only command is its primary shows no chip
   and does not change height when selected; the command bar still names the

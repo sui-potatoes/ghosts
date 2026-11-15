@@ -91,7 +91,7 @@ function Preview({
         store.focus(prefix + value, false);
         // Once, on open.
     }, []);
-    const at = store.subject;
+    const at = store.preview;
     const focused = at?.startsWith(prefix) ? at.slice(prefix.length) : null;
     useEffect(() => {
         if (focused !== null) onPreview(focused);
@@ -116,6 +116,7 @@ function Tile({
     const { props } = useFocusable<HTMLButtonElement>({
         id: `${scope}:${option.id}`,
         group: "grid",
+        previews: true,
         title: option.label,
         hint: current ? "Current" : undefined,
         commands: [

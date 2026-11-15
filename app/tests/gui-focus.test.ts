@@ -687,3 +687,44 @@ test("an inactive primary is never armed, so no confirm button is offered", () =
     assert.equal(s.armed, null);
     assert.deepEqual(ran, []);
 });
+
+// --- A picker starts on what is chosen, and previews what the pointer is on ----
+
+test("a scope opens on the node it names (the equipped one), not on its first row", () => {
+    const s = new FocusStore(back);
+    for (const [i, id] of ["pick-none", "pick-current", "pick-rifle"].entries())
+        s.register({ id, group: "picker", scope: "picker", el: box(0, i * 50), commands: [] });
+    s.pushScope("picker", back, false, "pick-current");
+    assert.equal(s.focused, "pick-current");
+    assert.equal(s.subject, "pick-current");
+});
+
+test("hover previews a row that previews; the subject, what the bar runs, stays put", () => {
+    const s = new FocusStore(back);
+    const ids = ["pick-none", "pick-current", "pick-rifle"];
+    for (const [i, id] of ids.entries())
+        s.register({
+            id,
+            group: "picker",
+            scope: "picker",
+            el: box(0, i * 50),
+            commands: [],
+            previews: true,
+        });
+    s.pushScope("picker", back, false, "pick-current");
+    arrive(s, "pick-rifle");
+    assert.equal(s.focused, "pick-rifle");
+    assert.equal(s.preview, "pick-rifle", "the stage shows what a click would equip");
+    assert.equal(s.subject, "pick-current", "a bar click still acts on the chosen row");
+    s.move("up");
+    assert.equal(s.preview, s.subject);
+});
+
+test("without `previews`, the preview is the subject as before", () => {
+    const s = new FocusStore(back);
+    for (const [i, id] of ["a", "b"].entries())
+        s.register({ id, group: "picker", scope: "picker", el: box(0, i * 50), commands: [] });
+    s.pushScope("picker", back, false, "a");
+    arrive(s, "b");
+    assert.equal(s.preview, "a");
+});

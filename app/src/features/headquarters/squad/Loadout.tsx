@@ -263,7 +263,11 @@ export function GearPicker({
         slot === "utility" && candidateUtility ? packed(candidateUtility.stats) : utility?.stats,
     );
     return (
-        <FocusScope id="picker" back={close}>
+        <FocusScope
+            id="picker"
+            back={close}
+            start={current ? "pick-current" : `pick-${items[0]?.objectId}`}
+        >
             <div className="hqs-stack">
                 <Eyebrow meta={`${items.length} in the armory`}>{SLOT_NAMES[slot]}</Eyebrow>
                 <List label={SLOT_NAMES[slot]}>
@@ -271,6 +275,7 @@ export function GearPicker({
                         <ListRow
                             id="pick-none"
                             instant
+                            previews
                             group="picker"
                             thumb={<Thumb icon={SLOT_ICON[slot]} />}
                             name="None"
@@ -286,6 +291,7 @@ export function GearPicker({
                     {current && (
                         <ListRow
                             id="pick-current"
+                            previews
                             group="picker"
                             thumb={<Thumb src={currentImage} icon={SLOT_ICON[slot]} />}
                             name={current}
@@ -302,6 +308,7 @@ export function GearPicker({
                             key={item.objectId}
                             id={`pick-${item.objectId}`}
                             instant
+                            previews
                             group="picker"
                             thumb={<Thumb src={item.image} icon={SLOT_ICON[slot]} />}
                             name={item.name}

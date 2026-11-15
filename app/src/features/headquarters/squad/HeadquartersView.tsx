@@ -469,7 +469,7 @@ function Squad(props: SquadProps) {
     };
 
     // The picker previews the focused item on the operative.
-    const focusedId = picker ? store.subject : undefined;
+    const focusedId = picker ? store.preview : undefined;
     const candidate = picker && focusedId?.startsWith("pick-") ? focusedId.slice(5) : undefined;
     const onStage = useMemo<LocalRecruit>(() => {
         const r: LocalRecruit = { ...local, armorColors: draft.armorColors };

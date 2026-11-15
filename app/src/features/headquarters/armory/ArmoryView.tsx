@@ -462,7 +462,7 @@ function Workspace(props: WorkspaceProps) {
     };
 
     // The picker row under the cursor, previewed on the stage and in the stats.
-    const focused = picker ? store.subject : null;
+    const focused = picker ? store.preview : null;
     const candidate = focused?.startsWith("pick-") ? focused.slice(5) : undefined;
 
     // --- The weapon on the bench -----------------------------------------------
@@ -1183,7 +1183,11 @@ function Workspace(props: WorkspaceProps) {
                 ];
             };
             return (
-                <FocusScope id="picker" back={back}>
+                <FocusScope
+                    id="picker"
+                    back={back}
+                    start={draft[slot] ? `pick-mod-${draft[slot]}` : "pick-mod-none"}
+                >
                     <div className="hqs-stack">
                         <Eyebrow meta={`${fitCount(draft)} / ${MAX_FITTINGS}`}>
                             {ATTACHMENT_SLOT_NAMES[slot]}
@@ -1193,6 +1197,7 @@ function Workspace(props: WorkspaceProps) {
                             <ListRow
                                 id="pick-mod-none"
                                 instant
+                                previews
                                 offered={!draft[slot] && !!fitted[slot]}
                                 group="picker"
                                 thumb={<Thumb icon={SLOT_ICON.primary} />}
@@ -1214,6 +1219,7 @@ function Workspace(props: WorkspaceProps) {
                                         key={a.id}
                                         id={`pick-mod-${a.tier}`}
                                         instant
+                                        previews
                                         offered={draft[slot] === a.tier && !on}
                                         group="picker"
                                         thumb={
@@ -1267,6 +1273,7 @@ function Workspace(props: WorkspaceProps) {
                                         key={w.id}
                                         id={`pick-w-${w.id}`}
                                         instant
+                                        previews
                                         group="picker"
                                         thumb={
                                             <Thumb
@@ -1321,7 +1328,11 @@ function Workspace(props: WorkspaceProps) {
             const none =
                 e.kind === "weapon" ? "Unarmed" : e.kind === "armor" ? "No armor" : "No utility";
             return (
-                <FocusScope id="picker" back={back}>
+                <FocusScope
+                    id="picker"
+                    back={back}
+                    start={e.carrier ? `pick-to-${e.carrier.objectId}` : undefined}
+                >
                     <div className="hqs-stack">
                         <Eyebrow>Equip on</Eyebrow>
                         <List label="Equip on">
@@ -1329,6 +1340,7 @@ function Workspace(props: WorkspaceProps) {
                                 <ListRow
                                     id="pick-to-storage"
                                     instant
+                                    previews
                                     group="picker"
                                     thumb={
                                         <Thumb
@@ -1379,6 +1391,7 @@ function Workspace(props: WorkspaceProps) {
                                         key={r.objectId}
                                         id={`pick-to-${r.objectId}`}
                                         instant
+                                        previews
                                         group="picker"
                                         thumb={
                                             <Portrait

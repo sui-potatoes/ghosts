@@ -203,8 +203,8 @@ function Screen({
     // Who stands where: the squad once deployed, else the picks, with the
     // picker's row under the cursor previewed on its podium.
     const candidate =
-        picking !== null && store.subject?.startsWith("pick-")
-            ? store.subject.slice("pick-".length)
+        picking !== null && store.preview?.startsWith("pick-")
+            ? store.preview.slice("pick-".length)
             : undefined;
     const shown: Podiums = done
         ? Array.from({ length: count }, (_, i) => squad?.[i]?.objectId ?? null)
@@ -715,6 +715,7 @@ function RecruitPicker({
                                     key={r.objectId}
                                     id={`pick-${r.objectId}`}
                                     instant
+                                    previews
                                     group="squad-picker"
                                     thumb={
                                         <Portrait src={portraits[r.objectId]} rank={r.rank.$kind} />
@@ -738,6 +739,7 @@ function RecruitPicker({
                         <ListRow
                             id="pick-none"
                             instant
+                            previews
                             group="squad-picker"
                             name="None"
                             title="None"

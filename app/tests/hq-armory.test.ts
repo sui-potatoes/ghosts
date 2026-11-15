@@ -319,3 +319,26 @@ test("a mod row drafts on one click and offers Apply; a second click or double c
     clickCommand(commands(), opts)!.run!();
     assert.deepEqual(ran, ["choose", "apply"]);
 });
+
+test("the gear pickers open on what is equipped and preview the row under the pointer", () => {
+    const loadout = readFileSync(
+        new URL("../src/features/headquarters/squad/Loadout.tsx", import.meta.url),
+        "utf8",
+    );
+    assert.match(loadout, /start=\{\s*current \? "pick-current"/);
+    const armory = "../src/features/headquarters/armory/ArmoryView.tsx";
+    for (const file of ["../src/features/headquarters/squad/Loadout.tsx", armory]) {
+        const rows = readFileSync(new URL(file, import.meta.url), "utf8");
+        for (const m of rows.matchAll(/<ListRow\b[\s\S]*?commands=/g)) {
+            const id = /\bid=(?:"(pick-[^"]*)"|\{`(pick-[^`]*)`\})/.exec(m[0]);
+            if (id) assert.match(m[0], /\bpreviews\b/, `${file}: ${id[1] ?? id[2]} previews`);
+        }
+    }
+    // The stage follows the preview, never only the subject.
+    for (const file of [
+        "../src/features/headquarters/squad/HeadquartersView.tsx",
+        armory,
+        "../src/features/squad-view/SquadSelect.tsx",
+    ])
+        assert.match(readFileSync(new URL(file, import.meta.url), "utf8"), /store\.preview/);
+});

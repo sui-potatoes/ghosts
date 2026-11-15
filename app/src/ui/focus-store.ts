@@ -69,6 +69,12 @@ export type FocusNode = {
     directions?: (dir: Dir) => boolean;
     /** False: the pointer never moves the cursor onto this node (the 3D stage). */
     pointer?: boolean;
+    /**
+     * The stage previews this node while the cursor is on it, hovered or not
+     * (a picker row a click acts on: the preview shows what the click does).
+     * Commands still act on the subject (`preview` vs `subject`).
+     */
+    previews?: boolean;
 };
 
 export type FocusScopeEntry = {
@@ -254,7 +260,10 @@ export class FocusStore {
     /** Refresh a node's data; only a visible change (labels, reasons) re-renders. */
     update(
         id: string,
-        data: Pick<FocusNode, "title" | "hint" | "commands" | "el" | "directions" | "pointer">,
+        data: Pick<
+            FocusNode,
+            "title" | "hint" | "commands" | "el" | "directions" | "pointer" | "previews"
+        >,
     ) {
         const node = this.nodes.get(id);
         if (!node) return;
@@ -304,12 +313,14 @@ export class FocusStore {
         this.emit();
     }
 
-    pushScope(id: string, back: Command, modal = false) {
+    pushScope(id: string, back: Command, modal = false, start?: string) {
         this.settle();
         this.armed = null;
         this.scopes.push({ id, back, restore: this.lost ?? this.focused, modal });
         this.lost = null;
-        const first = this.inScope(id)[0];
+        // The node it names if it is there, else the scope's first.
+        const named = start ? this.nodes.get(start) : undefined;
+        const first = named?.scope === id ? named : this.inScope(id)[0];
         if (first) this.setFocus(first.id, false);
         this.emit();
     }
@@ -372,6 +383,16 @@ export class FocusStore {
     get subject(): string | null {
         const node = this.chosen ? this.nodes.get(this.chosen) : undefined;
         return node && node.scope === this.scope.id ? node.id : this.focused;
+    }
+
+    /**
+     * What a stage or an "if chosen" block shows: the node under the cursor when
+     * it `previews`, hovered or not, else the subject. Never what a bar command
+     * runs on: that stays the subject.
+     */
+    get preview(): string | null {
+        const at = this.focused ? this.nodes.get(this.focused) : undefined;
+        return at?.previews && at.scope === this.scope.id ? at.id : this.subject;
     }
 
     /** A node the pointer may move the cursor to: in the open scope, and not opted out. */

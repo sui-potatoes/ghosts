@@ -171,11 +171,14 @@ export function FocusScope({
     id,
     back,
     modal = false,
+    start,
     children,
 }: {
     id: string;
     back: Command;
     modal?: boolean;
+    /** The node the cursor, and so the subject, starts on: what is chosen now, not the first row. */
+    start?: string;
     children: ReactNode;
 }) {
     const store = useFocusStore();
@@ -189,8 +192,10 @@ export function FocusScope({
                 run: () => ref.current.run?.(),
             },
             modal,
+            start,
         );
         return () => store.popScope(id);
+        // `start` is read once, on open.
     }, [store, id, modal]);
     return <ScopeContext.Provider value={id}>{children}</ScopeContext.Provider>;
 }
@@ -221,6 +226,8 @@ type FocusableOptions = {
     instant?: boolean;
     /** The primary is shown as a button on the row (`armedCommand`) without being armed. */
     offered?: boolean;
+    /** The stage previews this target while the cursor is on it, hovered or not (`store.preview`). */
+    previews?: boolean;
 };
 
 /**
@@ -239,6 +246,7 @@ export function useFocusable<T extends HTMLElement>({
     clickConfirm = true,
     instant = false,
     offered = false,
+    previews = false,
 }: FocusableOptions) {
     const store = useFocusState();
     const scope = useContext(ScopeContext);
@@ -258,13 +266,22 @@ export function useFocusable<T extends HTMLElement>({
             commands,
             directions,
             pointer,
+            previews,
         });
         return () => store.unregister(id);
         // Registered once per id; the data is refreshed below on every render.
     }, [store, id, group, scope]);
 
     useLayoutEffect(() => {
-        store.update(id, { el: ref.current, title, hint, commands, directions, pointer });
+        store.update(id, {
+            el: ref.current,
+            title,
+            hint,
+            commands,
+            directions,
+            pointer,
+            previews,
+        });
     });
 
     useEffect(() => () => window.clearTimeout(press.current?.timer), []);
