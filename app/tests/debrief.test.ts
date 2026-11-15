@@ -15,6 +15,8 @@ import {
     type MatchResult,
     type ResultRecruit,
 } from "../src/features/debrief/result.ts";
+import { demoDebriefOf } from "../src/features/debrief/demo.ts";
+import { fieldHint } from "../src/features/debrief/result.ts";
 import { fixtureResult } from "../src/features/ui-sample/debrief.ts";
 
 const SQUAD: ResultRecruit[] = [
@@ -298,4 +300,61 @@ test("an unpromoted survivor shows their rank whether or not a swap runs", () =>
     const p = debriefOf(result({})).plates[0];
     assert.ok(p.kind === "home" && !p.promoted);
     assert.deepEqual(rankLabels(p, true), rankLabels(p, false));
+});
+
+const demoRecruit = (id: string, kills: number, kia = false) => {
+    const xp = kia ? 0 : kills * 100 + 40;
+    return {
+        id,
+        name: id.toUpperCase(),
+        full: `Full ${id}`,
+        role: "Vanguard",
+        kia,
+        kills,
+        xp,
+        level: 1 + Math.floor(xp / 100),
+        progress: xp % 100,
+    };
+};
+
+test("the demo's report becomes plates with the field record, a fallen unit KIA", () => {
+    const d = demoDebriefOf({
+        report: {
+            victory: false,
+            turns: 7,
+            survivors: 2,
+            recruits: [demoRecruit("v", 2), demoRecruit("g", 0), demoRecruit("k", 1, true)],
+        },
+        operation: "Black Rain",
+        sector: "Kora",
+    });
+    assert.equal(d.title, "Contract failed");
+    assert.equal(d.tone, "loss");
+    assert.equal(d.plates.length, 3);
+    const [v, g, k] = d.plates;
+    assert.ok(v.kind === "home" && v.promoted && v.rankAfter === "Level 3" && v.gained === 240);
+    assert.equal(v.field?.kills, 2);
+    assert.ok(v.band && v.band.to === 0.4 && v.band.start === 200 && v.band.end === 300);
+    assert.equal(fieldHint(v), "Promoted to level 3 · 40 / 100 XP to level 4");
+    assert.ok(g.kind === "home" && !g.promoted && g.rankAfter === "Level 1");
+    assert.equal(fieldHint(g), "40 / 100 XP to level 2");
+    assert.ok(k.kind === "kia" && k.field?.kills === 1 && k.turn === null);
+    assert.match(d.lines?.[1] ?? "", /07 turns · 2 \/ 3 returned · 1 lost/);
+});
+
+test("a won demo is a fulfilled contract with the fourth podium vacant", () => {
+    const d = demoDebriefOf(
+        {
+            report: { victory: true, turns: 3, survivors: 1, recruits: [demoRecruit("v", 1)] },
+            operation: "Op",
+            sector: "S",
+        },
+        4,
+    );
+    assert.equal(d.title, "Contract fulfilled");
+    assert.equal(d.tone, "win");
+    assert.deepEqual(
+        d.plates.map((p) => p.kind),
+        ["home", "vacant", "vacant", "vacant"],
+    );
 });

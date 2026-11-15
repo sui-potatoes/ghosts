@@ -9,6 +9,7 @@ import type { DriverFactory } from "../driver";
 import type { Scenario } from "../scenario";
 import { newSession } from "../session";
 import { defaultSettings, type EngineSettings } from "../settings";
+import type { EncounterDebrief } from "../aftermath/report";
 import { Briefing, Debrief } from "./Dialogs";
 import { Field, type FieldRefs } from "./Field";
 import { CommandBar, HudHeader, SquadRail, UnitPanel } from "./Hud";
@@ -34,6 +35,13 @@ export interface EncounterProps {
   onPause?: () => void;
   /** Back to the host's menu from the debrief. */
   onQuit?: () => void;
+  /**
+   * The host shows the end of an encounter itself: called once with the report
+   * when the debrief would open, instead of the engine's own dialog. The field
+   * stays behind it; the host ends the debrief with `closeEncounterDebrief`
+   * (back to the field) or `restartEncounter`.
+   */
+  onDebrief?: (debrief: EncounterDebrief) => void;
   /** What the host knows about units (names, rank, gear) over the engine's own reading; read live. */
   intel?: IntelSource;
   /** The opposing player in a match: the hostile readout's commander line. */
@@ -54,6 +62,7 @@ export function Encounter({
   paused = false,
   onPause,
   onQuit,
+  onDebrief,
   intel,
   opponent = null,
 }: EncounterProps) {
@@ -64,8 +73,8 @@ export function Encounter({
   };
   // The session exists before the first render so the UI subscribes to the one boot fills in.
   const [session] = useState(() => newSession(scenario, driver));
-  const hooks = useRef({ onPause, onQuit });
-  hooks.current = { onPause, onQuit };
+  const hooks = useRef({ onPause, onQuit, onDebrief });
+  hooks.current = { onPause, onQuit, onDebrief };
   inspect.source = intel;
   useEffect(() => {
     inspect.opponent = opponent;
@@ -109,7 +118,7 @@ export function Encounter({
       }
     : undefined;
 
-  return <EncounterView refs={refs} onQuit={() => hooks.current.onQuit?.()} hasQuit={!!onQuit} onMenu={menu} />;
+  return <EncounterView refs={refs} onQuit={() => hooks.current.onQuit?.()} hasQuit={!!onQuit} onMenu={menu} onDebrief={onDebrief ? (d) => hooks.current.onDebrief?.(d) : undefined} />;
 }
 
 function EncounterView({
@@ -117,11 +126,13 @@ function EncounterView({
   onQuit,
   hasQuit,
   onMenu,
+  onDebrief,
 }: {
   refs: FieldRefs;
   onQuit: () => void;
   hasQuit: boolean;
   onMenu?: () => void;
+  onDebrief?: (debrief: EncounterDebrief) => void;
 }) {
   const s = useSession();
   const ready = s.state === "ready";
@@ -136,7 +147,7 @@ function EncounterView({
       </main>
       {ready &&
         (s.debrief ? (
-          <Debrief onQuit={hasQuit ? onQuit : undefined} />
+          <Debrief onQuit={hasQuit ? onQuit : undefined} onDebrief={onDebrief} />
         ) : (
           s.panel && <Briefing deploy={s.panel === "deploy"} />
         ))}

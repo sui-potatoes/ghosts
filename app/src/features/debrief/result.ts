@@ -100,10 +100,26 @@ export type XpBand = {
     to: number;
 };
 
+/**
+ * What a demo unit's plate carries beyond a match recruit's: the demo has no
+ * chain rank, it counts levels (`encounterReport`) and kills per unit.
+ */
+export type FieldRecord = {
+    role: string;
+    /** The recruit's full name; the plate's name is the callsign. */
+    full: string;
+    kills: number;
+    level: number;
+    /** Experience inside the level reached, out of `levelXp`. */
+    progress: number;
+    levelXp: number;
+};
+
 export type Plate =
     | {
           kind: "home";
           id: string;
+          field?: FieldRecord;
           name: string;
           rankBefore: string;
           rankAfter: string;
@@ -118,6 +134,7 @@ export type Plate =
     | {
           kind: "kia";
           id: string;
+          field?: FieldRecord;
           name: string;
           /** The rank on the dog tag. */
           rank: string;
@@ -138,6 +155,8 @@ export type Debrief = {
     tone: HeadlineTone;
     /** What else the player should know about how it ended. */
     note: string | null;
+    /** Further lines under the title (the demo's operation and tally). */
+    lines?: string[];
     opponent: string | null;
     rating: { before: number; after: number; delta: number } | null;
     plates: Plate[];
@@ -299,4 +318,12 @@ export function rankLabels(
     swapping: boolean,
 ): [rank: string] {
     return [plate.promoted && swapping ? plate.rankBefore : plate.rankAfter];
+}
+
+/** The hint under a demo survivor's plate, from the level reached. */
+export function fieldHint(plate: Extract<Plate, { kind: "home" }>): string {
+    const f = plate.field;
+    if (!f) return "Home";
+    const next = `${f.progress} / ${f.levelXp} XP to level ${f.level + 1}`;
+    return plate.promoted ? `Promoted to level ${f.level} · ${next}` : next;
 }

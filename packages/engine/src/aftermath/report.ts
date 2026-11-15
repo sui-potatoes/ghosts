@@ -24,6 +24,14 @@ export interface EncounterReport {
     recruits: RecruitReport[];
 }
 
+/** What a host that shows the result itself is handed when the encounter ends. */
+export interface EncounterDebrief {
+    report: EncounterReport;
+    /** The scenario's briefing title and sector. */
+    operation: string;
+    sector: string;
+}
+
 /** Presentation progression for this local encounter; never mutates saved recruits. */
 export function encounterReport(
     game: Pick<Encounter, "units" | "kills" | "turn" | "result">,

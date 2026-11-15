@@ -3,7 +3,7 @@
 
 import { Fragment, useEffect, useRef } from "react";
 import { closeBriefing, closeDebrief, reset } from "../actions";
-import { encounterReport } from "../aftermath/report";
+import { encounterReport, type EncounterDebrief } from "../aftermath/report";
 import { revealEncounter } from "../aftermath/reveal";
 import { weaponName } from "../game";
 import { pad2 } from "../html";
@@ -119,12 +119,18 @@ export function Briefing({ deploy }: { deploy: boolean }) {
 }
 
 /** The after-action debrief. Its reveal timeline owns the dialog's content; React only hosts it. */
-export function Debrief({ onQuit }: { onQuit?: () => void }) {
+export function Debrief({ onQuit, onDebrief }: { onQuit?: () => void; onDebrief?: (debrief: EncounterDebrief) => void }) {
   const s = useSession();
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
-    const dialog = ref.current!;
     const { battlefield, game, portraits } = s;
+    // A host that shows the result itself gets the report and no dialog; it ends the
+    // debrief with `closeEncounterDebrief` or `restartEncounter`.
+    if (onDebrief) {
+      onDebrief({ report: encounterReport(game), operation: game.scenario.briefing.title, sector: game.scenario.location.sector });
+      return;
+    }
+    const dialog = ref.current!;
     revealEncounter(dialog, {
       report: encounterReport(game),
       operation: game.scenario.briefing.title,
@@ -143,5 +149,5 @@ export function Debrief({ onQuit }: { onQuit?: () => void }) {
     // One reveal per debrief; the session object is stable while it is open.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  return <dialog id="modal" ref={ref} />;
+  return onDebrief ? null : <dialog id="modal" ref={ref} />;
 }

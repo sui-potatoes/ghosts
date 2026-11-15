@@ -32,6 +32,7 @@ import { rankIcon } from "../headquarters/squad/ranks";
 import type { Anchor } from "../squad-view/podium-scene";
 import { Podium, PodiumCanvas } from "../squad-view/podiums";
 import {
+    fieldHint,
     promotionBonus,
     rankLabels,
     type Debrief as DebriefData,
@@ -66,6 +67,8 @@ export type DebriefViewProps = {
     primary: { label: string; hint: string; run: () => void; deny?: string };
     /** The fallen podium's extra command (hiring), when there is one. */
     replacement?: Command | null;
+    /** Commands every podium and the primary carry besides their own (the demo's View battlefield). */
+    extras?: Command[];
     /** Something over the diorama's corner (the sample's result chooser). */
     corner?: ReactNode;
 };
@@ -77,6 +80,7 @@ export function DebriefView({
     frame,
     primary,
     replacement = null,
+    extras = [],
     corner,
 }: DebriefViewProps) {
     const store = useFocusState();
@@ -173,6 +177,7 @@ export function DebriefView({
                 },
             },
             ...(plate.kind === "kia" && replacement ? [replacement] : []),
+            ...extras,
         ];
     };
 
@@ -184,7 +189,11 @@ export function DebriefView({
 
     const { rating } = debrief;
     const parts = useMemo(
-        () => [debrief.opponent && `vs ${debrief.opponent}`, debrief.note],
+        () => [
+            debrief.opponent && `vs ${debrief.opponent}`,
+            debrief.note,
+            ...(debrief.lines ?? []),
+        ],
         [debrief],
     );
 
@@ -263,6 +272,7 @@ export function DebriefView({
                         hint={primary.hint}
                         run={primary.run}
                         deny={primary.deny}
+                        extras={extras}
                     />
                 )}
                 {stage.loading && <div className="gui-stage-status">Bringing the squad in</div>}
@@ -305,6 +315,9 @@ function plateTitle(plate: Plate, i: number): string {
 function plateHint(plate: Plate, done: boolean): string | undefined {
     if (plate.kind === "vacant") return "Nobody deployed here";
     if (!done) return undefined;
+    if (plate.kind === "home" && plate.field) return fieldHint(plate);
+    if (plate.kind === "kia" && plate.field)
+        return `${plate.field.full}. Killed in action; ${plate.field.kills} confirmed kills`;
     if (plate.kind === "kia")
         return `${plate.turn ? `Fell on turn ${plate.turn}. ` : ""}The dog tag came home; the slot is open`;
     if (plate.promoted) {
@@ -335,12 +348,15 @@ function ResultPlate({ plate, done, instant }: { plate: Plate; done: boolean; in
                     {kia && <span className="dbf-plate-marker">KIA</span>}
                 </span>
                 <span className="sqv-plate-line">
-                    <Icon name={rankIcon(r)} size={12} />
+                    <Icon name={plateIcon(r)} size={12} />
                     {r}
                 </span>
+                <FieldLine plate={plate} />
                 {kia ? (
                     <span className="sqv-plate-line dbf-plate-fate">
-                        {plate.turn ? `Turn ${plate.turn} · ` : ""}Vacant
+                        {plate.kind === "kia" && plate.field
+                            ? "Killed in action"
+                            : `${plate.turn ? `Turn ${plate.turn} · ` : ""}Vacant`}
                     </span>
                 ) : (
                     <span className="dbf-xp" aria-hidden />
@@ -356,6 +372,7 @@ function ResultPlate({ plate, done, instant }: { plate: Plate; done: boolean; in
                 <span className="sqv-plate-name">{plate.name}</span>
             </span>
             <RankLine plate={plate} instant={instant} />
+            <FieldLine plate={plate} />
             {plate.gained === null ? null : band ? (
                 <span
                     className="dbf-xp"
@@ -388,12 +405,14 @@ function Plaque({
     hint,
     run,
     deny,
+    extras = [],
 }: {
     id: string;
     label: string;
     hint: string;
     run: () => void;
     deny?: string;
+    extras?: Command[];
 }) {
     const store = useFocusState();
     const { props } = useFocusable<HTMLButtonElement>({
@@ -401,7 +420,7 @@ function Plaque({
         group: "continue",
         title: label,
         hint,
-        commands: [{ action: "confirm", label, tone: "primary", deny, run }],
+        commands: [{ action: "confirm", label, tone: "primary", deny, run }, ...extras],
         // While it is Skip, any direction skips too.
         directions:
             id === "debrief-skip"
@@ -456,9 +475,28 @@ function RankLine({
     return (
         <span className="sqv-plate-line dbf-rank-swap">
             <span className={swapping ? "dbf-rank-was" : "dbf-rank-now"} key={rank}>
-                <Icon name={rankIcon(rank)} size={12} />
+                <Icon name={plateIcon(rank)} size={12} />
                 {rank}
             </span>
+        </span>
+    );
+}
+
+/** A chain rank's insignia, or a demo level's (`Level n`: a chevron more every two levels). */
+function plateIcon(rank: string) {
+    const level = /^Level (\d+)$/.exec(rank);
+    if (!level) return rankIcon(rank);
+    const n = Number(level[1]);
+    return n >= 5 ? "rank3" : n >= 3 ? "rank2" : "rank1";
+}
+
+/** The demo's own record on a plate: role and confirmed kills. */
+function FieldLine({ plate }: { plate: Plate }) {
+    if (plate.kind === "vacant" || !plate.field) return null;
+    const { role, kills } = plate.field;
+    return (
+        <span className="sqv-plate-line dbf-plate-field">
+            {role} · {kills} {kills === 1 ? "kill" : "kills"}
         </span>
     );
 }

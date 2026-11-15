@@ -8,11 +8,12 @@
  * editor have their own subpaths (`@ghosts/engine/keys`, `/gamepad`,
  * `/sounds`, `/demo-assets`, `/editor`).
  */
-import { reset, showBriefing } from "./actions";
+import { closeDebrief, reset, showBriefing } from "./actions";
 
 export { correctEncounter, followOpponent } from "./actions";
 
 export { Encounter, type EncounterProps } from "./ui/Encounter";
+export type { EncounterDebrief, EncounterReport, RecruitReport } from "./aftermath/report";
 export { blackRain, type Scenario, type UnitSpec } from "./scenario";
 export { scenarioById, scenarios } from "./scenarios";
 export { paperTrail } from "./office/scenario";
@@ -36,6 +37,11 @@ export {
 /** A fresh encounter with the same squad, back at the deployment briefing. */
 export function restartEncounter() {
   reset();
+}
+
+/** End the host's debrief (`onDebrief`) and show the field as it stands. */
+export function closeEncounterDebrief() {
+  closeDebrief();
 }
 
 /** Show the briefing over the field. */

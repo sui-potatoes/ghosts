@@ -13,6 +13,8 @@ import { initialSquad } from "@ghosts/squad/model";
 import { useMemo } from "react";
 
 import { rankWith } from "../../chain/match-rules";
+import type { EncounterDebrief } from "@ghosts/engine";
+import { DemoDebrief } from "./DemoDebrief";
 import { MatchDebrief } from "./MatchDebrief";
 import type { MatchResult } from "./result";
 
@@ -23,7 +25,63 @@ const kia = (id: string, at: number) => [
     { $kind: "UnitKIA", UnitKIA: [id, 1, 1] as const },
 ];
 
+/** The demo's end over a fixture report: `?case=demo-win` or `demo-loss` (one casualty). */
+function DemoQa({ win }: { win: boolean }) {
+    const roster = useMemo(() => initialSquad().recruits, []);
+    const recruit = (
+        i: number,
+        role: string,
+        kills: number,
+        kia = false,
+    ): EncounterDebrief["report"]["recruits"][number] => {
+        const xp = kia ? 0 : kills * 100 + 40;
+        return {
+            id: roster[i].id,
+            name: roster[i].callsign,
+            full: roster[i].name,
+            role,
+            kia,
+            kills,
+            xp,
+            level: 1 + Math.floor(xp / 100),
+            progress: xp % 100,
+        };
+    };
+    const recruits = [
+        recruit(0, "Vanguard", win ? 2 : 1),
+        recruit(1, "Gunner", win ? 0 : 0, !win),
+        recruit(2, "Marksman", win ? 1 : 0),
+        recruit(3, "Medic", 0),
+    ];
+    const debrief: EncounterDebrief = {
+        report: {
+            victory: win,
+            turns: win ? 9 : 6,
+            survivors: recruits.filter((r) => !r.kia).length,
+            recruits,
+        },
+        operation: "Operation Black Rain",
+        sector: "Kora Street, Tokyo",
+    };
+    const noop = () => {};
+    return (
+        <DemoDebrief
+            debrief={debrief}
+            squad={null}
+            onField={noop}
+            onRedeploy={noop}
+            onQuit={noop}
+        />
+    );
+}
+
 export default function ResultQa() {
+    const kind = new URLSearchParams(window.location.search).get("case");
+    if (kind === "demo-win" || kind === "demo-loss") return <DemoQa win={kind === "demo-win"} />;
+    return <MatchQa />;
+}
+
+function MatchQa() {
     const params = new URLSearchParams(window.location.search);
     const kind = params.get("case") ?? "costly";
     const gone = params.get("gone") === "1";
