@@ -255,3 +255,202 @@ test("a command marked click answers a click on the first tap, never the primary
             change,
         );
 });
+
+// --- The cursor follows the pointer -----------------------------------------
+
+function rows(sounds: { tick: number } = { tick: 0 }) {
+    const s = new FocusStore(back, { tick: () => void sounds.tick++ });
+    const ran: string[] = [];
+    const confirm = (id: string): Command[] => [
+        { action: "confirm", label: id, run: () => void ran.push(id) },
+    ];
+    for (const [i, id] of ["a", "b", "c"].entries())
+        s.register({
+            id,
+            group: "list",
+            scope: "root",
+            el: box(0, i * 50),
+            commands: confirm(id),
+        });
+    return { s, ran, confirm };
+}
+
+/** Two pointer events: the first only records where the pointer is. */
+function arrive(s: FocusStore, id: string, now = 1000) {
+    s.pointerMove(1, 1, null, now);
+    return s.pointerMove(2, 2, id, now);
+}
+
+test("the pointer moving onto a target moves the cursor and marks the mouse in use", () => {
+    const { s } = rows();
+    assert.equal(s.focused, "a");
+    assert.equal(arrive(s, "b"), true);
+    assert.equal(s.focused, "b");
+    assert.equal(s.pointer, true);
+});
+
+test("the first pointer event only records where the pointer is", () => {
+    const { s } = rows();
+    assert.equal(s.pointerMove(5, 5, "b"), false);
+    assert.equal(s.focused, "a");
+});
+
+test("a stationary pointer does not move the cursor when the list changes under it", () => {
+    const { s } = rows();
+    arrive(s, "b");
+    s.focus("a", false); // the layout moved; the browser re-tests hover at the same place
+    assert.equal(s.pointerMove(2, 2, "c"), false);
+    assert.equal(s.focused, "a");
+    // ...and the pointer taking over needs a real move.
+    assert.equal(s.pointerMove(2, 3, "c"), true);
+    assert.equal(s.focused, "c");
+});
+
+test("keys after a hover keep the keyboard's place until the pointer moves again", () => {
+    const { s } = rows();
+    arrive(s, "b");
+    s.keyInput();
+    s.move("down");
+    assert.equal(s.focused, "c");
+    assert.equal(s.pointer, false);
+    // The list auto-scrolled: hover is re-tested at the pointer's old place.
+    assert.equal(s.pointerMove(2, 2, "b"), false);
+    assert.equal(s.focused, "c");
+    assert.equal(s.pointerMove(3, 2, "b"), true);
+    assert.equal(s.focused, "b");
+});
+
+test("leaving every target leaves the cursor where it is", () => {
+    const { s } = rows();
+    arrive(s, "b");
+    s.pointerMove(9, 9, null);
+    assert.equal(s.focused, "b");
+});
+
+test("a scope owns the cursor: targets behind a prompt are not reached", () => {
+    const { s } = rows();
+    s.register({
+        id: "ok",
+        group: "prompt",
+        scope: "prompt",
+        el: box(300, 0),
+        commands: [],
+    });
+    s.pushScope("prompt", back, true);
+    assert.equal(s.focused, "ok");
+    assert.equal(arrive(s, "c"), false);
+    assert.equal(s.focused, "ok");
+    s.popScope("prompt");
+    assert.equal(arrive(s, "c", 2000), true);
+});
+
+test("a target that opts out of the pointer is never reached (the stage)", () => {
+    const { s } = rows();
+    s.register({
+        id: "stage",
+        group: "stage",
+        scope: "root",
+        el: box(300, 0),
+        commands: [],
+        pointer: false,
+    });
+    assert.equal(arrive(s, "stage"), false);
+    assert.equal(s.focused, "a");
+});
+
+test("a locked target is reached like any other", () => {
+    const { s } = rows();
+    s.register({
+        id: "locked",
+        group: "list",
+        scope: "root",
+        el: box(0, 150),
+        commands: [{ action: "confirm", label: "Open", deny: "Not yet" }],
+        hint: "Not yet",
+    });
+    assert.equal(arrive(s, "locked"), true);
+    assert.equal(s.focused, "locked");
+});
+
+test("the mouse events a touch leaves behind do not move the cursor", () => {
+    const { s } = rows();
+    s.pointerMove(1, 1, null, 0);
+    s.touchDown("b", 100);
+    s.touchEnd(200);
+    assert.equal(s.pointerMove(5, 5, "c", 400), false);
+    assert.equal(s.focused, "b");
+    assert.equal(s.pointerMove(6, 6, "c", 2000), true);
+});
+
+test("a touch down focuses without activating; the lift (a click) activates an instant target", () => {
+    const { s, ran, confirm } = rows();
+    s.touchDown("b");
+    assert.equal(s.focused, "b");
+    assert.deepEqual(ran, []);
+    s.click("b", confirm("b"), { instant: true, clickConfirm: true });
+    assert.deepEqual(ran, ["b"]);
+});
+
+test("a finger that slides off before lifting leaves the cursor there and runs nothing", () => {
+    const { s, ran } = rows();
+    s.touchDown("c");
+    // No click follows: the lift landed elsewhere.
+    assert.equal(s.focused, "c");
+    assert.deepEqual(ran, []);
+});
+
+test("a tap on a target behind a scope does not take the cursor", () => {
+    const { s } = rows();
+    s.register({ id: "ok", group: "prompt", scope: "prompt", el: box(300, 0), commands: [] });
+    s.pushScope("prompt", back, true);
+    s.touchDown("a");
+    assert.equal(s.focused, "ok");
+});
+
+test("a target that is not instant is armed by a click and confirmed by the next, hover or not", () => {
+    const { s, ran, confirm } = rows();
+    arrive(s, "b"); // hover already put the cursor on it
+    const opts = { instant: false, clickConfirm: true };
+    s.click("b", confirm("b"), opts);
+    assert.deepEqual(ran, []);
+    assert.equal(s.armed, "b");
+    s.click("b", confirm("b"), opts);
+    assert.deepEqual(ran, ["b"]);
+    assert.equal(s.armed, null);
+});
+
+test("moving the cursor disarms a target", () => {
+    const { s, ran, confirm } = rows();
+    const opts = { instant: false, clickConfirm: true };
+    s.click("b", confirm("b"), opts);
+    s.pointerMove(1, 1, null);
+    s.pointerMove(2, 2, "c");
+    s.pointerMove(3, 3, "b");
+    s.click("b", confirm("b"), opts);
+    assert.deepEqual(ran, []);
+    assert.equal(s.armed, "b");
+});
+
+test("choosers are not armed by a click, and an instant target never waits", () => {
+    const { s, ran, confirm } = rows();
+    s.click("b", confirm("b"), { instant: false, clickConfirm: false });
+    assert.equal(s.armed, null);
+    s.click("c", confirm("c"), { instant: true, clickConfirm: true });
+    assert.deepEqual(ran, ["c"]);
+});
+
+test("a sweep across rows ticks at most once per gap; keys tick every move", () => {
+    const sounds = { tick: 0 };
+    const { s } = rows(sounds);
+    s.pointerMove(0, 0, null, 0);
+    s.pointerMove(1, 0, "b", 1000);
+    s.pointerMove(2, 0, "c", 1020);
+    s.pointerMove(3, 0, "a", 1040);
+    assert.equal(s.focused, "a");
+    assert.equal(sounds.tick, 1);
+    s.pointerMove(4, 0, "b", 1200);
+    assert.equal(sounds.tick, 2);
+    s.move("down");
+    s.move("down");
+    assert.equal(sounds.tick, 4);
+});

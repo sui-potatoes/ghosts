@@ -54,8 +54,8 @@ export type MenuRow = {
     primary?: boolean;
     /**
      * A click runs it at once: opening a screen or a dialog. Off for a row whose
-     * confirm sends a transaction (queue, leave the queue): a click selects it
-     * and a second click commits.
+     * confirm sends a transaction (queue, leave the queue): the cursor follows
+     * the pointer onto it, a click arms it and a second click commits.
      */
     instant: boolean;
 };

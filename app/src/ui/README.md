@@ -13,8 +13,8 @@ import { FocusRoot, ScreenFrame, FocusCommandBar, Panel, List, ListRow, useGlyph
 ## The rules that make it a game
 
 - **One cursor.** Exactly one thing is focused at any time; keys, pad, mouse
-  and touch all move the same cursor. Nothing else highlights except the
-  pointer's faint pre-highlight.
+  and touch all move the same cursor. Nothing else highlights, not even
+  under the pointer.
 - **Commands live in the bar.** What you can do with the focused thing is in
   the command bar at the bottom edge, with the player's own key or pad glyph.
   No buttons over content, no per-row button clusters. (The mouse gets the
@@ -196,13 +196,30 @@ changed; never run an idle loop.
 
 ## Mouse and touch
 
-- Hover only pre-highlights (CSS, `(hover: hover)` devices).
-- A click or a tap selects. The primary (confirm) is the click itself:
-    - `instant` targets run it on that same click — for a cheap, undoable
+- The cursor follows the pointer. Moving the mouse onto a target moves the
+  cursor there (hint and commands in the bar), so a mouse or a phone sees what
+  a row does before acting. One delegated `pointermove` listener in
+  `FocusRoot` reads the target's `data-focus-id`; it acts only on real
+  movement (position changed). A scroll, a re-layout or a key-driven
+  auto-scroll under a still pointer moves nothing, nor does the mouse echo of a
+  touch or a drag in progress. After keys or pad the pointer takes over again
+  only when it moves. Leaving every target leaves the cursor where it is.
+  Targets in a scope behind a prompt or picker, the header's tabs and sections,
+  and `pointer: false` targets (the stage) are not reached. Locked rows are.
+  The sweep's tick is rate-limited (one per 90ms); keys tick every move.
+- A touch moves the cursor on press (the bar shows the hint while the finger
+  rests); the action runs on lift, as a click. Sliding off before lifting
+  cancels the action and leaves the cursor there. Long-press opens the
+  command list.
+- A click or a tap acts as Confirm would. The hover already put the cursor on
+  the target, so "focused" no longer means "selected by a click":
+    - `instant` targets run the primary on that click — for a cheap, undoable
       primary: select an operative, open a picker, walk into a section;
-    - the others run it on a second click or tap on the selected target — for
-      a primary that commits something (issue, hire, requisition) or that the
-      stage previews first (a picker row). Danger primaries are never instant.
+    - the others are armed by the click (the cursor frame closes in) and run it
+      on the next click or tap on the same target — for a primary that commits
+      something (issue, hire, requisition) or that the stage previews first (a
+      picker row). Moving the cursor disarms. Danger primaries are never
+      instant.
 - Inline chips (`InlineCommands`) are for **secondary** commands only (Reset:
   Remove, Manage). A target whose only command is its primary shows no chip
   and does not change height when selected; the command bar still names the

@@ -7,10 +7,12 @@
  * element a cursor target, `<FocusCursor>` draws the one bracket frame. The
  * model and the navigation rules are in `focus-store.ts`.
  *
- * Pointer model: hover only pre-highlights; a click or a tap selects (the
- * target's commands then show inline at its trailing edge), a second click
- * or tap on the selected target runs its confirm; right-click or a
- * long-press lists every command at the pointer.
+ * Pointer model: the cursor follows the pointer. Moving the mouse onto a
+ * target focuses it (one delegated listener on the document, resolved from the
+ * `data-focus-id` of the event target, only on real movement); a finger
+ * focuses on touch down. A click or tap then runs the target's primary at once
+ * (`instant`) or arms it for a second click; right-click or a long-press lists
+ * every command at the pointer.
  */
 
 import {
@@ -31,7 +33,7 @@ import { uiBack, uiConfirm, uiDeny, uiTick } from "../audio";
 import { onAction } from "../input";
 import type { Action } from "../settings/keys";
 import { claimScreenBack } from "./back";
-import { clickCommand, FocusStore, secondaryCommands, type Command, type Dir } from "./focus-store";
+import { FocusStore, secondaryCommands, type Command, type Dir } from "./focus-store";
 
 export { clickCommand, FocusStore, secondaryCommands } from "./focus-store";
 export type { Command, CommandAction, Dir, Pulse } from "./focus-store";
@@ -90,6 +92,24 @@ export function FocusRoot({ back, onTab, onSection, children }: RootProps) {
 
     // Claimed before paint, so EscapeBack has stepped aside before any key.
     useLayoutEffect(() => claimScreenBack(), []);
+
+    // The cursor follows the pointer: one listener, the target resolved from its
+    // data attribute (no measuring). A drag in progress (a button held) and touch
+    // are not hover.
+    useEffect(() => {
+        const move = (e: globalThis.PointerEvent) => {
+            if (e.pointerType === "touch") return;
+            const hit =
+                e.buttons === 0 && e.target instanceof Element
+                    ? e.target.closest<HTMLElement>("[data-focus-id]")
+                    : null;
+            const id = hit?.dataset.focusId ?? null;
+            // The node's own element must be the hit: another screen's store is not ours.
+            store.pointerMove(e.clientX, e.clientY, id && store.node(id)?.el === hit ? id : null);
+        };
+        document.addEventListener("pointermove", move, { passive: true });
+        return () => document.removeEventListener("pointermove", move);
+    }, [store]);
 
     useEffect(
         () =>
@@ -219,13 +239,23 @@ export function useFocusable<T extends HTMLElement>({
     const swallow = useRef(0);
 
     useLayoutEffect(() => {
-        store.register({ id, group, scope, el: ref.current, title, hint, commands, directions });
+        store.register({
+            id,
+            group,
+            scope,
+            el: ref.current,
+            title,
+            hint,
+            commands,
+            directions,
+            pointer,
+        });
         return () => store.unregister(id);
         // Registered once per id; the data is refreshed below on every render.
     }, [store, id, group, scope]);
 
     useLayoutEffect(() => {
-        store.update(id, { el: ref.current, title, hint, commands, directions });
+        store.update(id, { el: ref.current, title, hint, commands, directions, pointer });
     });
 
     useEffect(() => () => window.clearTimeout(press.current?.timer), []);
@@ -264,12 +294,16 @@ export function useFocusable<T extends HTMLElement>({
             "data-pressed": pulse?.kind === "press" || undefined,
             "data-denied": pulse?.kind === "deny" || undefined,
             "data-pointer": pointer || undefined,
+            "data-focus-id": pointer ? id : undefined,
             onMouseDown: (e: MouseEvent) => {
                 if (pointer) e.preventDefault();
             },
-            // A touch resting in place opens the command list: a phone's right-click.
+            // A finger down takes the cursor at once (the bar shows the hint while it
+            // rests; the action waits for the lift). Resting in place opens the
+            // command list: a phone's right-click.
             onPointerDown: (e: PointerEvent) => {
                 if (e.pointerType !== "touch") return;
+                if (pointer) store.touchDown(id);
                 cancelPress();
                 const { clientX: x, clientY: y } = e;
                 press.current = {
@@ -287,18 +321,17 @@ export function useFocusable<T extends HTMLElement>({
                 if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > LONG_PRESS_SLOP)
                     cancelPress();
             },
-            onPointerUp: cancelPress,
+            onPointerUp: (e: PointerEvent) => {
+                if (e.pointerType === "touch") store.touchEnd();
+                cancelPress();
+            },
             onPointerCancel: cancelPress,
-            // Hover only pre-highlights (CSS); a click or tap selects, and runs
-            // the primary at once (`instant`) or on a second click.
+            // A click or tap acts as Confirm would: the primary at once
+            // (`instant`), else armed by this click and run by the next.
             onClick: () => {
                 if (performance.now() - swallow.current < 800) return;
                 if (!pointer) return;
-                const again = store.focused === id;
-                store.pointerInput();
-                store.focus(id);
-                const command = clickCommand(commands, { again, instant, clickConfirm });
-                if (command) store.run(command);
+                store.click(id, commands, { instant, clickConfirm });
             },
             // Right-click: every command of the target, as a list at the pointer.
             // Works on the stage too: the one way a mouse reaches its extra commands.
@@ -371,6 +404,7 @@ export function FocusCursor({ root }: { root: RefObject<HTMLElement | null> }) {
             className="gui-cursor"
             aria-hidden
             data-hidden={box.hidden || undefined}
+            data-armed={(store.armed !== null && store.armed === store.focused) || undefined}
             // A destructive question turns the cursor amber with the frame it sits on.
             data-tone={
                 node?.commands.some((c) => c.action === "confirm" && c.tone === "danger")

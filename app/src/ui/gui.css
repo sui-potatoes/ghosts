@@ -1475,6 +1475,12 @@ span.gui-cmd {
     box-shadow: inset 2px 0 0 var(--text-secondary);
 }
 
+/* A click that selected a target which confirms on the next one: the frame
+   closes in a little and stays tight until the cursor moves or it runs. */
+.gui-cursor[data-armed] .gui-cursor-frame {
+    inset: -2px;
+}
+
 .gui-cursor[data-tone="danger"] .gui-cursor-frame i {
     border-color: var(--warn-color);
 }
@@ -1519,14 +1525,6 @@ span.gui-cmd {
 
 .gui-chip[data-tone="warn"] .gui-chip-value {
     color: var(--warn-color);
-}
-
-/* === Pre-highlight: the pointer's own, faint, never the cursor ======= */
-
-@media (hover: hover) {
-    .gui [data-pointer]:not([data-focused]):hover {
-        background: color-mix(in srgb, var(--text-color) 5%, transparent);
-    }
 }
 
 /* === Thumbnails, portraits, pictograms =============================== */
@@ -1917,12 +1915,11 @@ span.gui-cmd {
     visibility: hidden;
 }
 
-.gui-chooser[data-focused] .gui-step,
-.gui-chooser:hover .gui-step {
+.gui-chooser[data-focused] .gui-step {
     visibility: visible;
 }
 
-/* A finger has no hover and no cursor to have selected the row first: on touch
+/* A finger has no hover to show the arrows before it presses: on touch
  * the arrows are always drawn, each a finger-sized target (44px on the glass;
  * /--ui-scale undoes the zoom of phone landscape), and a tap on one acts at once. */
 @media (hover: none), (pointer: coarse) {

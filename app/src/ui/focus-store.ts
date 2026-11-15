@@ -61,6 +61,8 @@ export type FocusNode = {
     commands: Command[];
     /** Takes a direction before the cursor does (steppers, the stage); true consumes it. */
     directions?: (dir: Dir) => boolean;
+    /** False: the pointer never moves the cursor onto this node (the 3D stage). */
+    pointer?: boolean;
 };
 
 export type FocusScopeEntry = {
@@ -83,6 +85,10 @@ export type FocusSounds = {
 };
 
 const PULSE_MS = 160;
+/** The least gap between two ticks the pointer's sweep makes; keys are never limited. */
+export const POINTER_TICK_GAP_MS = 90;
+/** The mouse events a touch leaves behind arrive within this long of its release. */
+const TOUCH_SHADOW_MS = 700;
 const FOLLOWING = 4; // Node.DOCUMENT_POSITION_FOLLOWING
 
 function signature(node: Pick<FocusNode, "title" | "hint" | "commands">): string {
@@ -121,6 +127,16 @@ export class FocusStore {
      * commands inline. Any menu action from keys or pad clears it.
      */
     pointer = false;
+    /**
+     * The target a click or tap has selected but not yet confirmed: a target
+     * that is not `instant` runs its primary on the next click while this is
+     * it. Any move of the cursor clears it. The cursor draws it as armed.
+     */
+    armed: string | null = null;
+    /** Where the pointer last was (client px); movement is told from this. */
+    private at: { x: number; y: number } | null = null;
+    private lastTouch = -Infinity;
+    private lastTick = -Infinity;
     /** The command list (right-click, long-press): which node, and where (client px). */
     menu: { id: string; x: number; y: number } | null = null;
     pulse: Pulse | null = null;
@@ -221,7 +237,10 @@ export class FocusStore {
     }
 
     /** Refresh a node's data; only a visible change (labels, reasons) re-renders. */
-    update(id: string, data: Pick<FocusNode, "title" | "hint" | "commands" | "el" | "directions">) {
+    update(
+        id: string,
+        data: Pick<FocusNode, "title" | "hint" | "commands" | "el" | "directions" | "pointer">,
+    ) {
         const node = this.nodes.get(id);
         if (!node) return;
         Object.assign(node, data);
@@ -294,21 +313,96 @@ export class FocusStore {
         this.emit();
     }
 
-    private setFocus(id: string, sound: boolean) {
+    private setFocus(id: string, sound: boolean, limited = false, now = 0) {
         if (this.focused === id) return;
         this.focused = id;
+        this.armed = null;
         const node = this.nodes.get(id);
         if (node) this.memory.set(node.group, id);
-        if (sound && node?.el) this.sounds.tick?.(node.el);
+        if (sound && node?.el && (!limited || now - this.lastTick >= POINTER_TICK_GAP_MS)) {
+            this.lastTick = now;
+            this.sounds.tick?.(node.el);
+        }
     }
 
     /** Put the cursor on `id`; `sound` for moves the player made. */
-    focus(id: string, sound = true) {
+    focus(id: string, sound = true, limited = false, now = performance.now()) {
         if (!this.nodes.has(id) || this.focused === id) return;
         this.lost = null;
         this.orphan = null;
-        this.setFocus(id, sound);
+        this.setFocus(id, sound, limited, now);
         this.emit();
+    }
+
+    /** A node the pointer may move the cursor to: in the open scope, and not opted out. */
+    private reachable(id: string | null): FocusNode | undefined {
+        const node = id ? this.nodes.get(id) : undefined;
+        return node && node.scope === this.scope.id && node.pointer !== false ? node : undefined;
+    }
+
+    /**
+     * The pointer is at (`x`, `y`) over node `id`, or over none. The cursor
+     * follows only real movement: the first event just records where the pointer
+     * is, and an event at the same place (the browser re-testing hover after a
+     * scroll or a re-layout, a synthetic move) is not movement. Touch is left to
+     * `touchDown`, and the mouse events that shadow a touch are ignored. Moving
+     * the pointer off every node leaves the cursor where it is. Returns whether
+     * the cursor moved.
+     */
+    pointerMove(x: number, y: number, id: string | null, now = performance.now()): boolean {
+        const last = this.at;
+        this.at = { x, y };
+        if (!last || (last.x === x && last.y === y)) return false;
+        if (now - this.lastTouch < TOUCH_SHADOW_MS) return false;
+        const node = this.reachable(id);
+        if (!node) return false;
+        this.pointerInput();
+        if (this.focused === node.id) return false;
+        this.focus(node.id, true, true, now);
+        return this.focused === node.id;
+    }
+
+    /**
+     * A finger went down on node `id`: the cursor moves to it at once, so the
+     * bar shows its hint while the finger rests; nothing runs until the lift
+     * (the click). A finger that slides off before lifting never clicks, and
+     * leaves the cursor where it went.
+     */
+    touchDown(id: string, now = performance.now()) {
+        this.lastTouch = now;
+        const node = this.reachable(id);
+        if (!node) return;
+        this.pointerInput();
+        this.focus(node.id, true, false, now);
+    }
+
+    /** A touch ended: its shadow mouse events (a click's hover) are ignored for a moment. */
+    touchEnd(now = performance.now()) {
+        this.lastTouch = now;
+    }
+
+    /**
+     * A click or tap on node `id`: the cursor goes there and the command
+     * `clickCommand` names runs, now or on the next click. A target that is not
+     * `instant` is only armed by its first click, so a pointer that has already
+     * moved the cursor onto it never commits on a click it did not mean twice.
+     */
+    click(
+        id: string,
+        commands: Command[],
+        { instant, clickConfirm }: { instant: boolean; clickConfirm: boolean },
+    ) {
+        this.pointerInput();
+        const again = this.armed === id;
+        this.focus(id);
+        const command = clickCommand(commands, { again, instant, clickConfirm });
+        if (command) {
+            this.armed = null;
+            this.run(command);
+        } else if (clickConfirm && !again && commands.some((c) => c.action === "confirm")) {
+            this.armed = id;
+            this.emit();
+        }
     }
 
     /** The first node of a group, or the one it had last when `remember`. */

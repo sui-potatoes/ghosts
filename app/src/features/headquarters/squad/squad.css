@@ -251,12 +251,6 @@
     border-color: var(--accent-color);
 }
 
-@media (hover: hover) {
-    .hqs-card:hover .hqs-card-face {
-        border-color: var(--text-secondary);
-    }
-}
-
 @media (prefers-reduced-motion: reduce) {
     .hqs-card-inner {
         transition: none;

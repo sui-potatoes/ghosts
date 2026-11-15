@@ -34,10 +34,6 @@
     transition: opacity 160ms ease;
 }
 
-.gui [data-pointer].sqv-podium:not([data-focused]):hover {
-    background: none;
-}
-
 .sqv-podium[data-dim] {
     opacity: 0.45;
 }
@@ -285,10 +281,6 @@
 
 .sqv-bench-plate[data-focused] .hqs-portrait {
     filter: none;
-}
-
-.gui [data-pointer].sqv-bench-plate:not([data-focused]):hover {
-    opacity: 0.9;
 }
 
 .sqv-bench-plate .sqv-plate-name {
