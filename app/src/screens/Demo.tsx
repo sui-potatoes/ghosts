@@ -1,7 +1,13 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
-import { Encounter, openBriefing, restartEncounter, paperTrail } from "@ghosts/engine";
+import {
+    deployedIntel,
+    Encounter,
+    openBriefing,
+    restartEncounter,
+    paperTrail,
+} from "@ghosts/engine";
 import { savedRecruits, SQUAD_STORAGE_KEY } from "@ghosts/squad/model";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -37,6 +43,7 @@ export default function Demo({ office = false }: { office?: boolean }) {
                 key={office ? "office" : "kora"}
                 scenario={office ? paperTrail : undefined}
                 squad={squad}
+                intel={deployedIntel}
                 settings={engineSettings}
                 paused={paused}
                 onPause={() => setPaused(true)}

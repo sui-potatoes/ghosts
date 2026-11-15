@@ -5,7 +5,7 @@ import { Fragment, useEffect, useRef } from "react";
 import { closeBriefing, closeDebrief, reset } from "../actions";
 import { encounterReport } from "../aftermath/report";
 import { revealEncounter } from "../aftermath/reveal";
-import { weapons } from "../game";
+import { weaponName } from "../game";
 import { pad2 } from "../html";
 import { Glyph } from "./Hud";
 import { useSession } from "./useSession";
@@ -93,7 +93,7 @@ export function Briefing({ deploy }: { deploy: boolean }) {
                     <div>
                       <b>{u.name}</b>
                       <small>{u.role}</small>
-                      <small>{weapons[u.weapon].label}</small>
+                      <small>{weaponName(u)}</small>
                     </div>
                   </li>
                 );

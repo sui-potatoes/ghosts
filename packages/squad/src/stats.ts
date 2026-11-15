@@ -55,6 +55,34 @@ export const RECRUIT_DEFAULT: Stats = stats({
   health: 10,
 });
 
+/** `ghosts::rank::Rank`, lowest first; a Rookie is 0. */
+export const RANKS = [
+  "Rookie",
+  "Squaddie",
+  "Corporal",
+  "Sergeant",
+  "Lieutenant",
+  "Captain",
+  "Major",
+  "Colonel",
+] as const;
+
+/** `PROMOTION_AIM` and `PROMOTION_HEALTH` in `recruit.move`. */
+const PROMOTION_AIM = 2;
+const PROMOTION_HEALTH = 1;
+
+/**
+ * A recruit's own stats at `rank`: `recruit::add_xp` sharpens their aim with
+ * every promotion and toughens them with every second one.
+ */
+export function rankedBase(rank?: string | null): Stats {
+  const ordinal = Math.max(0, RANKS.indexOf(rank as (typeof RANKS)[number]));
+  let total = RECRUIT_DEFAULT;
+  for (let step = 1; step <= ordinal; step++)
+    total = add(total, stats({ aim: PROMOTION_AIM, health: step % 2 === 0 ? PROMOTION_HEALTH : 0 }));
+  return total;
+}
+
 /** `stats::add`: zero and −0 modifiers skip, negatives floor at 0, results cap at 127. */
 export function add(base: Stats, modifier: Stats): Stats {
   const out = { ...base };
@@ -88,6 +116,9 @@ export function unpack(value: bigint): Stats {
   });
   return out;
 }
+
+/** `stats::default_weapon()`: what an unarmed recruit's unit takes in for a weapon. */
+export const DEFAULT_WEAPON: Stats = unpack(0x03_04_00_00_01_00_00_02_04n << 48n);
 
 /**
  * `ghosts::items` presets by catalog id. The armor presets are
@@ -130,6 +161,20 @@ export function recruitStats(recruit: Recruit): Stats {
   return contributions(recruit).total;
 }
 
+/**
+ * The stats `Unit::from_recruit` gives the recruit's unit in a match: their own
+ * at their rank, the weapon with its fittings, then the armor; an unarmed
+ * recruit takes `stats::default_weapon()` (and cannot shoot). The utility adds
+ * nothing for the frag grenade. `recruitStats` keeps the unranked, weapon-less
+ * reading the studio's Stats tab shows.
+ */
+export function fieldStats(recruit: Pick<Recruit, "equipment" | "attachments" | "rank">): Stats {
+  return contributions(recruit, {
+    base: rankedBase(recruit.rank),
+    unarmed: DEFAULT_WEAPON,
+  }).total;
+}
+
 export type Source = "weapon" | "attachment" | "armor";
 
 /** What one piece of gear did to one stat, after the chain's floor and cap. */
@@ -144,7 +189,11 @@ export interface Contribution {
 }
 
 /** The field stats with each gear piece's share, in the order the chain applies them. */
-export function contributions(recruit: Recruit): {
+export function contributions(
+  recruit: Pick<Recruit, "equipment" | "attachments" | "rank">,
+  /** `base` is the recruit's own stats; `unarmed` stands in for a weapon they do not carry. */
+  { base = RECRUIT_DEFAULT, unarmed = EMPTY }: { base?: Stats; unarmed?: Stats } = {},
+): {
   total: Stats;
   byStat: Record<StatKey, Contribution[]>;
 } {
@@ -161,12 +210,14 @@ export function contributions(recruit: Recruit): {
   const byStat = Object.fromEntries(
     STAT_KEYS.map((k) => [k, [] as Contribution[]]),
   ) as Record<StatKey, Contribution[]>;
-  let total = RECRUIT_DEFAULT;
+  let total = base;
   for (const [source, item] of steps) {
     const modifier =
       source === "attachment"
         ? unpack(attachmentById(item)!.packed)
-        : (ITEM_STATS[item ?? ""] ?? EMPTY);
+        : item === null && source === "weapon"
+          ? unarmed
+          : (ITEM_STATS[item ?? ""] ?? EMPTY);
     const next = add(total, modifier);
     for (const key of STAT_KEYS) {
       if (!modifier[key]) continue;

@@ -80,6 +80,8 @@ export interface Recruit {
     equipment: Record<Slot, string | null>;
     /** Attachments fitted to the primary weapon; absent in older saves. */
     attachments?: WeaponAttachments;
+    /** The recruit's rank by name (`RANKS` in `stats.ts`) as the chain has it; absent means a Rookie. Each promotion is in their base stats. */
+    rank?: string;
     /** The primary weapon's finish (`weapon-skins.ts`), kept on the device;
      * absent or unknown means Factory. Stages that draw the recruit holding
      * the gun show it; the field does not. */

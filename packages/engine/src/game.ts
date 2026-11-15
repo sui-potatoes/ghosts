@@ -17,6 +17,7 @@ import {
   type UnitAction,
 } from "./action-registry.ts";
 import type { UnitEffect } from "./status-effects.ts";
+import type { WeaponMod } from "./intel.ts";
 // Local presentation simulation. Rules reference ghosts::{unit,map,stats}; no chain imports.
 export type { Cell };
 export type Weapon = "rifle" | "sniper" | "pistol";
@@ -31,9 +32,26 @@ export const weapons = {
   },
   pistol: { label: "K–12 SIDEARM", damage: 4, range: 5, clip: 6, aim: 82 },
 };
+/** A unit's weapon as the HUD names it: the recruit's own (a trailing " +" with mods fitted), else the scenario's. */
+export const weaponName = (u: Pick<Unit, "weapon" | "gear">) =>
+  !u.gear
+    ? weapons[u.weapon].label
+    : !u.gear.weapon
+      ? "Unarmed"
+      : u.gear.weapon.mods.length
+        ? `${u.gear.weapon.name} +`
+        : u.gear.weapon.name;
 export type Role = "ASSAULT" | "RECON" | "HEAVY" | "SPECIALIST";
 /** The orders the HUD offers a unit; chain `Attack` is `fire`. */
 export type UnitOrder = "move" | "fire" | "grenade" | "reload" | "overwatch" | "hunker" | "secure";
+/** What an ally deployed from a recruit carries, as the readouts name it (a scenario's units carry none). */
+export interface UnitGear {
+  /** The primary weapon by name, with its fitted mods; null when unarmed. */
+  weapon: { name: string; mods: WeaponMod[] } | null;
+  armor: string | null;
+  /** Rank by name and step (0 = the lowest), when the recruit has one. */
+  rank?: { name: string; index: number };
+}
 export interface Unit {
   id: string;
   name: string;
@@ -51,6 +69,18 @@ export interface Unit {
   range: number;
   mobility: number;
   damage: number;
+  /** A hit deals `damage` plus or minus up to this much (`spread`). */
+  spread: number;
+  /** Percent chance a hit deals one more (`plus_one`). */
+  plusOne: number;
+  /** Percent chance a hit is critical, adding half the damage (`crit_chance`). */
+  critChance: number;
+  /** Percent chance a hit is dodged (`dodge`). */
+  dodge: number;
+  /** Points off every hit chance against the unit, with cover (`defense`). */
+  defense: number;
+  /** The recruit's gear, for the readouts; absent for scenario units. */
+  gear?: UnitGear;
   hunkered: boolean;
   overwatch: boolean;
   weapon: Weapon;
@@ -101,6 +131,12 @@ export function initialUnits(scenario: Scenario = blackRain): Unit[] {
       magazines,
       color,
       ...weapons[weapon],
+      // no spread, no dodge: a fixed hit with the old one-in-ten crit, until a loadout says otherwise
+      spread: 0,
+      plusOne: 0,
+      critChance: 10,
+      dodge: 0,
+      defense: 0,
       name,
       ammo: magazines[weapon],
     };
@@ -447,7 +483,7 @@ export class Encounter {
       Math.min(
         100,
         a.aim + (d < a.range ? (a.range - d) * 5 : -(d - a.range) * 10),
-      ) - this.cover(b, a),
+      ) - this.cover(b, a) - b.defense,
     );
   }
   /** Whether `a` has a line and the range to shoot `b` at all, AP aside. */
@@ -478,9 +514,21 @@ export class Encounter {
   }
   private shoot(a: Unit, b: Unit, reaction: boolean) {
     const chance = this.chance(a, b);
-    const hit = this.random() * 100 < chance;
-    const crit = hit && this.random() < 0.1;
-    const damage = hit ? shotDamage(a, b, crit) : 0;
+    let hit = this.random() * 100 < chance;
+    let crit = hit && this.random() < a.critChance / 100;
+    // `Unit.perform_attack`: the damage stat varies by up to `spread` either way (never below 0),
+    // maybe one more, and a critical adds half the stat; `apply_damage` then takes the armor off (not below 1)
+    let raw = a.damage;
+    if (hit && a.spread > 0) {
+      const up = this.random() < 0.5;
+      const offset = Math.floor(this.random() * ((up ? a.spread : Math.min(a.spread, a.damage)) + 1));
+      raw += up ? offset : -offset;
+    }
+    if (hit && a.plusOne > 0 && this.random() * 100 < a.plusOne) raw++;
+    if (crit) raw += Math.floor(a.damage / 2);
+    // a shot can be dodged, and a dodge shows as a miss (`Dodged` in a chain match)
+    if (hit && b.dodge > 0 && this.random() * 100 < b.dodge) hit = crit = false;
+    const damage = hit ? Math.max(1, raw - b.armor) : 0;
     const killed = hit && b.hp - damage <= 0;
     const cover = !hit && this.map.props.find((p) =>
       this.map.health(p.id) > 0 && (p.covers ?? (p.cover ? [p.cover] : [])).some(cell =>

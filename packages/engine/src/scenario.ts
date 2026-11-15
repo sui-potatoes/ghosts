@@ -5,8 +5,36 @@ import { koraPlan } from "./district-plan.ts";
 import type { Role } from "./game.ts";
 import type { Cell, MapPlan } from "./map.ts";
 
-/** One unit as a scenario places it; combat stats follow from the role. */
+/**
+ * What a unit carries, by catalog id (`@ghosts/squad/catalog`): the same loadout a
+ * recruit has, so its stats are the ones the contract assembles for it.
+ */
+export interface Kit {
+  primary: string | null;
+  armor: string | null;
+  utility?: string | null;
+  /** Fittings by slot, as a recruit's `attachments`. */
+  attachments?: Partial<Record<"clip" | "stock" | "laser" | "scope", string>>;
+  /** A rank by name; a Rookie when absent. */
+  rank?: string;
+}
+
+/**
+ * The plain loadout of a hostile by role, Rookies all: the rifleman a Standard
+ * Rifle in light armor, the marksman a Sharpshooter Rifle, the heavy a Standard
+ * Rifle in medium armor. A unit's own `kit` replaces its role's.
+ */
+export const roleKits: Record<Role, Kit> = {
+  ASSAULT: { primary: "mx4", armor: "spectre" },
+  RECON: { primary: "srs9", armor: "spectre" },
+  HEAVY: { primary: "mx4", armor: "nyx-mid" },
+  SPECIALIST: { primary: "mx4", armor: "spectre" },
+};
+
+/** One unit as a scenario places it; combat stats follow from the role (hostiles: from `kit`). */
 export interface UnitSpec {
+  /** The hostile's loadout, when not its role's (`roleKits`). */
+  kit?: Kit;
   id: string;
   name: string;
   full: string;

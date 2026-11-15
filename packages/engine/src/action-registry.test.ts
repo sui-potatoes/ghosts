@@ -119,11 +119,14 @@ test("demo units carry what their loadout gives, like chain units", () => {
   const recruit = (id: string, primary: string | null, utility: string | null) =>
     ({ id, equipment: { primary, sidearm: "k12", armor: null, utility } }) as never;
   const loadouts = deploymentLoadouts([recruit(a.id, null, "frag"), recruit(b.id, "mx4", null)], game.units, blackRain);
-  assert.deepEqual(loadouts.get(a.id)!.map((x) => x.kind), ["Move", "Grenade", "Hunker", "Secure"]);
-  assert.deepEqual(loadouts.get(a.id)!.find((x) => x.kind === "Grenade"), { kind: "Grenade", uses: 1 });
-  assert.ok(!loadouts.get(b.id)!.some((x) => x.kind === "Grenade"), "no frag, no grenade");
-  assert.ok(loadouts.get(b.id)!.some((x) => x.kind === "Attack"));
-  assert.ok(![...loadouts.keys()].some((id) => game.unit(id)!.enemy), "hostiles keep theirs");
+  assert.deepEqual(loadouts.get(a.id)!.actions.map((x) => x.kind), ["Move", "Grenade", "Hunker", "Secure"]);
+  assert.deepEqual(loadouts.get(a.id)!.actions.find((x) => x.kind === "Grenade"), { kind: "Grenade", uses: 1 });
+  assert.ok(!loadouts.get(b.id)!.actions.some((x) => x.kind === "Grenade"), "no frag, no grenade");
+  assert.ok(loadouts.get(b.id)!.actions.some((x) => x.kind === "Attack"));
+  for (const foe of game.enemies) {
+    // hostiles are built from their kit too, with the orders of a chain unit and none of the demo's
+    assert.deepEqual(loadouts.get(foe.id)!.actions.map((x) => x.kind), ["Move", "Attack", "Reload"]);
+  }
 });
 
 test("limited uses go down with each throw and refuse at zero", () => {

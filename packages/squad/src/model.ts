@@ -10,6 +10,7 @@ import {
   SLOTS,
   itemById,
 } from "./catalog.ts";
+import { RANKS } from "./stats.ts";
 import { normalize, presets, fromPreset } from "./appearance/editor-state.js";
 import { schema } from "./appearance/schema.ts";
 import type {
@@ -201,6 +202,8 @@ export function restoreSquad(input: unknown): SquadState {
       ...r,
       appearance: normalize(r.appearance, schema),
     });
+    // a rank is kept only as the chain names it
+    if (!RANKS.includes(r.rank as never)) delete result.recruits.at(-1)!.rank;
     for (const slot of SLOTS)
       if (r.equipment?.[slot]) {
         const item = EQUIPMENT.find(

@@ -35,8 +35,8 @@ export class Session {
   /** The controller's radial action menu is open, and its highlighted entry. */
   wheel = false;
   wheelIndex = 0;
-  /** The demo's actions per ally, from the deployed loadout; reapplied on every reset. Empty in a chain match. */
-  loadouts = new Map<string, import("./action-registry").UnitAction[]>();
+  /** The demo's actions and numbers per ally, from the deployed loadout; reapplied on every reset. Empty in a chain match. */
+  loadouts = new Map<string, import("./squad-bridge").Loadout>();
   /** Portrait data URLs by ally id, rendered once the scene is warm. */
   readonly portraits = new Map<string, string>();
   state: "loading" | "ready" | "failed" = "loading";

@@ -113,6 +113,7 @@ export function toLocalRecruits(
                 armor: r.armor ? armorModel(r.armor) : null,
                 utility: r.utilities[0] ? (utilityModel(r.utilities[0]) ?? null) : null,
             },
+            rank: r.rank.$kind,
             attachments: attachmentsOf(r.weapon),
             ...(r.weapon && skins[r.weapon.id] ? { weaponSkin: skins[r.weapon.id] } : {}),
         };

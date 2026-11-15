@@ -27,7 +27,7 @@ import {
 } from "../action-registry";
 import { action, cancelTargeting, deselect, endTurn, fire, pick, select, throwGrenade } from "../actions";
 import { runCombatAction } from "../controls";
-import { distance, weapons, type Unit, type UnitOrder } from "../game";
+import { distance, weaponName, type Unit, type UnitOrder } from "../game";
 import { padActive, padGlyph, padKind, subscribePad, type PadButton } from "../gamepad";
 import { pad2 } from "../html";
 import type { CombatAction, PadBindable } from "../keys";
@@ -381,7 +381,7 @@ export function UnitPanel() {
           )}
         </dl>
         <p className="hud-unit-stats">
-          <span>{armed ? weapons[u.weapon].label : "Unarmed"}</span>
+          <span>{armed ? weaponName(u) : "Unarmed"}</span>
           <span data-shift={changed("aim", u.aim)}>AIM {stats.aim}</span>
           <span data-shift={changed("mobility", u.mobility)}>MOB {stats.mobility}</span>
           <span data-shift={changed("armor", u.armor)}>ARM {stats.armor}</span>

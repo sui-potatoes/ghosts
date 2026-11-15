@@ -17,6 +17,7 @@ export { blackRain, type Scenario, type UnitSpec } from "./scenario";
 export { scenarioById, scenarios } from "./scenarios";
 export { paperTrail } from "./office/scenario";
 export { OfficeAssets, officeCatalog, officeFinishes, type OfficeKind, type OfficeFinish } from "./office/assets";
+export { deployedIntel } from "./squad-bridge";
 export { localDriver, type DriverFactory, type EncounterDriver } from "./driver";
 export type { Command, GameEvent } from "./events";
 export { replayEncounter, type Encounter as EncounterRules, type UnitOrder } from "./game";
