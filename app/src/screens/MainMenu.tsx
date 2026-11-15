@@ -26,8 +26,7 @@ import { useInstall } from "../install";
 import { requestSignIn } from "../signIn";
 import { CLASSIC_TITLE } from "../classicTitle";
 import MainMenuClassic from "./MainMenuClassic";
-
-const SOURCE = "https://github.com/sui-potatoes/ghosts";
+import { SOURCE_URL as SOURCE } from "../reportIssue";
 
 export default function MainMenu() {
     return CLASSIC_TITLE ? <MainMenuClassic /> : <Title />;

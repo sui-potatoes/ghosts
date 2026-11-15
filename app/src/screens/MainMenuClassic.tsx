@@ -14,8 +14,7 @@ import { useFitScale } from "../hooks/useFitScale";
 import { useMenuNav } from "../hooks/useMenuNav";
 import { useInstall } from "../install";
 import { requestSignIn } from "../signIn";
-
-const SOURCE = "https://github.com/sui-potatoes/ghosts";
+import { SOURCE_URL as SOURCE } from "../reportIssue";
 
 type Entry = {
     label: string;

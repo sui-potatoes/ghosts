@@ -3,6 +3,8 @@
 
 import { Component, type ErrorInfo, type ReactNode } from "react";
 
+import { issueUrl } from "../reportIssue";
+
 type Props = {
     children: ReactNode;
     /** Where it sits, for the log and the copied report. */
@@ -15,8 +17,8 @@ type State = { error: Error | null; componentStack: string };
 
 /**
  * Catches a render throw below it and shows what broke in place of a blank
- * page: the message, the stack, a report to copy, Reload and Back to menu.
- * Nothing is sent anywhere; the details stay on the device unless copied.
+ * page: the message, the stack, a report to copy, Reload, Back to menu and a prefilled GitHub issue link.
+ * Nothing is sent anywhere; the report link only opens GitHub when followed.
  */
 export class ErrorBoundary extends Component<Props, State> {
     state: State = { error: null, componentStack: "" };
@@ -64,6 +66,15 @@ function CrashScreen(props: {
     const { scope, fullScreen, error, componentStack } = props;
     const text = report(scope, error, componentStack);
 
+    const issue = issueUrl({
+        error,
+        componentStack,
+        pathname: location.pathname,
+        commit: __COMMIT__,
+        userAgent: navigator.userAgent,
+        viewport: `${innerWidth}x${innerHeight}`,
+    });
+
     async function copy(button: HTMLButtonElement) {
         const label = button.textContent;
         try {
@@ -110,6 +121,9 @@ function CrashScreen(props: {
                     <button type="button" className="btn" onClick={() => location.assign("/")}>
                         Back to menu
                     </button>
+                    <a className="btn" href={issue} target="_blank" rel="noopener noreferrer">
+                        Report on GitHub
+                    </a>
                 </div>
             </div>
         </main>
