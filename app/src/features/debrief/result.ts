@@ -288,3 +288,15 @@ export function deployedOf<R extends { objectId: string; leader: string }>(
         (r) => r.leader === leader && (alive.includes(r.objectId) || fallen.includes(r.objectId)),
     );
 }
+
+/**
+ * The rank labels a survivor's plate shows: the rank going in while a
+ * promotion is still being swapped in, otherwise the one rank they have now.
+ * Never both: the final state is this, not an animation's end.
+ */
+export function rankLabels(
+    plate: Extract<Plate, { kind: "home" }>,
+    swapping: boolean,
+): [rank: string] {
+    return [plate.promoted && swapping ? plate.rankBefore : plate.rankAfter];
+}

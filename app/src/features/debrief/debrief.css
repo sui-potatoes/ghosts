@@ -129,38 +129,22 @@
     }
 }
 
-/* A promotion: the old insignia gives way to the new once the bar has filled. */
+/* A promotion: the old insignia stands while the bar fills, then is replaced
+   (a cut, in the DOM: see `RankLine`); never two ranks at once. */
 .dbf-rank-swap {
     display: grid;
     justify-items: center;
 }
 
 .dbf-rank-swap > span {
-    grid-area: 1 / 1;
     display: inline-flex;
     align-items: center;
     gap: calc(var(--u) * 1.5);
 }
 
 [data-promoted] .dbf-rank-now {
+    /* The rank-up treatment is a colour, so it holds with no animation running. */
     color: var(--accent-color);
-    animation: dbf-fade-in 280ms 1100ms both;
-}
-
-.dbf-rank-was {
-    animation: dbf-fade-out 200ms 1050ms both;
-}
-
-@keyframes dbf-fade-in {
-    from {
-        opacity: 0;
-    }
-}
-
-@keyframes dbf-fade-out {
-    to {
-        opacity: 0;
-    }
 }
 
 @keyframes dbf-settle {
@@ -170,23 +154,14 @@
 }
 
 .sqv-diorama[data-instant] .dbf-xp-gain,
-.sqv-diorama[data-instant] .dbf-rank-now,
 .sqv-diorama[data-instant] .sqv-plate-engraved[data-kia] {
     animation: none;
 }
 
-.sqv-diorama[data-instant] .dbf-rank-was {
-    display: none;
-}
-
 @media (prefers-reduced-motion: reduce) {
     .dbf-xp-gain,
-    .dbf-rank-now,
     .sqv-plate-engraved[data-kia] {
         animation: none !important;
-    }
-    .dbf-rank-was {
-        display: none;
     }
 }
 

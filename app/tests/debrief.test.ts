@@ -9,6 +9,7 @@ import {
     deployedOf,
     fallTurns,
     promotionBonus,
+    rankLabels,
     replacementFor,
     xpBand,
     type MatchResult,
@@ -280,4 +281,21 @@ test("hiring waits for the wrap-up and counts what the Account holds", () => {
         call: "hire_recruits",
         count: 2,
     });
+});
+
+test("a promoted survivor's plate settles on one rank label, the new one", () => {
+    const d = debriefOf(
+        result({ squad: [{ objectId: "0xc", name: "AVI", rank: "Sergeant", xp: 24 }] }),
+    );
+    const p = d.plates[0];
+    assert.ok(p.kind === "home" && p.promoted);
+    // played through: the swap ran and ended; skipped / reduced motion: no swap at all
+    assert.deepEqual(rankLabels(p, true), ["Sergeant"]);
+    assert.deepEqual(rankLabels(p, false), ["Lieutenant"]);
+});
+
+test("an unpromoted survivor shows their rank whether or not a swap runs", () => {
+    const p = debriefOf(result({})).plates[0];
+    assert.ok(p.kind === "home" && !p.promoted);
+    assert.deepEqual(rankLabels(p, true), rankLabels(p, false));
 });

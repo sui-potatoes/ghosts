@@ -33,6 +33,7 @@ import type { Anchor } from "../squad-view/podium-scene";
 import { Podium, PodiumCanvas } from "../squad-view/podiums";
 import {
     promotionBonus,
+    rankLabels,
     type Debrief as DebriefData,
     type Plate,
     type Replacement,
@@ -245,7 +246,7 @@ export function DebriefView({
                         commands={podiumCommands(i)}
                         directions={inspecting === i ? turnBy : undefined}
                     >
-                        <ResultPlate plate={plate} done={i < resolved} />
+                        <ResultPlate plate={plate} done={i < resolved} instant={instant} />
                     </Podium>
                 ))}
                 {revealing ? (
@@ -317,7 +318,7 @@ function plateHint(plate: Plate, done: boolean): string | undefined {
 }
 
 /** A podium's engraved plate: as deployed until it resolves, then the result. */
-function ResultPlate({ plate, done }: { plate: Plate; done: boolean }) {
+function ResultPlate({ plate, done, instant }: { plate: Plate; done: boolean; instant: boolean }) {
     if (plate.kind === "vacant")
         return (
             <div className="sqv-plate-engraved" data-vacant>
@@ -354,18 +355,7 @@ function ResultPlate({ plate, done }: { plate: Plate; done: boolean }) {
             <span className="sqv-plate-head">
                 <span className="sqv-plate-name">{plate.name}</span>
             </span>
-            <span className="sqv-plate-line dbf-rank-swap">
-                {plate.promoted && (
-                    <span className="dbf-rank-was">
-                        <Icon name={rankIcon(plate.rankBefore)} size={12} />
-                        {plate.rankBefore}
-                    </span>
-                )}
-                <span className="dbf-rank-now">
-                    <Icon name={rankIcon(plate.rankAfter)} size={12} />
-                    {plate.rankAfter}
-                </span>
-            </span>
+            <RankLine plate={plate} instant={instant} />
             {plate.gained === null ? null : band ? (
                 <span
                     className="dbf-xp"
@@ -435,5 +425,40 @@ function Plaque({
         >
             {label}
         </button>
+    );
+}
+
+/** How long the old insignia stands on a promoted plate while the bar fills (ms). */
+const SWAP_AT = 1100;
+
+/**
+ * A survivor's rank line. A promotion shows the old rank while the bar fills,
+ * then cuts to the new one (a timer in state, so the final state never rests
+ * on an animation event); skipped, instant or reduced motion shows the new
+ * rank at once.
+ */
+function RankLine({
+    plate,
+    instant,
+}: {
+    plate: Extract<Plate, { kind: "home" }>;
+    instant: boolean;
+}) {
+    const [swapping, setSwapping] = useState(plate.promoted && !instant && !reducedMotion());
+    useEffect(() => {
+        if (!swapping) return;
+        const timer = window.setTimeout(() => setSwapping(false), SWAP_AT);
+        return () => window.clearTimeout(timer);
+    }, [swapping]);
+    // A skip while it waits settles it too.
+    if (swapping && instant) setSwapping(false);
+    const [rank] = rankLabels(plate, swapping);
+    return (
+        <span className="sqv-plate-line dbf-rank-swap">
+            <span className={swapping ? "dbf-rank-was" : "dbf-rank-now"} key={rank}>
+                <Icon name={rankIcon(rank)} size={12} />
+                {rank}
+            </span>
+        </span>
     );
 }
