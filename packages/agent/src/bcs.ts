@@ -9,7 +9,7 @@
 
 import { bcs } from "@mysten/sui/bcs";
 
-import { TURN_LIMIT_MS } from "./rules.ts";
+import { turnLimitMs } from "./rules.ts";
 import type {
     AccountView,
     Ending,
@@ -399,7 +399,7 @@ export function decodeGame(bytes: Uint8Array, version: string): GameState {
             state.$kind === "Deploying"
                 ? Number(state.Deploying.untilMs)
                 : state.$kind === "Playing"
-                  ? Number(state.Playing.startedMs) + TURN_LIMIT_MS
+                  ? Number(state.Playing.startedMs) + turnLimitMs(game.turn)
                   : 0,
         status,
         tiles: decodeTiles(game.map),

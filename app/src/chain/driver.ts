@@ -38,7 +38,7 @@ import {
 import {
     activeSide,
     blastCells,
-    TURN_LIMIT_MS,
+    turnLimitMs,
     turnStartedAt,
     canDo,
     encodePath,
@@ -209,7 +209,7 @@ export function chainDriver({
         /** When the turn in play runs out, for the command bar's clock and its refusals. */
         const deadline = (game: ChainGame) => {
             const started = turnStartedAt(game);
-            rules.turnDeadline = started ? started + TURN_LIMIT_MS : undefined;
+            rules.turnDeadline = started ? started + turnLimitMs(game.turn) : undefined;
         };
         deadline(start);
 

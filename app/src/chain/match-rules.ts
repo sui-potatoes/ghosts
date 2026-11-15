@@ -15,6 +15,16 @@ import type { ChainGame, ChainRecord } from "./bcs";
 /** `TURN_LIMIT_MS` in `ghosts::ghosts`: past it, a turn only takes `next_turn`. */
 export const TURN_LIMIT_MS = 90_000;
 
+/**
+ * `FIRST_TURN_MS` in `ghosts::ghosts`: the first turn lasts longer, as the scene is
+ * still loading. The deployed package has no such constant yet and gives the first
+ * turn `TURN_LIMIT_MS` too: set this to 120_000 only once a package with it is live.
+ */
+export const FIRST_TURN_MS = TURN_LIMIT_MS;
+
+/** How long turn number `turn` lasts; `turn_limit` in `ghosts::ghosts`. */
+export const turnLimitMs = (turn: number) => (turn === 0 ? FIRST_TURN_MS : TURN_LIMIT_MS);
+
 /** `MAX_MISSED_TURNS` in `ghosts::ghosts`: this many in a row abandon the game. */
 export const MAX_MISSED_TURNS = 3;
 

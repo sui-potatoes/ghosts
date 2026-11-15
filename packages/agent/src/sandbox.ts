@@ -30,7 +30,7 @@ import {
     MAX_TURNS,
     parseAction,
     SUSPENSION_MS,
-    TURN_LIMIT_MS,
+    turnLimitMs,
     unitAt,
 } from "./rules.ts";
 import {
@@ -234,7 +234,7 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
         else {
             state.status = { kind: "active" };
             state.missed = [0, 0];
-            state.deadlineMs = now() + TURN_LIMIT_MS;
+            state.deadlineMs = now() + turnLimitMs(state.turn);
         }
     }
 
@@ -402,7 +402,7 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
         state.units = ended.units;
         const records: GameRecord[] = [{ kind: "next_turn", turn: state.turn }];
         if (state.turn >= MAX_TURNS) over(state, { kind: "stalemate", by: null });
-        else state.deadlineMs = now() + TURN_LIMIT_MS;
+        else state.deadlineMs = now() + turnLimitMs(state.turn);
         return records;
     }
 

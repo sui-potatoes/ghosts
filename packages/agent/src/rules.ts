@@ -53,6 +53,14 @@ export const MAX_BATCH = 8;
 
 /** `ghosts::ghosts`: how long a player has for their turn. */
 export const TURN_LIMIT_MS = 90_000;
+/**
+ * `ghosts::ghosts`: how long the first turn lasts. The deployed package has no such
+ * constant and gives the first turn `TURN_LIMIT_MS` too: set this to 120_000 only
+ * once a package with it is live.
+ */
+export const FIRST_TURN_MS = TURN_LIMIT_MS;
+/** How long turn number `turn` lasts. */
+export const turnLimitMs = (turn: number) => (turn === 0 ? FIRST_TURN_MS : TURN_LIMIT_MS);
 /** `ghosts::ghosts`: how long the players have to pick their squads once matched. */
 export const DEPLOY_LIMIT_MS = 120_000;
 /** `ghosts::account`: the squad an account can always hold for free. */

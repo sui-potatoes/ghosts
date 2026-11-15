@@ -597,15 +597,44 @@ fun test_next_turn_after_time_limit() {
     f.deploy(&mut game);
 
     // Alice's turn runs out: Bob moves the game on, and the clock starts anew
-    f.clock.set_for_testing(TURN_LIMIT_MS + 1);
+    f.clock.set_for_testing(FIRST_TURN_MS + 1);
     f.ts.next_tx(BOB);
     next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());
     assert_eq!(game.turn(), 1);
-    assert_eq!(game.turn_started_ms(), TURN_LIMIT_MS + 1);
+    assert_eq!(game.turn_started_ms(), FIRST_TURN_MS + 1);
 
     // Bob's own turn can be ended by Bob at any time
     next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());
     assert_eq!(game.turn(), 2);
+
+    ts::return_shared(game);
+    fixture.finish();
+}
+
+/// The first turn outlasts the usual limit, the later ones don't.
+#[test]
+fun test_first_turn_is_longer() {
+    use std::unit_test::assert_eq;
+    use grid::direction::down;
+
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut game = f.start();
+    f.deploy(&mut game);
+    assert_eq!(FIRST_TURN_MS, 120_000);
+    assert!(FIRST_TURN_MS > TURN_LIMIT_MS);
+
+    // past the usual limit, Alice still acts on the first turn
+    f.clock.set_for_testing(TURN_LIMIT_MS + 1);
+    move_unit(&mut game, &f.alice, &f.clock, vector[0, 3, down!()], f.ts.ctx());
+    next_turn(&mut game, &f.alice, &f.clock, f.ts.ctx());
+
+    // Bob's turn starts now and runs out after the usual limit only
+    f.clock.set_for_testing(TURN_LIMIT_MS + 1 + TURN_LIMIT_MS + 1);
+    f.ts.next_tx(ALICE);
+    next_turn(&mut game, &f.alice, &f.clock, f.ts.ctx());
+    assert_eq!(game.turn(), 2);
+    assert_eq!(game.missed(1), 1);
 
     ts::return_shared(game);
     fixture.finish();
@@ -618,7 +647,7 @@ fun test_next_turn_of_running_turn_fail() {
     let mut game = f.start();
     f.deploy(&mut game);
 
-    f.clock.set_for_testing(TURN_LIMIT_MS);
+    f.clock.set_for_testing(FIRST_TURN_MS);
     f.ts.next_tx(BOB);
     next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());
 
@@ -634,7 +663,7 @@ fun test_act_at_time_limit() {
     let mut game = f.start();
     f.deploy(&mut game);
 
-    f.clock.set_for_testing(TURN_LIMIT_MS);
+    f.clock.set_for_testing(FIRST_TURN_MS);
     move_unit(&mut game, &f.alice, &f.clock, vector[0, 3, down!()], f.ts.ctx());
 
     ts::return_shared(game);
@@ -648,7 +677,7 @@ fun test_order_after_time_limit_fail() {
     let mut game = f.start();
     f.deploy(&mut game);
 
-    f.clock.set_for_testing(TURN_LIMIT_MS + 1);
+    f.clock.set_for_testing(FIRST_TURN_MS + 1);
     perform_reload(&mut game, &f.alice, &f.clock, 0, 3, f.ts.ctx());
 
     abort
@@ -1042,7 +1071,7 @@ fun test_missed_turns_abandon_the_game() {
     // Alice has gone quiet: Bob moves past her turn and ends his own, three times
     let mut now = 0u64;
     MAX_MISSED_TURNS.do!(|_| {
-        now = now + TURN_LIMIT_MS + 1;
+        now = now + FIRST_TURN_MS + 1;
         f.clock.set_for_testing(now);
         f.ts.next_tx(BOB);
         next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());
@@ -1074,7 +1103,7 @@ fun test_acting_resets_missed_turns() {
     f.deploy(&mut game);
 
     // Alice misses one, and is back for the next
-    let mut now = TURN_LIMIT_MS + 1;
+    let mut now = FIRST_TURN_MS + 1;
     f.clock.set_for_testing(now);
     f.ts.next_tx(BOB);
     next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());

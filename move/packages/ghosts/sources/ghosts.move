@@ -10,7 +10,8 @@
 /// until `accept_seat` puts it into the game: before anything else, by anyone. A
 /// player is their `Account` ID throughout; every call takes the `Account`, and
 /// all but accepting a seat check the sender controls it. Turns last
-/// `TURN_LIMIT_MS`, and first both get `DEPLOY_LIMIT_MS` to pick their squads, then
+/// `TURN_LIMIT_MS`, the first one `FIRST_TURN_MS` as the scene is still loading,
+/// and first both get `DEPLOY_LIMIT_MS` to pick their squads, then
 /// they take turns. A player who runs out of time cannot act anymore, and any
 /// player can move the game on.
 ///
@@ -81,6 +82,9 @@ const NO_LIMIT: u64 = 18_446_744_073_709_551_615;
 const DEPLOY_LIMIT_MS: u64 = 120_000;
 /// How long a player has for their turn.
 const TURN_LIMIT_MS: u64 = 90_000;
+/// How long the first turn lasts: longer, as the models and the scene are still
+/// loading when it starts.
+const FIRST_TURN_MS: u64 = 120_000;
 /// How long a player cannot search for a game after misbehaving. Kept short while
 /// the game is in testing.
 const SUSPENSION_MS: u64 = 60_000;
@@ -464,7 +468,7 @@ entry fun next_turn(game: &mut Game, acc: &Account, clock: &Clock, ctx: &mut TxC
             if (side == active) {
                 *&mut missed[active] = 0;
             } else {
-                assert!(now - *started_ms > TURN_LIMIT_MS, ETurnNotExpired);
+                assert!(now - *started_ms > turn_limit(game.turn), ETurnNotExpired);
                 *&mut missed[active] = missed[active] + 1;
             };
             *missed
@@ -545,6 +549,11 @@ fun release(game: &Game, acc: &mut Account) {
     if (acc.playing() == option::some(object::id(game))) acc.clear_search();
 }
 
+/// How long turn number `turn` lasts: the first one is longer than the rest.
+fun turn_limit(turn: u16): u64 {
+    if (turn == 0) FIRST_TURN_MS else TURN_LIMIT_MS
+}
+
 /// The side whose turn it is.
 fun active_side(game: &Game): u64 {
     (game.turn as u64) % game.players.length()
@@ -618,7 +627,7 @@ fun begin_turn_action(game: &mut Game, acc: &Account, clock: &Clock, ctx: &mut T
     match (&mut game.state) {
         State::Playing { started_ms, missed } => {
             assert!(side == active, ENotYourTurn);
-            assert!(clock.timestamp_ms() - *started_ms <= TURN_LIMIT_MS, ETurnExpired);
+            assert!(clock.timestamp_ms() - *started_ms <= turn_limit(game.turn), ETurnExpired);
             *&mut missed[side] = 0;
         },
         State::Deploying { .. } => abort EStillDeploying,

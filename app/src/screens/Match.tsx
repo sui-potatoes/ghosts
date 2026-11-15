@@ -45,7 +45,7 @@ import {
     squadOf,
     squadSize,
     turnStartedAt,
-    TURN_LIMIT_MS,
+    turnLimitMs,
     unitsOnMap,
     type Outcome,
 } from "../chain/match-rules";
@@ -261,7 +261,7 @@ function TurnClock({
     accountId: string;
     action: Action;
 }) {
-    const remaining = useRemaining(turnStartedAt(game) + TURN_LIMIT_MS);
+    const remaining = useRemaining(turnStartedAt(game) + turnLimitMs(game.turn));
     const mine = activeSide(game) === side;
     const [missed, theirMissed] = [missedTurns(game, side), missedTurns(game, 1 - side)];
     const lastChance = missed === MAX_MISSED_TURNS - 1;

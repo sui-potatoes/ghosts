@@ -23,6 +23,7 @@ import {
     MAX_MISSED_TURNS,
     MAX_TURNS,
     TURN_LIMIT_MS,
+    FIRST_TURN_MS,
 } from "./rules.ts";
 import { ActionError } from "./types.ts";
 
@@ -40,7 +41,7 @@ per match: range ${GRENADE_RANGE}, ${GRENADE_DAMAGE} damage in a diamond of radi
 They can't be dodged, only walls block the throw, and they destroy cover.
 WINNING: eliminate the enemy squad. A game still going at turn ${MAX_TURNS} is a draw. Fallen recruits
 are gone for good.
-CLOCK: squads deploy within ${DEPLOY_LIMIT_MS / 1000}s and each turn lasts ${TURN_LIMIT_MS / 1000}s. Think fast. Once your turn runs out only
+CLOCK: squads deploy within ${DEPLOY_LIMIT_MS / 1000}s and each turn lasts ${TURN_LIMIT_MS / 1000}s${FIRST_TURN_MS !== TURN_LIMIT_MS ? ` (the first, ${FIRST_TURN_MS / 1000}s)` : ""}. Think fast. Once your turn runs out only
 next_turn is open. Once the opponent's runs out, you can send next_turn to take your turn. That
 counts as a miss for them, and ${MAX_MISSED_TURNS} misses in a row lose the game. Passing your own turn or acting clears
 your count. Past the deployment time, next_turn starts the game, and a side that never deployed
