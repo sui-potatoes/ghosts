@@ -40,8 +40,10 @@ test("picking follows skeletal deformation even when cached bounds describe an o
   for (let i = 0; i < count; i++) weights[i * 4] = 1;
   geometry.setAttribute("skinWeight", new T.Float32BufferAttribute(weights, 4));
   const mesh = new T.SkinnedMesh(geometry, new T.MeshBasicMaterial());
+  // The bone sits where the body is, as a joint does: the skinned bounds follow the bones.
   const bone = new T.Bone();
-  mesh.add(bone); mesh.bind(new T.Skeleton([bone]));
+  bone.position.y = 1.4;
+  mesh.add(bone); mesh.updateMatrixWorld(true); mesh.bind(new T.Skeleton([bone]));
   mesh.computeBoundingBox(); mesh.computeBoundingSphere();
   bone.position.x = 3;
   const root = new T.Group(); root.add(mesh);
