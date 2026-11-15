@@ -18,7 +18,9 @@ import {
     newLevel,
     officeFinishes,
     placementsAt,
+    presetIssues,
     replacementsFor,
+    toPreset,
     swapAsset,
     interiorPreset,
     timePresets,
@@ -464,7 +466,18 @@ export default function Editor() {
         commit({ ...levelRef.current, lighting: { ...levelRef.current.lighting, ...patch } });
 
     const doExport = () => {
-        const data = JSON.stringify(exportLevel(levelRef.current), null, 2);
+        // The file also carries the chain's view: Map bytes and spawn positions as a
+        // preset would hold them, plus what the contract would reject. The draft in
+        // localStorage stays without it: re-encoding the grid on every edit is waste.
+        const preset = toPreset(levelRef.current);
+        const chain = {
+            rows: preset.rows,
+            cols: preset.cols,
+            map: Array.from(preset.bytes, (b) => b.toString(16).padStart(2, "0")).join(""),
+            positions: preset.positions,
+            issues: preset.issues,
+        };
+        const data = JSON.stringify({ ...exportLevel(levelRef.current), chain }, null, 2);
         const name =
             levelRef.current.name
                 .toLowerCase()
@@ -497,6 +510,10 @@ export default function Editor() {
         });
     };
 
+    const chainErrors = useMemo(
+        () => presetIssues(level).filter((issue) => issue.level === "error"),
+        [level],
+    );
     const lighting = level.lighting;
     const preset = lighting.time === "interior" ? interiorPreset : timePresets[lighting.time];
     const brushSpec = assetByUid(brush) ?? floorByUid(brush);
@@ -720,6 +737,11 @@ export default function Editor() {
                             {level.spawns.length} deploy ·{" "}
                             {level.objective ? "objective" : "no objective"}
                         </span>
+                        {chainErrors.length > 0 && (
+                            <span className="text-warn">
+                                Not playable on chain: {chainErrors.map((i) => i.text).join(" · ")}
+                            </span>
+                        )}
                         <span>
                             {hover ? `cell ${hover.cell[0]}, ${hover.cell[1]}` : "—"}
                             {tool === "place" && brushSpec ? ` · ${brushSpec.name}` : ""}

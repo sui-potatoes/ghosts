@@ -18,6 +18,9 @@ export {
   type FloorTile, type Level, type LevelExport, type LevelLighting, type LightSource,
   type MoveMapExport, type MoveTile, type Placement, type Turn,
 } from "./level.ts";
+export {
+  MAX_CHAIN_SIDE, MAX_CHAIN_TILES, encodeMap, presetIssues, toPreset, type PresetExport, type PresetIssue,
+} from "./preset.ts";
 export { demoLevels, levelFromPlan, levelFromScenario, type FloorZone, type PlanExtras } from "./from-plan.ts";
 export { officeFinishes, type OfficeFinish } from "../office/catalog.ts";
 export { timePresets, type TimeOfDay } from "../scene-weather.ts";
