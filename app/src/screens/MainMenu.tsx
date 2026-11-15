@@ -20,6 +20,7 @@ import { useNavigate } from "react-router-dom";
 import { SEARCH_TIMEOUT_MS, useMatchSearch } from "../chain";
 import { NETWORK } from "../constants";
 import { TitleScreen, type TitleData, type TitleOps } from "../features/main-menu/TitleScreen";
+import { requestFind } from "../features/find-match/model";
 import type { RowId } from "../features/main-menu/model";
 import { usePlayerName } from "../hooks/usePlayerName";
 import { useInstall } from "../install";
@@ -81,7 +82,10 @@ function Title() {
                 case "match":
                     if (match.playing) return navigate("/match");
                     if (match.searching) return match.cancel();
-                    return account ? match.find() : requestSignIn();
+                    if (!account) return requestSignIn();
+                    // The screen does the slow part (lookups, the queue transaction).
+                    requestFind();
+                    return navigate("/find");
                 case "headquarters":
                     return navigate("/headquarters");
                 case "editor":

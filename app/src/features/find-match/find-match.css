@@ -1,0 +1,33 @@
+/* The find-match screen: the pending mark above the action. */
+
+.gui-find-panel .gui-panel-body {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: calc(var(--u) * 4);
+}
+
+.gui-find-mark {
+    align-self: center;
+    width: calc(var(--u) * 8);
+    height: calc(var(--u) * 8);
+    border: 1px solid var(--disabled-color);
+    border-top-color: var(--accent-color);
+    border-radius: 50%;
+}
+
+.gui-find-mark[data-pending] {
+    animation: gui-find-spin 1.1s linear infinite;
+}
+
+@keyframes gui-find-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .gui-find-mark[data-pending] {
+        animation-duration: 3s;
+    }
+}

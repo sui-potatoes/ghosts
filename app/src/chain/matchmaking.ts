@@ -165,6 +165,7 @@ export function useMatchSearch() {
     const action = useGhostsAction();
     const busy = useSaving();
     const [hiring, setHiring] = useState(false);
+    const [lookupError, setLookupError] = useState<string | null>(null);
     const { gameId, seat } = useCurrentGame();
     const search = account?.state;
 
@@ -215,8 +216,14 @@ export function useMatchSearch() {
         playing: gameId,
         suspendedUntilMs: search?.$kind === "Suspended" ? Number(search.Suspended.untilMs) : 0,
         busy,
-        error: action.error,
-        find: () => void find().catch(() => {}),
+        error: action.error || lookupError,
+        find: () => {
+            setLookupError(null);
+            void find().catch((e: unknown) => {
+                setHiring(false);
+                setLookupError(e instanceof Error ? e.message : "Could not reach the network.");
+            });
+        },
         cancel: () => send(cancelSearchTx),
     };
 }

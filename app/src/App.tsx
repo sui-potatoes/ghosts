@@ -10,6 +10,7 @@ import { SignInDialog } from "./features/dialogs/SignInDialog";
 import MainMenu from "./screens/MainMenu";
 // The title before the shared interface language, kept until the new one is signed off.
 const MainMenuClassic = lazy(() => import("./screens/MainMenuClassic"));
+import FindMatch from "./screens/FindMatch";
 import Settings from "./screens/Settings";
 import SettingsClassic from "./screens/SettingsClassic";
 // Headquarters brings the squad's three.js studio; load it with the route,
@@ -54,6 +55,7 @@ function MenuMusic() {
     const menu =
         pathname === "/" ||
         pathname === "/menu-classic" ||
+        pathname === "/find" ||
         pathname.startsWith("/settings") ||
         pathname.startsWith("/headquarters");
     useEffect(() => {
@@ -121,6 +123,7 @@ export function App() {
                         </Suspense>
                     }
                 />
+                <Route path="/find" element={<FindMatch />} />
                 <Route
                     path="/match"
                     element={

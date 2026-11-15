@@ -43,13 +43,13 @@ test("signed out: a Sign In row after the demos; Find Match asks to sign in firs
     assert.equal(match.locked, undefined);
 });
 
-test("signed in: no Sign In row; Find Match queues, and a click only selects it", () => {
+test("signed in: no Sign In row; Find Match opens its screen on the first click", () => {
     const rows = menuRows(state());
     assert.ok(!rows.some((r) => r.id === "sign-in"));
     const match = rows.find((r) => r.id === "match")!;
     assert.equal(match.verb, "Find match");
     assert.equal(match.primary, true);
-    assert.equal(match.instant, false);
+    assert.equal(match.instant, true);
 });
 
 test("the one match row follows the search", () => {

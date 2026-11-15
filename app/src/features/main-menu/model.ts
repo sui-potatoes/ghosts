@@ -53,9 +53,10 @@ export type MenuRow = {
     /** The primary weighs heaviest in the bar. */
     primary?: boolean;
     /**
-     * A click runs it at once: opening a screen or a dialog. Off for a row whose
-     * confirm sends a transaction (queue, leave the queue): the cursor follows
-     * the pointer onto it, a click arms it and a second click commits.
+     * A click runs it at once: opening a screen or a dialog (Find Match opens
+     * its screen, which queues the squad). Off for a row whose confirm sends a
+     * transaction itself (leave the queue): the cursor follows the pointer onto
+     * it, a click arms it and a second click commits.
      */
     instant: boolean;
 };
@@ -116,7 +117,7 @@ export function matchRow(state: MenuState): MenuRow {
         hint: "Queue the squad against another player",
         verb: "Find match",
         primary: true,
-        instant: false,
+        instant: true,
     };
 }
 
