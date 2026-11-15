@@ -79,8 +79,8 @@ import { SettingsFrame, useSettingsContext, type Line } from "./SettingsView";
 const ONE = "minmax(0, 640px) minmax(0, 1fr)";
 /** Two columns side by side from the left edge. */
 const TWO = "minmax(0, 520px) minmax(0, 560px) minmax(0, 1fr)";
-/** Rows beside a wide visual, from the left edge. */
-const WIDE = "minmax(0, 460px) minmax(0, 760px) minmax(0, 1fr)";
+/** Rows beside a wide visual, from the left edge; the visual takes the rest. */
+const WIDE = "minmax(0, 460px) minmax(0, 1fr)";
 
 const CHANGE: Command = { action: "nav", label: "Change", glyph: "lr" };
 

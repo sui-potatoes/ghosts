@@ -139,6 +139,39 @@
     max-width: none;
 }
 
+/* The art is drawn in a 100-unit box, so its strokes would swell with the
+   diagram: hold them at screen widths instead (labels scale with the art). */
+.gui .gset-diagram :is(path, ellipse, rect, line, circle) {
+    vector-effect: non-scaling-stroke;
+    stroke-width: 1.5px;
+}
+.gui .gset-diagram [stroke-width="0.1"] {
+    stroke-width: 1px;
+}
+.gui .gset-diagram [stroke-width="0.3"] {
+    stroke-width: 1.25px;
+}
+
+/* Narrow portrait: the list and the diagram stack at full width and the body
+   scrolls (the column template is inline, hence the !important). */
+@media (max-width: 720px) {
+    .gui-body:has(> .gset-diagram-panel) {
+        grid-template-columns: minmax(0, 1fr) !important;
+        grid-template-rows: none;
+        grid-auto-rows: min-content;
+        overflow-y: auto;
+    }
+    .gui-body:has(> .gset-diagram-panel) > .gset-c2,
+    .gui-body:has(> .gset-diagram-panel) > .gset-c3 {
+        grid-column: 1;
+    }
+    .gset-diagram-panel .gset-diagram {
+        flex: none;
+        height: auto;
+        aspect-ratio: 3 / 2;
+    }
+}
+
 /* === Button test ==================================================== */
 
 .gset-test {
