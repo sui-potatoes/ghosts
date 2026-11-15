@@ -6,9 +6,8 @@
  * scene, an operative on each as a figurine on a lit plinth with an engraved
  * base plate (name, rank, kit, what matters in a fight), and the roster
  * recruits who are on no podium on the bench beside it. Confirm on a podium
- * picks who stands there (the figure previews the row under the cursor; a
- * recruit on another podium trades places); a bench plate swaps in with one
- * press. Deploy, the screen's primary, asks once and sends the squad.
+ * sets who stands there: None, or a recruit on no podium yet (the figure
+ * previews the row under the cursor). Nobody moves between podiums. Deploy, the screen's primary, asks once and sends the squad.
  *
  * Takes its data as props (`Match.tsx` feeds it from the `Game`), so a
  * fixture can drive it. Rules in `rules.ts`.
@@ -49,7 +48,6 @@ import {
     place,
     readLastSquad,
     squadOf,
-    swapTarget,
     weaponLabel,
     writeLastSquad,
     type Kit,
@@ -155,7 +153,6 @@ function Screen({
     const [picking, setPicking] = useState<number | null>(null);
     const [inspecting, setInspecting] = useState<number | null>(null);
     const [turn, setTurn] = useState(0);
-    const [lastPodium, setLastPodium] = useState<number | null>(null);
     const [anchors, setAnchors] = useState<Anchor[]>([]);
     const [stage, setStage] = useState<{ loading: boolean; error?: string }>({ loading: true });
 
@@ -196,7 +193,6 @@ function Screen({
     useLayoutEffect(() => store.relayout(), [store, anchors]);
     useEffect(() => {
         const at = podiumAt(focusedId);
-        if (at !== null) setLastPodium(at);
         // The cursor moving on ends the inspection (the command list it came from does not).
         if (inspecting !== null && at !== inspecting && !focusedId.startsWith("menu-")) {
             setInspecting(null);
@@ -219,10 +215,7 @@ function Screen({
     const bench = done
         ? roster.filter((r) => !shown.includes(r.objectId)).map((r) => r.objectId)
         : benchOf(rosterIds, ids);
-    const target = swapTarget(ids, lastPodium);
-    const benchFocused = focusedId.startsWith("bench-");
-    const focusIndex =
-        inspecting ?? picking ?? (benchFocused && !done ? target : podiumAt(focusedId));
+    const focusIndex = inspecting ?? picking ?? podiumAt(focusedId);
 
     const refusal = deployRefusal({
         podiums: ids,
@@ -314,7 +307,7 @@ function Screen({
 
     const podiumHint = (i: number) => {
         const id = shown[i];
-        if (!id) return done ? "Nobody deployed here" : "Vacant: this position stays empty";
+        if (!id) return done ? "Nobody deployed here" : "None: this position stays empty";
         const kit = kits.get(id)!;
         return kitHint(kit);
     };
@@ -411,10 +404,7 @@ function Screen({
                             key={i}
                             index={i}
                             anchor={anchors[i]}
-                            dim={
-                                (picking !== null && picking !== i) ||
-                                (benchFocused && !done && target !== i)
-                            }
+                            dim={picking !== null && picking !== i}
                             title={
                                 inspecting === i
                                     ? `Inspecting ${nameOf(id)}`
@@ -505,7 +495,6 @@ function Screen({
                 </span>
                 {bench.map((id) => {
                     const r = chain.get(id)!;
-                    const replaced = ids[target];
                     return (
                         <BenchPlate
                             key={id}
@@ -513,28 +502,7 @@ function Screen({
                             callsign={nameOf(id)}
                             kit={kits.get(id)!}
                             portrait={portraits[id]}
-                            hint={
-                                done
-                                    ? "Stays home this match"
-                                    : replaced
-                                      ? `Takes ${nameOf(replaced)}'s place on position ${target + 1}`
-                                      : `Onto position ${target + 1}`
-                            }
-                            commands={
-                                done
-                                    ? []
-                                    : [
-                                          {
-                                              action: "confirm",
-                                              label: replaced
-                                                  ? `Swap in for ${nameOf(replaced)}`
-                                                  : "Swap in",
-                                              tone: "primary",
-                                              deny: busy ? "Deploying the squad" : undefined,
-                                              run: () => setPodiums(place(ids, target, id)),
-                                          },
-                                      ]
-                            }
+                            hint="Stays home this match"
                         />
                     );
                 })}
@@ -611,7 +579,7 @@ function Plate({
     if (!recruit || !kit)
         return (
             <div className="sqv-plate-engraved" data-vacant>
-                <span className="sqv-plate-name">Vacant</span>
+                <span className="sqv-plate-name">None</span>
                 <span className="sqv-plate-line">Position {index + 1}</span>
             </div>
         );
@@ -661,14 +629,12 @@ function BenchPlate({
     kit,
     portrait,
     hint,
-    commands,
 }: {
     recruit: ChainRecruit;
     callsign: string;
     kit: Kit;
     portrait?: string;
     hint: string;
-    commands: Command[];
 }) {
     const rank = recruit.rank.$kind;
     const { props } = useFocusable<HTMLDivElement>({
@@ -676,9 +642,7 @@ function BenchPlate({
         group: "bench",
         title: `${recruit.metadata.name} · ${rank} · Bench`,
         hint: kit.weapon ? hint : `${hint} · Unarmed: cannot attack`,
-        commands,
-        // Swapping in is cheap and undoable: one click does it.
-        instant: true,
+        commands: [],
     });
     return (
         <div className="sqv-bench-plate" {...props}>
@@ -728,9 +692,18 @@ function RecruitPicker({
 }: PickerProps) {
     const close: Command = { action: "back", label: "Cancel", run: onClose };
     const current = podiums[index];
+    // Only recruits on no podium are on offer (the occupant of this podium is
+    // on one, so not listed; the podium itself shows them), then None.
+    const free = new Set(
+        benchOf(
+            roster.map((x) => x.objectId),
+            podiums,
+        ),
+    );
+    const unused = roster.filter((r) => free.has(r.objectId));
     return (
         <FocusScope id="squad-picker" back={close}>
-            <StartOn id={`pick-${current ?? "none"}`} />
+            <StartOn id={unused.length ? `pick-${unused[0].objectId}` : "pick-none"} />
             <div
                 className="sqv-picker gui-panel"
                 // Opposite the podium it chooses for, so the preview stays in view.
@@ -741,9 +714,7 @@ function RecruitPicker({
                 </header>
                 <div className="gui-panel-body">
                     <List label={`Position ${index + 1}`}>
-                        {roster.map((r) => {
-                            const at = podiums.indexOf(r.objectId);
-                            const here = at === index;
+                        {unused.map((r) => {
                             const armed = !!kits.get(r.objectId)?.weapon;
                             return (
                                 <ListRow
@@ -755,26 +726,15 @@ function RecruitPicker({
                                     }
                                     name={names(r.objectId)}
                                     kind={armed ? r.rank.$kind : `${r.rank.$kind} · Unarmed`}
-                                    tag={here ? "Here" : at >= 0 ? `Position ${at + 1}` : "Bench"}
-                                    tagTone={here ? "accent" : at >= 0 ? "dim" : "default"}
-                                    selected={here}
                                     title={`${r.metadata.name} · ${r.rank.$kind}`}
-                                    hint={
-                                        at >= 0 && !here
-                                            ? `Trades places with position ${index + 1}`
-                                            : kitHint(kits.get(r.objectId)!)
-                                    }
+                                    hint={kitHint(kits.get(r.objectId)!)}
                                     commands={[
-                                        ...(here
-                                            ? []
-                                            : ([
-                                                  {
-                                                      action: "confirm",
-                                                      label: at >= 0 ? "Swap" : "Place",
-                                                      tone: "primary",
-                                                      run: () => onPick(r.objectId),
-                                                  },
-                                              ] satisfies Command[])),
+                                        {
+                                            action: "confirm",
+                                            label: "Place",
+                                            tone: "primary",
+                                            run: () => onPick(r.objectId),
+                                        },
                                         close,
                                     ]}
                                 />
@@ -783,24 +743,20 @@ function RecruitPicker({
                         <ListRow
                             id="pick-none"
                             group="squad-picker"
-                            name="Leave vacant"
-                            title="Leave vacant"
+                            name="None"
+                            title="None"
                             hint={
                                 current
                                     ? `${names(current)} stays home; fewer deploy`
                                     : "The position stays empty"
                             }
                             commands={[
-                                ...(current
-                                    ? ([
-                                          {
-                                              action: "confirm",
-                                              label: "Remove",
-                                              tone: "primary",
-                                              run: () => onPick(null),
-                                          },
-                                      ] satisfies Command[])
-                                    : []),
+                                {
+                                    action: "confirm",
+                                    label: current ? "Clear" : "Keep empty",
+                                    tone: "primary",
+                                    run: () => onPick(null),
+                                },
                                 close,
                             ]}
                         />

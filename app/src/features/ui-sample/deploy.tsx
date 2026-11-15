@@ -7,8 +7,8 @@
  * with an engraved base plate: callsign, rank, role, the kit as pictograms,
  * a COST and a BASE / CUSTOM marker. The podium under the cursor steps
  * forward into its light; the rest recede. Confirm on a podium picks who
- * stands there (the figure previews the recruit under the cursor; a recruit
- * on another podium swaps). The budget is SAMPLE data (`squad-build.ts`).
+ * stands there: None, or a recruit on no podium yet (the figure previews the
+ * recruit under the cursor). Nobody moves between podiums. The budget is SAMPLE data (`squad-build.ts`).
  */
 
 import type { Recruit } from "@ghosts/squad/types";
@@ -34,6 +34,7 @@ import { Offstage, Portrait } from "../headquarters/squad/parts";
 import { gearName, ITEMS, rankIcon } from "./data";
 import type { Anchor } from "../squad-view/podium-scene";
 import { Podium, PodiumCanvas } from "../squad-view/podiums";
+import { benchOf, place } from "../squad-view/rules";
 import { ManagePreset, missingLine, NamePrompt, PresetRail } from "./preset-rail";
 import {
     add,
@@ -170,8 +171,7 @@ export function Deploy({
     const byId = (id: string | null) => roster.find((r) => r.id === id) ?? null;
     const cap = SAMPLE_CAPS.find((c) => c.id === capId) ?? SAMPLE_CAPS[0];
 
-    // While picking, the podium wears the recruit under the cursor; a recruit
-    // standing elsewhere trades places on the preview too.
+    // While picking, the podium wears the recruit under the cursor.
     const focusedId = store.node(store.focused)?.id ?? "";
     const candidate =
         picking !== null && focusedId.startsWith("pick-")
@@ -190,8 +190,6 @@ export function Deploy({
         if (previewing) return resolve(previewing, ids, inventory);
         if (picking === null || candidate === undefined) return ids;
         const id = candidate === "none" ? null : candidate;
-        const from = ids.indexOf(id);
-        if (id && from >= 0 && from !== picking) ids[from] = ids[picking];
         ids[picking] = id;
         return ids;
     }, [podiums, picking, candidate, previewing, inventory]);
@@ -304,7 +302,7 @@ export function Deploy({
         if (!recruit)
             return (
                 <div className="sqv-plate-engraved" data-vacant>
-                    <span className="sqv-plate-name">Vacant</span>
+                    <span className="sqv-plate-name">None</span>
                     <span className="sqv-plate-line">Podium {i + 1}</span>
                 </div>
             );
@@ -564,13 +562,7 @@ export function Deploy({
                         portraits={portraits}
                         rank={rank}
                         onPick={(id) => {
-                            setPodiums((list) => {
-                                const next = [...list];
-                                const from = id ? next.indexOf(id) : -1;
-                                if (from >= 0 && from !== picking) next[from] = next[picking];
-                                next[picking] = id;
-                                return next;
-                            });
+                            setPodiums((list) => place(list, picking, id));
                             setPicking(null);
                         }}
                         onClose={() => setPicking(null)}
@@ -648,18 +640,24 @@ type PickerProps = {
 function RecruitPicker({ index, roster, podiums, portraits, rank, onPick, onClose }: PickerProps) {
     const close: Command = { action: "back", label: "Cancel", run: onClose };
     const current = podiums[index];
+    // Only recruits on no podium are on offer, then None.
+    const free = new Set(
+        benchOf(
+            roster.map((r) => r.id),
+            podiums,
+        ),
+    );
+    const unused = roster.filter((r) => free.has(r.id));
     return (
         <FocusScope id="deploy-picker" back={close}>
-            <StartOn id={`pick-${current ?? "none"}`} />
+            <StartOn id={unused.length ? `pick-${unused[0].id}` : "pick-none"} />
             <div className="sqv-picker gui-panel">
                 <header className="gui-panel-head">
                     <span className="gui-panel-label">Podium {index + 1}</span>
                 </header>
                 <div className="gui-panel-body">
                     <List label={`Podium ${index + 1}`}>
-                        {roster.map((r) => {
-                            const at = podiums.indexOf(r.id);
-                            const here = at === index;
+                        {unused.map((r) => {
                             const cost = loadoutCost(loadoutOf(r));
                             return (
                                 <ListRow
@@ -669,28 +667,16 @@ function RecruitPicker({ index, roster, podiums, portraits, rank, onPick, onClos
                                     thumb={<Portrait src={portraits[r.id]} />}
                                     name={r.callsign}
                                     kind={`${rank(r.id).rank} · ${r.role}`}
-                                    tag={
-                                        here ? "Here" : at >= 0 ? `Podium ${at + 1}` : String(cost)
-                                    }
-                                    tagTone={here ? "accent" : at >= 0 ? "dim" : "default"}
-                                    selected={here}
+                                    tag={String(cost)}
                                     title={r.callsign}
-                                    hint={
-                                        at >= 0 && !here
-                                            ? `Trades places with podium ${index + 1}`
-                                            : `Cost ${cost}`
-                                    }
+                                    hint={`Cost ${cost}`}
                                     commands={[
-                                        ...(here
-                                            ? []
-                                            : ([
-                                                  {
-                                                      action: "confirm",
-                                                      label: at >= 0 ? "Swap" : "Place",
-                                                      tone: "primary",
-                                                      run: () => onPick(r.id),
-                                                  },
-                                              ] satisfies Command[])),
+                                        {
+                                            action: "confirm",
+                                            label: "Place",
+                                            tone: "primary",
+                                            run: () => onPick(r.id),
+                                        },
                                         close,
                                     ]}
                                 />
@@ -699,24 +685,20 @@ function RecruitPicker({ index, roster, podiums, portraits, rank, onPick, onClos
                         <ListRow
                             id="pick-none"
                             group="deploy-picker"
-                            name="Leave vacant"
-                            title="Leave vacant"
+                            name="None"
+                            title="None"
                             hint={
                                 current
                                     ? "Removes the operative from the squad"
                                     : "The podium stays empty"
                             }
                             commands={[
-                                ...(current
-                                    ? ([
-                                          {
-                                              action: "confirm",
-                                              label: "Remove from squad",
-                                              tone: "danger",
-                                              run: () => onPick(null),
-                                          },
-                                      ] satisfies Command[])
-                                    : []),
+                                {
+                                    action: "confirm",
+                                    label: current ? "Clear" : "Keep empty",
+                                    tone: "primary",
+                                    run: () => onPick(null),
+                                },
                                 close,
                             ]}
                         />

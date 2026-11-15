@@ -3,7 +3,7 @@
 
 /**
  * The match's squad selection as plain functions: who stands on the podiums
- * at first, swaps and the bench, whether the squad can deploy (and why not),
+ * at first, setting a podium and the bench, whether the squad can deploy (and why not),
  * the deadline as a clock, and a recruit's kit as the base plate shows it.
  * The rules are `ghosts::ghosts::deploy_squad`'s: one to as many recruits as
  * the side has spawn positions, each once, from the account, before the
@@ -48,30 +48,23 @@ export function defaultSquad(roster: string[], podiums: number, remembered: Podi
 }
 
 /**
- * Put `id` on podium `index` (null leaves it vacant). A recruit standing on
- * another podium trades places with whoever stood here.
+ * Set podium `index` to `id`, or to nobody (null). Units never move between
+ * podiums: a recruit already standing on another podium is refused (the
+ * podiums come back as they were). Clearing a podium frees its recruit.
  */
 export function place(podiums: Podiums, index: number, id: string | null): Podiums {
+    if (id && podiums.some((p, i) => p === id && i !== index)) return podiums;
     const next = [...podiums];
-    const from = id ? next.indexOf(id) : -1;
-    if (from >= 0 && from !== index) next[from] = next[index];
     next[index] = id;
     return next;
 }
 
-/** The roster recruits on no podium, in roster order: they stay home. */
+/**
+ * The roster recruits on no podium, in roster order: they stay home, and they
+ * are the only recruits a podium's picker offers (besides None).
+ */
 export const benchOf = (roster: string[], podiums: Podiums) =>
     roster.filter((id) => !podiums.includes(id));
-
-/**
- * The podium a bench recruit swaps onto: the first vacant one, else the one
- * the cursor last stood on, else the last.
- */
-export function swapTarget(podiums: Podiums, last: number | null): number {
-    const vacant = podiums.indexOf(null);
-    if (vacant >= 0) return vacant;
-    return last !== null && last >= 0 && last < podiums.length ? last : podiums.length - 1;
-}
 
 /** The recruits deploying, in podium order. */
 export const squadOf = (podiums: Podiums) => podiums.filter((id): id is string => !!id);

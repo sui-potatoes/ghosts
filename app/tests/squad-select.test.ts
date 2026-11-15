@@ -15,7 +15,6 @@ import {
     podiumCount,
     readLastSquad,
     squadOf,
-    swapTarget,
     warningsOf,
     weaponLabel,
     writeLastSquad,
@@ -44,27 +43,48 @@ test("default squad: the last squad kept on the device, where still on the roste
     assert.deepEqual(defaultSquad(ROSTER, 3, ["0xb", "0xb", "0xc", "0xd"]), ["0xb", "0xa", "0xc"]);
 });
 
-test("place: onto a podium, trading places with a recruit standing elsewhere", () => {
+test("place: sets a podium; a recruit standing on another podium is refused", () => {
     const podiums = ["0xa", "0xb", "0xc"];
     assert.deepEqual(place(podiums, 0, "0xd"), ["0xd", "0xb", "0xc"]);
-    assert.deepEqual(place(podiums, 0, "0xc"), ["0xc", "0xb", "0xa"]);
     assert.deepEqual(place(podiums, 1, null), ["0xa", null, "0xc"]);
     assert.deepEqual(place(podiums, 1, "0xb"), podiums);
+    // no trade: 0xc stands on podium 2, so podium 0 cannot take them
+    assert.deepEqual(place(podiums, 0, "0xc"), podiums);
+    assert.deepEqual(place([null, "0xb", null], 0, "0xb"), [null, "0xb", null]);
     // the input is left as it was
     assert.deepEqual(podiums, ["0xa", "0xb", "0xc"]);
+});
+
+test("picker: None plus the recruits on no podium, with none, some or all placed", () => {
+    const options = (podiums: (string | null)[]) => ["none", ...benchOf(ROSTER, podiums)];
+    // none placed: everyone is on offer
+    assert.deepEqual(options([null, null, null]), ["none", "0xa", "0xb", "0xc", "0xd"]);
+    // some placed: those on podiums are not listed, the occupant of the edited podium included
+    assert.deepEqual(options(["0xa", null, "0xc"]), ["none", "0xb", "0xd"]);
+    // every recruit placed: just None
+    const all = ["0xa", "0xb", "0xc", "0xd"];
+    assert.deepEqual(options(all), ["none"]);
+});
+
+test("clearing a podium returns its recruit to the unused set", () => {
+    const podiums = ["0xa", "0xb", "0xc"];
+    assert.deepEqual(benchOf(ROSTER, podiums), ["0xd"]);
+    const cleared = place(podiums, 1, null);
+    assert.deepEqual(benchOf(ROSTER, cleared), ["0xb", "0xd"]);
+    // and they can be set again, on any podium
+    assert.deepEqual(place(cleared, 1, "0xd"), ["0xa", "0xd", "0xc"]);
+    assert.deepEqual(place(cleared, 1, "0xb"), podiums);
+});
+
+test("no way to reorder: the rules export nothing that swaps or moves a recruit", async () => {
+    const rules = await import("../src/features/squad-view/rules.ts");
+    assert.equal(Object.keys(rules).filter((k) => /swap|move|trade/i.test(k)).length, 0);
 });
 
 test("bench: the roster on no podium, in roster order", () => {
     assert.deepEqual(benchOf(ROSTER, ["0xa", "0xb", "0xc"]), ["0xd"]);
     assert.deepEqual(benchOf(ROSTER, ["0xa", null, "0xc"]), ["0xb", "0xd"]);
     assert.deepEqual(squadOf(["0xa", null, "0xc"]), ["0xa", "0xc"]);
-});
-
-test("swap target: a vacant podium first, then the last one the cursor stood on", () => {
-    assert.equal(swapTarget(["0xa", null, "0xc"], 2), 1);
-    assert.equal(swapTarget(["0xa", "0xb", "0xc"], 0), 0);
-    assert.equal(swapTarget(["0xa", "0xb", "0xc"], null), 2);
-    assert.equal(swapTarget(["0xa", "0xb", "0xc"], 7), 2);
 });
 
 const ready: DeployState = {
