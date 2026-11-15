@@ -10,9 +10,8 @@
  *   `[x - ⌊w/2⌋, z - ⌊d/2⌋]`, which puts the shipped demos back where they were).
  * - Rules: the scenario carries the exported Move tile grid as its `ground`, so
  *   moving, cover, sight and grenades follow `ghosts::map` (`chain-ground.ts`):
- *   low cover (crates, concrete barriers, low fences) protects but never blocks
- *   a step; glass and tall fences (barrier edges) block a step but not a shot,
- *   and protect as low cover; high cover edges and walls block both.
+ *   low cover (crates, barriers, glass panes, tall fences alike) protects but
+ *   never blocks a step; high cover edges and walls do.
  * - Scenery: every placement becomes a catalog prop the battlefield draws and
  *   breaks; indestructible stand-ins (hit points 0) stay out of the props and
  *   are drawn as static scenery by the level's view (`playtest-view.ts`). Wall
@@ -179,7 +178,7 @@ export function scenarioFromLevel(level: Level): Scenario {
           : "This level has no objective: neutralize every hostile to finish.",
       ],
       rules:
-        "Two action points per operator. Movement, cover and sight follow the exported tile grid as a chain match would: walls and unwalkable tiles cannot be entered, high cover blocks a step and a shot across its edge, glass and tall fences block a step but not a shot and protect by 25 points, low cover (concrete barriers, crates, low fences) protects by 25 points but never blocks a step. A grenade clears every cover tile within two, glass and fences included. Hunker keeps the demo's flat bonus.",
+        "Two action points per operator. Movement, cover and sight follow the exported tile grid as a chain match would: walls and unwalkable tiles cannot be entered, high cover blocks a step and a shot across its edge, low cover (barriers, crates, glass panes, tall fences) protects by 25 points but never blocks a step. A grenade clears every cover tile within two. Hunker keeps the demo's flat bonus.",
       facts: [
         ["LEVEL", name.toUpperCase()],
         ["GRID", `${level.width} × ${level.depth}`],

@@ -52,9 +52,8 @@ export interface AssetSpec {
    * Walls, glazing, fences, low-cover barriers and doors sit on cell EDGES,
    * not on cells: the placement's turn names the side of its cell (0 north,
    * 1 east, 2 south, 3 west). A `solid` edge is high cover (blocks sight and
-   * movement across it), an `obstacle` edge (glass, a tall fence) is a barrier
-   * (blocks movement across it, not sight; protects as low cover), a `cover`
-   * edge is low, and a `none` edge (a door) is a passage.
+   * movement across it), `cover` and `obstacle` edges are low, and a `none`
+   * edge (a door) is a passage.
    */
   place?: "edge";
   /** Metres the authored mesh runs along the edge; scaled to one cell. */

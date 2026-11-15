@@ -72,15 +72,9 @@ const FINISH_TONES: Record<OfficeFinish, string> = {
     sand: "#9b846a",
 };
 
-/**
- * CVR / SOL / OBS / ENT, with the seat: ·E edge, ·S surface, ·W wall mount. An obstacle on an
- * edge (glass, a tall fence) is BAR: a barrier, no step across it, shots pass.
- */
+/** CVR / SOL / OBS / ENT, with the seat: ·E edge, ·S surface, ·W wall mount. */
 function tagOf(a: AssetSpec): string {
-    const base =
-        a.place === "edge" && a.footprint === "obstacle"
-            ? "BAR"
-            : { cover: "CVR", solid: "SOL", obstacle: "OBS", none: "ENT" }[a.footprint];
+    const base = { cover: "CVR", solid: "SOL", obstacle: "OBS", none: "ENT" }[a.footprint];
     const seat =
         a.mount === "wall" ? "W" : a.mount === "surface" ? "S" : a.place === "edge" ? "E" : "";
     return seat ? `${base}·${seat}` : base;

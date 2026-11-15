@@ -8,14 +8,11 @@
  * (`[left, top, right, bottom]`: west, north, east, south), Unwalkable, Wall.
  *
  * - Moving: walls and unwalkable tiles cannot be entered; a step across an edge
- *   with high cover or a barrier (3: glass, a tall fence) on either side is
- *   refused (`check_path`); low cover never stops a step, and a Cover tile is
- *   ground to stand on.
+ *   with high cover on either side is refused (`check_path`); low cover never
+ *   stops a step, and a Cover tile is ground to stand on.
  * - Cover: the side of the target facing the shot, else the neighbour's side
- *   facing it, 25 a level (`cover_bonus`); a barrier protects as low, a wall
- *   counts as high all round.
- * - Sight: walls block, high cover on an inner edge blocks (`trace_line`); a
- *   barrier never does.
+ *   facing it, 25 a level (`cover_bonus`); a wall counts as high all round.
+ * - Sight: walls block, high cover on an inner edge blocks (`trace_line`).
  * - Grenades: only walls stop a throw, it cannot land on one, and the blast
  *   turns every Cover tile in reach to Empty (`explode`).
  *
@@ -40,10 +37,7 @@ export interface Ground {
 type Tile = readonly [row: number, col: number];
 type Sides = { left: number; top: number; right: number; bottom: number };
 
-const LOW = 1;
 const HIGH = 2;
-/** `BARRIER` in `ghosts::map`: blocks a step like high cover, protects like low, never blocks sight. */
-const BARRIER = 3;
 /** `DEFENSE_BONUS` in `ghosts::map`. */
 const DEFENSE_BONUS = 25;
 /** `GRENADE_RADIUS` in `ghosts::map`. */
@@ -75,23 +69,20 @@ export class ChainGround {
     return this.tiles[row]?.[col];
   }
 
-  /** `tile_cover`: the protection on each side of a tile; a barrier is low, a wall high all round. */
+  /** `tile_cover!`: the cover on each side of a tile; a wall is high all round. */
   private sides(tile: Tile): Sides {
     const type = this.at(tile);
     if (type?.t === "cover") {
-      const [left, top, right, bottom] = type.sides.map((v) => (v === BARRIER ? LOW : v));
+      const [left, top, right, bottom] = type.sides;
       return { left, top, right, bottom };
     }
     const level = type?.t === "wall" ? HIGH : 0;
     return { left: level, top: level, right: level, bottom: level };
   }
 
-  /** `side_cover!`: a Cover tile's side as stored; anything else has none (a wall is a wall first). */
+  /** `side_cover!`: a Cover tile's side; anything else has none (a wall is a wall first). */
   private side(tile: Tile, name: keyof Sides) {
-    const type = this.at(tile);
-    if (type?.t !== "cover") return 0;
-    const [left, top, right, bottom] = type.sides;
-    return { left, top, right, bottom }[name];
+    return this.at(tile)?.t === "cover" ? this.sides(tile)[name] : 0;
   }
 
   /** Where units may stand: anything inside but a wall or an unwalkable tile. */
@@ -100,27 +91,17 @@ export class ChainGround {
     return !tile || tile.t === "wall" || tile.t === "unwalkable" ? "blocked" : "open";
   }
 
-  /** The stored side values on either side of the edge between two neighbouring tiles. */
-  private edge(from: Tile, to: Tile): [out: number, back: number] {
+  /** `is_edge_high_cover!` between two neighbouring tiles. */
+  private highEdge(from: Tile, to: Tile) {
     const [dRow, dCol] = [to[0] - from[0], to[1] - from[1]];
     const out = dRow < 0 ? "top" : dRow > 0 ? "bottom" : dCol < 0 ? "left" : "right";
     const back = dRow < 0 ? "bottom" : dRow > 0 ? "top" : dCol < 0 ? "right" : "left";
-    return [this.side(from, out), this.side(to, back)];
+    return this.side(from, out) === HIGH || this.side(to, back) === HIGH;
   }
 
-  /** `is_edge_high_cover!` between two neighbouring tiles: it blocks sight. */
-  private highEdge(from: Tile, to: Tile) {
-    return this.edge(from, to).includes(HIGH);
-  }
-
-  /** `is_edge_impassable!`: high cover or a barrier on either side stops a step. */
-  private closedEdge(from: Tile, to: Tile) {
-    return this.edge(from, to).some((value) => value === HIGH || value === BARRIER);
-  }
-
-  /** One step of `check_path` between neighbouring cells: no high cover or barrier across the edge. */
+  /** One step of `check_path` between neighbouring cells: no high cover across the edge. */
   step(from: Cell, to: Cell): boolean {
-    return this.terrain(to) === "open" && !this.closedEdge(this.tileOf(from), this.tileOf(to));
+    return this.terrain(to) === "open" && !this.highEdge(this.tileOf(from), this.tileOf(to));
   }
 
   /** `cover_bonus`: the defense `at` has against a shot from `from`, in percent points. */
@@ -192,7 +173,7 @@ export class ChainGround {
     return true;
   }
 
-  /** `line_of_sight`: walls and high covers block a shot; barriers, units and unwalkable tiles don't. */
+  /** `line_of_sight`: walls and high covers block a shot; units and unwalkable tiles don't. */
   clearShot(from: Cell, to: Cell): boolean {
     return this.trace(this.tileOf(from), this.tileOf(to), true);
   }
@@ -203,7 +184,7 @@ export class ChainGround {
     return !!this.at(target) && this.at(target)!.t !== "wall" && this.trace(this.tileOf(from), target, false);
   }
 
-  /** `explode` with environment damage: every Cover tile within the blast becomes Empty, barriers too. */
+  /** `explode` with environment damage: every Cover tile within the blast becomes Empty. */
   blast(at: Cell) {
     const [row, col] = this.tileOf(at);
     for (let r = row - BLAST_RADIUS; r <= row + BLAST_RADIUS; r++)

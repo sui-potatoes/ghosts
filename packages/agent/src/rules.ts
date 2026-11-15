@@ -26,14 +26,7 @@ export const DOWN = 4;
 export const LEFT = 8;
 
 const NO_DIRECTION = 0;
-const LOW_COVER = 1;
 const HIGH_COVER = 2;
-/**
- * `map::BARRIER` (glass, a tall fence): blocks a step across its edge like high cover, protects
- * like low cover, never blocks a shot. Only the package after the deployed one has it, and the
- * deployed preset holds none, so a live game never shows one.
- */
-const BARRIER = 3;
 const DEFENSE_BONUS = 25;
 const MAX_RANGE_OFFSET = 3;
 const DISTANCE_BONUS = 5;
@@ -108,18 +101,12 @@ function sideCover(tile: Tile, direction: number): number {
     return tile.right;
 }
 
-/** `is_edge_high_cover!`: high cover on either side of the edge blocks a shot. */
+/** `is_edge_high_cover!`. */
 function edgeHighCover(from: Tile, to: Tile, direction: number): boolean {
     return (
         sideCover(from, direction) === HIGH_COVER ||
         sideCover(to, INVERSE[direction]) === HIGH_COVER
     );
-}
-
-/** `is_edge_impassable!`: high cover or a barrier on either side of the edge stops a step. */
-function edgeImpassable(from: Tile, to: Tile, direction: number): boolean {
-    const sides = [sideCover(from, direction), sideCover(to, INVERSE[direction])];
-    return sides.some((side) => side === HIGH_COVER || side === BARRIER);
 }
 
 export function unitAt(state: GameState, x: number, y: number): Unit | undefined {
@@ -151,7 +138,7 @@ export function checkPath(
         if (!inBounds(state, nx, ny)) return null;
         const target = state.tiles[nx][ny];
         if (unitAt(state, nx, ny) || !isWalkable(target)) return null;
-        if (edgeImpassable(source, target, direction)) return null;
+        if (edgeHighCover(source, target, direction)) return null;
         [x, y, source] = [nx, ny, target];
     }
     return [x, y];
@@ -171,7 +158,7 @@ export function reachable(state: GameState, unit: Unit): Map<string, number[]> {
                 const key = `${nx},${ny}`;
                 if (seen.has(key) || !inBounds(state, nx, ny)) continue;
                 if (unitAt(state, nx, ny) || !isWalkable(state.tiles[nx][ny])) continue;
-                if (edgeImpassable(state.tiles[x][y], state.tiles[nx][ny], direction)) continue;
+                if (edgeHighCover(state.tiles[x][y], state.tiles[nx][ny], direction)) continue;
                 seen.add(key);
                 const longer = [...path, direction];
                 paths.set(key, longer);
@@ -252,7 +239,7 @@ function traceLine(
     return true;
 }
 
-/** Walls and high covers block a shot; barriers, units and unwalkable tiles do not. */
+/** Walls and high covers block a shot; units and unwalkable tiles do not. */
 export const lineOfSight = (s: GameState, x0: number, y0: number, x1: number, y1: number) =>
     traceLine(s, x0, y0, x1, y1, true);
 
@@ -273,23 +260,15 @@ function direction(x0: number, y0: number, x1: number, y1: number): number {
     return vertical | horizontal;
 }
 
-/** `tile_cover`: a barrier protects as low cover, a `Wall` as high cover on every side. */
+/** `tile_cover!`: a `Wall` counts as high cover on every side. */
 function tileCover(state: GameState, x: number, y: number) {
     const tile = state.tiles[x][y];
-    if (tile.kind === "cover") {
-        const level = (side: number) => (side === BARRIER ? LOW_COVER : side);
-        return {
-            top: level(tile.top),
-            bottom: level(tile.bottom),
-            left: level(tile.left),
-            right: level(tile.right),
-        };
-    }
+    if (tile.kind === "cover") return tile;
     const side = tile.kind === "wall" ? HIGH_COVER : 0;
     return { top: side, bottom: side, left: side, right: side };
 }
 
-/** `cover_bonus`: 0, 25 or 50 for a shot from `(x0, y0)` at `(x1, y1)`; a barrier gives 25. */
+/** `cover_bonus`: 0, 25 or 50 for a shot from `(x0, y0)` at `(x1, y1)`. */
 export function coverBonus(
     state: GameState,
     x0: number,

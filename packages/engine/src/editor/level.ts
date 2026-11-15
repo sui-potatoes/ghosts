@@ -346,23 +346,8 @@ export function swapAsset(level: Level, p: Placement, uid: string): Level | null
 // ---------------------------------------------------------------------------
 // Export: the Move tile grid and the render dressing.
 
-/**
- * Cover side levels in the Move enum: 0 none, 1 low, 2 high, 3 barrier. A
- * barrier (glass, a tall fence) blocks a step across its edge like high cover
- * but no shot, and protects like low cover.
- */
+/** Cover side levels in the Move enum: 0 none, 1 low, 2 high. */
 const LOW = 1, HIGH = 2;
-export const BARRIER = 3;
-
-/** The level an edge asset writes onto both tiles of its edge: walls high, glass and tall fences barriers, low partitions low, doors nothing. */
-export function edgeCover(spec: AssetSpec): number {
-  if (spec.footprint === "solid") return HIGH;
-  if (spec.footprint === "obstacle") return BARRIER;
-  return spec.footprint === "none" ? 0 : LOW;
-}
-
-/** How much a side level stops: none, low, barrier, high (high stops a shot too). */
-const strength = (value: number) => [0, 1, 3, 2][value] ?? 0;
 
 /** One tile of the Move `Map` grid, JSON-shaped after the on-chain enum. */
 export type MoveTile =
@@ -403,10 +388,10 @@ export interface LevelExport {
  * The tile grid the rules see. Cell footprints: `cover` is a Cover tile with
  * low cover on every side (the free-standing barrier), `obstacle` is
  * Unwalkable, `solid` is Wall. Edge assets write cover levels onto the sides
- * of both adjacent tiles (`edgeCover`) — high for a solid wall, barrier for
- * glazing and tall fences, low for low fences and partitions, nothing for a
- * door. Painted unwalkable tiles stay Unwalkable; where claims overlap a cell
- * the strongest wins. Destructibility stays with the render props for now.
+ * of both adjacent tiles — high for a solid wall, low for glazing and low
+ * partitions, nothing for a door. Painted unwalkable tiles stay Unwalkable;
+ * where claims overlap a cell the strongest wins. Destructibility stays with
+ * the render props for now.
  */
 export function toMoveMap(level: Level): MoveMapExport {
   const walls = new Set<string>();
@@ -415,14 +400,14 @@ export function toMoveMap(level: Level): MoveMapExport {
   const side = (cell: Cell, index: 0 | 1 | 2 | 3, value: number) => {
     if (!inLevel(level, cell)) return;
     const entry = sides.get(key(cell)) ?? [0, 0, 0, 0];
-    if (strength(value) > strength(entry[index])) entry[index] = value;
+    entry[index] = Math.max(entry[index], value);
     sides.set(key(cell), entry);
   };
   for (const p of level.placements) {
     const spec = assetByUid(p.asset);
     if (!spec) continue;
     if (spec.place === "edge") {
-      const value = edgeCover(spec);
+      const value = spec.footprint === "solid" ? HIGH : spec.footprint === "none" ? 0 : LOW;
       if (!value) continue;
       const e = canonicalEdge(p.at, p.turn);
       const [near, far] = edgeCells(p.at, p.turn);

@@ -33,10 +33,8 @@ COORDINATES: x is the row (0 at the top) and y the column (0 at the left).
 TURN: each unit has 2 AP per turn. Moving costs 1 AP and goes up to the unit's mobility in tiles,
 orthogonally. Reloading costs 1 AP. Throwing a grenade costs 1 AP. Shooting ends the unit's turn.
 SHOTS: distance is |dx|+|dy|. Base chance is aim, +5 per tile inside weapon range, -10 per tile past
-it, up to range+3. Cover at the target facing the shooter subtracts 25 (low or barrier) or 50
-(high), plus the target's defense. Walls and high cover in between block the line of sight.
-MOVING: units cannot step across high cover or a barrier (glass, a tall fence); low cover is
-stepped over. Shots and throws pass barriers.
+it, up to range+3. Cover at the target facing the shooter subtracts 25 (low) or 50 (high), plus
+the target's defense. Walls and high cover in between block the line of sight.
 DAMAGE: weapon damage ± spread, reduced by armor to at least 1. Dodge can avoid it entirely.
 GRENADES: only a unit carrying a grenade utility can throw one (setup equips a frag grenade), once
 per match: range ${GRENADE_RANGE}, ${GRENADE_DAMAGE} damage in a diamond of radius ${GRENADE_RADIUS}, friend or foe.

@@ -21,7 +21,7 @@ export interface Stats {
     ammo: number;
 }
 
-/** Cover sides hold 0 (none), 1 (low), 2 (high) or 3 (barrier: glass, a tall fence). */
+/** Cover sides hold 0 (none), 1 (low) or 2 (high). */
 export type Tile =
     | { kind: "empty" | "unwalkable" | "wall" }
     | { kind: "cover"; left: number; top: number; right: number; bottom: number };

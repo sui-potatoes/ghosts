@@ -68,7 +68,7 @@ $ gp state --moves 2
 {"game":"0x…","turn":1,"yourTurn":true,"status":"active","phase":"your_turn","turnMsLeft":89000,
  "you":"…","opponent":"…",
  "map":["#####........#####", …],
- "legend":". empty, + low cover, | barrier (glass or tall fence: no stepping across, shots pass), = high cover, ~ unwalkable, # wall, A-D your units, w-z enemy units",
+ "legend":". empty, + low cover, = high cover, ~ unwalkable, # wall, A-D your units, w-z enemy units",
  "units":[{"mark":"A","mine":true,"at":[3,6],"hp":"10/10","ap":2,"ammo":"3/3","actions":["move","attack","reload","grenade:1"],"mobility":7,"aim":65,"range":4,"damage":"4±2","armor":0,"dodge":0,"defense":0}, … {"mark":"w","mine":false,"at":[4,10], …}],
  "orders":{"3,6":{"attacks":[{"id":"attack:3,6:4,10","to":[4,10],"hitChance":45,"damage":{"min":2,"max":6},"targetHp":10}],
                   "grenades":[{"id":"grenade:3,6:4,9","to":[4,9],"enemiesHit":2,"alliesHit":0}],
@@ -124,10 +124,8 @@ loop:
   a radius-2 diamond, friend and foe, cannot be dodged, and walls block the throw (`A wall blocks
   the throw`). Use it when `enemiesHit` is 2+ and `alliesHit` is 0.
 - Shot chance is aim, +5 per tile inside range, -10 per tile past it (up to range+3), minus cover at
-  the target (-25 low `+` or barrier `|`, -50 high `=`) and the target's defense. Walls and high
-  cover in between block the line. Dodge can still avoid damage.
-- No step crosses high cover or a barrier (glass, a tall fence: packages after the deployed one);
-  low cover is stepped over. A blast clears all three.
+  the target (-25 low `+`, -50 high `=`) and the target's defense. Walls and high cover in between
+  block the line. Dodge can still avoid damage.
 - Ammo is limited (`ammo` 3/3): reload costs 1 AP.
 - Clock: 120 s to deploy, 90 s per turn (`turnMsLeft`). Past the limit only `end` is open.
   If the opponent's turn runs out you may `end` to take yours; that counts as their miss, and

@@ -12,7 +12,7 @@ export {
   type AssetSpec, type FloorSpec, type Footprint,
 } from "../catalog.ts";
 export {
-  addSpawn, BARRIER, canPlace, canonicalEdge, edgeCells, edgeCover, edgeKey, exportLevel, fitsBounds, floorRaise, hostTop,
+  addSpawn, canPlace, canonicalEdge, edgeCells, edgeKey, exportLevel, fitsBounds, floorRaise, hostTop,
   importLevel, inLevel, interiorPreset, newLevel, placementCells, placementSeat, placementsAt, removeSpawn,
   restHeight, SIDES, spawnSide, SQUAD_SIZE, swapAsset, toMoveMap, turnOffset,
   type FloorTile, type Level, type LevelExport, type LevelLighting, type LightSource,

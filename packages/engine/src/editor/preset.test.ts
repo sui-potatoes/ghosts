@@ -135,18 +135,3 @@ test("the editor's own export names the same grid the preset encodes", () => {
   const level = sample();
   assert.deepEqual(decode(toPreset(level).bytes).tiles, exportLevel(level).move.tiles);
 });
-
-test("glass and tall fences encode as barrier sides (3) and say what the deployed package would make of them", () => {
-  const level = sample();
-  level.placements.push({ asset: "s13", at: [5, 1], turn: 0 }, { asset: "s15", at: [5, 3], turn: 3 });
-  const preset = toPreset(level);
-  const { tiles } = decode(preset.bytes);
-  assert.deepEqual(tiles[1][5], { t: "cover", sides: [0, 3, 0, 0] });
-  assert.deepEqual(tiles[0][5], { t: "cover", sides: [0, 0, 0, 3] });
-  assert.deepEqual(tiles[3][5], { t: "cover", sides: [3, 0, 0, 0] });
-  assert.deepEqual(tiles[3][4], { t: "cover", sides: [0, 1, 3, 0] }); // the sample's low block on its north edge too
-  // A warning, not an error: the source package plays them; only the deployed one would not.
-  assert.deepEqual(preset.issues.filter((i) => i.level === "error"), []);
-  assert.ok(preset.issues.some((i) => i.level === "warn" && /barrier/.test(i.text)));
-  assert.ok(!toPreset(sample()).issues.some((i) => /barrier/.test(i.text)));
-});

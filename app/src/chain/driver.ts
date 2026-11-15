@@ -41,7 +41,6 @@ import {
     turnLimitMs,
     turnStartedAt,
     canDo,
-    canStep,
     encodePath,
     gameEvents,
     hitChance,
@@ -191,7 +190,6 @@ export function chainDriver({
         };
         rules.authority = {
             terrain: (cell) => terrainAt(latest, tile(cell)),
-            step: (from, to) => canStep(latest, tile(from), tile(to)),
             clearShot: (from, to) => lineOfSight(latest, tile(from), tile(to)),
             clearThrow: (from, to) => lineOfThrow(latest, tile(from), tile(to)),
             cover: (from, at) => coverBonus(latest, tile(from.pos), tile(at.pos)),

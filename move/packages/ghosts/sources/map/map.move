@@ -37,14 +37,11 @@ const EUnitIndexMismatch: u64 = 10;
 #[allow(unused_const)]
 /// Constant for no cover in the `TileType::Cover`.
 const NO_COVER: u8 = 0;
+#[allow(unused_const)]
 /// Constant for low cover in the `TileType::Cover`.
 const LOW_COVER: u8 = 1;
 /// Constant for high cover in the `TileType::Cover`.
 const HIGH_COVER: u8 = 2;
-/// Constant for a barrier in the `TileType::Cover`: glass or a tall fence. It
-/// blocks a step across its edge like high cover, but not sight or a shot, and
-/// protects like low cover.
-const BARRIER: u8 = 3;
 /// Constant for the defense bonus.
 const DEFENSE_BONUS: u8 = 25;
 
@@ -72,9 +69,8 @@ public enum TileType has copy, drop, store {
     /// A low cover tile. Provides partial cover from 1-3 sides. Can be
     /// destroyed by explosives and heavy weapons.
     ///
-    /// Each side is `NO_COVER`, `LOW_COVER`, `HIGH_COVER` or `BARRIER`. A unit
-    /// cannot step across a side with high cover or a barrier; high cover also
-    /// blocks sight across it.
+    /// Cover also limits the movement of units, as they cannot move through
+    /// cover sides.
     Cover {
         left: u8,
         top: u8,
@@ -345,14 +341,13 @@ public fun bury(map: &mut Map): vector<ID> {
 /// - no cover - 0
 /// - LOW_COVER - 25
 /// - HIGH_COVER - 50
-/// - BARRIER - 25, as low cover
 ///
 /// A `Wall` tile next to the target counts as high cover on that side.
 public(package) fun cover_bonus(map: &Map, x0: u16, y0: u16, x1: u16, y1: u16): u8 {
     use grid::direction::{direction, none, up, down, left, right};
 
     let direction = direction!(x0, y0, x1, y1);
-    let (up, down, left, right) = map.tile_cover(x1, y1);
+    let (up, down, left, right) = map.tile_cover!(x1, y1);
 
     // edge case: same tile, should never happen
     if (direction == none!()) return 0;
@@ -361,77 +356,70 @@ public(package) fun cover_bonus(map: &Map, x0: u16, y0: u16, x1: u16, y1: u16): 
     let cover_type = if (direction == up!()) {
         if (down != 0) down // target tile has cover
         else {
-            let (top, _, _, _) = map.tile_cover(x1 + 1, y1);
+            let (top, _, _, _) = map.tile_cover!(x1 + 1, y1);
             top
         }
     } else if (direction == down!()) {
         if (up != 0) up
         else {
-            let (_, bottom, _, _) = map.tile_cover(x1 - 1, y1);
+            let (_, bottom, _, _) = map.tile_cover!(x1 - 1, y1);
             bottom
         }
     } else if (direction == left!()) {
         if (right != 0) right
         else {
-            let (_, _, left, _) = map.tile_cover(x1, y1 + 1);
+            let (_, _, left, _) = map.tile_cover!(x1, y1 + 1);
             left
         }
     } else if (direction == right!()) {
         if (left != 0) left
         else {
-            let (_, _, _, right) = map.tile_cover(x1, y1 - 1);
+            let (_, _, _, right) = map.tile_cover!(x1, y1 - 1);
             right
         }
     } else if (direction == up!() | left!()) {
         let cover_type = down.max(right);
         if (cover_type  != 0) cover_type
         else {
-            let (top, _, _, _) = map.tile_cover(x1 + 1, y1);
-            let (_, _, left, _) = map.tile_cover(x1, y1 + 1);
+            let (top, _, _, _) = map.tile_cover!(x1 + 1, y1);
+            let (_, _, left, _) = map.tile_cover!(x1, y1 + 1);
             top.max(left)
         }
     } else if (direction == up!() | right!()) {
         let cover_type = down.max(left);
         if (cover_type != 0) cover_type
         else {
-            let (top, _, _, _) = map.tile_cover(x1 + 1, y1);
-            let (_, _, _, right) = map.tile_cover(x1, y1 - 1);
+            let (top, _, _, _) = map.tile_cover!(x1 + 1, y1);
+            let (_, _, _, right) = map.tile_cover!(x1, y1 - 1);
             top.max(right)
         }
     } else if (direction == down!() | left!()) {
         let cover_type = up.max(right);
         if (cover_type != 0) cover_type
         else {
-            let (_, bottom, _, _) = map.tile_cover(x1 - 1, y1);
-            let (_, _, left, _) = map.tile_cover(x1, y1 + 1);
+            let (_, bottom, _, _) = map.tile_cover!(x1 - 1, y1);
+            let (_, _, left, _) = map.tile_cover!(x1, y1 + 1);
             bottom.max(left)
         }
     } else if (direction == down!() | right!()) {
         let cover_type = up.max(left);
         if (cover_type != 0) cover_type
         else {
-            let (_, bottom, _, _) = map.tile_cover(x1 - 1, y1);
-            let (_, _, _, right) = map.tile_cover(x1, y1 - 1);
+            let (_, bottom, _, _) = map.tile_cover!(x1 - 1, y1);
+            let (_, _, _, right) = map.tile_cover!(x1, y1 - 1);
             bottom.max(right)
         }
     } else abort; // unreachable
 
-    // `tile_cover` gives 0, 1 or 2 (a barrier reads as low), so by multiplying
-    // it by 25 we get the value we need; same, as if we matched it to 0, 25, 50
+    // cover enum is 0, 1, 2, so by multiplying it by 25 we get the value we
+    // need; same, as if we matched it to 0, 25, 50
     cover_type * DEFENSE_BONUS
 }
 
-/// The protection on each side of a tile as `(top, bottom, left, right)`, in
-/// levels of `DEFENSE_BONUS`: a barrier protects as low cover, and a `Wall` as
-/// high cover all round.
-fun tile_cover(map: &Map, x: u16, y: u16): (u8, u8, u8, u8) {
-    match (map.grid[x, y].tile_type) {
-        TileType::Cover { left, right, top, bottom } => (
-            protection(top),
-            protection(bottom),
-            protection(left),
-            protection(right),
-        ),
+macro fun tile_cover($map: &Map, $x: u16, $y: u16): (u8, u8, u8, u8) {
+    let map = $map;
+    match (map.grid[$x, $y].tile_type) {
+        TileType::Cover { left, right, top, bottom } => (top, bottom, left, right),
         TileType::Wall => (HIGH_COVER, HIGH_COVER, HIGH_COVER, HIGH_COVER),
         _ => (0, 0, 0, 0),
     }
@@ -471,9 +459,7 @@ public fun perform_grenade(
 /// Apply area damage centered at `(x, y)`: every unit in the von Neumann
 /// neighborhood of `radius` (center included) takes `damage`, reduced by its
 /// armor and dodged only if `can_dodge`. With `env_damage`, covers in the area
-/// are destroyed (`Cover` -> `Empty`), barriers with them: glass breaks, a fence
-/// is flattened, and the edge can be crossed again. Shared by grenades and area
-/// weapons.
+/// are destroyed (`Cover` -> `Empty`). Shared by grenades and area weapons.
 ///
 /// Records: `Explosion`, then `Dodged`, or `Damage`, `[UnitKIA]`, per unit in
 /// the area. Tiles are visited in the order of `Grid.von_neumann_neighbors`
@@ -594,30 +580,14 @@ macro fun side_cover($tile: &Tile, $direction: u8): u8 {
     }
 }
 
-/// The protection a cover side value gives, in levels of `DEFENSE_BONUS`: a
-/// barrier protects as low cover.
-fun protection(side: u8): u8 {
-    if (side == BARRIER) LOW_COVER else side
-}
-
 /// Whether the edge between `$from` and its neighbor `$to` in `$direction`
-/// has high cover on either side: it blocks a line of sight (`trace_line`).
+/// has high cover on either side. Shared by `check_path` and `trace_line`.
 macro fun is_edge_high_cover($from: &Tile, $to: &Tile, $direction: u8): bool {
     use grid::direction::inverse;
 
     let (from, to, direction) = ($from, $to, $direction);
     side_cover!(from, direction) == HIGH_COVER
         || side_cover!(to, inverse!(direction)) == HIGH_COVER
-}
-
-/// Whether a unit cannot step across the edge between `$from` and its neighbor
-/// `$to` in `$direction`: high cover or a barrier on either side (`check_path`).
-macro fun is_edge_impassable($from: &Tile, $to: &Tile, $direction: u8): bool {
-    use grid::direction::inverse;
-
-    let (from, to, direction) = ($from, $to, $direction);
-    let (out, back) = (side_cover!(from, direction), side_cover!(to, inverse!(direction)));
-    out == HIGH_COVER || out == BARRIER || back == HIGH_COVER || back == BARRIER
 }
 
 /// Alias to support the `Grid.to_string` method.
@@ -672,10 +642,10 @@ public fun check_path(map: &Map, mut path: vector<u8>): Option<vector<u16>> {
             let (x1, y1) = cursor.to_values();
             let target = &map.grid[x1, y1];
 
-            // units, walls, unwalkable tiles, high covers and barriers block it
+            // units, walls, unwalkable tiles and high covers block the path
             if (target.unit.is_some()) return 'path none;
             if (!is_walkable!(target)) return 'path none;
-            if (is_edge_impassable!(source, target, direction)) return 'path none;
+            if (is_edge_high_cover!(source, target, direction)) return 'path none;
             source = target;
         });
 
@@ -686,8 +656,7 @@ public fun check_path(map: &Map, mut path: vector<u8>): Option<vector<u16>> {
 // === Line of Sight ===
 
 /// Check the line of sight for a shot from `(x0, y0)` to `(x1, y1)`: walls and
-/// high covers block it, barriers, unwalkable tiles and units do not. See
-/// `trace_line`.
+/// high covers block it, unwalkable tiles and units do not. See `trace_line`.
 public fun line_of_sight(map: &Map, x0: u16, y0: u16, x1: u16, y1: u16): bool {
     map.trace_line(x0, y0, x1, y1, true)
 }
@@ -702,10 +671,9 @@ public fun line_of_throw(map: &Map, x0: u16, y0: u16, x1: u16, y1: u16): bool {
 /// check that it is clear. Entering a `Wall` always blocks. With
 /// `high_cover_blocks`, a high cover on either side of a crossed edge blocks
 /// too, except on the edges touching the two end tiles: cover next to the
-/// attacker or the target is cover, not a wall. Barriers (glass, tall fences),
-/// `Unwalkable` tiles and units never block. Where the segment passes exactly
-/// through a corner, it is clear if either of the two orthogonal routes around
-/// the corner is clear.
+/// attacker or the target is cover, not a wall. `Unwalkable` tiles and units
+/// never block. Where the segment passes exactly through a corner, it is
+/// clear if either of the two orthogonal routes around the corner is clear.
 ///
 /// The walk is the Amanatides-Woo grid traversal in unsigned integers: after
 /// `i` row steps and `j` column steps the next row edge lies at
