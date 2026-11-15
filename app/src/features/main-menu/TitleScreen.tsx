@@ -31,6 +31,7 @@ import {
     FocusCursor,
     FocusRoot,
     headerClick,
+    InlineCommands,
     Prompt,
     StatusChip,
     useFocusable,
@@ -118,6 +119,7 @@ export function TitleScreen({ data, ops }: { data: TitleData; ops: TitleOps }) {
                         prompt === "stop-search" &&
                         data.searchingSinceMs !== null && (
                             <StopSearchPrompt
+                                deny={data.state.match.busy ? "Saving a change" : undefined}
                                 onStop={() => {
                                     setPrompt(null);
                                     ops.cancelSearch();
@@ -267,7 +269,7 @@ function TitleRow({
             run: () => onRun(row.id),
         },
     ];
-    const { props } = useFocusable<HTMLButtonElement>({
+    const { props, armedCommand } = useFocusable<HTMLButtonElement>({
         id: row.id,
         group: "menu",
         title: row.label,
@@ -280,19 +282,21 @@ function TitleRow({
             type="button"
             tabIndex={-1}
             className="gui-title-row"
-            data-locked={row.locked ? "" : undefined}
             data-primary={row.primary ? "" : undefined}
-            aria-disabled={row.locked ? true : undefined}
             style={{ "--i": index } as CSSProperties}
             {...props}
         >
             <span className="gui-title-row-index">{String(index + 1).padStart(2, "0")}</span>
             <span className="gui-title-row-name">{row.label}</span>
-            {row.tag && (
-                <span className="gui-title-row-tag" data-tone={row.tagTone ?? "default"}>
-                    {row.locked && <i className="gui-lock" aria-hidden />}
-                    {row.tag}
-                </span>
+            {armedCommand ? (
+                <InlineCommands commands={[]} armed={armedCommand} />
+            ) : (
+                row.tag && (
+                    <span className="gui-title-row-tag" data-tone={row.tagTone ?? "default"}>
+                        {row.locked && <i className="gui-lock" aria-hidden />}
+                        {row.tag}
+                    </span>
+                )
             )}
             <i className="gui-title-row-caret" aria-hidden />
         </button>
@@ -417,14 +421,22 @@ function ChipButton({ onClick, children }: { onClick: () => void; children: Reac
 }
 
 /** Opened from the match chip: leave the queue, or keep searching. */
-function StopSearchPrompt({ onStop, onKeep }: { onStop: () => void; onKeep: () => void }) {
+function StopSearchPrompt({
+    onStop,
+    onKeep,
+    deny,
+}: {
+    onStop: () => void;
+    onKeep: () => void;
+    deny?: string;
+}) {
     const glyphs = useGlyphSet();
     return (
         <Prompt
             id="prompt-stop-search"
             eyebrow="Matchmaking"
             title="Stop searching?"
-            confirm={{ label: "Stop", run: onStop }}
+            confirm={{ label: "Stop", run: onStop, deny }}
             cancel={{ label: "Keep searching", run: onKeep }}
             glyphs={glyphs}
         >

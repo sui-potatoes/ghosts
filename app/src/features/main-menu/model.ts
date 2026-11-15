@@ -32,6 +32,8 @@ export type MenuState = {
         hiring: boolean;
         /** Whole minutes left of a matchmaking suspension; 0 when none. */
         suspendedMin: number;
+        /** Another write is in flight: a cancel sent now would be dropped. */
+        busy?: boolean;
     };
     /** The install entry: the browser's prompt, the iOS share-sheet hint, or nothing. */
     install: "none" | "prompt" | "ios";
@@ -91,6 +93,7 @@ export function matchRow(state: MenuState): MenuRow {
             label: "Cancel Search",
             hint: "The squad leaves the queue",
             verb: "Cancel search",
+            locked: match.busy ? "Saving a change" : undefined,
             instant: false,
         };
     if (match.hiring)

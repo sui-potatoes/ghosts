@@ -33,9 +33,15 @@ import { uiBack, uiConfirm, uiDeny, uiTick } from "../audio";
 import { onAction } from "../input";
 import type { Action } from "../settings/keys";
 import { claimScreenBack } from "./back";
-import { FocusStore, secondaryCommands, type Command, type Dir } from "./focus-store";
+import {
+    FocusStore,
+    inactiveReason,
+    secondaryCommands,
+    type Command,
+    type Dir,
+} from "./focus-store";
 
-export { clickCommand, FocusStore, secondaryCommands } from "./focus-store";
+export { clickCommand, FocusStore, inactiveReason, secondaryCommands } from "./focus-store";
 export type { Command, CommandAction, Dir, Pulse } from "./focus-store";
 
 const SOUNDS = {
@@ -213,6 +219,8 @@ type FocusableOptions = {
      * click on the selected target runs it (a purchase, an issue, a hire).
      */
     instant?: boolean;
+    /** The primary is shown as a button on the row (`armedCommand`) without being armed. */
+    offered?: boolean;
 };
 
 /**
@@ -230,6 +238,7 @@ export function useFocusable<T extends HTMLElement>({
     pointer = true,
     clickConfirm = true,
     instant = false,
+    offered = false,
 }: FocusableOptions) {
     const store = useFocusState();
     const scope = useContext(ScopeContext);
@@ -271,6 +280,14 @@ export function useFocusable<T extends HTMLElement>({
     // Chips and the command list carry the secondaries only; the primary is the click.
     const secondary = secondaryCommands(commands);
     const listable = secondary.length > 0;
+    // The primary cannot run now: the target dims and nothing arms it.
+    const inactive = inactiveReason(commands);
+    // Armed by a click: the confirm waits for a second click, and the mouse is
+    // offered it as a button on the row (never for a refused primary).
+    const armedCommand =
+        (store.armed === id || offered) && inactive === undefined
+            ? commands.find((c) => c.action === "confirm")
+            : undefined;
 
     const openList = (x: number, y: number) => {
         store.pointerInput();
@@ -289,8 +306,11 @@ export function useFocusable<T extends HTMLElement>({
          * Show the secondary commands inline at the trailing edge: focused, the
          * mouse or touch in use, and something besides the primary to offer.
          */
-        inline: focused && store.pointer && listable,
+        inline: (focused && store.pointer && listable) || armedCommand !== undefined,
+        /** The primary, while the target is armed: shown as a button on the row. */
+        armedCommand,
         commands,
+        inactive,
         props: {
             ref,
             "data-focused": focused || undefined,
@@ -299,6 +319,8 @@ export function useFocusable<T extends HTMLElement>({
             "data-subject": subject || undefined,
             "data-pressed": pulse?.kind === "press" || undefined,
             "data-denied": pulse?.kind === "deny" || undefined,
+            "data-inactive": inactive !== undefined || undefined,
+            "aria-disabled": inactive !== undefined || undefined,
             "data-pointer": pointer || undefined,
             "data-focus-id": pointer ? id : undefined,
             onMouseDown: (e: MouseEvent) => {
@@ -411,6 +433,7 @@ export function FocusCursor({ root }: { root: RefObject<HTMLElement | null> }) {
             aria-hidden
             data-hidden={box.hidden || undefined}
             data-armed={(store.armed !== null && store.armed === store.focused) || undefined}
+            data-inactive={(node && inactiveReason(node.commands) !== undefined) || undefined}
             // A destructive question turns the cursor amber with the frame it sits on.
             data-tone={
                 node?.commands.some((c) => c.action === "confirm" && c.tone === "danger")

@@ -70,3 +70,37 @@ test("clock", () => {
     assert.equal(clockOf(75_000), "1:15");
     assert.equal(clockOf(-5), "0:00");
 });
+
+test("cancel search is there from the first moment, inactive until the queue is joined", () => {
+    const preparing = view({ starting: true });
+    assert.equal(preparing.action.id, "cancel");
+    assert.equal(preparing.action.label, "Cancel search");
+    assert.equal(preparing.action.inactive, "Joining the queue");
+
+    const hiring = view({ hiring: true, starting: true });
+    assert.equal(hiring.action.id, "cancel");
+    assert.equal(hiring.action.inactive, "Hiring the squad");
+
+    const searching = view({ searching: true, elapsedMs: 5_000 });
+    assert.equal(searching.action.id, "cancel");
+    assert.equal(searching.action.inactive, undefined);
+});
+
+test("a cancel waits for another write in flight, and only then", () => {
+    assert.equal(view({ searching: true, busy: true }).action.inactive, "Saving a change");
+    assert.equal(
+        view({ searching: true, elapsedMs: 130_000, busy: true }).action.inactive,
+        "Saving a change",
+    );
+    assert.equal(view({ searching: true, busy: false }).action.inactive, undefined);
+});
+
+test("other phases have nothing inactive", () => {
+    for (const patch of [
+        { signedIn: false },
+        { playing: true },
+        { suspendedMin: 2 },
+        { error: "boom" },
+    ])
+        assert.equal(view(patch).action.inactive, undefined);
+});

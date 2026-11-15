@@ -659,7 +659,13 @@
     background: var(--accent-color);
 }
 
-.gui-row[data-locked] .gui-row-name {
+/* Inactive: the one state for a target whose Confirm is refused (`deny`).
+   Dimmed, no accent band; the cursor may still rest on it for the reason the
+   bar gives. Screens never restyle it: plaques and title rows follow the same
+   rules in their own sheets. */
+.gui-row[data-inactive] .gui-row-name,
+.gui-stat[data-inactive] .gui-stat-label,
+.gui-slot[data-inactive] {
     color: var(--disabled-color);
 }
 
@@ -671,10 +677,13 @@
 .gui-row[data-focused] .gui-row-kind {
     color: var(--on-band-soft);
 }
-.gui-row[data-focused][data-locked] {
+.gui-row[data-focused][data-inactive],
+.gui-stat[data-focused][data-inactive],
+.gui-slot[data-focused][data-inactive] {
     background: var(--band-locked);
+    color: var(--on-band);
 }
-.gui-row[data-focused][data-locked] .gui-row-name {
+.gui-row[data-focused][data-inactive] .gui-row-name {
     color: var(--on-band);
 }
 
@@ -1006,6 +1015,20 @@
     letter-spacing: var(--track);
     text-transform: uppercase;
     color: var(--text-color);
+}
+
+.gui-empty-action[data-inactive] {
+    border-style: dashed;
+    border-color: var(--line);
+    color: var(--disabled-color);
+}
+
+/* A block button has its own outline, so it keeps no band at all: dashed, dim,
+   and the cursor frame around it (quieter on an inactive target). */
+.gui-empty-action[data-focused][data-inactive] {
+    background: none;
+    color: var(--disabled-color);
+    animation: none;
 }
 
 .gui-void {
@@ -1392,6 +1415,11 @@ span.gui-cmd {
     border-width: 0 2px 2px 0;
 }
 
+/* The cursor on an inactive target is quieter: it is there to read, not to act. */
+.gui-cursor[data-inactive] .gui-cursor-frame {
+    opacity: 0.55;
+}
+
 .gui-cursor-frame[data-motion="press"] {
     animation: gui-cursor-press 150ms ease-out;
 }
@@ -1691,7 +1719,7 @@ span.gui-cmd {
     color: var(--warn-color);
 }
 
-.gui-menu-item[data-refused] {
+.gui-menu-item[data-inactive] {
     color: var(--disabled-color);
 }
 
@@ -2298,4 +2326,15 @@ span.gui-cmd {
 
 .gui .gui-field-input:focus {
     border-color: var(--accent-color);
+}
+
+/* The confirm button an armed target offers the mouse: its primary, labelled,
+   at the row's trailing edge (under the row's text where it has no room). */
+.gui-chip-cmd[data-confirm] {
+    max-width: 100%;
+    white-space: nowrap;
+}
+.gui-empty > .gui-inline {
+    justify-content: center;
+    margin-top: calc(var(--u) * 2);
 }

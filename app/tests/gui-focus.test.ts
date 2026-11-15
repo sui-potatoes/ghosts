@@ -7,6 +7,7 @@ import { test } from "node:test";
 import {
     clickCommand,
     FocusStore,
+    inactiveReason,
     nearest,
     secondaryCommands,
     type Command,
@@ -593,4 +594,96 @@ test("hover alone never moves the subject, a selection that unmounts falls back 
     arrive(s, "b", 2000);
     s.unregister("a");
     assert.equal(s.subject, "b");
+});
+
+test("an inactive target reports its reason, and only its Confirm decides", () => {
+    const run = () => {};
+    assert.equal(inactiveReason([{ action: "confirm", label: "Go", deny: "Wait", run }]), "Wait");
+    assert.equal(inactiveReason([{ action: "confirm", label: "Go", run }]), undefined);
+    assert.equal(inactiveReason([{ action: "confirm", label: "Go", deny: "", run }]), undefined);
+    assert.equal(inactiveReason([{ action: "reset", label: "Drop", deny: "No", run }]), undefined);
+    assert.equal(inactiveReason([]), undefined);
+});
+
+test("clicking an inactive target never arms or runs it, and only knocks", () => {
+    for (const instant of [true, false]) {
+        const s = store();
+        let ran = 0;
+        const commands: Command[] = [
+            {
+                action: "confirm",
+                label: "Cancel search",
+                deny: "Joining the queue",
+                run: () => ran++,
+            },
+        ];
+        s.register({ id: "x", group: "g", scope: "root", el: box(0, 0), commands });
+        s.click("x", commands, { instant, clickConfirm: true });
+        s.click("x", commands, { instant, clickConfirm: true });
+        assert.equal(ran, 0);
+        assert.equal(s.armed, null);
+        assert.equal(s.focused, "x");
+        assert.equal(s.denies, 2);
+        assert.equal(s.pulse?.kind, "deny");
+    }
+});
+
+test("an inactive target keeps the cursor, so its reason can be read, and runs once active", () => {
+    const s = store();
+    let ran = 0;
+    const inactive: Command[] = [
+        { action: "confirm", label: "Go", deny: "Wait", run: () => ran++ },
+    ];
+    s.register({ id: "x", group: "g", scope: "root", el: box(0, 0), commands: inactive });
+    assert.equal(s.focused, "x");
+    assert.equal(s.command("confirm")?.deny, "Wait");
+    s.invoke("confirm");
+    assert.equal(ran, 0);
+    const active: Command[] = [{ action: "confirm", label: "Go", run: () => ran++ }];
+    s.update("x", { commands: active });
+    const opts = { instant: false, clickConfirm: true };
+    s.click("x", active, opts);
+    assert.equal(s.armed, "x");
+    s.click("x", active, opts);
+    assert.equal(ran, 1);
+});
+
+// --- The confirm button of an armed target (the mouse's second press) ------------
+
+test("the inline confirm of an armed target runs its primary once and disarms", () => {
+    const { s, ran, confirm } = rows();
+    const opts = { instant: false, clickConfirm: true };
+    s.click("b", confirm("b"), opts);
+    assert.equal(s.armed, "b");
+    // The pointer rests on another row: the button still belongs to the armed one.
+    arrive(s, "c");
+    s.confirmArmed();
+    assert.deepEqual(ran, ["b"]);
+    assert.equal(s.armed, null);
+    s.confirmArmed();
+    assert.deepEqual(ran, ["b"], "a second press on the gone button does nothing");
+});
+
+test("Back disarms an armed target before it leaves; a click elsewhere and a key move disarm too", () => {
+    const { s, ran, confirm } = rows();
+    const opts = { instant: false, clickConfirm: true };
+    s.click("b", confirm("b"), opts);
+    assert.equal(s.invoke("back"), true);
+    assert.equal(s.armed, null);
+    assert.deepEqual(ran, []);
+    s.click("b", confirm("b"), opts);
+    s.click("c", confirm("c"), opts);
+    assert.equal(s.armed, "c");
+    s.move("up");
+    assert.equal(s.armed, null);
+});
+
+test("an inactive primary is never armed, so no confirm button is offered", () => {
+    const { s, ran } = rows();
+    const denied: Command[] = [
+        { action: "confirm", label: "x", deny: "No", run: () => void ran.push("x") },
+    ];
+    s.click("b", denied, { instant: false, clickConfirm: true });
+    assert.equal(s.armed, null);
+    assert.deepEqual(ran, []);
 });

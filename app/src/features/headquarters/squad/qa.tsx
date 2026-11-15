@@ -7,8 +7,8 @@
  * `HeadquartersView` over fixture recruits, no chain, no sign-in. A hire
  * lands the missing recruits after a short wait, as the listing lags the
  * transaction. `?case=empty|partial|gap|full`, `&delay=MS` before the hire
- * lands, `&fail=1` for a hire that is refused, `&storage=1` for three rifles in
- * storage (equips are logged on `window.__issued`).
+ * lands, `&fail=1` for a hire that is refused, `&storage=1` for three rifles, two armors and a grenade in
+ * storage (equips are logged on `window.__issued`); `?view=armory` is the Armory bench.
  */
 
 import { fromPreset, normalize, presets } from "@ghosts/squad/appearance/editor-state";
@@ -20,6 +20,8 @@ import { useMemo, useRef, useState } from "react";
 import { scheduleLamp } from "../../../audio/lamp";
 
 import type { ChainRecruit } from "../../../chain";
+import type { ArmoryData, ArmoryOps } from "../armory/types";
+import { ArmoryView } from "../armory/ArmoryView";
 import { HeadquartersView, type HqData, type HqOps } from "./HeadquartersView";
 
 const NAMES = ["Mara Voss", "Idris Kane", "Tove Hale", "Ren Okoye"];
@@ -63,7 +65,62 @@ const recruit = (i: number): ChainRecruit => {
     return { peak, seconds: end / rate };
 };
 
+/** `?view=armory`: the Armory bench over fixtures; every write is logged on `window.__issued`. */
+function ArmoryQa() {
+    const log = (...entry: unknown[]) => {
+        ((window as unknown as { __issued?: unknown[] }).__issued ??= []).push(entry);
+        return Promise.resolve(true);
+    };
+    const gear = (id: string, name: string, extra: object = {}) => ({
+        objectId: id,
+        id,
+        name,
+        stats: { value: "0" },
+        upgrades: [],
+        actions: [],
+        ...extra,
+    });
+    const data = {
+        gate: null,
+        accountId: "0xqa",
+        recruits: [0, 1].map((i) => {
+            const r = recruit(i);
+            return { ...r, weapon: { ...r.weapon!, stats: { value: "0" } } };
+        }),
+        storage: {
+            weapons: [gear("0xqs0", "Standard Rifle"), gear("0xqs1", "Standard Rifle")],
+            armors: [gear("0xqa0armor", "Medium Armor")],
+            utilities: [gear("0xqu0", "Frag Grenade")],
+            upgrades: ["Basic Scope", "Advanced Scope", "Basic Stock", "Basic Laser Sight"].map(
+                (name, i) => gear(`0xqm${i}`, name),
+            ),
+        },
+        busy: false,
+        error: "",
+        clearError: () => {},
+        saving: false,
+        match: { searchingSince: null, playing: false, cancel: () => {} },
+    } as unknown as ArmoryData;
+    const ops = {
+        requisition: async (order: unknown) => log("requisition", order),
+        applyFittings: async (w: { id: string }, carrier: unknown, desired: unknown) =>
+            log("fit", w.id, carrier, desired),
+        applyAll: async () => true,
+        issue: async (...args: unknown[]) => log("issue", ...args),
+        unequip: async (...args: unknown[]) => log("unequip", ...args),
+        issueUtility: async (...args: unknown[]) => log("utility", ...args),
+        unequipUtility: async (...args: unknown[]) => log("unequipUtility", ...args),
+        signIn: () => {},
+    } as unknown as ArmoryOps;
+    return <ArmoryView data={data} ops={ops} />;
+}
+
 export default function RecruitQa() {
+    if (new URLSearchParams(window.location.search).get("view") === "armory") return <ArmoryQa />;
+    return <RecruitHq />;
+}
+
+function RecruitHq() {
     const params = new URLSearchParams(window.location.search);
     const kind = params.get("case") ?? "empty";
     const delay = Number(params.get("delay") ?? 900);
@@ -102,7 +159,13 @@ export default function RecruitQa() {
             return true;
         },
         unequip: async () => true,
-        equipUtility: async () => true,
+        equipUtility: async (...args) => {
+            ((window as unknown as { __issued?: unknown[] }).__issued ??= []).push([
+                "utility",
+                ...args,
+            ]);
+            return true;
+        },
         unequipUtility: async () => true,
         dismiss: async () => true,
         saveLooks: async () => true,
@@ -124,8 +187,25 @@ export default function RecruitQa() {
                       upgrades: [],
                   }))
                 : [],
-            armors: [],
-            utilities: [],
+            armors: params.get("storage")
+                ? ["Medium Armor", "Heavy Armor"].map((name, i) => ({
+                      objectId: `0xqa${i}armor`,
+                      id: `0xqa${i}armor`,
+                      name,
+                      stats: { value: "0" },
+                  }))
+                : [],
+            utilities: params.get("storage")
+                ? [
+                      {
+                          objectId: "0xqu0",
+                          id: "0xqu0",
+                          name: "Frag Grenade",
+                          stats: { value: "0" },
+                          actions: [],
+                      },
+                  ]
+                : [],
         } as unknown as HqData["storage"],
         busy,
         error,

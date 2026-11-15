@@ -106,6 +106,7 @@ export function CommandHint({ command, glyphs, pressed, onRun }: HintProps) {
             data-action={command.action}
             data-tone={command.tone}
             data-denied={command.deny ? "" : undefined}
+            aria-disabled={command.deny ? true : undefined}
             data-pressed={pressed || undefined}
             onMouseDown={(e: MouseEvent) => e.preventDefault()}
             onClick={() => onRun(command)}

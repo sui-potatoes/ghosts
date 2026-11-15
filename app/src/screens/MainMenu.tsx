@@ -57,6 +57,7 @@ function Title() {
                 playing: !!match.playing,
                 searching: !!match.searching,
                 hiring: match.hiring,
+                busy: match.busy,
                 suspendedMin: suspendedMs > 0 ? Math.ceil(suspendedMs / 60_000) : 0,
             },
             install: install.kind,

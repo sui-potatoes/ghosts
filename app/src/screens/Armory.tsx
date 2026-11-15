@@ -115,6 +115,7 @@ export default function Armory() {
         match: {
             searchingSince: search.searching ? Number(search.searching.sinceMs) : null,
             playing: !!search.playing,
+            busy: search.busy,
             cancel: search.cancel,
         },
         initialItem: params.get("item"),

@@ -24,13 +24,38 @@ function reachable(commands: Command[]): Command[] {
 }
 
 /** Small glyph + label chips at a selected row's trailing edge: its secondary commands. */
-export function InlineCommands({ commands }: { commands: Command[] }) {
+export function InlineCommands({
+    commands,
+    armed,
+}: {
+    commands: Command[];
+    /** The primary of an armed target: a labelled button that runs it (the second click). */
+    armed?: Command;
+}) {
     const store = useFocusState();
     const glyphs = useGlyphSet();
     const list = secondaryCommands(commands);
-    if (!list.length) return null;
+    if (!list.length && !armed) return null;
     return (
         <span className="gui-inline">
+            {armed && (
+                <button
+                    type="button"
+                    tabIndex={-1}
+                    className="gui-chip-cmd"
+                    data-tone={armed.tone === "danger" ? "danger" : "primary"}
+                    data-confirm=""
+                    onMouseDown={(e: MouseEvent) => e.preventDefault()}
+                    onClick={(e: MouseEvent) => {
+                        e.stopPropagation();
+                        if (store.armed !== null) store.confirmArmed();
+                        else store.run(armed);
+                    }}
+                >
+                    <Glyph action="confirm" set={glyphs} />
+                    {armed.label}
+                </button>
+            )}
             {list.map((command) => (
                 <button
                     key={command.action}
@@ -39,6 +64,7 @@ export function InlineCommands({ commands }: { commands: Command[] }) {
                     className="gui-chip-cmd"
                     data-tone={command.tone}
                     data-denied={command.deny ? "" : undefined}
+                    aria-disabled={command.deny ? true : undefined}
                     onMouseDown={(e: MouseEvent) => e.preventDefault()}
                     onClick={(e: MouseEvent) => {
                         e.stopPropagation();
@@ -118,7 +144,6 @@ function MenuItem({ command, glyphs }: { command: Command; glyphs: GlyphSet }) {
             className="gui-menu-item"
             data-tone={command.tone}
             {...props}
-            data-refused={command.deny ? "" : undefined}
             onClick={(e) => {
                 e.stopPropagation();
                 if (command.deny) store.run(command);

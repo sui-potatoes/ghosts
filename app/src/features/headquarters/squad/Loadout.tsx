@@ -270,6 +270,7 @@ export function GearPicker({
                     {current && (
                         <ListRow
                             id="pick-none"
+                            instant
                             group="picker"
                             thumb={<Thumb icon={SLOT_ICON[slot]} />}
                             name="None"
@@ -300,6 +301,7 @@ export function GearPicker({
                         <ListRow
                             key={item.objectId}
                             id={`pick-${item.objectId}`}
+                            instant
                             group="picker"
                             thumb={<Thumb src={item.image} icon={SLOT_ICON[slot]} />}
                             name={item.name}

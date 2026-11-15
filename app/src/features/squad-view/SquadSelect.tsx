@@ -611,13 +611,7 @@ function Plaque({ label, hint, command }: { label: string; hint: string; command
         instant: true,
     });
     return (
-        <button
-            type="button"
-            tabIndex={-1}
-            className="sqv-plaque"
-            data-refused={command.deny ? "" : undefined}
-            {...props}
-        >
+        <button type="button" tabIndex={-1} className="sqv-plaque" {...props}>
             {label}
         </button>
     );
@@ -720,6 +714,7 @@ function RecruitPicker({
                                 <ListRow
                                     key={r.objectId}
                                     id={`pick-${r.objectId}`}
+                                    instant
                                     group="squad-picker"
                                     thumb={
                                         <Portrait src={portraits[r.objectId]} rank={r.rank.$kind} />
@@ -742,6 +737,7 @@ function RecruitPicker({
                         })}
                         <ListRow
                             id="pick-none"
+                            instant
                             group="squad-picker"
                             name="None"
                             title="None"

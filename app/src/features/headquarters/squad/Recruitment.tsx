@@ -267,7 +267,6 @@ function Plaque({
             type="button"
             tabIndex={-1}
             className="sqv-plaque"
-            data-refused={deny ? "" : undefined}
             data-intro={variant === "intro" ? "" : undefined}
             {...props}
         >

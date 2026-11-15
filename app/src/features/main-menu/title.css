@@ -234,7 +234,7 @@
     color: var(--warn-color);
 }
 
-.gui-title-row[data-locked] .gui-title-row-name {
+.gui-title-row[data-inactive] .gui-title-row-name {
     color: var(--disabled-color);
 }
 
@@ -277,10 +277,10 @@
     transform: translateX(0) rotate(45deg);
 }
 
-.gui-title-row[data-focused][data-locked] {
+.gui-title-row[data-focused][data-inactive] {
     background: var(--band-locked);
 }
-.gui-title-row[data-focused][data-locked] .gui-title-row-name {
+.gui-title-row[data-focused][data-inactive] .gui-title-row-name {
     color: var(--on-band);
 }
 
@@ -300,7 +300,7 @@
     transform: scaleY(1);
 }
 
-.gui-title-row[data-focused][data-locked]::before {
+.gui-title-row[data-focused][data-inactive]::before {
     background: var(--disabled-color);
 }
 

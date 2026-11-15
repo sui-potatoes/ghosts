@@ -269,6 +269,7 @@ export function ArmoryView({ data, ops }: { data: ArmoryData; ops: ArmoryOps }) 
         ) : prompt?.kind === "search" ? (
             <SearchPrompt
                 glyphs={glyphs}
+                deny={data.match.busy ? "Saving a change" : undefined}
                 onStop={() => {
                     setPrompt(null);
                     data.match.cancel();
@@ -1063,6 +1064,7 @@ function Workspace(props: WorkspaceProps) {
                         <div className="hqa-apply">
                             <ActionRow
                                 id="bench-apply"
+                                instant
                                 group="detail"
                                 label="Apply mods"
                                 title="Apply mods"
@@ -1072,6 +1074,7 @@ function Workspace(props: WorkspaceProps) {
                         </div>
                         <ActionRow
                             id="bench-discard"
+                            instant
                             group="detail"
                             label="Discard"
                             title="Discard"
@@ -1146,6 +1149,39 @@ function Workspace(props: WorkspaceProps) {
                 (data.storage.upgrades ?? []).filter(
                     (u) => u.name === tiers.find((a) => a.id === id)?.name,
                 ).length;
+            // A click on a mod drafts it and the picker stays open: the row then offers
+            // Apply (a button on the row, and the next click or double click on it), so
+            // fitting is two presses. The draft is local and Discard undoes it.
+            const fitPlanNow = fitPlan(
+                (weapon.gear?.upgrades ?? []).map((u) => u.name),
+                draft,
+                stock,
+            );
+            const applyHere: Command = write(
+                `Apply \u00b7 ${planSummary(fitPlanNow)}`,
+                () => {
+                    closePicker();
+                    return apply();
+                },
+                { short: "Apply" },
+            );
+            const choice = (tier: number | null, drafted: boolean): Command[] => {
+                const next = draftMod(draft, slot, tier);
+                return [
+                    drafted
+                        ? applyHere
+                        : {
+                              action: "confirm",
+                              label: "Choose",
+                              tone: "primary",
+                              deny: "deny" in next ? next.deny : undefined,
+                              run: () => {
+                                  if ("fit" in next) setDraft(next.fit);
+                              },
+                          },
+                    back,
+                ];
+            };
             return (
                 <FocusScope id="picker" back={back}>
                     <div className="hqs-stack">
@@ -1153,37 +1189,32 @@ function Workspace(props: WorkspaceProps) {
                             {ATTACHMENT_SLOT_NAMES[slot]}
                         </Eyebrow>
                         <List label={ATTACHMENT_SLOT_NAMES[slot]}>
-                            {draft[slot] && (
-                                <ListRow
-                                    id="pick-mod-none"
-                                    group="picker"
-                                    thumb={<Thumb icon={SLOT_ICON.primary} />}
-                                    name="None"
-                                    title="None"
-                                    hint="Comes off when the mods are applied"
-                                    commands={[
-                                        {
-                                            action: "confirm",
-                                            label: "Choose",
-                                            tone: "primary",
-                                            run: () => {
-                                                const next = draftMod(draft, slot, null);
-                                                if ("fit" in next) setDraft(next.fit);
-                                                closePicker();
-                                            },
-                                        },
-                                        back,
-                                    ]}
-                                />
-                            )}
+                            {/* Always present, so a draft never shifts the rows under the pointer. */}
+                            <ListRow
+                                id="pick-mod-none"
+                                instant
+                                offered={!draft[slot] && !!fitted[slot]}
+                                group="picker"
+                                thumb={<Thumb icon={SLOT_ICON.primary} />}
+                                name="None"
+                                title="None"
+                                selected={!draft[slot]}
+                                hint={
+                                    fitted[slot]
+                                        ? "Comes off when the mods are applied"
+                                        : "Nothing fitted"
+                                }
+                                commands={choice(null, !draft[slot] && !!fitted[slot])}
+                            />
                             {tiers.map((a) => {
-                                const next = draftMod(draft, slot, a.tier);
                                 const on = fitted[slot] === a.tier;
                                 const count = inStock(a.id);
                                 return (
                                     <ListRow
                                         key={a.id}
                                         id={`pick-mod-${a.tier}`}
+                                        instant
+                                        offered={draft[slot] === a.tier && !on}
                                         group="picker"
                                         thumb={
                                             <Thumb src={images[a.id]} icon={SLOT_ICON.primary} />
@@ -1201,19 +1232,7 @@ function Workspace(props: WorkspaceProps) {
                                                   ? "From storage when applied"
                                                   : "Requisitioned when applied, free"
                                         }
-                                        commands={[
-                                            {
-                                                action: "confirm",
-                                                label: "Choose",
-                                                tone: "primary",
-                                                deny: "deny" in next ? next.deny : undefined,
-                                                run: () => {
-                                                    if ("fit" in next) setDraft(next.fit);
-                                                    closePicker();
-                                                },
-                                            },
-                                            back,
-                                        ]}
+                                        commands={choice(a.tier, draft[slot] === a.tier && !on)}
                                     />
                                 );
                             })}
@@ -1247,6 +1266,7 @@ function Workspace(props: WorkspaceProps) {
                                     <ListRow
                                         key={w.id}
                                         id={`pick-w-${w.id}`}
+                                        instant
                                         group="picker"
                                         thumb={
                                             <Thumb
@@ -1308,6 +1328,7 @@ function Workspace(props: WorkspaceProps) {
                             {e.carrier && (
                                 <ListRow
                                     id="pick-to-storage"
+                                    instant
                                     group="picker"
                                     thumb={
                                         <Thumb
@@ -1357,6 +1378,7 @@ function Workspace(props: WorkspaceProps) {
                                     <ListRow
                                         key={r.objectId}
                                         id={`pick-to-${r.objectId}`}
+                                        instant
                                         group="picker"
                                         thumb={
                                             <Portrait

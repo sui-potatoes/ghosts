@@ -179,7 +179,7 @@
     color: var(--accent-color);
 }
 
-.sqv-plaque[data-refused] {
+.sqv-plaque[data-inactive] {
     border-color: var(--line-strong);
     color: var(--disabled-color);
 }
@@ -189,7 +189,7 @@
     color: var(--background-color);
 }
 
-.sqv-plaque[data-focused][data-refused] {
+.sqv-plaque[data-focused][data-inactive] {
     background: var(--band-locked);
     color: var(--on-band);
 }

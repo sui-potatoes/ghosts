@@ -40,6 +40,7 @@ export default function FindMatchScreen() {
                         match.suspendedUntilMs > Date.now()
                             ? Math.ceil((match.suspendedUntilMs - Date.now()) / 60_000)
                             : 0,
+                    busy: match.busy,
                     error: match.error || null,
                     timeoutMs: SEARCH_TIMEOUT_MS,
                 },

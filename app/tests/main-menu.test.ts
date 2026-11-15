@@ -55,6 +55,8 @@ test("signed in: no Sign In row; Find Match opens its screen on the first click"
 test("the one match row follows the search", () => {
     assert.equal(matchRow(state({}, { searching: true })).label, "Cancel Search");
     assert.equal(matchRow(state({}, { searching: true })).instant, false);
+    assert.equal(matchRow(state({}, { searching: true })).locked, undefined);
+    assert.equal(matchRow(state({}, { searching: true, busy: true })).locked, "Saving a change");
     assert.equal(matchRow(state({}, { playing: true, searching: true })).label, "Resume Match");
     const hiring = matchRow(state({}, { hiring: true }));
     assert.equal(hiring.tag, "Hiring");

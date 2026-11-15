@@ -38,7 +38,13 @@ const SECTIONS: { id: HqSection; label: string }[] = [
 export type HqGate = "disabled" | "signed-out" | "loading" | { error: string } | null;
 
 /** The match search the header shows. */
-export type MatchState = { searchingSince: number | null; playing: boolean; cancel(): void };
+export type MatchState = {
+    searchingSince: number | null;
+    playing: boolean;
+    /** Another write is in flight: a cancel sent now would be dropped. */
+    busy?: boolean;
+    cancel(): void;
+};
 
 export type FrameBits = {
     status: ReactNode;
@@ -267,17 +273,20 @@ export function SearchPrompt({
     glyphs,
     onStop,
     onKeep,
+    deny,
 }: {
     glyphs: GlyphSet;
     onStop: () => void;
     onKeep: () => void;
+    /** Why Stop cannot run yet. */
+    deny?: string;
 }) {
     return (
         <Prompt
             id="prompt-search"
             eyebrow="Matchmaking"
             title="Stop searching?"
-            confirm={{ label: "Stop", run: onStop }}
+            confirm={{ label: "Stop", run: onStop, deny }}
             cancel={{ label: "Keep searching", run: onKeep }}
             glyphs={glyphs}
         >

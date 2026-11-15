@@ -3,7 +3,7 @@
 
 /**
  * The find-match screen's rules, apart from the screen: which phase the search
- * is in and what the one action on it is. The screen (`FindMatch.tsx`) feeds
+ * is in and what the one action on it is, and whether it can run yet. The screen (`FindMatch.tsx`) feeds
  * it from the account and the queue and draws what it says.
  */
 
@@ -24,6 +24,8 @@ export type FindState = {
     timeoutMs: number;
     /** A queue request is on its way, or the screen has yet to send one. */
     starting: boolean;
+    /** Another write is in flight: a cancel sent now would be dropped. */
+    busy?: boolean;
 };
 
 export type FindPhase =
@@ -43,7 +45,12 @@ export type FindView = {
     headline: string;
     note: string;
     /** The screen's one focus target. */
-    action: { id: FindAction; label: string };
+    action: {
+        id: FindAction;
+        label: string;
+        /** Why the action cannot run yet; the button shows, dimmed, and the bar says why. */
+        inactive?: string;
+    };
     /** Something is in flight: the pending mark turns. */
     pending: boolean;
 };
@@ -78,7 +85,11 @@ export function findView(s: FindState): FindView {
             phase: "timeout",
             headline: "No match found",
             note: "No opponent came in time. The squad leaves the queue.",
-            action: { id: "cancel", label: "Leave the queue" },
+            action: {
+                id: "cancel",
+                label: "Leave the queue",
+                inactive: s.busy ? "Saving a change" : undefined,
+            },
             pending: false,
         };
     if (s.searching)
@@ -86,7 +97,11 @@ export function findView(s: FindState): FindView {
             phase: "searching",
             headline: "Finding match",
             note: "Looking for an opponent. The search carries on while you use the menus.",
-            action: { id: "cancel", label: "Cancel search" },
+            action: {
+                id: "cancel",
+                label: "Cancel search",
+                inactive: s.busy ? "Saving a change" : undefined,
+            },
             pending: true,
         };
     if (s.hiring)
@@ -94,7 +109,7 @@ export function findView(s: FindState): FindView {
             phase: "hiring",
             headline: "Hiring the squad",
             note: "Your first recruits sign on, then the squad queues.",
-            action: { id: "menu", label: "Back to menu" },
+            action: { id: "cancel", label: "Cancel search", inactive: "Hiring the squad" },
             pending: true,
         };
     if (s.error && !s.starting)
@@ -109,7 +124,7 @@ export function findView(s: FindState): FindView {
         phase: "starting",
         headline: "Finding match",
         note: "Joining the queue.",
-        action: { id: "menu", label: "Back to menu" },
+        action: { id: "cancel", label: "Cancel search", inactive: "Joining the queue" },
         pending: true,
     };
 }

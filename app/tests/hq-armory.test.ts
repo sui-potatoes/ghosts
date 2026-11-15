@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import {
@@ -18,6 +19,7 @@ import {
     type Holder,
     type StackInput,
 } from "../src/features/headquarters/armory/rules.ts";
+import { clickCommand } from "../src/ui/focus-store.ts";
 import { holdingRifle, weaponName } from "../src/features/headquarters/squad/rules.ts";
 
 test("a draft takes one tier per kind: a new tier replaces the old one", () => {
@@ -226,4 +228,94 @@ test("bench commands: no draft keeps the row's own, a draft makes Apply the prim
     // Draft, a row whose own action waits (stats, Equipped by): Apply and Discard.
     const waiting = benchCommands(true, [change, back], apply, discard, back, true);
     assert.deepEqual(asLabels(waiting), ["confirm:Apply mods", "reset:Discard", "back:List"]);
+});
+
+// --- Equipping is one press for every kind of gear ----------------------------------
+
+const rowsOf = (file: string, prefix: string): { id: string; instant: boolean }[] => {
+    const src = readFileSync(new URL(file, import.meta.url), "utf8");
+    const rows: { id: string; instant: boolean }[] = [];
+    for (const m of src.matchAll(/<ListRow\b[\s\S]*?commands=/g)) {
+        const id = /\bid=(?:"([^"]+)"|\{`([^`]+)`\})/.exec(m[0]);
+        const name = id?.[1] ?? id?.[2] ?? "";
+        if (name.startsWith(prefix)) rows.push({ id: name, instant: /\binstant\b/.test(m[0]) });
+    }
+    return rows;
+};
+
+test("a click on an instant picker row runs its Equip, a commit row only arms", () => {
+    const equip = { action: "confirm" as const, label: "Equip", run: () => {} };
+    const opts = { again: false, clickConfirm: true };
+    assert.equal(clickCommand([equip], { ...opts, instant: true }), equip);
+    assert.equal(clickCommand([equip], { ...opts, instant: false }), undefined);
+});
+
+test("every row of the loadout and Armory pickers (armor, rifle, utility, mod, try-on) acts on one click", () => {
+    for (const file of [
+        "../src/features/headquarters/squad/Loadout.tsx",
+        "../src/features/headquarters/armory/ArmoryView.tsx",
+        "../src/features/squad-view/SquadSelect.tsx",
+    ]) {
+        const rows = rowsOf(file, "pick-");
+        assert.ok(rows.length >= 2, `${file} declares picker rows`);
+        for (const r of rows)
+            // `pick-current` only closes the picker: it carries no Equip.
+            if (r.id !== "pick-current")
+                assert.ok(r.instant, `${file}: ${r.id} must be instant, one click equips`);
+    }
+});
+
+test("the bench's Apply and Discard rows run on one press", () => {
+    const src = readFileSync(
+        new URL("../src/features/headquarters/armory/ArmoryView.tsx", import.meta.url),
+        "utf8",
+    );
+    const head = (id: string) =>
+        new RegExp(
+            `<(?:ActionRow|ListRow|SlotRow)\\b[^>]*?\\bid=["{\`]+${id}[\\s\\S]*?commands=`,
+        ).exec(src)?.[0] ?? "";
+    for (const id of ["bench-apply", "bench-discard", "bench-carrier"])
+        assert.match(head(id), /\binstant\b/, `${id} is instant`);
+    assert.doesNotMatch(
+        head("bench-apply") + head("bench-discard"),
+        /\bclick:/,
+        "no special click command stands in for Apply",
+    );
+});
+
+test("a mod row drafts on one click and offers Apply; a second click or double click applies once", () => {
+    const file = "../src/features/headquarters/armory/ArmoryView.tsx";
+    const src = readFileSync(new URL(file, import.meta.url), "utf8");
+    for (const id of ["pick-mod-", "pick-w-"]) {
+        const row = rowsOf(file, id);
+        assert.ok(row.length >= 1 && row.every((r) => r.instant), `${id} rows are instant`);
+    }
+    // The drafted row's primary is Apply (the same command as the bar's), shown on the row.
+    assert.match(src, /drafted\s*\?\s*applyHere/);
+    assert.match(src, /offered=\{draft\[slot\] === a\.tier && !on\}/);
+    const apply = /const applyCommand = write\("Apply mods"[^;]*;/.exec(src)?.[0] ?? "";
+    assert.ok(
+        apply && !/click:/.test(apply),
+        "the bench's Apply is one command, no click stand-in",
+    );
+
+    // On an instant row: click 1 runs Choose, click 2 (or the second of a double) runs Apply, once.
+    const ran: string[] = [];
+    let drafted = false;
+    const commands = () => [
+        drafted
+            ? { action: "confirm" as const, label: "Apply", run: () => void ran.push("apply") }
+            : {
+                  action: "confirm" as const,
+                  label: "Choose",
+                  run: () => {
+                      ran.push("choose");
+                      drafted = true;
+                  },
+              },
+    ];
+    const opts = { again: false, instant: true, clickConfirm: true };
+    clickCommand(commands(), opts)!.run!();
+    clickCommand(commands(), opts)!.run!();
+    assert.deepEqual(ran, ["choose", "apply"]);
 });

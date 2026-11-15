@@ -93,6 +93,7 @@ export default function Headquarters() {
         match: {
             searchingSince: search.searching ? Number(search.searching.sinceMs) : null,
             playing: !!search.playing,
+            busy: search.busy,
             cancel: search.cancel,
         },
     };

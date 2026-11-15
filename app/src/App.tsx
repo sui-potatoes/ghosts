@@ -38,6 +38,8 @@ const ResultQa = import.meta.env.VITE_RESULT_QA
 const RecruitQa = import.meta.env.VITE_RECRUIT_QA
     ? lazy(() => import("./features/headquarters/squad/qa"))
     : null;
+// QA only: the find-match screen over fixtures, registered in `VITE_FIND_QA=1` builds.
+const FindQa = import.meta.env.VITE_FIND_QA ? lazy(() => import("./features/find-match/qa")) : null;
 import { SquadPreload, TransactionSender } from "./chain";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { LoadingSpinner } from "./components/LoadingSpinner";
@@ -200,6 +202,16 @@ export function App() {
                         element={
                             <Suspense fallback={<LoadingSpinner />}>
                                 <RecruitQa />
+                            </Suspense>
+                        }
+                    />
+                )}
+                {FindQa && (
+                    <Route
+                        path="/qa/find"
+                        element={
+                            <Suspense fallback={<LoadingSpinner />}>
+                                <FindQa />
                             </Suspense>
                         }
                     />

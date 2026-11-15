@@ -300,6 +300,7 @@ export function HeadquartersView({ data, ops }: { data: HqData; ops: HqOps }) {
         ) : prompt?.kind === "search" ? (
             <SearchPrompt
                 glyphs={glyphs}
+                deny={data.match.busy ? "Saving a change" : undefined}
                 onStop={() => {
                     setPrompt(null);
                     data.match.cancel();

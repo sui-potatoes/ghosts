@@ -88,11 +88,19 @@ type Command = {
     label: string;
     short?: string; // inline chip label
     tone?: "primary" | "danger";
-    deny?: string; // shown but refused; the bar says why
+    deny?: string; // inactive: shown, never runs; the target dims, the bar says why
     glyph?: "lr" | "ud"; // for nav: what the directions do
     run?: () => void;
 };
 ```
+
+**Inactive is `deny` on a node's Confirm** — one reason string, no per-screen
+styling. The target gets `data-inactive` + `aria-disabled` (dimmed, no accent
+band, dashed block buttons, a quieter cursor frame), the bar's hint line shows
+the reason, the bar's command is dashed, a press or click knocks (deny sound
+and shake) and never arms or runs. The cursor may still land on it so the
+reason can be read. A command that becomes possible later just drops `deny`.
+`ListRow`'s `locked` is only the padlock before its tag.
 
 A node's `back` command overrides the scope's Back (e.g. "Roster" returns to
 the list). For a custom element use `useFocusable({ id, group, … })` and
@@ -233,6 +241,12 @@ changed; never run an idle loop.
   shows is what lands. Hover also never writes a panel's remembered row.
   Clicking the hovered row makes it the subject, as before: plain menus act
   with one click.
+- An armed row shows its primary as a labelled button at its trailing edge
+  (`useFocusable`'s `armedCommand`, drawn by `InlineCommands armed`): a click
+  on it runs the command once and disarms (`store.confirmArmed`), as the second
+  click does. Back, a key or pad move, a click elsewhere or a scope change
+  remove it; a refused (`deny`) primary is never armed. Gear equips and
+  unequips are `instant` (one press); commit rows are for what spends or destroys.
 - Inline chips (`InlineCommands`) are for **secondary** commands only (Reset:
   Remove, Manage). A target whose only command is its primary shows no chip
   and does not change height when selected; the command bar still names the

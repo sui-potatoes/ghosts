@@ -435,13 +435,7 @@ function Plaque({
         // Once, as the reveal starts.
     }, []);
     return (
-        <button
-            type="button"
-            tabIndex={-1}
-            className="sqv-plaque"
-            data-refused={deny ? "" : undefined}
-            {...props}
-        >
+        <button type="button" tabIndex={-1} className="sqv-plaque" {...props}>
             {label}
         </button>
     );

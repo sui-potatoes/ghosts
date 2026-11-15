@@ -24,7 +24,13 @@ export type CommandAction = "nav" | "confirm" | "reset" | "back";
 export type Command = {
     action: CommandAction;
     label: string;
-    /** Shown but refused; the reason is what the command bar says. */
+    /**
+     * Inactive: shown, never run, with this short reason. The one inactive
+     * state of the interface: the target dims (`data-inactive`, `aria-disabled`),
+     * a press knocks instead of acting, nothing arms, and the command bar says
+     * why while the cursor is on it. The cursor may still land on it so the
+     * reason can be read.
+     */
     deny?: string;
     /** Primary weighs heaviest in the bar; danger is the destructive variant. */
     tone?: "primary" | "danger";
@@ -437,6 +443,13 @@ export class FocusStore {
             this.memory.set(node.group, id);
             this.chosen = id;
         }
+        // An inactive primary is never armed or run; the click only knocks.
+        const refused = inactiveReason(commands);
+        if (refused !== undefined && clickConfirm && !commands.some((c) => c.click)) {
+            this.armed = null;
+            this.run(commands.find((c) => c.action === "confirm")!);
+            return;
+        }
         const command = clickCommand(commands, { again, instant, clickConfirm });
         if (command) {
             this.armed = null;
@@ -445,6 +458,24 @@ export class FocusStore {
             this.armed = id;
             this.emit();
         }
+    }
+
+    /**
+     * The inline confirm button of an armed target: it runs that target's
+     * primary now, as the second click would, and disarms. The pointer may rest
+     * on another target, so it acts on the armed one.
+     */
+    confirmArmed() {
+        const id = this.armed;
+        this.armed = null;
+        const command = id
+            ? this.nodes.get(id)?.commands.find((c) => c.action === "confirm")
+            : null;
+        if (!id || !command) {
+            this.emit();
+            return;
+        }
+        this.run(command, id);
     }
 
     /** The first node of a group, or the one it had last when `remember`. */
@@ -533,6 +564,12 @@ export class FocusStore {
 
     invoke(action: CommandAction): boolean {
         if (action === "nav") return false;
+        // Back first disarms a target waiting for its second click.
+        if (action === "back" && this.armed !== null) {
+            this.armed = null;
+            this.emit();
+            return true;
+        }
         this.settle();
         const command = this.command(action);
         if (!command) return false;
@@ -623,6 +660,11 @@ export function nearest<N extends { el: FocusElement | null }>(
         }
     }
     return best;
+}
+
+/** Why a target's primary (its Confirm) is inactive right now; undefined when it can run. */
+export function inactiveReason(commands: Command[]): string | undefined {
+    return commands.find((c) => c.action === "confirm")?.deny || undefined;
 }
 
 /**

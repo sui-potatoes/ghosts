@@ -117,6 +117,7 @@ export function FindMatch({ ops }: { ops: FindOps }) {
                                 action: "confirm",
                                 label: view.action.label,
                                 tone: "primary",
+                                deny: view.action.inactive,
                                 run,
                             },
                         ]}

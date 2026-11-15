@@ -63,6 +63,8 @@ type Focus = {
     commands?: Command[];
     /** The first click or tap runs the primary too (`useFocusable`'s `instant`). */
     instant?: boolean;
+    /** The primary is on offer to the mouse as a labelled button on the row, armed or not. */
+    offered?: boolean;
 };
 
 /** A small picture at a row's leading edge: a rendered thumbnail, or a pictogram. */
@@ -85,7 +87,7 @@ type ListRowProps = Focus & {
     tagTone?: "default" | "accent" | "warn" | "dim";
     /** The current one (issued, on stage): an accent notch, independent of the cursor. */
     selected?: boolean;
-    /** Shown, selectable, refused: the command bar says why. */
+    /** A padlock before the tag. The dimming is the row's inactive state (`deny` on its Confirm). */
     locked?: boolean;
 };
 
@@ -104,14 +106,13 @@ export function ListRow({
     locked,
     ...focus
 }: ListRowProps) {
-    const { props, inline, commands } = useFocusable<HTMLButtonElement>(focus);
+    const { props, inline, commands, armedCommand } = useFocusable<HTMLButtonElement>(focus);
     return (
         <button
             type="button"
             tabIndex={-1}
             className="gui-row"
             data-selected={selected || undefined}
-            data-locked={locked || undefined}
             data-thumb={thumb ? "" : undefined}
             aria-selected={selected}
             {...props}
@@ -122,7 +123,7 @@ export function ListRow({
                 {kind && <span className="gui-row-kind">{kind}</span>}
             </span>
             {inline ? (
-                <InlineCommands commands={commands} />
+                <InlineCommands commands={commands} armed={armedCommand} />
             ) : (
                 tag && (
                     <span className="gui-row-tag" data-tone={tagTone}>
@@ -254,7 +255,7 @@ type SlotRowProps = Focus & {
 
 /** A slot: filled or empty, a cursor target whose commands change or clear it. */
 export function SlotRow({ slot, icon, image, item, ...focus }: SlotRowProps) {
-    const { props, inline, commands } = useFocusable<HTMLButtonElement>(focus);
+    const { props, inline, commands, armedCommand } = useFocusable<HTMLButtonElement>(focus);
     return (
         <button
             type="button"
@@ -272,7 +273,7 @@ export function SlotRow({ slot, icon, image, item, ...focus }: SlotRowProps) {
                 <span className="gui-slot-name">{slot}</span>
                 <span className="gui-slot-item">{item ?? "Empty"}</span>
             </span>
-            {inline && <InlineCommands commands={commands} />}
+            {inline && <InlineCommands commands={commands} armed={armedCommand} />}
         </button>
     );
 }
@@ -305,7 +306,7 @@ type EmptyStateProps = Focus & {
 
 /** An empty panel that still gives the cursor somewhere to be, and a way forward. */
 export function EmptyState({ headline, children, action, ...focus }: EmptyStateProps) {
-    const { props } = useFocusable<HTMLButtonElement>(focus);
+    const { props, armedCommand } = useFocusable<HTMLButtonElement>(focus);
     return (
         <div className="gui-empty">
             <span className="gui-empty-headline">{headline}</span>
@@ -313,6 +314,7 @@ export function EmptyState({ headline, children, action, ...focus }: EmptyStateP
             <button type="button" tabIndex={-1} className="gui-empty-action" {...props}>
                 {action}
             </button>
+            {armedCommand && <InlineCommands commands={[]} armed={armedCommand} />}
         </div>
     );
 }
@@ -463,11 +465,11 @@ type ActionRowProps = Focus & {
 
 /** A row that is one action (Dismiss): a cursor target, Confirm runs it. */
 export function ActionRow({ label, tone = "default", ...focus }: ActionRowProps) {
-    const { props, inline, commands } = useFocusable<HTMLButtonElement>(focus);
+    const { props, inline, commands, armedCommand } = useFocusable<HTMLButtonElement>(focus);
     return (
         <button type="button" tabIndex={-1} className="gui-action-row" data-tone={tone} {...props}>
             <span className="gui-action-label">{label}</span>
-            {inline && <InlineCommands commands={commands} />}
+            {inline && <InlineCommands commands={commands} armed={armedCommand} />}
         </button>
     );
 }
