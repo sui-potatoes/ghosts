@@ -604,7 +604,9 @@ export function CommandBar() {
       ? "The encounter is over"
       : !myTurn
         ? game.scenario.versus
-          ? "The opponent is moving"
+          ? game.turn === 1
+            ? "The opponent moves first: your turn comes after theirs"
+            : "The opponent is moving"
           : "Hostiles are moving"
         : s.resolving
           ? "Order sent"
@@ -705,7 +707,7 @@ export function CommandBar() {
           onClick={() => void endTurn()}
         >
           <Glyph action={aiming ? undefined : "confirm"} pad={engineSettings().padCombat().wheel} />
-          <span>End turn</span>
+          <span>{!game.result && game.phase !== "player" && game.scenario.versus ? "Opponent's turn" : "End turn"}</span>
         </button>
       </div>
     </footer>

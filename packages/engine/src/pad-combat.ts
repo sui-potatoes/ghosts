@@ -11,6 +11,7 @@ import { cancelDialog, onPad, padActive, type PadDir, type PadInput } from "./ga
 import { PAD_COMBAT_ACTIONS, type PadBindable, type PadCombatAction, type PadCombatBindings } from "./keys";
 import { session } from "./session";
 import { engineSettings } from "./settings";
+import { padCameraFree } from "./camera-input";
 import { closeInspect, cycleInspect, inspect, inspectHeld } from "./ui/intel/store";
 
 /**
@@ -208,9 +209,10 @@ export function bindPadCombat({ onPause }: ControlOptions = {}): () => void {
 
     // The right stick drives the camera, even mid-animation: sideways
     // orbits, up and down dolly in and out, both smooth and frame-timed.
-    // With nobody selected the camera is free: up and down tilt instead,
-    // and the left stick, the d-pad and the triggers pan and zoom.
-    const free = !s.selected && !s.wheel;
+    // With nobody selected, or while the other side acts or an animation runs,
+    // the camera is free: up and down tilt instead, and the left stick, the
+    // d-pad and the triggers pan and zoom.
+    const free = padCameraFree({ selected: s.selected, wheel: s.wheel, busy: s.busy, phase: game.phase });
     const rx = pad.axis(2);
     if (rx) battlefield.rotate(rx * TURN_SPEED * dt);
     const ry = pad.axis(3);
@@ -230,6 +232,11 @@ export function bindPadCombat({ onPause }: ControlOptions = {}): () => void {
       else if (pad.pressed("right")) cycleInspect(1);
       if (pad.pressed("b") || pad.pressed("left") || pad.pressed("right")) return true;
     }
+    // Pause is the player's, even through the other side's turn.
+    if (!s.wheel && pad.pressed("start")) {
+      onPause?.();
+      return true;
+    }
     if (s.busy || s.resolving) {
       if (free) battlefield.markTile(null);
       return true;
@@ -239,10 +246,6 @@ export function bindPadCombat({ onPause }: ControlOptions = {}): () => void {
       return true;
     }
 
-    if (pad.pressed("start")) {
-      onPause?.();
-      return true;
-    }
     if (bound("grid")) {
       runCombatAction("grid");
       return true;

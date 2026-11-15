@@ -4,6 +4,7 @@
 import { action, cancelTargeting, deselect, endTurn, fire, pick, select, throwGrenade } from "./actions";
 import { GRENADE_RANGE } from "./action-registry";
 import { allows, distance } from "./game";
+import { isCameraCommand } from "./camera-input";
 import { combatActionOf, isEditable as typing, type CombatAction } from "./keys";
 import { session } from "./session";
 import { engineSettings } from "./settings";
@@ -41,6 +42,15 @@ export function runCombatAction(command: CombatAction, { onPause, reverse }: Con
     cycleInspect(reverse ? -1 : 1);
     return;
   }
+  // The camera is never locked: it is the player's own view, and the other side's turn is when it is wanted.
+  if (isCameraCommand(command)) {
+    const { battlefield } = s;
+    if (command === "focus") {
+      if (s.selected) battlefield.focus();
+    } else if (command === "camera") toggleView();
+    else battlefield.rotate((command === "rotate-left" ? -1 : 1) * (Math.PI / 4));
+    return;
+  }
   if (s.busy) return;
   if (command === "next-operator") {
     const living = s.game.allies;
@@ -50,17 +60,12 @@ export function runCombatAction(command: CombatAction, { onPause, reverse }: Con
     if (n) select(living[i < 0 ? (reverse ? n - 1 : 0) : (i + (reverse ? -1 : 1) + n) % n].id);
     return;
   }
-  const { battlefield } = s;
   if (ORDERS.has(command)) void action(command);
   else if (command === "confirm") {
     if (s.mode === "fire") void fire();
     else if (s.mode === "grenade") void throwGrenade();
     else void endTurn();
   } else if (command === "grid") toggleGrid();
-  else if (command === "focus") battlefield.focus();
-  else if (command === "camera") toggleView();
-  else if (command === "rotate-left") battlefield.rotate(-Math.PI / 4);
-  else if (command === "rotate-right") battlefield.rotate(Math.PI / 4);
   else if (command === "cancel") cancelTargeting();
 }
 
@@ -103,6 +108,11 @@ export function bindControls({ onPause }: ControlOptions = {}): () => void {
     if (command === "inspect" && !typing(target)) {
       e.preventDefault();
       runCombatAction("inspect", { reverse: e.shiftKey });
+      return;
+    }
+    if (isCameraCommand(command)) {
+      if (s.busy) e.preventDefault();
+      runCombatAction(command);
       return;
     }
     if (s.busy) {
