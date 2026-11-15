@@ -142,6 +142,36 @@ test("the playtest moves, covers and sees by the chain's rules for its tiles", (
   assert.equal(game.coverAt(cell(2, 3)), false);
 });
 
+test("glass and tall fences stop a step and a shot like any high edge", () => {
+  const level = yard();
+  level.placements.push({ asset: "s13", at: [1, 4], turn: 0 }); // glass pane north of [1,4]
+  level.placements.push({ asset: "s15", at: [0, 4], turn: 0 }); // tall chain-link north of [0,4]
+  level.placements.push({ asset: "s06", at: [2, 4], turn: 0 }); // low sheet fence north of [2,4]
+  const game = new Encounter(scenarioFromLevel(level));
+  const cell = (x: number, z: number): Cell => [x - 4, z - 3];
+  const unit = game.unit("v")!;
+  unit.mobility = 12;
+  unit.pos = cell(1, 4);
+  const paths = game.paths(unit);
+  assert.ok(paths.get(cell(1, 3).join())!.length > 2, "around the glass, not through it");
+  assert.ok(paths.get(cell(0, 3).join())!.length > 2, "around the fence, not through it");
+  // The low fence beside them is still a step.
+  unit.pos = cell(2, 4);
+  assert.equal(game.paths(unit).get(cell(2, 3).join())?.length, 2);
+  // An order straight through the glass is refused.
+  unit.pos = cell(1, 4);
+  unit.mobility = 1;
+  assert.deepEqual(game.apply({ type: "move", unit: "v", to: cell(1, 3) }), []);
+  assert.deepEqual(unit.pos, cell(1, 4));
+  // Sight, as for any high edge: it blocks a line only as an inner edge, so a shot that
+  // crosses it mid-line is stopped, while one that starts or ends beside it is not.
+  assert.equal(game.shotBlocked(cell(1, 0), cell(1, 5)), true, "glass");
+  assert.equal(game.shotBlocked(cell(0, 0), cell(0, 5)), true, "tall fence");
+  assert.equal(game.shotBlocked(cell(2, 0), cell(2, 5)), false, "the low fence stays clear");
+  assert.equal(game.shotBlocked(cell(6, 0), cell(6, 6)), true, "the high block, same rule");
+  assert.equal(game.shotBlocked(cell(1, 3), cell(1, 4)), false, "adjacent across the glass");
+});
+
 test("the shipped demos round-trip: Black Rain and Paper Trail playtest where the demo deploys", () => {
   for (const shipped of [blackRain, paperTrail]) {
     const { level } = levelFromScenario(shipped);

@@ -7,7 +7,7 @@ import {
   canPlace, edgeKey, exportLevel, hostTop, importLevel, newLevel, placementCells, placementsAt,
   restHeight, swapAsset, toMoveMap, turnOffset, type Placement, type Turn,
 } from "./level.ts";
-import { assetByUid, assetSpec, replacementsFor } from "../catalog.ts";
+import { assetByUid, assetCatalog, assetSpec, replacementsFor } from "../catalog.ts";
 
 const place = (kind: Parameters<typeof assetSpec>[0], at: [number, number], turn: Turn = 0): Placement => ({
   asset: assetSpec(kind).uid,
@@ -108,10 +108,40 @@ test("the Move grid ranks footprints and writes edge cover onto both sides", () 
   // The wall on the north edge of [1,2]: high on its top, high on [1,1]'s bottom.
   assert.deepEqual(map.tiles[2][1], { t: "cover", sides: [0, 2, 0, 0] });
   assert.deepEqual(map.tiles[1][1], { t: "cover", sides: [0, 0, 0, 2] });
-  // Glazing west of [3,2] is low cover; a door marks nothing.
-  assert.deepEqual(map.tiles[2][3], { t: "cover", sides: [1, 0, 0, 0] });
-  assert.deepEqual(map.tiles[2][2], { t: "cover", sides: [0, 0, 1, 0] });
+  // Glazing west of [3,2] is high like a wall (the contract has nothing between); a door marks nothing.
+  assert.deepEqual(map.tiles[2][3], { t: "cover", sides: [2, 0, 0, 0] });
+  assert.deepEqual(map.tiles[2][2], { t: "cover", sides: [0, 0, 2, 0] });
   assert.deepEqual(map.tiles[2][0], { t: "empty" });
+});
+
+test("every catalog edge asset exports a pinned level: obstacles and walls high, low pieces low, doors nothing", () => {
+  const obstacles = ["s13", "s14", "s15", "s16", "o22"]; // glass pane, tall sheet/chain-link/picket, office glass wall
+  const highs = ["s11", "s12", "b02", "b03", "o20", "o21"];
+  const lows = ["s01", "s06", "s07", "s08", "b01", "o16"];
+  const doors = ["o17", "o18"];
+  const edges = assetCatalog.filter((a) => a.place === "edge" && a.mount !== "wall");
+  assert.deepEqual(
+    edges.map((a) => a.uid).sort(),
+    [...obstacles, ...highs, ...lows, ...doors].sort(),
+    "a new edge asset must be pinned here",
+  );
+  for (const [uids, value] of [[obstacles, 2], [highs, 2], [lows, 1], [doors, 0]] as const)
+    for (const uid of uids) {
+      const level = newLevel(3, 3);
+      level.placements.push({ asset: uid, at: [1, 1], turn: 1 }); // the east edge of [1,1]
+      const { tiles } = toMoveMap(level);
+      if (!value) assert.deepEqual([tiles[1][1], tiles[1][2]], [{ t: "empty" }, { t: "empty" }], uid);
+      else {
+        assert.deepEqual(tiles[1][1], { t: "cover", sides: [0, 0, value, 0] }, uid);
+        assert.deepEqual(tiles[1][2], { t: "cover", sides: [value, 0, 0, 0] }, uid);
+      }
+    }
+});
+
+test("edge pieces sharing an edge merge strongest-wins: glass over a low fence is high", () => {
+  const level = newLevel(3, 3);
+  level.placements.push({ asset: "s06", at: [1, 1], turn: 0 }, { asset: "s13", at: [1, 1], turn: 0 });
+  assert.deepEqual(toMoveMap(level).tiles[1][1], { t: "cover", sides: [0, 2, 0, 0] });
 });
 
 test("stand-ins swap for same-seat assets only", () => {

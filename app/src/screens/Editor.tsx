@@ -72,9 +72,14 @@ const FINISH_TONES: Record<OfficeFinish, string> = {
     sand: "#9b846a",
 };
 
-/** CVR / SOL / OBS / ENT, with the seat: ·E edge, ·S surface, ·W wall mount. */
+/**
+ * CVR / SOL / OBS / ENT, with the seat: ·E edge, ·S surface, ·W wall mount.
+ * An obstacle edge (glass, tall fences) exports as high cover, so it reads SOL:
+ * it blocks movement and sight like a wall.
+ */
 function tagOf(a: AssetSpec): string {
-    const base = { cover: "CVR", solid: "SOL", obstacle: "OBS", none: "ENT" }[a.footprint];
+    const footprint = a.place === "edge" && a.footprint === "obstacle" ? "solid" : a.footprint;
+    const base = { cover: "CVR", solid: "SOL", obstacle: "OBS", none: "ENT" }[footprint];
     const seat =
         a.mount === "wall" ? "W" : a.mount === "surface" ? "S" : a.place === "edge" ? "E" : "";
     return seat ? `${base}·${seat}` : base;

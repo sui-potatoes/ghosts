@@ -20,7 +20,8 @@ import type { BlockKind, PropKind, StreetKind } from "./environment.ts";
 /**
  * What an asset does to each cell it occupies: `cover` is a waist-high
  * barrier (units shelter against it), `solid` blocks movement and line of
- * sight at full height, `obstacle` blocks movement only, `none` is set
+ * sight at full height, `obstacle` blocks movement (a cell obstacle is a pit; an
+ * edge obstacle exports as high cover, so it blocks sight too), `none` is set
  * dressing on a walkable cell.
  */
 export type Footprint = "cover" | "solid" | "obstacle" | "none";
@@ -51,8 +52,8 @@ export interface AssetSpec {
   /**
    * Walls, glazing, fences, low-cover barriers and doors sit on cell EDGES,
    * not on cells: the placement's turn names the side of its cell (0 north,
-   * 1 east, 2 south, 3 west). A `solid` edge is high cover (blocks sight and
-   * movement across it), `cover` and `obstacle` edges are low, and a `none`
+   * 1 east, 2 south, 3 west). A `solid` or `obstacle` edge is high cover (blocks
+   * sight and movement across it), a `cover` edge is low, and a `none`
    * edge (a door) is a passage.
    */
   place?: "edge";

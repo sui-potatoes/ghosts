@@ -135,3 +135,13 @@ test("the editor's own export names the same grid the preset encodes", () => {
   const level = sample();
   assert.deepEqual(decode(toPreset(level).bytes).tiles, exportLevel(level).move.tiles);
 });
+
+test("glass and tall fences encode as high sides (2) like a wall", () => {
+  const level = sample();
+  level.placements.push({ asset: "s13", at: [5, 1], turn: 0 }, { asset: "s15", at: [5, 3], turn: 3 });
+  const { tiles } = decode(toPreset(level).bytes);
+  assert.deepEqual(tiles[1][5], { t: "cover", sides: [0, 2, 0, 0] });
+  assert.deepEqual(tiles[0][5], { t: "cover", sides: [0, 0, 0, 2] });
+  assert.deepEqual(tiles[3][5], { t: "cover", sides: [2, 0, 0, 0] });
+  assert.deepEqual(toPreset(level).issues.filter((i) => i.level === "error"), []);
+});

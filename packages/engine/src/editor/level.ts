@@ -388,7 +388,8 @@ export interface LevelExport {
  * The tile grid the rules see. Cell footprints: `cover` is a Cover tile with
  * low cover on every side (the free-standing barrier), `obstacle` is
  * Unwalkable, `solid` is Wall. Edge assets write cover levels onto the sides
- * of both adjacent tiles — high for a solid wall, low for glazing and low
+ * of both adjacent tiles — high for a solid wall, glazing and tall fences (the
+ * contract has no see-through blocker, so they block sight too), low for low
  * partitions, nothing for a door. Painted unwalkable tiles stay Unwalkable;
  * where claims overlap a cell the strongest wins. Destructibility stays with
  * the render props for now.
@@ -407,7 +408,7 @@ export function toMoveMap(level: Level): MoveMapExport {
     const spec = assetByUid(p.asset);
     if (!spec) continue;
     if (spec.place === "edge") {
-      const value = spec.footprint === "solid" ? HIGH : spec.footprint === "none" ? 0 : LOW;
+      const value = spec.footprint === "solid" || spec.footprint === "obstacle" ? HIGH : spec.footprint === "none" ? 0 : LOW;
       if (!value) continue;
       const e = canonicalEdge(p.at, p.turn);
       const [near, far] = edgeCells(p.at, p.turn);
