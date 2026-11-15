@@ -21,6 +21,7 @@ import { uiLampOn } from "../../../audio";
 import type { ChainRecruit } from "../../../chain";
 import { getSettings } from "../../../settings/store";
 import { FocusScope, Icon, useFocusable, useFocusState } from "../../../ui";
+import { FREE_RECRUITS } from "../../debrief/result";
 import { figuresOf } from "../../debrief/figures";
 import type { Anchor } from "../../squad-view/podium-scene";
 import { PodiumCanvas, podiumBox } from "../../squad-view/podiums";
@@ -121,7 +122,8 @@ export function Recruitment({ slots, pending, onHire, onEnter }: Props) {
     // The cursor follows the primary as it changes hands.
     const last = useRef<string | null>(null);
     useLayoutEffect(() => {
-        const id = phase === "revealing" ? "rec-skip" : "rec-primary";
+        const id =
+            phase === "revealing" ? "rec-skip" : phase === "idle" ? "rec-hire" : "rec-primary";
         if (last.current !== id) store.focus(id, false);
         last.current = id;
     }, [phase, store]);
@@ -158,12 +160,13 @@ export function Recruitment({ slots, pending, onHire, onEnter }: Props) {
                 </FocusScope>
             ) : phase === "settled" ? (
                 <Plaque id="rec-primary" label="Continue" hint="Into headquarters" run={onEnter} />
+            ) : phase === "idle" ? (
+                <Intro open={slots.filter((s) => !s).length} onHire={onHire} />
             ) : (
                 <Plaque
                     id="rec-primary"
                     label="Hire squad"
-                    hint={pending ? undefined : "Four recruits, free"}
-                    deny={pending ? "The squad is on its way" : undefined}
+                    deny="The squad is on its way"
                     run={onHire}
                 />
             )}
@@ -176,6 +179,31 @@ export function Recruitment({ slots, pending, onHire, onEnter }: Props) {
         </section>
     );
 }
+
+/**
+ * The empty state: what this is and what the primary does, above the dark
+ * stands. It gives way once the hire is under way (the plaque takes its old
+ * place) so it never covers the figures.
+ */
+function Intro({ open, onHire }: { open: number; onHire: () => void }) {
+    return (
+        <div className="sqv-intro" role="group" aria-labelledby="rec-intro-title">
+            <span className="gui-prompt-eyebrow">Recruitment</span>
+            <h2 className="gui-prompt-title" id="rec-intro-title">
+                {open === FREE_RECRUITS ? "Your squad is empty" : "Your squad has vacancies"}
+            </h2>
+            <p className="gui-prompt-body">
+                {open === FREE_RECRUITS
+                    ? `Hire up to ${COUNT_WORDS[open]} recruits at no cost.`
+                    : `Hire ${COUNT_WORDS[open] ?? open} more at no cost.`}{" "}
+                They report to the stands below, ready to equip.
+            </p>
+            <Plaque id="rec-hire" label="Hire squad" hint="Free" run={onHire} variant="intro" />
+        </div>
+    );
+}
+
+const COUNT_WORDS: Record<number, string> = { 1: "one", 2: "two", 3: "three", 4: "four" };
 
 /** A podium's engraved plate: its number while empty, the recruit's name and rank once named. */
 function Plate({ index, recruit }: { index: number; recruit: ChainRecruit | null }) {
@@ -207,6 +235,7 @@ function Plaque({
     run,
     deny,
     swipe,
+    variant,
 }: {
     id: string;
     label: string;
@@ -215,6 +244,8 @@ function Plaque({
     deny?: string;
     /** While it is Skip, any direction skips too. */
     swipe?: boolean;
+    /** `intro`: inside the empty-state block instead of the screen corner. */
+    variant?: "intro";
 }) {
     const { props } = useFocusable<HTMLButtonElement>({
         id,
@@ -237,6 +268,7 @@ function Plaque({
             tabIndex={-1}
             className="sqv-plaque"
             data-refused={deny ? "" : undefined}
+            data-intro={variant === "intro" ? "" : undefined}
             {...props}
         >
             {label}

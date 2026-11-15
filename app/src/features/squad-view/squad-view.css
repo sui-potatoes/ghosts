@@ -340,3 +340,26 @@
         height: calc(var(--u) * 9);
     }
 }
+
+/* Recruitment's empty state: a block over the upper middle of the dark stands. */
+.sqv-intro {
+    /* Against the viewport, not the diorama: on a phone the frame is wider than the screen. */
+    position: fixed;
+    top: calc(var(--h-l) + var(--u) * 6);
+    left: 16px;
+    right: 16px;
+    margin-inline: auto;
+    z-index: 5;
+    max-width: calc(var(--u) * 120);
+    padding: calc(var(--u) * 6) calc(var(--u) * 7);
+    background: var(--surface-color);
+    border: 1px solid var(--line-strong);
+    border-top: 2px solid var(--text-color);
+}
+
+.sqv-intro .sqv-plaque {
+    position: static;
+    display: block;
+    width: 100%;
+    margin-top: calc(var(--u) * 6);
+}
