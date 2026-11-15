@@ -21,8 +21,17 @@ export function perimeterMist() {
   texture.generateMipmaps = false;
   texture.needsUpdate = true;
   const material = new T.ShaderMaterial({
-    transparent: true, depthWrite: false, side: T.DoubleSide,
-    uniforms: { mist: { value: texture }, time: { value: 0 }, tint: { value: new T.Color('#9aa8c0') } },
+    transparent: true,
+    depthWrite: false,
+    side: T.DoubleSide,
+    // `blend` is 1 when the frame is blended in display space (drawn straight to the canvas). A linear
+    // target lays the same alpha on far heavier, so the post pipeline raises it (LOOK.mistBlend).
+    uniforms: {
+      mist: { value: texture },
+      time: { value: 0 },
+      tint: { value: new T.Color("#9aa8c0") },
+      blend: { value: 1 },
+    },
     vertexShader: `
       varying vec3 world;
       void main() {
@@ -32,7 +41,7 @@ export function perimeterMist() {
       }`,
     fragmentShader: `
       uniform sampler2D mist;
-      uniform float time;
+      uniform float time, blend;
       uniform vec3 tint;
       varying vec3 world;
       void main() {
@@ -41,7 +50,7 @@ export function perimeterMist() {
         vec2 uv = world.xz * .042 + vec2(time * .003, time * -.001);
         float cloud = texture2D(mist, uv + world.y * .09).r;
         cloud *= texture2D(mist, uv * 1.7 - world.y * .07).r;
-        float alpha = edge * cloud * .14;
+        float alpha = pow(edge * cloud * .14, blend);
         gl_FragColor = vec4(tint, alpha);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>

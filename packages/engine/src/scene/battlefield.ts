@@ -22,13 +22,17 @@ import { Occlusion } from "./occlusion";
 import { Overlays } from "./overlays";
 import { RenderProfiler } from "./profiler";
 import { buildCovers, buildRelay } from "./props";
-import { Precipitation, type Weather } from "./precipitation";
+import { Precipitation, RoofMap, type Weather } from "./precipitation";
 import { Space } from "./space";
 import type { AimReadout } from "./markers";
 import { Units } from "./units";
 import { ThreatOverlay } from "./threat";
 import type { ThreatArea } from "../intel";
-import { StreetReflections } from "./puddles";
+import { StreetReflections, wetGround } from "./puddles";
+import { noAir, plain, shot, SHOT_STEP } from "./shot";
+import { LOOK } from "./look";
+import { Post } from "./post";
+import { StreetAir } from "./street-air";
 
 export interface BattlefieldOptions {
   /** Element the canvas fills; also carries the scene's QA data attributes. */
@@ -94,13 +98,19 @@ export class Battlefield {
   private readonly occlusion = new Occlusion();
   private readonly reflections = new StreetReflections();
   private reflectionsDirty = true;
-  private readonly precipitation = new Precipitation();
+  private readonly precipitation: Precipitation;
+  /** What the post pipeline draws over the scene with a soft depth fade: lamp light volumes, rain, snow. */
+  private readonly airScene = new T.Scene();
+  private readonly roof = new RoofMap();
+  private roofDirty = true;
   private readonly profiler: RenderProfiler;
   private readonly reticle?: HTMLElement;
   private readonly sun = new T.DirectionalLight(0xc6d2ed, 3.6);
   private readonly ambient = new T.HemisphereLight(0xaebbd6, 0x14131a, 0.95);
   private readonly rim = new T.DirectionalLight(0xd69d70, 0.55);
   private readonly mist = perimeterMist();
+  private readonly post: Post;
+  private readonly air: StreetAir;
   private readonly pacer = new FramePacer();
   private readonly resizeObserver: ResizeObserver;
   private readonly chestPoints: T.Vector3[] = [];
@@ -117,6 +127,20 @@ export class Battlefield {
   private cameraMotion = false;
   private cameraSequence = 0;
   private savedCamera: SavedCamera | null = null;
+  /** `?shot=`: fixed steps taken since `startShot`; -1 before it. */
+  private shotStep = -1;
+  private pixelRatioQuery?: MediaQueryList;
+  /** The device pixel ratio the buffers were last sized for. */
+  private pixelRatioSeen = 0;
+  /** A display-scale change (another monitor, browser zoom) alone resizes nothing the observer sees. */
+  private readonly onPixelRatio = () => {
+    // The query flips before `devicePixelRatio` itself is current; read it on the next frame.
+    requestAnimationFrame(() => {
+      if (this.disposed) return;
+      this.resize();
+      this.watchPixelRatio();
+    });
+  };
   private readonly onVisibility = () => {
     cancelAnimationFrame(this.raf);
     this.raf = 0;
@@ -135,6 +159,8 @@ export class Battlefield {
     this.reticle = reticle;
     this.renderer = renderer;
     this.profiler = new RenderProfiler(renderer, viewport);
+    this.post = new Post(renderer);
+    if (!plain) this.mist.mesh.material.uniforms.blend.value = LOOK.mistBlend;
     this.scene.background = new T.Color(0x0c1019);
     this.scene.fog = new T.FogExp2(0x252b3b, 0.019);
     renderer.setPixelRatio(1);
@@ -148,6 +174,11 @@ export class Battlefield {
     this.space = new Space(game.map);
     this.destruction = new Destruction(game.map, () => {
       this.renderer.shadowMap.needsUpdate = true;
+      // Debris and broken props are new materials: they join the street's height fog here.
+      if (this.air && !this.indoors) {
+        this.air.fog(this.destruction.group);
+        this.host.dataset.airMaterials = String(this.air.patched);
+      }
     });
     // Scenery places clones of the same catalog assets combat destroys.
     const kit = { props: this.destruction.assets };
@@ -165,7 +196,12 @@ export class Battlefield {
       group.quaternion.identity();
       this.scene.add(group);
     }
-    this.scene.add(this.destruction.group, this.mist.mesh, this.effects.light, this.effects.group, this.precipitation.group);
+    this.scene.add(
+      this.destruction.group,
+      this.mist.mesh,
+      this.effects.light,
+      this.effects.group,
+    );
     renderer.shadowMap.autoUpdate = false;
     renderer.shadowMap.needsUpdate = true;
     this.overlays = new Overlays(this.scene, this.space);
@@ -188,6 +224,24 @@ export class Battlefield {
         if (current) this.onPick(current.pos, current.id);
       },
     });
+    // Outdoors the street's air goes over everything built so far: height fog and the lamps' light volumes.
+    this.air = new StreetAir(
+      this.scene,
+      this.post.depth,
+      this.roof.uniforms,
+      !noAir,
+    );
+    this.precipitation = new Precipitation(
+      { depth: this.post.depth, light: this.air.light },
+      this.roof,
+    );
+    this.airScene.add(this.precipitation.group);
+    if (!this.indoors) {
+      this.air.fog(this.scene);
+      if (!noAir) this.airScene.add(this.air.cones);
+    }
+    viewport.dataset.airMaterials = String(this.air.patched);
+    this.watchPixelRatio();
     this.listen();
     // A unit's name plate counts as the unit for the readout.
     const plate = (e: PointerEvent) =>
@@ -222,7 +276,23 @@ export class Battlefield {
     controls.minPolarAngle = 0.15;
     controls.maxPolarAngle = Math.PI * 0.47;
     controls.maxTargetRadius = 13;
-    controls.mouseButtons = { LEFT: T.MOUSE.ROTATE, MIDDLE: T.MOUSE.DOLLY, RIGHT: T.MOUSE.PAN };
+    controls.mouseButtons = {
+      LEFT: T.MOUSE.ROTATE,
+      MIDDLE: T.MOUSE.DOLLY,
+      RIGHT: T.MOUSE.PAN,
+    };
+    if (shot) {
+      // Dev only: a pinned camera that no input, focus or damping moves, free of the orbit limits.
+      controls.minDistance = 0;
+      controls.maxPolarAngle = Math.PI;
+      controls.maxTargetRadius = Infinity;
+      this.camera.position.set(...shot.position);
+      this.camera.fov = shot.fov;
+      controls.target.set(...shot.target);
+      controls.enableDamping = false;
+      controls.enabled = false;
+      this.cameraMotion = true;
+    }
     controls.update();
     controls.addEventListener("change", () => this.invalidate());
     controls.addEventListener("start", () => {
@@ -241,7 +311,8 @@ export class Battlefield {
     this.scene.add(this.ambient);
     sun.position.set(-16, 18, 5);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(1024, 1024);
+    sun.shadow.mapSize.set(LOOK.shadow.size, LOOK.shadow.size);
+    sun.shadow.radius = LOOK.shadow.radius;
     sun.shadow.camera.left = -22;
     sun.shadow.camera.right = 22;
     sun.shadow.camera.top = 22;
@@ -396,6 +467,14 @@ export class Battlefield {
     return ray.ray.intersectPlane(new T.Plane(new T.Vector3(0, 1, 0), 0), p) ? this.space.cellAt(p) : null;
   }
 
+  /** Re-run `resize` when the device pixel ratio moves off its current value; re-armed on every change. */
+  private watchPixelRatio() {
+    this.pixelRatioQuery?.removeEventListener("change", this.onPixelRatio);
+    if (this.disposed || typeof matchMedia !== "function") return;
+    this.pixelRatioQuery = matchMedia(`(resolution: ${devicePixelRatio}dppx)`);
+    this.pixelRatioQuery.addEventListener("change", this.onPixelRatio);
+  }
+
   resize() {
     const { width, height } = this.host.getBoundingClientRect();
     if (!width || !height) return;
@@ -403,9 +482,16 @@ export class Battlefield {
     this.viewportHeight = height;
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
-    this.renderer.setPixelRatio(renderPixelRatio(width, height, devicePixelRatio, this.renderMode));
+    this.pixelRatioSeen = devicePixelRatio;
+    this.renderer.setPixelRatio(
+      renderPixelRatio(width, height, devicePixelRatio, this.renderMode),
+    );
     this.renderer.setSize(width, height);
-    this.precipitation.setViewportHeight(height * this.renderer.getPixelRatio());
+    this.post.resize();
+    this.precipitation.setViewportHeight(
+      height * this.renderer.getPixelRatio(),
+      this.camera,
+    );
     this.invalidate();
   }
 
@@ -799,11 +885,35 @@ export class Battlefield {
     const interior = mapView(this.game.map.plan.id).interiorLighting;
     this.mist.mesh.visible = !interior;
     if (interior) {
-      this.renderer.toneMappingExposure = interior(this.scene, this.sun, this.ambient, this.rim, time);
+      this.renderer.toneMappingExposure = interior(
+        this.scene,
+        this.sun,
+        this.ambient,
+        this.rim,
+        time,
+      );
+      this.post.setDaylight(false);
     } else {
-      const p = applyTimeOfDay(this.scene, this.sun, this.ambient, this.rim, time);
+      const p = applyTimeOfDay(
+        this.scene,
+        this.sun,
+        this.ambient,
+        this.rim,
+        time,
+      );
+      if (this.precipitation.kind === "snow") {
+        // Snow in the air scatters light: paler, slightly thicker fog and more light from the sky.
+        const fog = this.scene.fog as T.FogExp2,
+          { air } = LOOK.snow;
+        fog.color.lerp(new T.Color(air.haze), air.lift);
+        fog.density *= air.density;
+        this.ambient.intensity *= air.ambient;
+      }
       this.renderer.toneMappingExposure = p.exposure;
       this.mist.mesh.material.uniforms.tint.value.setHex(p.mist);
+      this.air.setLit(p.lights, this.scene);
+      this.post.setDaylight(!p.lights);
+      this.precipitation.setAmbient(this.scene.fog!.color);
     }
     this.renderer.shadowMap.needsUpdate = true;
     this.reflectionsDirty = true;
@@ -816,7 +926,15 @@ export class Battlefield {
   get indoors() { return !!mapView(this.game.map.plan.id).interiorLighting; }
 
   setWeather(weather: Weather) {
-    this.precipitation.setKind(weather);
+    // Weather is an outdoor thing: nothing falls inside a building.
+    this.precipitation.setKind(this.indoors || noAir ? "clear" : weather);
+    const kind = this.precipitation.kind;
+    // The ground follows the weather: ripples only in rain, a dusting over a dulled street in snow.
+    wetGround.rippleAmount.value = kind === "rain" ? LOOK.rain.ripples : 0;
+    wetGround.wetAmount.value = kind === "snow" ? LOOK.snow.wet : 1;
+    this.air.setSnow(kind === "snow");
+    // The air does too (fog, sky light, the probe): re-apply the time of day under the new weather.
+    if (!this.indoors) this.setTimeOfDay(this.timeOfDay);
     this.host.dataset.weather = weather;
     this.host.dataset.snowParticles = String(this.precipitation.particles);
     this.invalidate();
@@ -824,10 +942,17 @@ export class Battlefield {
 
   setRenderMode(mode: RenderMode) {
     this.renderMode = mode;
+    this.post.setMode(mode);
     this.destruction.setBatterySaver(mode === "battery");
     this.precipitation.setBatterySaver(mode === "battery");
     this.host.dataset.snowParticles = String(this.precipitation.particles);
     this.resize();
+  }
+
+  /** `?shot=`: the encounter is ready; count the fixed steps to the held frame from here. */
+  startShot() {
+    this.shotStep = 0;
+    this.invalidate();
   }
 
   // === Render loop ===
@@ -844,7 +969,14 @@ export class Battlefield {
   private animate = (now: number) => {
     this.raf = 0;
     if (this.disposed) return;
-    const active = now < this.activeUntil || this.jobs.length > 0 || this.units.busy || this.destruction.active || this.occlusion.active || this.destruction.fading;
+    const active =
+      now < this.activeUntil ||
+      this.jobs.length > 0 ||
+      this.units.busy ||
+      this.destruction.active ||
+      this.occlusion.active ||
+      this.destruction.fading ||
+      (!!shot && this.shotStep <= shot.frames);
     const rate = renderCadence(this.renderMode, !document.hidden, active);
     if (rate === null) {
       this.pacer.reset();
@@ -852,36 +984,81 @@ export class Battlefield {
       return;
     }
     this.raf = requestAnimationFrame(this.animate);
-    const elapsed = this.pacer.step(now, rate);
+    let elapsed = this.pacer.step(now, rate);
     if (elapsed === null) return;
+    if (shot) {
+      // Scene time stands still until `startShot`, runs in fixed steps, then the frame is held.
+      if (this.shotStep > shot.frames) return;
+      elapsed = this.shotStep < 0 ? 0 : SHOT_STEP;
+      now = Math.max(0, this.shotStep) * SHOT_STEP * 1000;
+      if (this.shotStep >= 0) this.shotStep++;
+    }
     if (this.paused) {
       this.host.dataset.renderState = "paused";
       return;
     }
     const cpuStart = performance.now();
+    // Belt and braces for the media-query listener: a frame never draws at a stale pixel ratio.
+    if (devicePixelRatio !== this.pixelRatioSeen) this.resize();
     this.host.dataset.renderState = "rendering";
     this.mist.update(now / 1000);
+    this.air.update(now / 1000);
     // Hidden tabs suspend the timeline; returning resumes the current action without a jump.
     this.jobs = this.jobs.filter((job) => !job(elapsed));
     if (!this.aimKey && !this.cameraMotion) this.controls.update();
     this.precipitation.update(elapsed);
+    this.precipitation.follow(this.controls.target);
+    wetGround.rippleTime.value = this.precipitation.time;
     this.destruction.update(elapsed, this.camera);
     this.host.dataset.destruction = JSON.stringify(this.destruction.stats);
     this.updateUnits(elapsed, now / 1000);
     for (const hook of this.frameHooks) hook();
     this.updateReticle();
-    if (this.reflectionsDirty && !this.indoors) {
+    if ((this.reflectionsDirty || this.roofDirty) && !this.indoors) {
       // Probe only scenery: moving actors and ground HUD should never be baked into puddles.
-      const excluded = [...this.overlays.reflectionExcluded, this.threat.object, this.precipitation.group, this.effects.group,
-        ...this.game.units.flatMap((u) => { const rig = this.units.rig(u.id); return rig ? [rig.root] : []; })];
+      const excluded = [
+        ...this.overlays.reflectionExcluded,
+        this.threat.object,
+        this.effects.group,
+        ...this.game.units.flatMap((u) => {
+          const rig = this.units.rig(u.id);
+          return rig ? [rig.root] : [];
+        }),
+      ];
       const excludedVisibility = excluded.map((object) => object.visible);
       excluded.forEach((object) => { object.visible = false; });
       const visibility = this.occlusion.occluders.map(({ group }) => group.visible);
       for (const { group } of this.occlusion.occluders) group.visible = true;
-      try { this.reflections.capture(this.renderer, this.scene); }
-      finally {
-        excluded.forEach((object, i) => { object.visible = excludedVisibility[i]; });
-        this.occlusion.occluders.forEach(({ group }, i) => { group.visible = visibility[i]; });
+      if (this.roofDirty) {
+        // The weather's roof map: static scenery only, so props and mist come out too.
+        const extra = [this.destruction.group, this.mist.mesh],
+          shown = extra.map((object) => object.visible);
+        extra.forEach((object) => {
+          object.visible = false;
+        });
+        try {
+          this.roof.capture(this.renderer, this.scene);
+        } finally {
+          extra.forEach((object, i) => {
+            object.visible = shown[i];
+          });
+        }
+        this.roofDirty = false;
+      }
+      // The probe never lights its own capture; afterwards it is also the scene's faint environment.
+      this.scene.environment = null;
+      try {
+        if (this.reflectionsDirty)
+          this.reflections.capture(this.renderer, this.scene);
+      } finally {
+        this.scene.environment = this.reflections.texture;
+        this.scene.environmentIntensity = LOOK.environment;
+        excluded.forEach((object, i) => {
+          object.visible = excludedVisibility[i];
+        });
+        this.occlusion.occluders.forEach(({ group }, i) => {
+          group.visible = visibility[i];
+        });
       }
       this.reflectionsDirty = false;
     }
@@ -889,8 +1066,15 @@ export class Battlefield {
     // Interior shadows follow moving actors / camera cutaways, then reuse their maps at rest.
     if (this.indoors && active) this.renderer.shadowMap.needsUpdate = true;
     this.profiler.begin();
-    this.renderer.render(this.scene, this.camera);
+    if (plain) this.renderer.render(this.scene, this.camera);
+    else
+      this.post.render(
+        this.scene,
+        this.camera,
+        noAir ? undefined : this.airScene,
+      );
     this.profiler.end(now, elapsed, cpuStart, this.renderMode);
+    if (shot && this.shotStep > shot.frames) this.host.dataset.shot = "ready";
   };
 
   private updateUnits(dt: number, time: number) {
@@ -928,7 +1112,9 @@ export class Battlefield {
   async warmup() {
     const restore = this.units.showAllWeapons();
     try {
-      await this.renderer.compileAsync(this.scene, this.camera);
+      await this.post.compiling(() =>
+        this.renderer.compileAsync(this.scene, this.camera),
+      );
     } finally {
       restore();
     }
@@ -949,6 +1135,7 @@ export class Battlefield {
     this.disposed = true;
     cancelAnimationFrame(this.raf);
     this.resizeObserver.disconnect();
+    this.pixelRatioQuery?.removeEventListener("change", this.onPixelRatio);
     this.controls.dispose();
     this.units.dispose();
     this.occlusion.dispose();
@@ -977,6 +1164,9 @@ export class Battlefield {
     for (const skeleton of skeletons) skeleton.dispose();
     this.profiler.dispose();
     this.mist.dispose();
+    this.air.dispose();
+    this.roof.dispose();
+    this.post.dispose();
     this.renderer.dispose();
     this.renderer.forceContextLoss();
     this.renderer.domElement.remove();

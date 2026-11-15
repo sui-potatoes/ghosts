@@ -4,51 +4,75 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as T from "three";
-import { Rain } from "./scene/rain.ts";
+import { LOOK } from "./scene/look.ts";
+import { Precipitation } from "./scene/precipitation.ts";
 
-test("rain stays over the map after prolonged wind drift, with intact streaks and valid culling bounds", () => {
-  const rain = new Rain();
+type Particles = T.Mesh<T.InstancedBufferGeometry, T.ShaderMaterial>;
+const named = (weather: Precipitation, name: string) =>
+  weather.group.children.find((o) => o.name === name) as Particles;
+
+test("rain animates from one time uniform: seeds are never rewritten and the clock stops when it is off", () => {
+  const weather = new Precipitation();
   try {
-    // Fifteen minutes, including steps spanning more than one vertical wrap.
-    for (let i = 0; i < 900; i++) rain.update(1);
-    const positions = rain.mesh.geometry.attributes.position;
-    const point = new T.Vector3();
-    for (let i = 0; i < positions.count; i += 2) {
-      const x = positions.getX(i), y = positions.getY(i);
-      assert(x >= -32.5 && x <= 32.5);
-      assert(y >= 0 && y <= 23);
-      const tailX = positions.getX(i + 1) - x, tailY = positions.getY(i + 1) - y;
-      assert(tailX > 0 && tailY > 0, "tail trails the falling, left-moving head");
-      assert(Math.abs(tailX / tailY - 2 / 15) < 0.00001, "streak aligns with travel velocity");
-      assert.equal(positions.getZ(i + 1), positions.getZ(i));
-      for (const index of [i, i + 1]) {
-        point.fromBufferAttribute(positions, index);
-        assert(rain.mesh.geometry.boundingSphere!.containsPoint(point));
-      }
-    }
+    const rain = named(weather, "GPU rain");
+    const seeds = rain.geometry.getAttribute(
+      "seed",
+    ) as T.InstancedBufferAttribute;
+    const before = seeds.array.slice(),
+      version = seeds.version;
+    for (let i = 0; i < 900; i++) weather.update(1);
+    assert.deepEqual(seeds.array, before);
+    assert.equal(seeds.version, version);
+    assert.equal(weather.time, 900);
+    weather.setKind("clear");
+    weather.update(100);
+    assert.equal(weather.time, 900, "clear weather does not run the clock");
+    assert.equal(rain.visible, false);
+    weather.setKind("rain");
+    weather.update(1 / 60);
+    assert(weather.time > 900);
+    assert.equal(rain.visible, true);
   } finally {
-    rain.mesh.geometry.dispose();
-    (rain.mesh.material as T.Material).dispose();
+    weather.dispose();
   }
 });
 
-test("rain freezes when off and advances again on every re-enable", () => {
-  const rain = new Rain();
+test("rain is one draw call in battery saver; splashes, spray and the larger drop count come only off it", () => {
+  const weather = new Precipitation();
   try {
-    for (let cycle = 0; cycle < 5; cycle++) {
-      rain.update(40);
-      rain.visible = false;
-      const before = Array.from(rain.mesh.geometry.attributes.position.array);
-      rain.update(100);
-      assert.deepEqual(Array.from(rain.mesh.geometry.attributes.position.array), before);
-      assert.equal(rain.mesh.visible, false);
-      rain.visible = true;
-      rain.update(1 / 60);
-      assert.equal(rain.mesh.visible, true);
-      assert.notDeepEqual(Array.from(rain.mesh.geometry.attributes.position.array), before);
+    const rain = named(weather, "GPU rain"),
+      splashes = named(weather, "GPU rain splashes");
+    assert.equal(rain.geometry.instanceCount, LOOK.rain.drops.battery);
+    assert.equal(splashes.visible, false);
+    assert.equal(named(weather, "GPU rain spray").visible, false);
+    assert.equal(weather.instances, LOOK.rain.drops.battery);
+    weather.setBatterySaver(false);
+    assert.equal(rain.geometry.instanceCount, LOOK.rain.drops.smooth);
+    assert.equal(splashes.visible, true);
+    assert.equal(
+      weather.instances,
+      LOOK.rain.drops.smooth + LOOK.rain.splashes,
+    );
+    for (const mesh of [rain, splashes]) {
+      assert.equal(mesh.material.depthWrite, false);
+      assert.equal(
+        mesh.frustumCulled,
+        false,
+        "positions come from the shader, so bounds cannot cull",
+      );
     }
   } finally {
-    rain.mesh.geometry.dispose();
-    (rain.mesh.material as T.Material).dispose();
+    weather.dispose();
+  }
+});
+
+test("the volume follows the camera's focus on the ground plane only", () => {
+  const weather = new Precipitation();
+  try {
+    const { center, volume } = named(weather, "GPU rain").material.uniforms;
+    weather.follow(new T.Vector3(7, 3, -4));
+    assert.deepEqual(center.value.toArray(), [7, volume.value.y / 2, -4]);
+  } finally {
+    weather.dispose();
   }
 });

@@ -12,6 +12,9 @@ import { loadNativeIdentities } from "./mpfb-characters.js";
 import { Battlefield } from "./scene/battlefield";
 import { loadDestruction } from "./scene/destruction";
 import { mapView } from "./scene/maps";
+import { shot } from "./scene/shot";
+import { timePresets, type TimeOfDay } from "./scene-weather";
+import type { Weather } from "./scene/precipitation";
 import type { Recruit } from "@ghosts/squad/types";
 import type { Session } from "./session";
 import { applyLoadouts, deploymentLoadouts, deploymentLooks } from "./squad-bridge";
@@ -109,8 +112,15 @@ export function boot(options: BootOptions): () => void {
       // The briefing first: an encounter that is already over opens its debrief once it closes.
       if (s.game.scenario.versus) {
         if (s.game.phase === "enemy") void watchOpponent();
-      } else showBriefing("deploy");
+      } else if (!shot) showBriefing("deploy");
       refresh();
+      if (shot) {
+        if (shot.time && shot.time in timePresets)
+          battlefield.setTimeOfDay(shot.time as TimeOfDay);
+        if (shot.weather && ["clear", "rain", "snow"].includes(shot.weather))
+          battlefield.setWeather(shot.weather as Weather);
+        battlefield.startShot();
+      }
     } catch (error) {
       if (disposed) return;
       s.state = "failed";

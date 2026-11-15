@@ -2,6 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 import * as T from "three";
+import { LOOK } from "./look.ts";
+
+/** The rain's clock and strength on wet ground: drops leave ripples while it rains. One encounter runs at a time. */
+export const wetGround = {
+  rippleTime: { value: 0 },
+  rippleAmount: { value: LOOK.rain.ripples as number },
+  /** 1 on a rained-on street; snow covers most of the mirror. */
+  wetAmount: { value: 1 },
+};
 
 /** Static rain shelter, independent of camera cutaways. Roof and awning bounds include recessed entrances. */
 export function createPuddleExposure(buildings: readonly T.Object3D[], reach: number) {
@@ -37,12 +46,17 @@ export function createPuddleExposure(buildings: readonly T.Object3D[], reach: nu
 /** World-space noise modulates reflectance without tiling a puddle across every paving stone. */
 export function addPuddles(material: T.MeshStandardMaterial, exposure: ReturnType<typeof createPuddleExposure>) {
   material.userData.puddleSurface = true;
-  material.customProgramCacheKey = () => "street-puddles-v2";
+  material.customProgramCacheKey = () => "street-puddles-v4";
   material.onBeforeCompile = (shader) => {
     shader.uniforms.puddleExposure = { value: exposure.texture };
     shader.uniforms.puddleTransform = { value: exposure.transform };
-    shader.vertexShader = `varying vec3 puddlePosition; varying float puddleUp;\n` + shader.vertexShader;
-    shader.vertexShader = shader.vertexShader.replace("#include <begin_vertex>", `
+    Object.assign(shader.uniforms, wetGround);
+    shader.vertexShader =
+      `varying vec3 puddlePosition; varying float puddleUp;\n` +
+      shader.vertexShader;
+    shader.vertexShader = shader.vertexShader.replace(
+      "#include <begin_vertex>",
+      `
       #include <begin_vertex>
       puddlePosition = (modelMatrix * vec4(transformed, 1.)).xyz;
       puddleUp = (modelMatrix * vec4(objectNormal, 0.)).y;
@@ -52,11 +66,21 @@ export function addPuddles(material: T.MeshStandardMaterial, exposure: ReturnTyp
       uniform vec4 puddleTransform;
       varying vec3 puddlePosition;
       varying float puddleUp;
+      uniform float rippleTime, rippleAmount, wetAmount;
       float puddleHash(vec2 p) { return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
       float puddleNoise(vec2 p) {
         vec2 i = floor(p), f = fract(p); f = f * f * (3. - 2. * f);
         return mix(mix(puddleHash(i), puddleHash(i + vec2(1,0)), f.x),
           mix(puddleHash(i + vec2(0,1)), puddleHash(i + vec2(1,1)), f.x), f.y);
+      }
+      // One raindrop ring per cell, opening and fading on its own clock; returns the slope it adds.
+      vec2 puddleRipple(vec2 p, float t) {
+        vec2 cell = floor(p), f = fract(p) - .5;
+        float h = puddleHash(cell);
+        float age = fract(t * (.7 + h * .6) + h * 9.);
+        vec2 to = f - (vec2(puddleHash(cell + 3.1), puddleHash(cell + 7.7)) - .5) * .5;
+        float r = length(to), front = age * .42;
+        return to / max(r, 1e-3) * (sin((r - front) * 48.) * smoothstep(.09, 0., abs(r - front)) * (1. - age));
       }
     ` + shader.fragmentShader;
     shader.fragmentShader = shader.fragmentShader.replace("#include <roughnessmap_fragment>", `
@@ -65,15 +89,28 @@ export function addPuddles(material: T.MeshStandardMaterial, exposure: ReturnTyp
       float noise = puddleNoise(p) * .65 + puddleNoise(p * 2.7 + 4.2) * .25 + puddleNoise(p * 7.1) * .10;
       vec2 shelterUv = (puddlePosition.xz - puddleTransform.xy) * puddleTransform.zw;
       float exposed = texture2D(puddleExposure, clamp(shelterUv, 0., 1.)).r;
-      float wet = smoothstep(.53, .65, noise) * smoothstep(.8, .98, puddleUp) * exposed;
-      roughnessFactor = mix(roughnessFactor, .075, wet);
-      diffuseColor.rgb *= mix(1., .66, wet);
-    `);
-    shader.fragmentShader = shader.fragmentShader.replace("#include <normal_fragment_maps>", `
+      float open = smoothstep(.8, .98, puddleUp) * exposed * wetAmount;
+      float wet = smoothstep(.48, .62, noise) * open;
+      // Rained-on ground is damp everywhere; standing water is a mirror that long streaks break up,
+      // so lamps and signs smear down the street instead of sitting in round pools.
+      float streak = puddleNoise(puddlePosition.xz * vec2(8., .8)) * .6 + puddleNoise(puddlePosition.xz * vec2(1., 9.) + 3.7) * .4;
+      roughnessFactor *= mix(1., ${LOOK.wet.damp.toFixed(2)}, open);
+      roughnessFactor = mix(roughnessFactor, mix(${LOOK.wet.roughness[0].toFixed(3)}, ${LOOK.wet.roughness[1].toFixed(3)}, streak * streak), wet);
+      diffuseColor.rgb *= mix(1., .66, wet) * mix(1., .9, open);
+    `,
+    );
+    shader.fragmentShader = shader.fragmentShader.replace(
+      "#include <normal_fragment_maps>",
+      `
       #include <normal_fragment_maps>
       // Water fills the asphalt grain instead of inheriting every dry bump.
       normal = normalize(mix(normal, nonPerturbedNormal, wet * .95));
-    `);
+      if (rippleAmount > 0.) {
+        vec2 ripple = puddleRipple(puddlePosition.xz * 2.2, rippleTime) + puddleRipple(puddlePosition.xz * 3.7 + 11.3, rippleTime * 1.13 + .4);
+        normal = normalize(normal + (viewMatrix * vec4(ripple.x, 0., ripple.y, 0.)).xyz * (rippleAmount * wet));
+      }
+    `,
+    );
   };
   return material;
 }
@@ -103,7 +140,7 @@ export class StreetReflections {
       // buildings, characters and props. Preserve the authored scene lighting.
       for (const material of surfaces) {
         material.envMap = next.texture;
-        material.envMapIntensity = .35;
+        material.envMapIntensity = LOOK.wet.environment;
         material.needsUpdate = true;
       }
       this.environment?.dispose();
@@ -116,5 +153,13 @@ export class StreetReflections {
     }
   }
 
-  dispose() { this.cube.dispose(); this.environment?.dispose(); }
+  /** The filtered probe, once captured: also the scene's environment light. */
+  get texture() {
+    return this.environment?.texture ?? null;
+  }
+
+  dispose() {
+    this.cube.dispose();
+    this.environment?.dispose();
+  }
 }

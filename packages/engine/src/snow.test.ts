@@ -4,68 +4,78 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as T from "three";
+import { LOOK } from "./scene/look.ts";
 import { Precipitation } from "./scene/precipitation.ts";
-import { Snow, SNOW_PARTICLES } from "./scene/snow.ts";
 
-test("snow animation leaves particle buffers untouched and uses a bounded draw budget", () => {
-  const snow = new Snow();
+type Particles = T.Mesh<T.InstancedBufferGeometry, T.ShaderMaterial>;
+const named = (weather: Precipitation, name: string) =>
+  weather.group.children.find((o) => o.name === name) as Particles | undefined;
+
+test("snow allocates on first use, leaves its seeds untouched and keeps a bounded draw budget", () => {
+  const weather = new Precipitation();
   try {
-    const { geometry, material } = snow.mesh;
-    const positions = geometry.getAttribute("position") as T.BufferAttribute;
-    const flakes = geometry.getAttribute("flake") as T.BufferAttribute;
-    const before = positions.array.slice(), seeds = flakes.array.slice();
-    const version = positions.version;
-    assert.equal(geometry.drawRange.count, SNOW_PARTICLES.battery);
-    for (let i = 0; i < 900; i++) snow.update(1);
-    assert.deepEqual(positions.array, before);
-    assert.deepEqual(flakes.array, seeds);
-    assert.equal(positions.version, version);
-    assert.equal(material.uniforms.time.value, 900);
-    snow.mesh.visible = false; snow.update(100);
-    assert.equal(material.uniforms.time.value, 900);
-    snow.mesh.visible = true; snow.update(1 / 60);
-    assert(material.uniforms.time.value > 900);
-    snow.setBatterySaver(false);
-    assert.equal(geometry.drawRange.count, positions.count);
-    assert.equal(positions.count, SNOW_PARTICLES.smooth);
-    snow.setViewportHeight(1080);
-    assert.equal(material.uniforms.viewportHeight.value, 1080);
-    assert.equal(material.depthWrite, false);
-  } finally { snow.dispose(); }
+    assert.equal(weather.kind, "rain");
+    assert.equal(
+      named(weather, "GPU snow"),
+      undefined,
+      "no snow buffers until requested",
+    );
+    assert.equal(weather.particles, 0);
+    weather.setKind("snow");
+    const snow = named(weather, "GPU snow")!;
+    const seeds = snow.geometry.getAttribute(
+      "seed",
+    ) as T.InstancedBufferAttribute;
+    const before = seeds.array.slice(),
+      version = seeds.version;
+    assert.equal(weather.particles, LOOK.snow.flakes.battery);
+    for (let i = 0; i < 900; i++) weather.update(1);
+    assert.deepEqual(seeds.array, before);
+    assert.equal(seeds.version, version);
+    weather.setBatterySaver(false);
+    assert.equal(weather.particles, LOOK.snow.flakes.smooth);
+    assert.equal(seeds.count, LOOK.snow.flakes.smooth);
+    assert.equal(snow.material.depthWrite, false);
+  } finally {
+    weather.dispose();
+  }
 });
 
-test("weather switches reuse snow, stop hidden effects, and release their resources", () => {
+test("weather switches reuse snow, show one effect at a time, and release their resources", () => {
   const weather = new Precipitation();
-  assert.equal(weather.kind, "rain");
-  assert.equal(weather.group.children.length, 1, "no snow buffers until requested");
   weather.setBatterySaver(false);
-  weather.setViewportHeight(720);
   weather.setKind("snow");
-  const snow = weather.group.children.find((o) => o instanceof T.Points) as T.Points<T.BufferGeometry, T.ShaderMaterial>;
-  const rain = weather.group.children.find((o) => o instanceof T.LineSegments) as T.LineSegments;
-  const rainPositions = rain.geometry.getAttribute("position").array.slice();
-  assert.equal(weather.particles, 2400);
-  assert.equal(snow.material.uniforms.viewportHeight.value, 720);
-  const resources = [snow.geometry, snow.material, rain.geometry, rain.material as T.Material];
+  const snow = named(weather, "GPU snow")!,
+    rain = named(weather, "GPU rain")!,
+    splashes = named(weather, "GPU rain splashes")!;
+  const resources = [snow, rain, splashes].flatMap((mesh) => [
+    mesh.geometry,
+    mesh.material,
+  ]);
   let disposed = 0;
-  resources.forEach((resource) => resource.addEventListener("dispose", () => disposed++));
+  resources.forEach((resource) =>
+    resource.addEventListener("dispose", () => disposed++),
+  );
   for (let i = 0; i < 5; i++) {
-    weather.setKind("snow"); weather.update(1);
+    weather.setKind("snow");
+    weather.update(1);
     assert.equal(rain.visible, false);
-    assert.deepEqual(rain.geometry.getAttribute("position").array, rainPositions);
-    const time = snow.material.uniforms.time.value;
-    weather.setKind("clear"); weather.update(30);
-    assert.equal(snow.material.uniforms.time.value, time);
+    assert.equal(splashes.visible, false);
+    assert.equal(snow.visible, true);
+    const time = weather.time;
+    weather.setKind("clear");
+    weather.update(30);
+    assert.equal(weather.time, time);
     assert(weather.group.children.every((o) => !o.visible));
   }
   weather.setKind("rain");
-  assert.equal(snow.visible, false); assert.equal(rain.visible, true);
-  weather.update(1);
-  assert.notDeepEqual(rain.geometry.getAttribute("position").array, rainPositions);
-  weather.setBatterySaver(true); weather.setKind("snow");
-  assert.equal(weather.particles, 900);
-  assert.equal(weather.group.children.length, 2);
+  assert.equal(snow.visible, false);
+  assert.equal(rain.visible, true);
+  assert.equal(weather.group.children.length, 4, "snow is built once");
+  weather.setBatterySaver(true);
+  weather.setKind("snow");
+  assert.equal(weather.particles, LOOK.snow.flakes.battery);
   weather.dispose();
-  assert.equal(disposed, 4);
+  assert.equal(disposed, 6);
   assert.equal(weather.group.children.length, 0);
 });

@@ -2,14 +2,21 @@
 // SPDX-License-Identifier: MIT
 
 import { cityBlocks } from "./city-blocks";
-import { demoAsset } from './demo-assets';
-import * as T from 'three';
-import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
-import { STREET, districtBuildings, footprint, surfaceHeight } from './district-plan';
-import { storefrontFaces } from './storefronts';
-import type { StreetKind } from './environment';
-import type { SceneryKit } from './scene/maps';
-import { addPuddles, createPuddleExposure } from './scene/puddles';
+import { demoAsset } from "./demo-assets";
+import * as T from "three";
+import { KTX2Loader } from "three/addons/loaders/KTX2Loader.js";
+import {
+  STREET,
+  districtBuildings,
+  footprint,
+  surfaceHeight,
+} from "./district-plan";
+import { storefrontFaces } from "./storefronts";
+import type { StreetKind } from "./environment";
+import type { SceneryKit } from "./scene/maps";
+import { addPuddles, createPuddleExposure } from "./scene/puddles";
+import { LOOK } from "./scene/look";
+import { litPanes } from "./scene/street-air";
 
 const textures: Record<string, T.Texture> = {};
 export async function loadDistrictTextures(renderer: T.WebGLRenderer) {
@@ -25,6 +32,20 @@ export async function loadDistrictTextures(renderer: T.WebGLRenderer) {
   } finally { loader.dispose(); }
 }
 const rgb = new T.Color();
+/** A fixed 0..1 value per index: which windows are lit never changes between loads. */
+function pick(i: number) {
+  let h = Math.imul(i ^ 0x9e3779b9, 0x85ebca6b);
+  h ^= h >>> 13;
+  h = Math.imul(h, 0xc2b2ae35);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+/** A seeded third of the windows are lit: mostly warm rooms, a few cool screens, some curtained. */
+function litPane(i: number) {
+  const r = pick(i),
+    strength = 0.3 + 0.7 * pick(i * 7 + 3);
+  return r < 0.07 ? 1 + strength : r < 0.33 ? strength * strength : 0;
+}
 function material(color: number, roughness = 0.8, metalness = 0.05) {
   return new T.MeshStandardMaterial({ color, roughness, metalness });
 }
@@ -39,7 +60,19 @@ export function districtMaps(name: 'asphalt' | 'concrete') {
     roughnessMap: textures[`${name}-rough`] ?? null };
 }
 /** Metric UVs keep the same texture density on a small curb and a large facade. */
-function block(parent: T.Object3D, x: number, y: number, z: number, w: number, h: number, d: number, m: T.Material, tint?: number) {
+/** `pane` lights a window pane at night (scene/street-air.ts `litPanes`): 0 dark, (0,1] warm, (1,2] cool. */
+function block(
+  parent: T.Object3D,
+  x: number,
+  y: number,
+  z: number,
+  w: number,
+  h: number,
+  d: number,
+  m: T.Material,
+  tint?: number,
+  pane = 0,
+) {
   const geo = new T.BoxGeometry(w, h, d);
   const pos = geo.attributes.position, normal = geo.attributes.normal, uv = geo.attributes.uv;
   if ((m as T.MeshStandardMaterial).map && !(m as T.MeshStandardMaterial).userData.atlas) {
@@ -50,9 +83,13 @@ function block(parent: T.Object3D, x: number, y: number, z: number, w: number, h
   }
   if ((m as T.MeshStandardMaterial).vertexColors) {
     rgb.setHex(tint ?? 0xffffff);
-    const colors = new Float32Array(pos.count * 3);
-    for (let i = 0; i < pos.count; i++) rgb.toArray(colors, i * 3);
-    geo.setAttribute('color', new T.BufferAttribute(colors, 3));
+    // Alpha is 1 plus the pane's light, so a fading building's opacity is untouched.
+    const colors = new Float32Array(pos.count * 4);
+    for (let i = 0; i < pos.count; i++) {
+      rgb.toArray(colors, i * 4);
+      colors[i * 4 + 3] = 1 + pane;
+    }
+    geo.setAttribute("color", new T.BufferAttribute(colors, 4));
   }
   const mesh = new T.Mesh(geo, m); mesh.position.set(x, y, z);
   mesh.castShadow = h > 0.3; mesh.receiveShadow = true; parent.add(mesh); return mesh;
@@ -92,15 +129,40 @@ function placeProp(kit:SceneryKit,kind:StreetKind,seed:number,parent:T.Object3D,
   prop.position.set(x,y,z);parent.add(prop);return prop;
 }
 export function buildDistrict(scene: T.Scene, kit: SceneryKit) {
-  const asphalt=pbr('asphalt',0x737c88,.72), concrete=pbr('concrete',0x9c9fa3,.9), paving=pavementMaterial(), brick=pbr('brick',0x8e7770,.9);
-  const steel=material(0x30383f,.52,.65), black=material(0x151c23), paint=material(0xb8b5a2), curb=material(0x85888b), glass=material(0x1b303b,.22,.65);
-  const colored=new T.MeshStandardMaterial({vertexColors:true,roughness:.75});
-  const glow=new T.MeshStandardMaterial({color:0xe7e5cb,emissive:0xffe4ad,emissiveIntensity:1.5});
-  const windows=new T.MeshStandardMaterial({color:0x81959b,emissive:0xa2bec5,emissiveIntensity:.15,roughness:.32,metalness:.35});
-  const atlas=signAtlas();
-  for(const m of [glow,windows,atlas]) m.userData.nightGlow=m.emissiveIntensity;
-  const occluders: {group:T.Group;bounds:T.Box3}[]=[];
-  block(scene,0,-.11,0,90,.2,90,asphalt);
+  const asphalt = pbr("asphalt", 0x737c88, 0.72),
+    concrete = pbr("concrete", 0x9c9fa3, 0.9),
+    paving = pavementMaterial(),
+    brick = pbr("brick", 0x8e7770, 0.9);
+  const steel = material(0x30383f, 0.52, 0.65),
+    black = material(0x151c23),
+    paint = material(0xb8b5a2),
+    curb = material(0x85888b),
+    glass = material(0x1b303b, 0.22, 0.65);
+  const colored = new T.MeshStandardMaterial({
+    vertexColors: true,
+    roughness: 0.75,
+  });
+  const glow = new T.MeshStandardMaterial({
+    color: 0xe7e5cb,
+    emissive: 0xffe4ad,
+    emissiveIntensity: 1.5,
+  });
+  const windows = litPanes(
+    new T.MeshStandardMaterial({
+      color: 0x81959b,
+      emissive: 0xa2bec5,
+      emissiveIntensity: 0.15,
+      roughness: 0.32,
+      metalness: 0.35,
+      vertexColors: true,
+    }),
+  );
+  const atlas = signAtlas();
+  atlas.emissiveIntensity = LOOK.signs.near;
+  for (const m of [glow, windows, atlas])
+    m.userData.nightGlow = m.emissiveIntensity;
+  const occluders: { group: T.Group; bounds: T.Box3 }[] = [];
+  block(scene, 0, -0.11, 0, 90, 0.2, 90, asphalt);
   // Four city blocks: streets stay connected through the whole visible district.
   for(const sx of [-1,1]) for(const sz of [-1,1]) {
     const w=STREET.reach-STREET.avenueHalf,d=STREET.reach-STREET.crossHalf;
@@ -191,19 +253,50 @@ export function buildDistrict(scene: T.Scene, kit: SceneryKit) {
       block(g,s*(w/2-.1),corner?(h+3.15)/2:h/2,0,.2,corner?h-3.15:h,d,index%2?concrete:brick);
     }
     // Upper storeys have a proper facade; the ground floor is genuinely recessed.
-    block(g,0,3.05,0,w,.25,d,concrete);
-    block(g,0,(h+3.15)/2,front-.12,w,h-3.15,.24,index%2?concrete:brick);
-    block(g,0,h,0,w+.12,.18,d+.12,steel);
-    for(const s of [-1,1])block(g,s*(w/2-.08),h+.18,0,.16,.3,d,curb);
-    block(g,0,h+.18,-front,w,.3,.16,curb);
-    block(g,-w*.22,h+.35,-.4,1.0,.55,1.4,steel);
-    for(let n=0;n<7;n++)block(g,-w*.22-.38+n*.125,h+.64,-.4,.045,.025,1.15,black);
-    block(g,w*.3,h+.3,-.9,.3,.6,.3,steel);
-    for(let x=-w/2+.65;x<w/2-.3;x+=1.35) {
-      block(g,x,3.95,front+.01,.83,1.05,.04,black);
-      block(g,x,3.95,front+.04,.73,.94,.03,windows);
-      block(g,x,3.95,front+.07,.035,.95,.04,steel);
-      block(g,x,3.4,front+.08,1,.06,.18,curb);
+    block(g, 0, 3.05, 0, w, 0.25, d, concrete);
+    block(
+      g,
+      0,
+      (h + 3.15) / 2,
+      front - 0.12,
+      w,
+      h - 3.15,
+      0.24,
+      index % 2 ? concrete : brick,
+    );
+    block(g, 0, h, 0, w + 0.12, 0.18, d + 0.12, steel);
+    for (const s of [-1, 1])
+      block(g, s * (w / 2 - 0.08), h + 0.18, 0, 0.16, 0.3, d, curb);
+    block(g, 0, h + 0.18, -front, w, 0.3, 0.16, curb);
+    block(g, -w * 0.22, h + 0.35, -0.4, 1.0, 0.55, 1.4, steel);
+    for (let n = 0; n < 7; n++)
+      block(
+        g,
+        -w * 0.22 - 0.38 + n * 0.125,
+        h + 0.64,
+        -0.4,
+        0.045,
+        0.025,
+        1.15,
+        black,
+      );
+    block(g, w * 0.3, h + 0.3, -0.9, 0.3, 0.6, 0.3, steel);
+    for (let x = -w / 2 + 0.65; x < w / 2 - 0.3; x += 1.35) {
+      block(g, x, 3.95, front + 0.01, 0.83, 1.05, 0.04, black);
+      block(
+        g,
+        x,
+        3.95,
+        front + 0.04,
+        0.73,
+        0.94,
+        0.03,
+        windows,
+        0xffffff,
+        litPane(index * 97 + Math.round(x * 10)),
+      );
+      block(g, x, 3.95, front + 0.07, 0.035, 0.95, 0.04, steel);
+      block(g, x, 3.4, front + 0.08, 1, 0.06, 0.18, curb);
     }
     // The frontage is framed glazing with a central accessible door.
     if(index<2) {
@@ -235,10 +328,21 @@ export function buildDistrict(scene: T.Scene, kit: SceneryKit) {
         return group;
       });
       // Upper windows wrap the corner as well, rather than leaving a blank side wall.
-      for(let u=-d/2+.7;u<d/2-.4;u+=1.3) {
-        block(avenueFace,u,3.95,.025,.8,1.05,.04,black);
-        block(avenueFace,u,3.95,.055,.7,.94,.025,windows);
-        block(avenueFace,u,3.4,.08,.94,.06,.18,curb);
+      for (let u = -d / 2 + 0.7; u < d / 2 - 0.4; u += 1.3) {
+        block(avenueFace, u, 3.95, 0.025, 0.8, 1.05, 0.04, black);
+        block(
+          avenueFace,
+          u,
+          3.95,
+          0.055,
+          0.7,
+          0.94,
+          0.025,
+          windows,
+          0xffffff,
+          litPane(index * 193 + Math.round(u * 10) + 50),
+        );
+        block(avenueFace, u, 3.4, 0.08, 0.94, 0.06, 0.18, curb);
       }
       label(frontFace,atlas,4,-streetSide*w*.3,1.5,.04,.65,.75);
       // The hanging advert stays supported when the glazing below it shatters.
@@ -262,34 +366,104 @@ export function buildDistrict(scene: T.Scene, kit: SceneryKit) {
     block(g,index<2?-streetSide*(w/2+.15):w/2+.15,2.1,0,.3,.6,.85,curb);
     occluders.push({group:g,bounds:new T.Box3(new T.Vector3(f.minX-.4,0,f.minZ-.4),new T.Vector3(f.maxX+.4,h+.8,f.maxZ+.4))});
   }
-  const urbanAtlas=neighbourhoodAtlas();
-  const urban=new T.MeshStandardMaterial({vertexColors:true,roughness:.78,emissive:0x141414});
-  for(const [i,b] of cityBlocks().entries()) {
-    const g=new T.Group();g.position.set(b.x,.16,b.z);g.rotation.y=b.rotation;scene.add(g);
-    urbanBuilding(g,b.w,b.d,b.h,b.style,b.shop,urban,urbanAtlas,i,b.recess??0);
-    const width=Math.abs(Math.cos(b.rotation))*b.w+Math.abs(Math.sin(b.rotation))*b.d;
-    const depth=Math.abs(Math.cos(b.rotation))*b.d+Math.abs(Math.sin(b.rotation))*b.w;
-    occluders.push({group:g,bounds:new T.Box3(new T.Vector3(b.x-width/2-.2,0,b.z-depth/2-.2),new T.Vector3(b.x+width/2+.2,b.h+1.2,b.z+depth/2+.2))});
+  const urbanAtlas = neighbourhoodAtlas();
+  const urban = litPanes(
+    new T.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.78,
+      emissive: 0x141414,
+    }),
+  );
+  // The far street's shop signs are unlit paint by day and lit boxes at night (scene/street-air.ts).
+  scene.userData.nightSigns = [urbanAtlas];
+  for (const [i, b] of cityBlocks().entries()) {
+    const g = new T.Group();
+    g.position.set(b.x, 0.16, b.z);
+    g.rotation.y = b.rotation;
+    scene.add(g);
+    urbanBuilding(
+      g,
+      b.w,
+      b.d,
+      b.h,
+      b.style,
+      b.shop,
+      urban,
+      urbanAtlas,
+      i,
+      b.recess ?? 0,
+    );
+    const width =
+      Math.abs(Math.cos(b.rotation)) * b.w +
+      Math.abs(Math.sin(b.rotation)) * b.d;
+    const depth =
+      Math.abs(Math.cos(b.rotation)) * b.d +
+      Math.abs(Math.sin(b.rotation)) * b.w;
+    occluders.push({
+      group: g,
+      bounds: new T.Box3(
+        new T.Vector3(b.x - width / 2 - 0.2, 0, b.z - depth / 2 - 0.2),
+        new T.Vector3(b.x + width / 2 + 0.2, b.h + 1.2, b.z + depth / 2 + 0.2),
+      ),
+    });
   }
   streetLife(scene,urban,kit);
   // Two mission-area lamps cast cached static shadows. Distant fixtures remain inexpensive.
-  for(const x of [-3.05,3.05])for(const z of [-11,9,23,-25,x<0?5.7:-5.7]) {
-    block(scene,x,2.1,z,.07,4.2,.07,steel);
-    block(scene,x-Math.sign(x)*.38,4.18,z,.85,.08,.09,steel);
-    const lampX=x-Math.sign(x)*.65;
-    block(scene,lampX,4.12,z,.45,.04,.18,glow);
-    if(Math.abs(z)===5.7) {
-      const lamp=new T.SpotLight(x<0?0xffd3a0:0xdce9ff,95,13,Math.PI*.35,.65,2);
-      lamp.position.set(lampX,4.06,z);lamp.target.position.set(lampX,0,z-Math.sign(z)*1.3);
-      lamp.userData.nightIntensity=lamp.intensity;
-      lamp.castShadow=true;lamp.shadow.mapSize.set(512,512);
-      lamp.shadow.camera.near=.2;lamp.shadow.camera.far=13;
-      lamp.shadow.normalBias=.025;lamp.shadow.bias=-.00015;
-      scene.add(lamp,lamp.target);
+  for (const x of [-3.05, 3.05])
+    for (const z of [-11, 9, 23, -25, x < 0 ? 5.7 : -5.7]) {
+      block(scene, x, 2.1, z, 0.07, 4.2, 0.07, steel);
+      block(scene, x - Math.sign(x) * 0.38, 4.18, z, 0.85, 0.08, 0.09, steel);
+      const lampX = x - Math.sign(x) * 0.65;
+      block(scene, lampX, 4.12, z, 0.45, 0.04, 0.18, glow);
+      // Lamp heads, for the light volumes in the air under them (scene/street-air.ts).
+      (scene.userData.lamps ??= []).push([
+        lampX,
+        4.08,
+        z,
+        x < 0 ? 0xffd3a0 : 0xdce9ff,
+      ]);
+      if (Math.abs(z) === 5.7) {
+        const lamp = new T.SpotLight(
+          x < 0 ? 0xffd3a0 : 0xdce9ff,
+          95,
+          13,
+          Math.PI * 0.35,
+          0.65,
+          2,
+        );
+        lamp.position.set(lampX, 4.06, z);
+        lamp.target.position.set(lampX, 0, z - Math.sign(z) * 1.3);
+        lamp.userData.nightIntensity = lamp.intensity;
+        lamp.castShadow = true;
+        lamp.shadow.mapSize.set(512, 512);
+        lamp.shadow.camera.near = 0.2;
+        lamp.shadow.camera.far = 13;
+        lamp.shadow.normalBias = 0.025;
+        lamp.shadow.bias = -0.00015;
+        scene.add(lamp, lamp.target);
+      }
     }
-  }
-  for(const [x,z,c] of [[-8,-4.4,0xffd8a3],[8,-4.4,0xb5dbfa]]) {
-    const light=new T.PointLight(c,8,6,2);light.userData.nightIntensity=light.intensity;light.position.set(x,2.1,z);scene.add(light);
+  // A bulkhead lamp on the laundry's side wall: the south-west footway is in the building's shadow.
+  block(scene, -8.71, 2.5, 4.4, 0.09, 0.2, 0.36, glow);
+  block(scene, -8.7, 2.63, 4.4, 0.16, 0.05, 0.44, steel);
+  const alley = new T.PointLight(
+    LOOK.alley.color,
+    LOOK.alley.intensity,
+    LOOK.alley.reach,
+    2,
+  );
+  alley.userData.nightIntensity = alley.intensity;
+  alley.position.set(-8.3, 2.4, 4.4);
+  scene.add(alley);
+  // Shop light spilling onto the footway. Kept a metre off the storefront glass: closer, each one burns a white star into the door panes.
+  for (const [x, z, c] of [
+    [-8, -3.7, 0xffd8a3],
+    [8, -3.7, 0xb5dbfa],
+  ]) {
+    const light = new T.PointLight(c, 8, 6, 2);
+    light.userData.nightIntensity = light.intensity;
+    light.position.set(x, 2.3, z);
+    scene.add(light);
   }
   // Crossing signals and street-name signs at the curb, out of tile centres.
   for(const s of [-1,1]) {
@@ -361,28 +535,85 @@ function neighbourhoodAtlas() {
   const t=new T.CanvasTexture(c);t.colorSpace=T.SRGBColorSpace;t.anisotropy=2;
   const m=new T.MeshBasicMaterial({map:t,color:0xc5bdaa});m.userData.atlas=true;return m;
 }
-function urbanBuilding(g:T.Group,w:number,d:number,h:number,style:number,shop:boolean,m:T.Material,signs:T.Material,index:number,recess=0) {
-  const colors=[0x777879,0x887b6b,0x656e72,0x8e8c83,0x745b51,0x53616b,0x969588,0x655e5e];
-  const wall=colors[style],facade=d/2,front=facade-recess;
-  const b=(x:number,y:number,z:number,bw:number,bh:number,bd:number,c:number)=>block(g,x,y,z,bw,bh,bd,m,c);
-  if(recess>0) {
-    b(0,(h+2.8)/2,0,w,h-2.8,d,wall);
-    b(0,1.4,-recess/2,w,2.8,d-recess,wall);
-    b(0,.025,0,w+.04,.05,d+.04,0x45494c);
-  } else { b(0,h/2,0,w,h,d,wall);b(0,.2,0,w+.04,.4,d+.04,0x45494c); }
-  b(0,h+.08,0,w+.16,.16,d+.16,0x3b444b);
-  b(0,h+.17,0,w-.32,.04,d-.32,0x252d32);
-  const floors=Math.max(2,Math.round(h/2.9)),floorH=h/floors,cols=Math.max(2,Math.floor(w/1.4));
-  for(let f=1;f<floors;f++) {
-    const y=f*floorH+floorH*.5;
-    for(let n=0;n<cols;n++) {
-      const x=-w/2+(n+.5)*w/cols,lit=(f*13+n*7+index*3)%9;
-      const pane=lit<3?[0xbab18c,0xc9bea0,0x94a6ae][lit]:0x28343d;
-      b(x,y,facade+.035,w/cols*.65,1.25,.07,0x333d43);
-      b(x,y,facade+.08,w/cols*.57,1.12,.025,pane);
-      b(x,y,facade+.1,.04,1.15,.03,0x53595b);
+function urbanBuilding(
+  g: T.Group,
+  w: number,
+  d: number,
+  h: number,
+  style: number,
+  shop: boolean,
+  m: T.Material,
+  signs: T.Material,
+  index: number,
+  recess = 0,
+) {
+  const colors = [
+    0x777879, 0x887b6b, 0x656e72, 0x8e8c83, 0x745b51, 0x53616b, 0x969588,
+    0x655e5e,
+  ];
+  const wall = colors[style],
+    facade = d / 2,
+    front = facade - recess;
+  const b = (
+    x: number,
+    y: number,
+    z: number,
+    bw: number,
+    bh: number,
+    bd: number,
+    c: number,
+    pane = 0,
+  ) => block(g, x, y, z, bw, bh, bd, m, c, pane);
+  if (recess > 0) {
+    b(0, (h + 2.8) / 2, 0, w, h - 2.8, d, wall);
+    b(0, 1.4, -recess / 2, w, 2.8, d - recess, wall);
+    b(0, 0.025, 0, w + 0.04, 0.05, d + 0.04, 0x45494c);
+  } else {
+    b(0, h / 2, 0, w, h, d, wall);
+    b(0, 0.2, 0, w + 0.04, 0.4, d + 0.04, 0x45494c);
+  }
+  b(0, h + 0.08, 0, w + 0.16, 0.16, d + 0.16, 0x3b444b);
+  b(0, h + 0.17, 0, w - 0.32, 0.04, d - 0.32, 0x252d32);
+  const floors = Math.max(2, Math.round(h / 2.9)),
+    floorH = h / floors,
+    cols = Math.max(2, Math.floor(w / 1.4));
+  for (let f = 1; f < floors; f++) {
+    const y = f * floorH + floorH * 0.5;
+    for (let n = 0; n < cols; n++) {
+      const x = -w / 2 + ((n + 0.5) * w) / cols,
+        lit = (f * 13 + n * 7 + index * 3) % 9;
+      const pane = lit < 3 ? [0xbab18c, 0xc9bea0, 0x94a6ae][lit] : 0x28343d;
+      b(x, y, facade + 0.035, (w / cols) * 0.65, 1.25, 0.07, 0x333d43);
+      // The pale panes are the lit ones: warm rooms, the bluish ones screens, some dimmed by curtains.
+      const light =
+        lit < 3
+          ? (lit === 2 ? 1 : 0) + 0.3 + 0.7 * pick(index * 131 + f * 17 + n)
+          : 0;
+      b(x, y, facade + 0.08, (w / cols) * 0.57, 1.12, 0.025, pane, light);
+      b(x, y, facade + 0.1, 0.04, 1.15, 0.03, 0x53595b);
       // Side windows and occasional glowing stairwells.
-      if(n<Math.floor(d/1.7))for(const s of [-1,1])b(s*(w/2+.02),y,-d/2+.85+n*1.6,.04,1.15,.7,lit===1?0xa9a390:0x26333b);
+      if (n < Math.floor(d / 1.7))
+        for (const s of [-1, 1])
+          b(
+            s * (w / 2 + 0.02),
+            y,
+            -d / 2 + 0.85 + n * 1.6,
+            0.04,
+            1.15,
+            0.7,
+            lit === 1 ? 0xa9a390 : 0x26333b,
+            lit === 1 ? 0.6 : 0,
+          );
+    }
+    if (style % 3 === 0) {
+      b(0, y - 0.7, facade + 0.25, w - 0.35, 0.12, 0.65, 0x5c6264);
+      b(0, y - 0.25, facade + 0.55, w - 0.4, 0.07, 0.045, 0x9c9c91);
+      for (let x = -w / 2 + 0.3; x < w / 2; x += 0.55)
+        b(x, y - 0.47, facade + 0.55, 0.025, 0.48, 0.025, 0x727a7d);
+    } else b(0, f * floorH, facade + 0.04, w, 0.06, 0.11, 0x444c50);
+    if (f % 2 === 1) {
+      b(w * 0.3, y - 0.5, facade + 0.23, 0.68, 0.38, 0.36, 0x9a9d98);
+      b(w * 0.3, y - 0.5, facade + 0.42, 0.54, 0.26, 0.02, 0x525c61);
     }
     if(style%3===0) {
       b(0,y-.7,facade+.25,w-.35,.12,.65,0x5c6264);
@@ -439,13 +670,28 @@ function streetLife(scene:T.Scene,m:T.Material,kit:SceneryKit) {
     for(let n=0;n<2;n++)placeProp(kit,'bicycle',n?0:1,g,-1.25+n*.55,.05,2.1).rotation.z=.08;
   }
   // Utility poles and restrained sagging bundles enclose the street vertically.
-  for(const sx of [-1,1]) {
-    for(const z of [-11.6,12,26])placeProp(kit,'utility-pole',0,scene,sx*3.3,0,z);
-    for(const [z1,z2] of [[-11.6,12],[12,26]])for(let k=0;k<3;k++) {
-      const x=sx*3.3-.4+k*.4;
-      const curve=new T.QuadraticBezierCurve3(new T.Vector3(x,5.72,z1),new T.Vector3(x,4.8,(z1+z2)/2),new T.Vector3(x,5.72,z2));
-      const geo=new T.TubeGeometry(curve,12,.012,3,false),colors=new Float32Array(geo.attributes.position.count*3).fill(.065);geo.setAttribute('color',new T.BufferAttribute(colors,3));scene.add(new T.Mesh(geo,m));
-    }
+  for (const sx of [-1, 1]) {
+    for (const z of [-11.6, 12, 26])
+      placeProp(kit, "utility-pole", 0, scene, sx * 3.3, 0, z);
+    for (const [z1, z2] of [
+      [-11.6, 12],
+      [12, 26],
+    ])
+      for (let k = 0; k < 3; k++) {
+        const x = sx * 3.3 - 0.4 + k * 0.4;
+        const curve = new T.QuadraticBezierCurve3(
+          new T.Vector3(x, 5.72, z1),
+          new T.Vector3(x, 4.8, (z1 + z2) / 2),
+          new T.Vector3(x, 5.72, z2),
+        );
+        const geo = new T.TubeGeometry(curve, 12, 0.012, 3, false),
+          colors = new Float32Array(geo.attributes.position.count * 4).fill(
+            0.065,
+          );
+        for (let i = 3; i < colors.length; i += 4) colors[i] = 1;
+        geo.setAttribute("color", new T.BufferAttribute(colors, 4));
+        scene.add(new T.Mesh(geo, m));
+      }
   }
   // A busy district temporarily cordoned off: deliveries and business infrastructure remain.
   for(const [x,z] of [[-13.8,-8.8],[13.6,8.9],[4.4,-17]])placeProp(kit,'pallet',0,scene,x,.16,z);

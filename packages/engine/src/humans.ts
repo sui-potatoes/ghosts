@@ -28,8 +28,9 @@ import { KTX2Loader } from "three/addons/loaders/KTX2Loader.js";
 import { clone } from "three/addons/utils/SkeletonUtils.js";
 import type { Unit, Weapon } from "./game";
 import { restMotion } from "./motions";
+import { shotRandom } from "./scene/shot";
 let asset: GLTF;
-const idleDirector = new IdleDirector();
+const idleDirector = new IdleDirector(shotRandom());
 export async function loadOperatives(renderer: T.WebGLRenderer) {
   const ktx = new KTX2Loader()
     .setTranscoderPath(demoAsset("basis/"))
