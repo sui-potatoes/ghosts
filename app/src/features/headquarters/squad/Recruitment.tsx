@@ -17,7 +17,7 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
-import { uiTick } from "../../../audio";
+import { uiLampOn } from "../../../audio";
 import type { ChainRecruit } from "../../../chain";
 import { getSettings } from "../../../settings/store";
 import { FocusScope, Icon, useFocusable, useFocusState } from "../../../ui";
@@ -29,6 +29,7 @@ import {
     advance,
     beatBefore,
     BUILD_WAIT,
+    cuesBetween,
     litOf,
     namedOf,
     nextStep,
@@ -51,6 +52,14 @@ export const motionReduced = () =>
 export function useRecruitReveal(slots: (ChainRecruit | null)[], ready: boolean, reduced: boolean) {
     const [stages, setStages] = useState<Stages>(() => standing(slots));
     const [fast, setFast] = useState(true);
+    const now = useRef(stages);
+    now.current = stages;
+    /** Sound the switch-on cues for a move between two states (none under reduced motion). */
+    const sound = (to: Stages, instant: boolean) => {
+        if (!reduced)
+            for (const c of cuesBetween(slots, now.current, to, instant)) uiLampOn(c.index, c.last);
+        now.current = to;
+    };
     const shown = useMemo(
         () => (reduced ? settle(slots, stages) : stages),
         [reduced, slots, stages],
@@ -62,15 +71,18 @@ export function useRecruitReveal(slots: (ChainRecruit | null)[], ready: boolean,
         const wait = ready ? beatBefore(step, first) : BUILD_WAIT;
         const timer = window.setTimeout(() => {
             setFast(false);
-            setStages((s) => advance(slots, s));
-            if (step.to === 1) uiTick();
+            const to = advance(slots, now.current);
+            sound(to, false);
+            setStages(to);
         }, wait);
         return () => window.clearTimeout(timer);
         // The step stands for the state it was derived from.
     }, [step?.id, step?.to, ready]);
     const skip = () => {
         setFast(true);
-        setStages((s) => settle(slots, s));
+        const to = settle(slots, now.current);
+        sound(to, true);
+        setStages(to);
     };
     return { stages: shown, skip, instant: fast || reduced };
 }
@@ -124,6 +136,7 @@ export function Recruitment({ slots, pending, onHire, onEnter }: Props) {
         >
             <PodiumCanvas
                 key={slots.length}
+                projector
                 figures={figures}
                 focus={null}
                 lit={lit}

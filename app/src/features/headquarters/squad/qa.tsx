@@ -16,6 +16,8 @@ import { encodeVisuals } from "@ghosts/squad/appearance/codec";
 import { DEFAULT_ARMOR_COLORS } from "@ghosts/squad/armor-colors";
 import { useMemo, useRef, useState } from "react";
 
+import { scheduleLamp } from "../../../audio/lamp";
+
 import type { ChainRecruit } from "../../../chain";
 import { HeadquartersView, type HqData, type HqOps } from "./HeadquartersView";
 
@@ -42,6 +44,22 @@ const recruit = (i: number): ChainRecruit => {
         utilities: [],
         leader: "0x0",
     } as unknown as ChainRecruit;
+};
+
+/** Offline render of the switch-on cue at unit level: its peak and audible length. */
+(window as unknown as { __lamp: unknown }).__lamp = async (index: number, last: boolean) => {
+    const rate = 44100;
+    const offline = new OfflineAudioContext(1, rate, rate);
+    scheduleLamp(offline, offline.destination, 0, { index, last });
+    const data = (await offline.startRendering()).getChannelData(0);
+    let peak = 0;
+    let end = 0;
+    for (let i = 0; i < data.length; i++) {
+        const v = Math.abs(data[i]);
+        peak = Math.max(peak, v);
+        if (v > 0.002) end = i;
+    }
+    return { peak, seconds: end / rate };
 };
 
 export default function RecruitQa() {

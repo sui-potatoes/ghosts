@@ -86,3 +86,22 @@ export function phaseOf(slots: Slots, stages: Stages, pending: boolean): Phase {
     if (slots.length > 0 && slots.every(Boolean)) return "settled";
     return pending ? "waiting" : "idle";
 }
+
+/** A podium's light struck on: which one, and whether it completes the squad. */
+export type Cue = { index: number; last: boolean };
+
+/**
+ * The switch-on cues for the move from `before` to `after`: one per podium
+ * that came lit, in order. A step lights one podium, so it is one cue. A
+ * skip (`instant`) lights several at once and sounds at most one settle cue,
+ * for the last of them; nothing newly lit, nothing sounded. Reduced motion
+ * plays no cues: the host does not ask.
+ */
+export function cuesBetween(slots: Slots, before: Stages, after: Stages, instant = false): Cue[] {
+    const was = litOf(slots, before);
+    const now = litOf(slots, after);
+    const lit = now.flatMap((on, i) => (on && !was[i] ? [i] : []));
+    const done = slots.length > 0 && now.every(Boolean);
+    const cues = lit.map((index) => ({ index, last: done && index === Math.max(...lit) }));
+    return instant ? cues.slice(-1).map((c) => ({ ...c, last: done })) : cues;
+}

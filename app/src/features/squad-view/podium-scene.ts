@@ -102,6 +102,10 @@ type Slot = {
     yaw: [number, number];
     light: [number, number];
     lit: boolean;
+    /** Projector mode: when the light was struck, while it strikes. */
+    strike: number | null;
+    /** The back light that picks the figure out from behind (projector mode). */
+    back?: T.SpotLight;
     /** False keeps a built figure out of the picture. */
     shown: boolean;
 };
@@ -111,12 +115,43 @@ export type PodiumSceneOptions = {
     count?: number;
     /** Full-detail characters and guns (as the studio builds them): for comparing costs. */
     full?: boolean;
+    /**
+     * Each podium is lit by its own lamps only: almost no fill, no rim light
+     * and no floor pool until its light is on, and a light comes on with a
+     * strike (a fast rise, a flicker, settling) instead of easing up.
+     */
+    projector?: boolean;
 };
+
+/** A projector strike: the light's share of its target over time (ms): rise, flicker, settle. */
+const STRIKE: [number, number][] = [
+    [0, 0],
+    [25, 1.5],
+    [55, 0.25],
+    [85, 1.25],
+    [120, 0.7],
+    [165, 1.1],
+    [240, 1],
+];
+export const STRIKE_MS = STRIKE[STRIKE.length - 1][0];
+
+/** The strike curve at `ms` after the light was struck (1 once it has settled). */
+export function strikeAt(ms: number): number {
+    if (ms >= STRIKE_MS) return 1;
+    for (let i = 1; i < STRIKE.length; i++) {
+        const [t1, v1] = STRIKE[i];
+        if (ms <= t1) {
+            const [t0, v0] = STRIKE[i - 1];
+            return v0 + ((v1 - v0) * (ms - t0)) / (t1 - t0);
+        }
+    }
+    return 1;
+}
 
 export function createPodiumScene(
     host: HTMLElement,
     onLayout: (anchors: Anchor[]) => void,
-    { count = PODIUMS, full = false }: PodiumSceneOptions = {},
+    { count = PODIUMS, full = false, projector = false }: PodiumSceneOptions = {},
 ): PodiumScene {
     const renderer = new T.WebGLRenderer({
         antialias: true,
@@ -140,10 +175,14 @@ export function createPodiumScene(
     scene.background = background;
     scene.fog = new T.Fog(background, 7, 13);
     // Low fill: a podium without its own light reads as a silhouette.
-    scene.add(new T.HemisphereLight(0xc8d0d4, 0x0c0e10, 0.32));
-    const rimLight = new T.DirectionalLight(0x9fb8c4, 0.9);
-    rimLight.position.set(0, 3, -4);
-    scene.add(rimLight);
+    scene.add(new T.HemisphereLight(0xc8d0d4, 0x0c0e10, projector ? 0.03 : 0.32));
+    if (!projector) {
+        const rimLight = new T.DirectionalLight(0x9fb8c4, 0.9);
+        rimLight.position.set(0, 3, -4);
+        scene.add(rimLight);
+    }
+    // An unlit podium's engraved rim barely shows.
+    const dimLine = background.clone().lerp(line, 0.18);
 
     const camera = new T.PerspectiveCamera(28, 1, 0.1, 30);
     // Aimed a little low: the lower fifth of the frame holds the base plates.
@@ -175,6 +214,14 @@ export function createPodiumScene(
         spot.position.set(0, 4.2, 1.2);
         spot.target.position.set(0, 0.9, 0);
         group.add(plinth, rim, spot, spot.target);
+        let back: T.SpotLight | undefined;
+        if (projector) {
+            // The rim light, per podium: a narrow cone from behind.
+            back = new T.SpotLight(0x9fb8c4, 0, 9, 0.3, 0.6, 1.2);
+            back.position.set(0, 3, -3.5);
+            back.target.position.set(0, 1, 0);
+            group.add(back, back.target);
+        }
         scene.add(group);
         slots.push({
             group,
@@ -186,6 +233,8 @@ export function createPodiumScene(
             yaw: [0, 0],
             light: [0, 0],
             lit: true,
+            strike: null,
+            back,
             shown: true,
         });
     }
@@ -202,6 +251,8 @@ export function createPodiumScene(
     const LIGHT_ON = 26;
     const LIGHT_REST = 9;
     const LIGHT_GLANCE = 3.5;
+    /** The back light's intensity relative to the front spot's. */
+    const BACK_SHARE = 0.7;
 
     const settleTargets = () => {
         slots.forEach((slot, i) => {
@@ -220,7 +271,9 @@ export function createPodiumScene(
                   : focused === null
                     ? LIGHT_REST * 1.4
                     : LIGHT_REST;
-            (slot.rim.material as T.MeshBasicMaterial).color.copy(on && slot.lit ? accent : line);
+            (slot.rim.material as T.MeshBasicMaterial).color.copy(
+                on && slot.lit ? accent : projector && !slot.lit ? dimLine : line,
+            );
         });
     };
 
@@ -232,6 +285,7 @@ export function createPodiumScene(
                 slot.figure.root.visible = slot.shown;
             }
             slot.spot.intensity = slot.light[0];
+            if (slot.back) slot.back.intensity = slot.light[0] * BACK_SHARE;
         }
     };
 
@@ -245,8 +299,16 @@ export function createPodiumScene(
     const step = () => {
         raf = 0;
         let moving = false;
+        const now = performance.now();
         for (const slot of slots) {
+            if (slot.strike !== null) {
+                const elapsed = now - slot.strike;
+                if (elapsed >= STRIKE_MS) slot.strike = null;
+                else moving = true;
+                slot.light[0] = slot.light[1] * strikeAt(elapsed);
+            }
             for (const pair of [slot.forward, slot.yaw, slot.light]) {
+                if (pair === slot.light && slot.strike !== null) continue;
                 const d = pair[1] - pair[0];
                 if (Math.abs(d) > 1e-3 * (pair === slot.light ? 50 : 1)) {
                     pair[0] += d * 0.22;
@@ -400,10 +462,27 @@ export function createPodiumScene(
             else animate();
         },
         setLit(index, lit, instant = false) {
-            slots[index].lit = lit;
+            const slot = slots[index];
+            const was = slot.lit;
+            slot.lit = lit;
             settleTargets();
-            if (instant || reducedMotion()) jump();
-            else animate();
+            if (instant || reducedMotion()) {
+                slot.strike = null;
+                jump();
+            } else if (projector && lit && !was) {
+                // A lamp striking, not a fade; a timer settles it if no frame does.
+                const struck = performance.now();
+                slot.strike = struck;
+                slot.light[0] = 0;
+                window.setTimeout(() => {
+                    if (disposed || slot.strike !== struck) return;
+                    slot.strike = null;
+                    slot.light[0] = slot.light[1];
+                    apply();
+                    draw();
+                }, STRIKE_MS + 80);
+                animate();
+            } else animate();
         },
         setShown(index, shown) {
             slots[index].shown = shown;

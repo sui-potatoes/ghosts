@@ -7,6 +7,7 @@ import { test } from "node:test";
 import {
     advance,
     beatBefore,
+    cuesBetween,
     FIRST_BEAT,
     litOf,
     namedOf,
@@ -124,4 +125,49 @@ test("beats: a plate follows its light quickly, the next light after a pause", (
     assert.equal(beatBefore({ to: 2 }, false), PLATE_BEAT);
     assert.equal(beatBefore({ to: 1 }, true), FIRST_BEAT);
     assert.equal(beatBefore({ to: 1 }, false), NEXT_BEAT);
+});
+
+test("unlit until revealed: a podium's light comes with its recruit, never before", () => {
+    for (const s of run(four, {})) {
+        const lit = litOf(four, s);
+        const named = namedOf(four, s);
+        lit.forEach((on, i) => assert.ok(on || !named[i]));
+    }
+    assert.deepEqual(litOf(four, {}), [false, false, false, false]);
+});
+
+test("one switch-on cue per reveal, in podium order, the last one marked", () => {
+    const trail = run(four, {});
+    const cues = trail.flatMap((s, i) => (i ? cuesBetween(four, trail[i - 1], s) : []));
+    assert.deepEqual(cues, [
+        { index: 0, last: false },
+        { index: 1, last: false },
+        { index: 2, last: false },
+        { index: 3, last: true },
+    ]);
+});
+
+test("a plate step makes no cue", () => {
+    const trail = run(four, {});
+    assert.deepEqual(cuesBetween(four, trail[1], trail[2]), []);
+});
+
+test("a skip sounds at most one settle cue, however many lights come on", () => {
+    const mid = run(four, {})[3];
+    const cues = cuesBetween(four, mid, settle(four, mid), true);
+    assert.equal(cues.length, 1);
+    assert.deepEqual(cues[0], { index: 3, last: true });
+    assert.equal(cuesBetween(four, {}, settle(four, {}), true).length, 1);
+    assert.deepEqual(cuesBetween(four, standing(four), settle(four, standing(four)), true), []);
+});
+
+test("a partial squad cues only the new podiums, the last of them marked", () => {
+    const after: Slots = [r("a"), r("b"), r("c"), r("d")];
+    const stages = { a: 2, c: 2 } as Stages;
+    const trail = run(after, stages);
+    const cues = trail.flatMap((s, i) => (i ? cuesBetween(after, trail[i - 1], s) : []));
+    assert.deepEqual(cues, [
+        { index: 1, last: false },
+        { index: 3, last: true },
+    ]);
 });

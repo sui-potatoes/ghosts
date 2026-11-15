@@ -18,6 +18,7 @@ export { callPlayerBack } from "./alert";
 export { audioFocused, subscribeAudioFocus } from "./focus";
 export { previewDialogue, previewEffect, previewVoice, stopPreview } from "./preview";
 export { playTheme, stopTheme } from "./theme";
+export { uiLampOn } from "./lamp";
 export { uiBack, uiConfirm, uiDeny, uiResolve, uiTick } from "./ui";
 
 /**

@@ -20,6 +20,8 @@ type CanvasProps = {
     figures: (Recruit | null)[];
     /** Full-detail figures (the studio's): only for comparing costs. */
     full?: boolean;
+    /** Each podium lit by its own lamps only, struck on (recruitment). */
+    projector?: boolean;
     focus: number | null;
     lit: boolean[];
     /** Podiums whose built figure stays out of the picture (default: all shown). */
@@ -36,6 +38,7 @@ type CanvasProps = {
 export function PodiumCanvas({
     figures,
     full = false,
+    projector = false,
     focus,
     lit,
     hidden,
@@ -55,6 +58,7 @@ export function PodiumCanvas({
 
     const count = useRef(figures.length);
     const detail = useRef(full);
+    const lamps = useRef(projector);
     useEffect(() => {
         let cancelled = false;
         void import("./podium-scene")
@@ -63,6 +67,7 @@ export function PodiumCanvas({
                 const view = createPodiumScene(host.current, (anchors) => layout.current(anchors), {
                     count: count.current,
                     full: detail.current,
+                    projector: lamps.current,
                 });
                 scene.current = view;
                 layout.current(view.anchors());
