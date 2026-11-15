@@ -33,6 +33,10 @@ const UiSample = lazy(() => import("./features/ui-sample/UiSample"));
 const ResultQa = import.meta.env.VITE_RESULT_QA
     ? lazy(() => import("./features/debrief/qa"))
     : null;
+// QA only: recruitment over fixtures, registered in `VITE_RECRUIT_QA=1` builds.
+const RecruitQa = import.meta.env.VITE_RECRUIT_QA
+    ? lazy(() => import("./features/headquarters/squad/qa"))
+    : null;
 import { SquadPreload, TransactionSender } from "./chain";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { LoadingSpinner } from "./components/LoadingSpinner";
@@ -183,6 +187,16 @@ export function App() {
                         element={
                             <Suspense fallback={<LoadingSpinner />}>
                                 <ResultQa />
+                            </Suspense>
+                        }
+                    />
+                )}
+                {RecruitQa && (
+                    <Route
+                        path="/qa/recruitment"
+                        element={
+                            <Suspense fallback={<LoadingSpinner />}>
+                                <RecruitQa />
                             </Suspense>
                         }
                     />

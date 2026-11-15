@@ -74,6 +74,8 @@ export interface PodiumScene {
     focus(index: number | null): void;
     /** A podium's light: off leaves its figure a dark silhouette. */
     setLit(index: number, lit: boolean, instant?: boolean): void;
+    /** A built figure stays out of the scene until shown (default shown): a podium waiting for its recruit. */
+    setShown(index: number, shown: boolean): void;
     /** Inspect: an unlit podium gets a low glance of light, enough to read the silhouette. */
     inspect(index: number | null): void;
     /** Turn the focused figure (Inspect). */
@@ -100,6 +102,8 @@ type Slot = {
     yaw: [number, number];
     light: [number, number];
     lit: boolean;
+    /** False keeps a built figure out of the picture. */
+    shown: boolean;
 };
 
 export type PodiumSceneOptions = {
@@ -182,6 +186,7 @@ export function createPodiumScene(
             yaw: [0, 0],
             light: [0, 0],
             lit: true,
+            shown: true,
         });
     }
 
@@ -222,7 +227,10 @@ export function createPodiumScene(
     const apply = () => {
         for (const slot of slots) {
             slot.group.position.z = slot.forward[0];
-            if (slot.figure) slot.figure.root.rotation.y = slot.yaw[0];
+            if (slot.figure) {
+                slot.figure.root.rotation.y = slot.yaw[0];
+                slot.figure.root.visible = slot.shown;
+            }
             slot.spot.intensity = slot.light[0];
         }
     };
@@ -396,6 +404,11 @@ export function createPodiumScene(
             settleTargets();
             if (instant || reducedMotion()) jump();
             else animate();
+        },
+        setShown(index, shown) {
+            slots[index].shown = shown;
+            apply();
+            draw();
         },
         inspect(index) {
             inspected = index;

@@ -22,6 +22,8 @@ type CanvasProps = {
     full?: boolean;
     focus: number | null;
     lit: boolean[];
+    /** Podiums whose built figure stays out of the picture (default: all shown). */
+    hidden?: boolean[];
     /** Lights change without the fade (reduced motion, a fixture switch). */
     instant?: boolean;
     turn?: number;
@@ -36,6 +38,7 @@ export function PodiumCanvas({
     full = false,
     focus,
     lit,
+    hidden,
     instant,
     turn,
     inspect = null,
@@ -115,6 +118,13 @@ export function PodiumCanvas({
         // The key stands for the flags.
     }, [ready, litKey, instant]);
 
+    const hiddenKey = (hidden ?? []).join();
+    useEffect(() => {
+        // After the figures: a rebuild keeps what was set.
+        if (ready && hidden) hidden.forEach((h, i) => scene.current?.setShown(i, !h));
+        // The key stands for the flags.
+    }, [ready, hiddenKey, key]);
+
     useEffect(() => {
         if (ready) scene.current?.inspect(inspect);
     }, [ready, inspect]);
@@ -142,6 +152,18 @@ type PodiumProps = {
 /** The engraved plate's height below the plinth's front edge (px). */
 const PLATE_HEIGHT = 96;
 
+/** A podium's column on the canvas, from the figure's head down to its plate. */
+export function podiumBox(anchor?: Anchor) {
+    return anchor
+        ? {
+              left: anchor.x - anchor.width / 2,
+              width: anchor.width,
+              top: anchor.top,
+              height: Math.max(0, anchor.base - anchor.top) + PLATE_HEIGHT,
+          }
+        : { display: "none" as const };
+}
+
 /** One podium as a cursor target: the figure's column, down to its plate. */
 export function Podium({
     index,
@@ -163,14 +185,7 @@ export function Podium({
         // A podium's primary opens the operative picker: one click does it.
         instant: true,
     });
-    const style = anchor
-        ? {
-              left: anchor.x - anchor.width / 2,
-              width: anchor.width,
-              top: anchor.top,
-              height: Math.max(0, anchor.base - anchor.top) + PLATE_HEIGHT,
-          }
-        : { display: "none" };
+    const style = podiumBox(anchor);
     return (
         <div className="sqv-podium" style={style} data-dim={dim || undefined} {...props}>
             <div className="sqv-plate-mount">

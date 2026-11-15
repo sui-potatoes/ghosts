@@ -5,7 +5,7 @@
  * HQ / Squad in the shared interface language (src/ui): the roster, the
  * selected recruit on the character stage, and an inspector whose four
  * sections (Loadout, Stats, Appearance, Dossier) are the header's tabs. With
- * no squad on file the body is the recruitment deck; before the account can
+ * no squad on file the body is the recruitment podiums; before the account can
  * be read it is a gate. The view takes everything as props — the screen
  * (`src/screens/Headquarters.tsx`) feeds it from the account and turns its
  * `ops` into transactions — so it can be driven by fixtures too.
@@ -72,7 +72,7 @@ import {
 import { utilityStats, weaponName } from "./gear";
 import { GearPicker, LoadoutRows } from "./Loadout";
 import { Offstage, Portrait, RankMark, SquadStats } from "./parts";
-import { Deck } from "./Recruitment";
+import { Recruitment } from "./Recruitment";
 import { hireOffer, holdingRifle, type GearSlot } from "./rules";
 import type { HqData, HqOps } from "./types";
 import "./squad.css";
@@ -192,10 +192,10 @@ export function HeadquartersView({ data, ops }: { data: HqData; ops: HqOps }) {
         guard(() => navigate(itemId ? `${ARMORY}?item=${itemId}` : ARMORY, { replace: true }));
 
     // --- Recruitment ----------------------------------------------------------
-    // The deck stays up after a hire from zero until the player walks in.
+    // The podiums stay up after a hire until the player walks in.
     const [deck, setDeck] = useState(false);
     // A hire from the press until its recruits are listed (listing lags the
-    // transaction by a moment), so the cards stay face down in between.
+    // transaction by a moment), so the podiums stay dark in between.
     const [incoming, setIncoming] = useState(false);
     if (incoming && recruits.length >= FREE_RECRUITS) setIncoming(false);
     useEffect(() => {
@@ -205,10 +205,15 @@ export function HeadquartersView({ data, ops }: { data: HqData; ops: HqOps }) {
     }, [incoming, data.busy]);
     const pending = data.busy || incoming;
 
-    async function hireSquad(fromDeck: boolean) {
-        if (fromDeck) setDeck(true);
+    // From the workspace too: recruits on file stand lit, the new ones come up.
+    async function hireSquad() {
+        setDeck(true);
         setIncoming(true);
-        if (!(await ops.hireSquad())) setIncoming(false);
+        if (!(await ops.hireSquad())) {
+            setIncoming(false);
+            // A refused hire returns a partial squad to its workspace.
+            setDeck(false);
+        }
     }
 
     const showDeck = data.gate === null && (data.onFile === 0 || deck);
@@ -329,14 +334,13 @@ export function HeadquartersView({ data, ops }: { data: HqData; ops: HqOps }) {
             {mode === "gate" ? (
                 <HqGateView section="squad" gate={data.gate!} frame={frame} onSignIn={ops.signIn} />
             ) : mode === "deck" ? (
-                <Frame frame={frame} columns="minmax(0, 1fr)" focus="deck">
-                    <Deck
+                <Frame frame={frame} columns="minmax(0, 1fr)" focus="continue">
+                    <Recruitment
                         slots={data.slots.slice(0, FREE_RECRUITS)}
-                        portraits={portraits}
                         pending={pending}
-                        onHire={() => void hireSquad(true)}
-                        onEnter={(id) => {
-                            setSelectedId(id);
+                        onHire={() => void hireSquad()}
+                        onEnter={() => {
+                            setSelectedId(null);
                             setDeck(false);
                         }}
                     />
@@ -364,7 +368,7 @@ export function HeadquartersView({ data, ops }: { data: HqData; ops: HqOps }) {
                     patch={patch}
                     save={() => void save()}
                     discard={discard}
-                    hireSquad={() => void hireSquad(false)}
+                    hireSquad={() => void hireSquad()}
                     toArmory={toArmory}
                     onDismiss={(r) => setPrompt({ kind: "dismiss", recruit: r })}
                     studioHost={<Offstage ref={studioHost} />}
