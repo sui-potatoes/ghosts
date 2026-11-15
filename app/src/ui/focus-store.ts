@@ -130,9 +130,18 @@ export class FocusStore {
     /**
      * The target a click or tap has selected but not yet confirmed: a target
      * that is not `instant` runs its primary on the next click while this is
-     * it. Any move of the cursor clears it. The cursor draws it as armed.
+     * it. It is the explicit selection a command acts on, so the pointer
+     * sweeping over other targets (hover, a finger resting) never clears it:
+     * the cursor goes there, the selection stays. A key or pad move, a click
+     * elsewhere or a scope change clears it. The cursor draws it as armed.
      */
     armed: string | null = null;
+    /**
+     * The last node the cursor reached by an explicit act (keys, pad, a click
+     * or tap, a scope's initial focus or restore); never one the pointer only
+     * passed over. It is what commands act on (`subject`).
+     */
+    private chosen: string | null = null;
     /** Where the pointer last was (client px); movement is told from this. */
     private at: { x: number; y: number } | null = null;
     private lastTouch = -Infinity;
@@ -255,6 +264,8 @@ export class FocusStore {
         const node = this.nodes.get(id);
         this.nodes.delete(id);
         this.sigs.delete(id);
+        if (this.armed === id) this.armed = null;
+        if (this.chosen === id) this.chosen = null;
         if (this.menu?.id === id) this.menu = null;
         if (this.focused === id && node) {
             // The cursor never vanishes: whatever replaces it in the same panel
@@ -280,6 +291,7 @@ export class FocusStore {
             const next = same ?? rest[0];
             if (next) {
                 this.focused = next.id;
+                this.chosen = next.id;
                 if (same) this.memory.set(same.group, same.id);
             }
         }
@@ -288,6 +300,7 @@ export class FocusStore {
 
     pushScope(id: string, back: Command, modal = false) {
         this.settle();
+        this.armed = null;
         this.scopes.push({ id, back, restore: this.lost ?? this.focused, modal });
         this.lost = null;
         const first = this.inScope(id)[0];
@@ -299,6 +312,7 @@ export class FocusStore {
         const i = this.scopes.findIndex((s) => s.id === id);
         if (i <= 0) return;
         const [scope] = this.scopes.splice(i, 1);
+        this.armed = null;
         if (this.menu && id === "menu") this.menu = null;
         if (this.orphan?.scope === id) this.orphan = null;
         const back = this.node(scope.restore);
@@ -308,30 +322,50 @@ export class FocusStore {
             if (this.node(this.focused)?.scope !== this.scope.id) {
                 const first = this.inScope()[0];
                 this.focused = first?.id ?? null;
+                this.chosen = this.focused;
             }
         }
         this.emit();
     }
 
-    private setFocus(id: string, sound: boolean, limited = false, now = 0) {
+    private setFocus(id: string, sound: boolean, limited = false, now = 0, hover = false) {
         if (this.focused === id) return;
         this.focused = id;
-        this.armed = null;
         const node = this.nodes.get(id);
-        if (node) this.memory.set(node.group, id);
+        if (!hover) {
+            this.armed = null;
+            this.chosen = id;
+            if (node) this.memory.set(node.group, id);
+        }
         if (sound && node?.el && (!limited || now - this.lastTick >= POINTER_TICK_GAP_MS)) {
             this.lastTick = now;
             this.sounds.tick?.(node.el);
         }
     }
 
-    /** Put the cursor on `id`; `sound` for moves the player made. */
-    focus(id: string, sound = true, limited = false, now = performance.now()) {
-        if (!this.nodes.has(id) || this.focused === id) return;
+    /**
+     * Put the cursor on `id`; `sound` for moves the player made. `hover` is the
+     * pointer passing over: the cursor and the hint follow it, but the explicit
+     * selection (the armed target, the panel's remembered row) stays.
+     */
+    focus(id: string, sound = true, limited = false, now = performance.now(), hover = false) {
+        if (!this.nodes.has(id)) return;
+        if (!hover) this.chosen = id;
+        if (this.focused === id) return;
         this.lost = null;
         this.orphan = null;
-        this.setFocus(id, sound, limited, now);
+        this.setFocus(id, sound, limited, now, hover);
         this.emit();
+    }
+
+    /**
+     * What a command acts on: the last node reached by an explicit act while it
+     * is live in the open scope, else the one under the cursor. Previews and
+     * the command bar read this, so hovering another target never retargets them.
+     */
+    get subject(): string | null {
+        const node = this.chosen ? this.nodes.get(this.chosen) : undefined;
+        return node && node.scope === this.scope.id ? node.id : this.focused;
     }
 
     /** A node the pointer may move the cursor to: in the open scope, and not opted out. */
@@ -358,7 +392,7 @@ export class FocusStore {
         if (!node) return false;
         this.pointerInput();
         if (this.focused === node.id) return false;
-        this.focus(node.id, true, true, now);
+        this.focus(node.id, true, true, now, true);
         return this.focused === node.id;
     }
 
@@ -373,7 +407,7 @@ export class FocusStore {
         const node = this.reachable(id);
         if (!node) return;
         this.pointerInput();
-        this.focus(node.id, true, false, now);
+        this.focus(node.id, true, false, now, true);
     }
 
     /** A touch ended: its shadow mouse events (a click's hover) are ignored for a moment. */
@@ -394,7 +428,15 @@ export class FocusStore {
     ) {
         this.pointerInput();
         const again = this.armed === id;
+        // A click elsewhere ends the selection; the hover that brought the
+        // cursor here recorded nothing, so the click does.
+        if (!again) this.armed = null;
         this.focus(id);
+        const node = this.nodes.get(id);
+        if (node) {
+            this.memory.set(node.group, id);
+            this.chosen = id;
+        }
         const command = clickCommand(commands, { again, instant, clickConfirm });
         if (command) {
             this.armed = null;
@@ -453,7 +495,12 @@ export class FocusStore {
 
     /** Keys or pad: back to the console presentation. */
     keyInput() {
-        if (!this.pointer) return;
+        // The pointer left the cursor on a hovered target while another is
+        // selected: keys act on the selection, so the cursor returns to it.
+        const subject = this.subject;
+        const snap = subject !== null && subject !== this.focused;
+        if (snap) this.focused = subject;
+        if (!this.pointer && !snap) return;
         this.pointer = false;
         this.emit();
     }
@@ -470,8 +517,8 @@ export class FocusStore {
     }
 
     /** Run a command with its feedback: pressed or refused, and the sound. */
-    run(command: Command) {
-        const id = this.focused ?? "";
+    run(command: Command, target?: string | null) {
+        const id = target ?? this.focused ?? "";
         if (command.deny) {
             this.sounds.deny?.();
             this.denies++;

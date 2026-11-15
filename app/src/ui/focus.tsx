@@ -264,6 +264,10 @@ export function useFocusable<T extends HTMLElement>({
     const pulse = store.pulse?.id === id ? store.pulse : null;
     // The panel's own place-keeper: where its cursor was, once the cursor left it.
     const current = !focused && store.remembered(group) === id;
+    // Selected by a click and waiting for its confirm while the pointer rests elsewhere.
+    const armed = !focused && store.armed === id;
+    // The row commands act on while the pointer's cursor rests elsewhere.
+    const subject = !focused && store.subject === id;
     // Chips and the command list carry the secondaries only; the primary is the click.
     const secondary = secondaryCommands(commands);
     const listable = secondary.length > 0;
@@ -291,6 +295,8 @@ export function useFocusable<T extends HTMLElement>({
             ref,
             "data-focused": focused || undefined,
             "data-current": current || undefined,
+            "data-armed": armed || undefined,
+            "data-subject": subject || undefined,
             "data-pressed": pulse?.kind === "press" || undefined,
             "data-denied": pulse?.kind === "deny" || undefined,
             "data-pointer": pointer || undefined,

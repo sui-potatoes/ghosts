@@ -3,7 +3,7 @@
 
 import type { MouseEvent } from "react";
 
-import { useFocusState, type Command, type CommandAction } from "./focus";
+import { useFocusState, type Command, type CommandAction, type FocusStore } from "./focus";
 import { Glyph, type GlyphSet } from "./glyphs";
 
 /** Fixed slot order, left to right; Back always closes the row. */
@@ -116,25 +116,41 @@ export function CommandHint({ command, glyphs, pressed, onRun }: HintProps) {
     );
 }
 
+/**
+ * What the bar shows for the store's cursor. The pointer may rest on another
+ * target than the one a click selected: the title and hint follow the
+ * pointer, while the commands belong to the selection and name it. `target`
+ * is the node a run is attributed to.
+ */
+export function barOf(store: FocusStore) {
+    const node = store.node(store.focused);
+    const subjectId = store.subject;
+    const subject = subjectId !== store.focused ? store.node(subjectId) : undefined;
+    const commands = ((subject ?? node)?.commands ?? []).map((c) =>
+        subject?.title && c.action === "confirm"
+            ? { ...c, label: `${c.label} \u00b7 ${subject.title}` }
+            : c,
+    );
+    return { title: node?.title, hint: node?.hint, commands, target: subjectId };
+}
+
 /** The command bar wired to the focus cursor: it follows whatever is focused. */
 export function FocusCommandBar({ glyphs }: { glyphs: GlyphSet }) {
     const store = useFocusState();
-    const node = store.node(store.focused);
-    const commands = node?.commands ?? [];
+    const { title, hint, commands, target } = barOf(store);
     const confirm = commands.find((c) => c.action === "confirm");
-    const back = store.command("back")!;
     const pulse = store.pulse;
     return (
         <CommandBar
-            title={node?.title}
-            hint={node?.hint}
+            title={title}
+            hint={hint}
             deny={confirm?.deny}
             denyKey={store.denies}
             commands={commands.filter((c) => c.action !== "back")}
-            back={back}
+            back={store.command("back")!}
             glyphs={glyphs}
             pressed={pulse?.kind === "press" ? pulse.action : null}
-            onRun={(command) => store.run(command)}
+            onRun={(command) => store.run(command, target)}
         />
     );
 }

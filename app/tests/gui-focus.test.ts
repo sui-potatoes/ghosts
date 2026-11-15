@@ -306,18 +306,19 @@ test("a stationary pointer does not move the cursor when the list changes under 
     assert.equal(s.focused, "c");
 });
 
-test("keys after a hover keep the keyboard's place until the pointer moves again", () => {
+test("keys after a hover continue from the subject until the pointer moves again", () => {
     const { s } = rows();
-    arrive(s, "b");
+    arrive(s, "c"); // hover only: the subject stays a
     s.keyInput();
+    assert.equal(s.focused, "a");
     s.move("down");
-    assert.equal(s.focused, "c");
+    assert.equal(s.focused, "b");
     assert.equal(s.pointer, false);
     // The list auto-scrolled: hover is re-tested at the pointer's old place.
-    assert.equal(s.pointerMove(2, 2, "b"), false);
-    assert.equal(s.focused, "c");
-    assert.equal(s.pointerMove(3, 2, "b"), true);
+    assert.equal(s.pointerMove(2, 2, "c"), false);
     assert.equal(s.focused, "b");
+    assert.equal(s.pointerMove(3, 2, "c"), true);
+    assert.equal(s.focused, "c");
 });
 
 test("leaving every target leaves the cursor where it is", () => {
@@ -419,16 +420,66 @@ test("a target that is not instant is armed by a click and confirmed by the next
     assert.equal(s.armed, null);
 });
 
-test("moving the cursor disarms a target", () => {
+test("a key or pad move disarms a target; the pointer passing over does not", () => {
     const { s, ran, confirm } = rows();
     const opts = { instant: false, clickConfirm: true };
     s.click("b", confirm("b"), opts);
-    s.pointerMove(1, 1, null);
-    s.pointerMove(2, 2, "c");
-    s.pointerMove(3, 3, "b");
+    s.move("down");
+    assert.equal(s.armed, null);
     s.click("b", confirm("b"), opts);
     assert.deepEqual(ran, []);
     assert.equal(s.armed, "b");
+});
+
+test("hovering another target leaves the selection, the bar subject and memory alone", () => {
+    const { s, ran, confirm } = rows();
+    const opts = { instant: false, clickConfirm: true };
+    s.click("b", confirm("b"), opts);
+    assert.equal(s.remembered("list"), "b");
+    s.pointerMove(1, 1, null);
+    arrive(s, "c", 2000);
+    assert.equal(s.focused, "c");
+    assert.equal(s.armed, "b");
+    assert.equal(s.subject, "b");
+    assert.equal(s.remembered("list"), "b");
+    // Confirm by the bar acts on the selection, not on what the pointer crossed.
+    s.run(
+        s.node(s.subject)!.commands.find((c) => c.action === "confirm")!,
+        s.subject,
+    );
+    assert.deepEqual(ran, ["b"]);
+    // Clicking the hovered target selects it instead.
+    s.click("c", confirm("c"), opts);
+    assert.equal(s.armed, "c");
+    assert.equal(s.subject, "c");
+});
+
+test("keys act on the selection: the cursor returns to it first", () => {
+    const { s, ran, confirm } = rows();
+    s.click("b", confirm("b"), { instant: false, clickConfirm: true });
+    arrive(s, "c", 2000);
+    s.keyInput();
+    assert.equal(s.focused, "b");
+    s.invoke("confirm");
+    assert.deepEqual(ran, ["b"]);
+});
+
+test("hover alone never changes a panel's remembered row", () => {
+    const { s } = rows();
+    s.focus("a");
+    arrive(s, "c", 2000);
+    assert.equal(s.remembered("list"), "a");
+    // The click on the hovered target is what records it.
+    s.click("c", [], { instant: true, clickConfirm: true });
+    assert.equal(s.remembered("list"), "c");
+});
+
+test("opening a scope drops the selection", () => {
+    const { s, confirm } = rows();
+    s.click("b", confirm("b"), { instant: false, clickConfirm: true });
+    s.pushScope("picker", back);
+    assert.equal(s.armed, null);
+    assert.equal(s.subject, s.focused);
 });
 
 test("choosers are not armed by a click, and an instant target never waits", () => {
@@ -453,4 +504,93 @@ test("a sweep across rows ticks at most once per gap; keys tick every move", () 
     s.move("down");
     s.move("down");
     assert.equal(sounds.tick, 4);
+});
+
+// --- The subject: what commands act on, independent of hover -----------------
+
+const bar = (s: FocusStore) => {
+    const id = s.subject!;
+    s.run(
+        s.node(id)!.commands.find((c) => c.action === "confirm")!,
+        id,
+    );
+};
+
+test("keyboard to a row, hover another, click the bar's Confirm: the first row", () => {
+    const { s, ran } = rows();
+    s.keyInput();
+    s.move("down"); // b
+    arrive(s, "c", 2000);
+    assert.equal(s.focused, "c");
+    assert.equal(s.subject, "b");
+    bar(s);
+    assert.deepEqual(ran, ["b"]);
+});
+
+test("the scope's initial focus is the subject until something explicit replaces it", () => {
+    const { s, ran } = rows();
+    s.register({
+        id: "p1",
+        group: "pick",
+        scope: "picker",
+        el: box(300, 0),
+        commands: [{ action: "confirm", label: "p1", run: () => void ran.push("p1") }],
+    });
+    s.register({
+        id: "p2",
+        group: "pick",
+        scope: "picker",
+        el: box(300, 50),
+        commands: [{ action: "confirm", label: "p2", run: () => void ran.push("p2") }],
+    });
+    s.pushScope("picker", back);
+    assert.equal(s.focused, "p1");
+    arrive(s, "p2", 2000);
+    assert.equal(s.subject, "p1");
+    bar(s);
+    assert.deepEqual(ran, ["p1"]);
+});
+
+test("clicking the hovered row makes it the subject: instant rows run, commit rows arm", () => {
+    const { s, ran, confirm } = rows();
+    arrive(s, "b", 2000);
+    assert.equal(s.subject, "a");
+    s.click("b", confirm("b"), { instant: true, clickConfirm: true });
+    assert.deepEqual(ran, ["b"]);
+    assert.equal(s.subject, "b");
+    arrive(s, "c", 4000);
+    s.click("c", confirm("c"), { instant: false, clickConfirm: true });
+    assert.deepEqual(ran, ["b"]);
+    assert.equal(s.armed, "c");
+    assert.equal(s.subject, "c");
+});
+
+test("an arrow key after hover continues from the subject, not from the hovered row", () => {
+    const { s } = rows();
+    s.keyInput();
+    s.move("down"); // b
+    arrive(s, "c", 2000);
+    s.keyInput();
+    assert.equal(s.focused, "b");
+    s.move("down");
+    assert.equal(s.focused, "c");
+    arrive(s, "a", 4000);
+    s.keyInput();
+    s.move("up");
+    assert.equal(s.focused, "b"); // from the subject c, not from the hovered a
+});
+
+test("a touch that goes down on a row and lifts elsewhere leaves the subject", () => {
+    const { s } = rows();
+    s.touchDown("c", 1000);
+    s.touchEnd(1100);
+    assert.equal(s.focused, "c");
+    assert.equal(s.subject, "a");
+});
+
+test("hover alone never moves the subject, a selection that unmounts falls back to the cursor", () => {
+    const { s } = rows();
+    arrive(s, "b", 2000);
+    s.unregister("a");
+    assert.equal(s.subject, "b");
 });

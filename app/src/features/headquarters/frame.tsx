@@ -14,6 +14,7 @@ import { useNavigate } from "react-router-dom";
 import { SEARCH_TIMEOUT_MS } from "../../chain";
 import { useGoUp } from "../../hooks/useGoUp";
 import {
+    barOf,
     CommandBar,
     EmptyState,
     headerClick,
@@ -111,8 +112,7 @@ export function HqCommandBar({
     clearError: () => void;
 }) {
     const store = useFocusState();
-    const node = store.node(store.focused);
-    const commands = node?.commands ?? [];
+    const { title, hint, commands, target } = barOf(store);
     const confirm = commands.find((c) => c.action === "confirm");
     const clear = useRef(clearError);
     clear.current = clearError;
@@ -129,15 +129,15 @@ export function HqCommandBar({
     const pulse = store.pulse;
     return (
         <CommandBar
-            title={node?.title}
-            hint={node?.hint}
+            title={title}
+            hint={hint}
             deny={confirm?.deny ?? (error || undefined)}
             denyKey={store.denies + (error ? 1 : 0)}
             commands={commands.filter((c) => c.action !== "back")}
             back={store.command("back")!}
             glyphs={glyphs}
             pressed={pulse?.kind === "press" ? pulse.action : null}
-            onRun={(command) => store.run(command)}
+            onRun={(command) => store.run(command, target)}
         />
     );
 }

@@ -1475,6 +1475,16 @@ span.gui-cmd {
     box-shadow: inset 2px 0 0 var(--text-secondary);
 }
 
+/* The row commands act on (reached by keys, a click or the scope's start)
+   while the pointer's cursor hovers another: a gutter notch; armed adds a tint. */
+.gui-row[data-subject] {
+    box-shadow: inset 2px 0 0 var(--accent-color);
+}
+.gui-row[data-armed] {
+    background: color-mix(in srgb, var(--accent-color) 14%, transparent);
+    box-shadow: inset 2px 0 0 var(--accent-color);
+}
+
 /* A click that selected a target which confirms on the next one: the frame
    closes in a little and stays tight until the cursor moves or it runs. */
 .gui-cursor[data-armed] .gui-cursor-frame {

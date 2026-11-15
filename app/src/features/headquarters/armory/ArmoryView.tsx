@@ -461,7 +461,7 @@ function Workspace(props: WorkspaceProps) {
     };
 
     // The picker row under the cursor, previewed on the stage and in the stats.
-    const focused = picker ? store.focused : null;
+    const focused = picker ? store.subject : null;
     const candidate = focused?.startsWith("pick-") ? focused.slice(5) : undefined;
 
     // --- The weapon on the bench -----------------------------------------------

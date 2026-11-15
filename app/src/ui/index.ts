@@ -6,7 +6,7 @@
 import "./gui.css";
 
 export { claimScreenBack, screenOwnsBack } from "./back";
-export { CommandBar, CommandHint, FocusCommandBar } from "./CommandBar";
+export { barOf, CommandBar, CommandHint, FocusCommandBar } from "./CommandBar";
 export {
     FocusCursor,
     FocusRoot,

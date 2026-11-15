@@ -13,6 +13,7 @@ import { createContext, useContext, useRef, useState, type ReactNode } from "rea
 
 import { uiTick } from "../../audio";
 import {
+    barOf,
     CommandBar,
     FocusRoot,
     Prompt,
@@ -215,8 +216,7 @@ export function SettingsFrame({
 /** The command bar with the panel's line: ok in the hint slot, a failure on the amber line. */
 function SettingsCommandBar({ glyphs, line }: { glyphs: GlyphSet; line: Line }) {
     const store = useFocusState();
-    const node = store.node(store.focused);
-    const commands = node?.commands ?? [];
+    const { title, hint, commands, target } = barOf(store);
     const confirm = commands.find((c) => c.action === "confirm");
     const warn = line?.tone === "warn" ? line.text : undefined;
     const pulse = store.pulse;
@@ -229,15 +229,15 @@ function SettingsCommandBar({ glyphs, line }: { glyphs: GlyphSet; line: Line }) 
     }
     return (
         <CommandBar
-            title={node?.title}
-            hint={line?.tone === "ok" ? line.text : node?.hint}
+            title={title}
+            hint={line?.tone === "ok" ? line.text : hint}
             deny={confirm?.deny ?? warn}
             denyKey={store.denies + flashes.current}
             commands={commands.filter((c) => c.action !== "back")}
             back={store.command("back")!}
             glyphs={glyphs}
             pressed={pulse?.kind === "press" ? pulse.action : null}
-            onRun={(command) => store.run(command)}
+            onRun={(command) => store.run(command, target)}
         />
     );
 }

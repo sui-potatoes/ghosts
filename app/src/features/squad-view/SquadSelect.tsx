@@ -203,8 +203,8 @@ function Screen({
     // Who stands where: the squad once deployed, else the picks, with the
     // picker's row under the cursor previewed on its podium.
     const candidate =
-        picking !== null && focusedId.startsWith("pick-")
-            ? focusedId.slice("pick-".length)
+        picking !== null && store.subject?.startsWith("pick-")
+            ? store.subject.slice("pick-".length)
             : undefined;
     const shown: Podiums = done
         ? Array.from({ length: count }, (_, i) => squad?.[i]?.objectId ?? null)

@@ -7,7 +7,8 @@
  * `HeadquartersView` over fixture recruits, no chain, no sign-in. A hire
  * lands the missing recruits after a short wait, as the listing lags the
  * transaction. `?case=empty|partial|gap|full`, `&delay=MS` before the hire
- * lands, `&fail=1` for a hire that is refused.
+ * lands, `&fail=1` for a hire that is refused, `&storage=1` for three rifles in
+ * storage (equips are logged on `window.__issued`).
  */
 
 import { fromPreset, normalize, presets } from "@ghosts/squad/appearance/editor-state";
@@ -96,7 +97,10 @@ export default function RecruitQa() {
             setSlots((s) => s.map((x, i) => x ?? recruit(i)));
             return true;
         },
-        issue: async () => true,
+        issue: async (...args) => {
+            ((window as unknown as { __issued?: unknown[] }).__issued ??= []).push(args);
+            return true;
+        },
         unequip: async () => true,
         equipUtility: async () => true,
         unequipUtility: async () => true,
@@ -110,7 +114,19 @@ export default function RecruitQa() {
         rating: 1500,
         slots,
         onFile: slots.filter(Boolean).length,
-        storage: { weapons: [], armors: [], utilities: [] },
+        storage: {
+            weapons: params.get("storage")
+                ? ["Standard Rifle", "Standard Rifle", "Standard Rifle"].map((name, i) => ({
+                      objectId: `0xqs${i}`,
+                      id: `0xqs${i}`,
+                      name,
+                      stats: {},
+                      upgrades: [],
+                  }))
+                : [],
+            armors: [],
+            utilities: [],
+        } as unknown as HqData["storage"],
         busy,
         error,
         clearError: () => setError(""),

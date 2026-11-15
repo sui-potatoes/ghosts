@@ -91,7 +91,8 @@ function Preview({
         store.focus(prefix + value, false);
         // Once, on open.
     }, []);
-    const focused = store.focused?.startsWith(prefix) ? store.focused.slice(prefix.length) : null;
+    const at = store.subject;
+    const focused = at?.startsWith(prefix) ? at.slice(prefix.length) : null;
     useEffect(() => {
         if (focused !== null) onPreview(focused);
         // The preview follows the cursor only.

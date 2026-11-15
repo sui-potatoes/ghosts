@@ -220,6 +220,19 @@ changed; never run an idle loop.
       something (issue, hire, requisition) or that the stage previews first (a
       picker row). Moving the cursor disarms. Danger primaries are never
       instant.
+- **Hover, subject, armed.** Hover moves the cursor highlight and the bar's
+  title and hint, nothing else. What commands act on is the _subject_
+  (`store.subject`): the last node reached by an explicit act (keys or pad, a
+  click or tap, a scope's initial focus or restore), never one the pointer only
+  passed over or a finger only touched down on. A bar click runs the subject's
+  command (its label names the subject, "Equip · Kira"); Enter and arrows after
+  hover snap the cursor back to the subject first. The subject row keeps a
+  gutter notch while the highlight is elsewhere (`data-subject`); `armed` (the
+  first click of a commit row) adds a tint on top and keeps its meaning.
+  Previews (picker stage, grid tiles) follow the subject, so what the stage
+  shows is what lands. Hover also never writes a panel's remembered row.
+  Clicking the hovered row makes it the subject, as before: plain menus act
+  with one click.
 - Inline chips (`InlineCommands`) are for **secondary** commands only (Reset:
   Remove, Manage). A target whose only command is its primary shows no chip
   and does not change height when selected; the command bar still names the
