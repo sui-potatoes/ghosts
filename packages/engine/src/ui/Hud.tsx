@@ -260,7 +260,7 @@ export function HudHeader({ onMenu }: { onMenu?: () => void }) {
       </div>
       <div className="hud-right">
         <ul className="hud-objectives" aria-label="Objectives">
-          {!game.scenario.versus && (
+          {!game.scenario.versus && !game.scenario.noObjective && (
             <li data-done={game.secured || undefined}>
               <i />
               {objectives.secure.order}

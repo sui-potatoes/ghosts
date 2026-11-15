@@ -29,6 +29,8 @@ export type DemoDebriefProps = {
     onField: () => void;
     onRedeploy: () => void;
     onQuit: () => void;
+    /** What leaving is called: the menu, unless the demo went elsewhere (a playtest goes back to the editor). */
+    quitLabel?: string;
 };
 
 /** The figure of each unit that went out: its recruit by id, else by squad order. */
@@ -45,7 +47,7 @@ export function deployedFigures(
 
 export function DemoDebrief(props: DemoDebriefProps) {
     return (
-        <FocusRoot back={{ action: "back", label: "Menu", run: props.onQuit }}>
+        <FocusRoot back={{ action: "back", label: props.quitLabel ?? "Menu", run: props.onQuit }}>
             <Screen {...props} />
         </FocusRoot>
     );

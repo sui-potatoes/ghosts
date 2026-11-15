@@ -160,6 +160,7 @@ export class Destruction {
       root.name = `${prop.kind} / ${prop.id}`;
       root.position.set(prop.x, map.surfaceHeight(prop.x, prop.z) + (prop.y ?? 0), prop.z);
       root.rotation.y = prop.yaw;
+      if (prop.span) root.scale.x = prop.span;
       root.add(intact, asset.frame.clone());
       this.group.add(root); root.updateMatrixWorld(true);
       const colliders: RAPIER.Collider[] = [];
@@ -172,7 +173,9 @@ export class Destruction {
       ] : [asset.bounds]);
       for (const bounds of boxes) {
         const center = root.localToWorld(bounds.getCenter(new T.Vector3()));
-        colliders.push(this.fixedBox(center, bounds.getSize(new T.Vector3()), root.quaternion));
+        const size = bounds.getSize(new T.Vector3());
+        size.x *= prop.span ?? 1;
+        colliders.push(this.fixedBox(center, size, root.quaternion));
       }
       const destroyed = map.health(prop.id) === 0;
       const view: PropView = { prop, asset, root, intact, colliders, destroyed, shed: new Set() };

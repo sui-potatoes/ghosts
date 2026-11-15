@@ -15,17 +15,20 @@ import * as T from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { assetByUid, floorByUid, type AssetSpec, type FloorSpec } from "../catalog.ts";
-import { districtMaps, loadDistrictTextures, pavementMaterial } from "../district.ts";
+import { districtMaps, loadDistrictTextures } from "../district.ts";
 import type { MapProp } from "../environment.ts";
 import { CELL, type Cell } from "../map.ts";
 import type { OfficeFinish, OfficeKind } from "../office/catalog.ts";
-import { FLOOR_UV_SCALE, floorSurfaceMaterial, officeFloorTexture } from "../office/flooring.ts";
 import { applyTimeOfDay } from "../scene-weather.ts";
 import { PropAssets } from "../scene/prop-assets.ts";
+import { floorMaterial, floorMeshes, type FloorTextures } from "./floors.ts";
 import {
-  anchorOf, canonicalEdge, floorRaise, interiorPreset, newLevel, restHeight, turnOffset,
+  floorRaise, interiorPreset, newLevel, placementSeat, restHeight,
   type Level, type LevelLighting, type Placement, type Turn,
 } from "./level.ts";
+
+/** Deployment pad tones: side A the squad's teal, side B the hostiles' red. */
+export const SIDE_COLORS = { a: 0x7eaaa7, b: 0xe77469 } as const;
 
 const placementKey = (p: Placement, rest: number, raise: number) =>
   `${p.asset}:${p.at.join()}:${p.turn}:${rest}:${raise}:${p.finish ?? ""}`;
@@ -48,38 +51,9 @@ function propOf(spec: AssetSpec, turn: Turn, finish?: OfficeFinish): MapProp {
 
 /** Where a placement's mesh sits: world position, yaw and run-length scale. */
 function seatOf(spec: AssetSpec, at: Cell, turn: Turn, lift: number) {
-  if (spec.place === "edge") {
-    const e = canonicalEdge(at, turn);
-    const [x, z] = e.cell;
-    const mid =
-      e.side === "n"
-        ? new T.Vector3(x * CELL, lift, (z - 0.5) * CELL)
-        : new T.Vector3((x - 0.5) * CELL, lift, z * CELL);
-    if (spec.mount === "wall") {
-      // Into the cell it was placed from, at its mounting height.
-      const inset = new T.Vector3(at[0] * CELL, 0, at[1] * CELL).sub(mid.clone().setY(0));
-      mid.add(inset.normalize().multiplyScalar(0.09));
-      return { position: mid, yaw: -turn * (Math.PI / 2), scale: 1 };
-    }
-    return { position: mid, yaw: turn * (Math.PI / 2), scale: spec.span ? CELL / spec.span : 1 };
-  }
-  // The mesh sits at its authored anchor, not the footprint centroid, plus
-  // its workstation offset — desk clutter composes instead of piling up.
-  const [ax, az] = turnOffset(anchorOf(spec), turn);
-  const [ox, oz] = spec.offset ? turnOffset(spec.offset, turn) : [0, 0];
-  return {
-    position: new T.Vector3((at[0] + ax) * CELL + ox, lift, (at[1] + az) * CELL + oz),
-    yaw: turn * (Math.PI / 2),
-    scale: 1,
-  };
+  const seat = placementSeat(spec, at, turn);
+  return { position: new T.Vector3(seat.x, lift, seat.z), yaw: seat.yaw, scale: seat.span };
 }
-
-// The office surfaces at their shared scale; the street materials use the
-// district's metric UVs, one repeat per 2m.
-const UV_SCALE = { ...FLOOR_UV_SCALE, asphalt: [2, 2], concrete: [2, 2], slabs: [2, 2] } as const;
-
-/** The texture a floor tile samples, or undefined for a flat tint. */
-const surfaceOf = (spec: FloorSpec) => spec.texture ?? spec.street ?? (spec.slabs ? "slabs" : undefined);
 
 export class EditorScene {
   /** The host paints over a cell; `side` is the cell edge nearest the pointer. */
@@ -104,7 +78,7 @@ export class EditorScene {
   private readonly placed = new T.Group();
   private readonly byKey = new Map<string, T.Object3D>();
   private readonly floorMaterials = new Map<string, T.MeshStandardMaterial>();
-  private readonly floorTextures = new Map<string, ReturnType<typeof officeFloorTexture>>();
+  private readonly floorTextures: FloorTextures = new Map();
   // The crosswalks' zebra strips, the street demo's road-paint tone.
   private readonly paint = new T.MeshStandardMaterial({ color: 0xb8b5a2, roughness: 0.85 });
   private readonly bulbMaterials = new Map<number, T.MeshBasicMaterial>();
@@ -369,93 +343,18 @@ export class EditorScene {
 
   private floorMaterial(spec: FloorSpec): T.MeshStandardMaterial {
     let material = this.floorMaterials.get(spec.uid);
-    if (material) return material;
-    if (spec.slabs) {
-      material = pavementMaterial();
-    } else if (spec.street) {
-      // The street demo's own PBR set; flat-tinted until the KTX2 maps land.
-      material = new T.MeshStandardMaterial({
-        color: spec.tone,
-        roughness: spec.rough ?? 1,
-        metalness: 0,
-        normalScale: new T.Vector2(0.45, 0.45),
-        ...districtMaps(spec.street),
-      });
-    } else if (spec.texture) {
-      let maps = this.floorTextures.get(spec.texture);
-      if (!maps) {
-        maps = officeFloorTexture(spec.texture);
-        this.floorTextures.set(spec.texture, maps);
-      }
-      material = floorSurfaceMaterial(spec.texture, maps, spec.tone);
-    } else {
-      material = new T.MeshStandardMaterial({
-        color: spec.tone,
-        roughness: spec.rough ?? 0.92,
-        metalness: spec.metal ?? 0.04,
-      });
+    if (!material) {
+      material = floorMaterial(spec, this.floorTextures);
+      this.floorMaterials.set(spec.uid, material);
     }
-    this.floorMaterials.set(spec.uid, material);
     return material;
   }
 
   private buildFloors(level: Level) {
     this.clear(this.floors, true);
-    const cells = new Map<string, Cell[]>();
-    for (const tile of level.floors) {
-      const list = cells.get(tile.floor) ?? [];
-      list.push(tile.at);
-      cells.set(tile.floor, list);
-    }
-    for (const [uid, at] of cells) {
-      const spec = floorByUid(uid);
-      if (!spec) continue;
-      const surface = surfaceOf(spec);
-      const strips: T.BufferGeometry[] = [];
-      const parts = at.map(([x, z]) => {
-        const geometry = spec.raise
-          ? new T.BoxGeometry(CELL, spec.raise, CELL)
-          : new T.PlaneGeometry(CELL, CELL).rotateX(-Math.PI / 2);
-        geometry.translate(x * CELL, spec.raise ? spec.raise / 2 : 0.006, z * CELL);
-        if (surface) {
-          // World-space UVs keep grain and weave at real scale across tiles;
-          // on a raised box the sides map by their world axes, like the street.
-          const [sx, sz] = UV_SCALE[surface];
-          const position = geometry.getAttribute("position");
-          const normal = geometry.getAttribute("normal");
-          const uv = geometry.getAttribute("uv");
-          for (let i = 0; i < position.count; i++) {
-            const side = Math.abs(normal.getY(i)) < 0.5;
-            const u = Math.abs(normal.getX(i)) > 0.5 ? position.getZ(i) : position.getX(i);
-            uv.setXY(i, u / sx, (side ? position.getY(i) : position.getZ(i)) / sz);
-          }
-        }
-        // Zebra paint: two strips per cell, aligned across neighbours.
-        if (spec.stripes)
-          for (const offset of [-CELL / 4, CELL / 4]) {
-            const along = spec.stripes === "x";
-            const strip = new T.BoxGeometry(along ? 0.34 : CELL - 0.13, 0.012, along ? CELL - 0.13 : 0.34);
-            strip.translate(x * CELL + (along ? offset : 0), 0.013, z * CELL + (along ? 0 : offset));
-            strips.push(strip);
-          }
-        return geometry;
-      });
-      const merged = mergeGeometries(parts);
-      for (const part of parts) part.dispose();
-      if (!merged) continue;
-      this.disposable.add(merged);
-      const mesh = new T.Mesh(merged, this.floorMaterial(spec));
-      mesh.receiveShadow = true;
-      mesh.castShadow = !!spec.raise;
+    for (const mesh of floorMeshes(level, (spec) => this.floorMaterial(spec), this.paint)) {
+      this.disposable.add(mesh.geometry);
       this.floors.add(mesh);
-      const paint = strips.length ? mergeGeometries(strips) : null;
-      for (const strip of strips) strip.dispose();
-      if (paint) {
-        this.disposable.add(paint);
-        const painted = new T.Mesh(paint, this.paint);
-        painted.receiveShadow = true;
-        this.floors.add(painted);
-      }
     }
   }
 
@@ -557,9 +456,12 @@ export class EditorScene {
 
   private buildMarkers(level: Level) {
     this.clear(this.markers, true);
-    const ring = (cell: Cell, color: number) => {
+    // Side A deploys on round pads in the squad's teal, side B on square ones in the hostiles' red.
+    const ring = (cell: Cell, color: number, corners = 32) => {
       const mesh = new T.Mesh(
-        new T.RingGeometry(CELL * 0.3, CELL * 0.4, 32),
+        corners === 4
+          ? new T.RingGeometry(CELL * 0.34, CELL * 0.46, 4, 1, Math.PI / 4)
+          : new T.RingGeometry(CELL * 0.3, CELL * 0.4, corners),
         new T.MeshBasicMaterial({ color, transparent: true, opacity: 0.75, side: T.DoubleSide }),
       );
       this.disposable.add(mesh.geometry);
@@ -567,7 +469,8 @@ export class EditorScene {
       mesh.position.set(cell[0] * CELL, 0.03 + floorRaise(level, cell), cell[1] * CELL);
       this.markers.add(mesh);
     };
-    for (const spawn of level.spawns) ring(spawn, 0x7eaaa7);
+    for (const spawn of level.spawns.a) ring(spawn, SIDE_COLORS.a);
+    for (const spawn of level.spawns.b) ring(spawn, SIDE_COLORS.b, 4);
     if (level.objective) {
       ring(level.objective, 0xf4c583);
       const beacon = new T.Mesh(

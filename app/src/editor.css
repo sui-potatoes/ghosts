@@ -174,3 +174,22 @@
     backdrop-filter: blur(3px);
     padding: 6px 9px;
 }
+
+/* Deployment sides, in the viewport pads' tones: A the squad's teal, B the hostiles' red. */
+.ed-side-a {
+    color: #7eaaa7;
+}
+
+.ed-side-b {
+    color: #e77469;
+}
+
+.ed-btn.ed-side-a[data-on="true"] {
+    border-color: #7eaaa7;
+    color: #7eaaa7;
+}
+
+.ed-btn.ed-side-b[data-on="true"] {
+    border-color: #e77469;
+    color: #e77469;
+}

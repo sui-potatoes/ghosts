@@ -24,7 +24,9 @@ test("Black Rain reconstructs: covers seated, buildings as stand-ins, squad depl
   // The four solid buildings became swappable building blocks: 5·4+5·4+3·4+4·3.
   const blocks = level.placements.filter((p) => p.asset === assetSpec("block-fill").uid);
   assert.equal(blocks.length, 64);
-  assert.equal(level.spawns.length, 4);
+  // Both sides deploy where the demo puts them: the squad as side A, the hostiles as side B.
+  assert.deepEqual(level.spawns.a, [[6, 11], [8, 12], [10, 11], [4, 10]]);
+  assert.deepEqual(level.spawns.b, [[11, 4], [14, 5], [6, 3]]);
   assert.deepEqual(level.objective, [9, 5]);
   // The tile grid holds the buildings as walls.
   const map = toMoveMap(level);

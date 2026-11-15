@@ -73,12 +73,16 @@ test("an editor level's preset bytes parse with the deployed Map schema", () => 
     put("block-high", [5, 1], 3);
     put("block-cover", [6, 4], 0);
     level.unwalkable.push([8, 5]);
-    level.spawns = [
-        [0, 0],
-        [0, 5],
-        [8, 0],
-        [8, 4],
-    ];
+    level.spawns = {
+        a: [
+            [0, 0],
+            [0, 5],
+        ],
+        b: [
+            [8, 0],
+            [8, 4],
+        ],
+    };
     const preset = toPreset(level);
     assert.deepEqual(
         preset.issues.filter((i) => i.level === "error"),

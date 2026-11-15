@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
+    addSpawn,
     assetByUid,
     assetCatalog,
     canPlace,
-    demoLevels,
     EditorScene,
     exportLevel,
     fitsBounds,
@@ -15,11 +15,14 @@ import {
     floorCatalog,
     importLevel,
     inLevel,
-    newLevel,
     officeFinishes,
     placementsAt,
+    playtestIssues,
     presetIssues,
+    removeSpawn,
     replacementsFor,
+    spawnSide,
+    SQUAD_SIZE,
     toPreset,
     swapAsset,
     interiorPreset,
@@ -29,9 +32,20 @@ import {
     type LevelLighting,
     type OfficeFinish,
     type Placement,
+    type Side,
     type TimeOfDay,
     type Turn,
 } from "@ghosts/engine/editor";
+import {
+    buildBase,
+    draftKey,
+    isSlot,
+    loadDraft,
+    playtestPath,
+    savedSlot,
+    SLOT_KEY,
+    SLOTS,
+} from "../editorDrafts";
 import { useBack } from "../hooks/useBack";
 import { onKeys } from "../input";
 import "../editor.css";
@@ -39,7 +53,6 @@ import "../editor.css";
 type Cell = [number, number];
 type Tool = "place" | "select" | "erase" | "spawn" | "objective" | "void" | "light";
 
-const SLOT_KEY = "ghosts:editor-slot";
 const TIMES: readonly (TimeOfDay | "interior")[] = [
     "morning",
     "day",
@@ -47,27 +60,8 @@ const TIMES: readonly (TimeOfDay | "interior")[] = [
     "night",
     "interior",
 ];
-const BASES = [
-    { id: "scratch", name: "Scratch" },
-    ...demoLevels.map((d) => ({ id: d.id, name: d.name })),
-];
-
-const draftKey = (slot: string) =>
-    slot === "scratch" ? "ghosts:editor-level" : `ghosts:editor-level:${slot}`;
-
-function loadDraft(key: string): Level | null {
-    try {
-        const raw = localStorage.getItem(key);
-        return raw ? importLevel(JSON.parse(raw)).level : null;
-    } catch {
-        return null;
-    }
-}
-
-function buildBase(slot: string): { level: Level; dropped: number } {
-    const demo = demoLevels.find((d) => d.id === slot);
-    return demo ? demo.build() : { level: newLevel(), dropped: 0 };
-}
+/** What an older save's single deployment list became on load. */
+const MIGRATED = "Deployment from an older save moved to side A: place side B";
 
 const hex = (value: number) => `#${value.toString(16).padStart(6, "0")}`;
 
@@ -95,23 +89,22 @@ function tagOf(a: AssetSpec): string {
  * editable bases; every base keeps its own local draft on this device.
  * Left mouse paints, right orbits, R turns, E toggles erase, ⌘Z undoes,
  * ⇧⌘Z redoes, / finds assets. Point lights place per cell with their own
- * color, intensity and height.
+ * color, intensity and height. Deploy marks each side's cells (D switches to
+ * it, then flips the side); Playtest (⌘↵) opens the draft in the demo.
  */
 export default function Editor() {
     const host = useRef<HTMLDivElement>(null);
     const scene = useRef<EditorScene | null>(null);
     const file = useRef<HTMLInputElement>(null);
     const searchBox = useRef<HTMLInputElement>(null);
+    // A playtest comes back on the slot it played (`?slot=`); otherwise the slot last open.
+    const [params] = useSearchParams();
     const [slot, setSlot] = useState(() => {
-        try {
-            return localStorage.getItem(SLOT_KEY) ?? "scratch";
-        } catch {
-            return "scratch";
-        }
+        const asked = params.get("slot");
+        return isSlot(asked) ? asked : savedSlot();
     });
-    const [level, setLevelState] = useState<Level>(
-        () => loadDraft(draftKey(slot)) ?? buildBase(slot).level,
-    );
+    const [initial] = useState(() => loadDraft(slot));
+    const [level, setLevelState] = useState<Level>(() => initial?.level ?? buildBase(slot).level);
     const levelRef = useRef(level);
     const slotRef = useRef(slot);
     slotRef.current = slot;
@@ -120,6 +113,8 @@ export default function Editor() {
     const history = useRef<Level[]>([]);
     const future = useRef<Level[]>([]);
     const [tool, setTool] = useState<Tool>("place");
+    const toolRef = useRef(tool);
+    toolRef.current = tool;
     const [brush, setBrush] = useState("b01");
     const [turn, setTurn] = useState<Turn>(0);
     // The office color scheme new placements carry; placed ones keep their own.
@@ -133,7 +128,9 @@ export default function Editor() {
     const hoverRef = useRef(hover);
     hoverRef.current = hover;
     const [search, setSearch] = useState("");
-    const [notice, setNotice] = useState("");
+    const [notice, setNotice] = useState(() => (initial?.migrated ? MIGRATED : ""));
+    // Which side the Deploy tool marks.
+    const [deploySide, setDeploySide] = useState<Side>("a");
     // What the Light tool places next; placed lights keep their own values.
     const [lamp, setLamp] = useState({ color: 0xffe4ad, intensity: 6, height: 2.6 });
     const lampRef = useRef(lamp);
@@ -243,8 +240,8 @@ export default function Editor() {
                 commit({ ...lv, unwalkable: lv.unwalkable.filter((u) => u.join() !== key) });
             } else if (lv.objective?.join() === key) {
                 commit({ ...lv, objective: undefined });
-            } else if (lv.spawns.some((s) => s.join() === key)) {
-                commit({ ...lv, spawns: lv.spawns.filter((s) => s.join() !== key) });
+            } else if (spawnSide(lv, cell)) {
+                commit(removeSpawn(lv, cell));
             } else if (lv.floors.some((f) => f.at.join() === key)) {
                 commit({ ...lv, floors: lv.floors.filter((f) => f.at.join() !== key) });
             }
@@ -256,13 +253,16 @@ export default function Editor() {
                 : [...lv.lights, { at: cell, ...lampRef.current }];
             commit({ ...lv, lights });
         } else if (tool === "spawn") {
-            const has = lv.spawns.some((s) => s.join() === key);
+            const has = spawnSide(lv, cell) === deploySide;
             if (!stroke(has)) return;
-            // Four deployment pads, the squad's size; the oldest gives way.
-            const spawns = has
-                ? lv.spawns.filter((s) => s.join() !== key)
-                : [...lv.spawns.slice(-3), cell];
-            commit({ ...lv, spawns });
+            if (has) {
+                commit(removeSpawn(lv, cell));
+                return;
+            }
+            // A side holds a squad; a full one refuses rather than dropping a pad.
+            const next = addSpawn(lv, deploySide, cell);
+            if (typeof next === "string") setNotice(next);
+            else if (next !== lv) commit(next);
         } else if (tool === "objective") {
             commit({ ...lv, objective: lv.objective?.join() === key ? undefined : cell });
         } else {
@@ -297,6 +297,21 @@ export default function Editor() {
 
     const navigate = useNavigate();
     const [leaving, setLeaving] = useState(false);
+    // Opens the demo on this slot's draft, saved first so the playtest reads the board as it stands.
+    const playtestRef = useRef(() => {});
+    playtestRef.current = () => {
+        if (playtestIssues(levelRef.current).length) return;
+        try {
+            localStorage.setItem(
+                draftKey(slotRef.current),
+                JSON.stringify(exportLevel(levelRef.current)),
+            );
+            localStorage.setItem(SLOT_KEY, slotRef.current);
+        } catch {
+            // Without storage the playtest cannot read the draft; it says so itself.
+        }
+        navigate(playtestPath(slotRef.current));
+    };
     // Escape asks before leaving; a second Escape (or the backdrop) stays.
     useBack(() => setLeaving((open) => !open));
 
@@ -365,6 +380,12 @@ export default function Editor() {
             e: () => setTool((t) => (t === "erase" ? "place" : "erase")),
             s: () => setTool("select"),
             p: () => setTool("place"),
+            d: () => {
+                // D picks the Deploy tool, and on it flips the side.
+                if (toolRef.current === "spawn") setDeploySide((v) => (v === "a" ? "b" : "a"));
+                else setTool("spawn");
+            },
+            "Mod+Enter": () => playtestRef.current(),
             i: () => {
                 if (hoverRef.current) pickRef.current(hoverRef.current.cell);
             },
@@ -400,7 +421,9 @@ export default function Editor() {
 
     const switchSlot = (next: string) => {
         if (next === slot) return;
-        const loaded = loadDraft(draftKey(next)) ?? buildBase(next).level;
+        const draft = loadDraft(next);
+        const loaded = draft?.level ?? buildBase(next).level;
+        if (draft?.migrated) setNotice(MIGRATED);
         history.current = [];
         future.current = [];
         setSelection(null);
@@ -431,7 +454,10 @@ export default function Editor() {
         next.placements = lv.placements.filter((p) => fitsBounds(next, p));
         next.floors = lv.floors.filter((f) => inLevel(next, f.at));
         next.unwalkable = lv.unwalkable.filter((c) => inLevel(next, c));
-        next.spawns = lv.spawns.filter((c) => inLevel(next, c));
+        next.spawns = {
+            a: lv.spawns.a.filter((c) => inLevel(next, c)),
+            b: lv.spawns.b.filter((c) => inLevel(next, c)),
+        };
         if (next.objective && !inLevel(next, next.objective)) next.objective = undefined;
         commit(next);
     };
@@ -495,14 +521,19 @@ export default function Editor() {
         if (!picked) return;
         void picked.text().then((text) => {
             try {
-                const { level: loaded, dropped } = importLevel(JSON.parse(text));
+                const { level: loaded, dropped, migrated } = importLevel(JSON.parse(text));
                 history.current = [];
                 future.current = [];
                 setSelection(null);
                 levelRef.current = loaded;
                 setLevelState(loaded);
                 setNotice(
-                    dropped ? `Loaded · ${dropped} unknown piece(s) dropped` : "Level loaded",
+                    [
+                        dropped ? `Loaded · ${dropped} unknown piece(s) dropped` : "Level loaded",
+                        migrated ? MIGRATED : "",
+                    ]
+                        .filter(Boolean)
+                        .join(" · "),
                 );
             } catch {
                 setNotice("Not a ghosts level file");
@@ -514,6 +545,8 @@ export default function Editor() {
         () => presetIssues(level).filter((issue) => issue.level === "error"),
         [level],
     );
+    // Why the level cannot be playtested, if it cannot: the button stays put, inactive, with the reason.
+    const playBlocked = useMemo(() => playtestIssues(level), [level]);
     const lighting = level.lighting;
     const preset = lighting.time === "interior" ? interiorPreset : timePresets[lighting.time];
     const brushSpec = assetByUid(brush) ?? floorByUid(brush);
@@ -592,7 +625,7 @@ export default function Editor() {
                     value={slot}
                     onChange={(e) => switchSlot(e.target.value)}
                 >
-                    {BASES.map((b) => (
+                    {SLOTS.map((b) => (
                         <option key={b.id} value={b.id}>
                             {b.name}
                         </option>
@@ -637,8 +670,21 @@ export default function Editor() {
                     <button className="ed-btn" onClick={() => file.current?.click()}>
                         Import
                     </button>
-                    <button className="ed-btn" data-on="true" onClick={doExport}>
+                    <button className="ed-btn" onClick={doExport}>
                         Export
+                    </button>
+                    <button
+                        className="ed-btn"
+                        data-on={playBlocked.length === 0}
+                        disabled={playBlocked.length > 0}
+                        title={
+                            playBlocked.length
+                                ? `Cannot playtest: ${playBlocked.join(" · ")}`
+                                : "Play this draft in the demo against the AI"
+                        }
+                        onClick={() => playtestRef.current()}
+                    >
+                        Playtest · ⌘↵
                     </button>
                     <input
                         ref={file}
@@ -658,7 +704,35 @@ export default function Editor() {
                         ["place", "Place · P"],
                         ["select", "Select · S"],
                         ["erase", "Erase · E"],
-                        ["spawn", "Deploy"],
+                    ] as const
+                ).map(([t, label]) => (
+                    <button
+                        key={t}
+                        className="ed-btn"
+                        data-on={tool === t}
+                        onClick={() => setTool(t)}
+                    >
+                        {label}
+                    </button>
+                ))}
+                {/* Deploy, per side: A the squad, B the hostiles. D picks the tool, then flips the side. */}
+                <div className="flex gap-px" role="group" aria-label="Deploy">
+                    {(["a", "b"] as const).map((s) => (
+                        <button
+                            key={s}
+                            className={`ed-btn ed-side ed-side-${s}`}
+                            data-on={tool === "spawn" && deploySide === s}
+                            onClick={() => {
+                                setDeploySide(s);
+                                setTool("spawn");
+                            }}
+                        >
+                            Deploy {s.toUpperCase()} · {level.spawns[s].length}/{SQUAD_SIZE}
+                        </button>
+                    ))}
+                </div>
+                {(
+                    [
                         ["objective", "Objective"],
                         ["void", "Unwalkable"],
                         ["light", "Light"],
@@ -676,8 +750,8 @@ export default function Editor() {
                 <button className="ed-btn" onClick={() => rotateRef.current()}>
                     Turn {turn * 90}° · R
                 </button>
-                <span className="ed-chip ml-auto hidden md:block">
-                    I / ⌥-click pick · ⌘Z undo · ⇧⌘Z redo · / search
+                <span className="ed-chip ml-auto hidden min-w-0 truncate md:block">
+                    D deploy / flip side · I / ⌥-click pick · ⌘Z undo · ⇧⌘Z redo · / search
                 </span>
             </div>
 
@@ -734,9 +808,15 @@ export default function Editor() {
                         <span className="text-secondary">
                             {level.placements.length} placed · {level.floors.length} floor ·{" "}
                             {level.unwalkable.length} void · {level.lights.length} light ·{" "}
-                            {level.spawns.length} deploy ·{" "}
+                            <span className="ed-side-a">{level.spawns.a.length} side A</span> ·{" "}
+                            <span className="ed-side-b">{level.spawns.b.length} side B</span> ·{" "}
                             {level.objective ? "objective" : "no objective"}
                         </span>
+                        {playBlocked.length > 0 && (
+                            <span className="text-warn">
+                                Cannot playtest: {playBlocked.join(" · ")}
+                            </span>
+                        )}
                         {chainErrors.length > 0 && (
                             <span className="text-warn">
                                 Not playable on chain: {chainErrors.map((i) => i.text).join(" · ")}
@@ -745,6 +825,7 @@ export default function Editor() {
                         <span>
                             {hover ? `cell ${hover.cell[0]}, ${hover.cell[1]}` : "—"}
                             {tool === "place" && brushSpec ? ` · ${brushSpec.name}` : ""}
+                            {tool === "spawn" ? ` · deploy side ${deploySide.toUpperCase()}` : ""}
                             {eraseTarget ? ` · erase ${eraseTarget.name}` : ""}
                         </span>
                     </div>

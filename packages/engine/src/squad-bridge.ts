@@ -151,7 +151,7 @@ export function deploymentLoadouts(
       actions: loadoutActions({
         armed: !!recruit.equipment.primary,
         utilities: [utilityActions(recruit.equipment.utility)],
-        demo: { extract: !scenario.versus },
+        demo: { extract: !scenario.versus && !scenario.noObjective },
       }),
       fit: recruitFit(recruit),
     });

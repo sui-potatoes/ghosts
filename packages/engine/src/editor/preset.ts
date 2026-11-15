@@ -13,7 +13,7 @@
  * bytes are valid for both.
  */
 import type { Cell } from "../map.ts";
-import { inLevel, toMoveMap, type Level, type MoveTile } from "./level.ts";
+import { inLevel, SIDES, SQUAD_SIZE, toMoveMap, type Level, type MoveTile, type Side } from "./level.ts";
 
 /** Cells are `u8` in `Preset.positions`, so a side is at most this long. */
 export const MAX_CHAIN_SIDE = 255;
@@ -31,7 +31,7 @@ export interface PresetExport {
   cols: number;
   /** BCS of `ghosts::map::Map` (deployed layout, `units` left out). */
   bytes: Uint8Array;
-  /** `[row, col]` per spawn, first half for the first player, second half for the second. */
+  /** `[row, col]` per spawn: side a's cells, then side b's (first half the first player's). */
   positions: [row: number, col: number][];
   issues: PresetIssue[];
 }
@@ -63,11 +63,47 @@ function tileBytes(tile: MoveTile): number[] {
 /** `[row, col]` of a level cell: a row is one line of constant z. */
 const chainCell = ([x, z]: Cell): [number, number] => [z, x];
 
+const sideName = (side: Side) => `side ${side.toUpperCase()}`;
+
+/**
+ * What would keep anyone from deploying on `level` at all, chain or playtest:
+ * a side with no cells or more than a squad, a cell outside the grid, on a
+ * wall or an unwalkable tile (`place_recruit` aborts there), or listed twice.
+ */
+export function deploymentIssues(level: Level): string[] {
+  const issues: string[] = [];
+  const tiles = toMoveMap(level).tiles;
+  const seen = new Map<string, Side>();
+  for (const side of SIDES) {
+    const cells = level.spawns[side];
+    if (!cells.length) issues.push(`No ${sideName(side)} deployment`);
+    if (cells.length > SQUAD_SIZE)
+      issues.push(`${sideName(side)} has ${cells.length} deployment cells: a squad is at most ${SQUAD_SIZE}`);
+    for (const cell of cells) {
+      const name = cell.join();
+      if (!inLevel(level, cell)) {
+        issues.push(`Deployment ${name} (${sideName(side)}) is outside the grid`);
+        continue;
+      }
+      const before = seen.get(name);
+      if (before === side) issues.push(`Deployment ${name} is listed twice on ${sideName(side)}`);
+      else if (before) issues.push(`Deployment ${name} is on both sides`);
+      seen.set(name, side);
+      const tile = tiles[cell[1]]?.[cell[0]];
+      if (tile?.t === "wall") issues.push(`Deployment ${name} stands on a wall: place_recruit aborts there`);
+      else if (tile?.t === "unwalkable")
+        issues.push(`Deployment ${name} stands on an unwalkable tile: place_recruit aborts there`);
+    }
+  }
+  return issues;
+}
+
 /**
  * What the contract would refuse or mangle for `level`, without encoding it.
- * Spawns follow `ghosts::deploy_squad`: a recruit goes on `position[0], [1]`
- * through `place_recruit`, which aborts on a wall, an unwalkable tile or an
- * occupied tile; the first half of the list is the first player's.
+ * Spawns follow `ghosts::deploy_squad`: the list is side a's cells then side
+ * b's, each half one player's, so both sides must hold as many; a recruit goes
+ * on its cell through `place_recruit`, which aborts on a wall, an unwalkable
+ * tile or an occupied tile (`deploymentIssues`).
  */
 export function presetIssues(level: Level): PresetIssue[] {
   const issues: PresetIssue[] = [];
@@ -78,23 +114,10 @@ export function presetIssues(level: Level): PresetIssue[] {
     err(`A side past ${MAX_CHAIN_SIDE} cells does not fit the u8 spawn positions`);
   if (level.width * level.depth > MAX_CHAIN_TILES)
     err(`${level.width * level.depth} tiles do not fit the u16 unit index (max ${MAX_CHAIN_TILES})`);
-
-  const tiles = toMoveMap(level).tiles;
-  const seen = new Set<string>();
-  for (const cell of level.spawns) {
-    const name = cell.join();
-    if (!inLevel(level, cell)) {
-      err(`Deployment ${name} is outside the grid`);
-      continue;
-    }
-    if (seen.has(name)) err(`Deployment ${name} is listed twice`);
-    seen.add(name);
-    const tile = tiles[cell[1]]?.[cell[0]];
-    if (tile?.t === "wall") err(`Deployment ${name} stands on a wall: place_recruit aborts there`);
-    else if (tile?.t === "unwalkable") err(`Deployment ${name} stands on an unwalkable tile: place_recruit aborts there`);
-  }
-  if (level.spawns.length === 0) err("No deployment cells: nobody could be placed");
-  else if (level.spawns.length % 2) err("Deployment count is odd: the first half is one side's, the second half the other's");
+  for (const text of deploymentIssues(level)) err(text);
+  const { a, b } = level.spawns;
+  if (a.length && b.length && a.length !== b.length)
+    err(`Side A deploys ${a.length}, side B ${b.length}: the chain splits the list in half, so both sides need as many`);
   if (level.objective) warn("The objective is not on chain: the contract has no objective tile");
   if (level.lights.length || level.floors.length || level.placements.length)
     warn("Floors, lights, props and lighting are scene dressing: the chain only keeps the tile grid and spawns");
@@ -128,7 +151,7 @@ export function toPreset(level: Level): PresetExport {
     rows,
     cols,
     bytes: encodeMap(tiles),
-    positions: level.spawns.map(chainCell),
+    positions: [...level.spawns.a, ...level.spawns.b].map(chainCell),
     issues: presetIssues(level),
   };
 }

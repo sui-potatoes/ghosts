@@ -61,6 +61,8 @@ export interface MapPlan {
   obstacles?: readonly Cell[];
   props?: readonly MapProp[];
   street: Street;
+  /** Raised cells (an editor level's curb-height floor slabs): metres above the street at each. */
+  rises?: readonly (readonly [x: number, z: number, height: number])[];
 }
 
 const key = (p: Point) => `${p[0]},${p[1]}`;
@@ -79,6 +81,7 @@ export class TacticalMap {
   private readonly propBlocks = new Map<string, string[]>();
   private readonly blocked = new Set<string>();
   private readonly coverKeys: Set<string>;
+  private readonly rises?: Map<string, number>;
 
   constructor(plan: MapPlan) {
     this.plan = plan;
@@ -93,6 +96,7 @@ export class TacticalMap {
       for (let x = b.x - Math.floor(b.w / 2); x < b.x - Math.floor(b.w / 2) + b.w; x++)
         for (let z = b.z - Math.floor(b.d / 2); z < b.z - Math.floor(b.d / 2) + b.d; z++) this.blocked.add(key([x, z]));
     this.coverKeys = new Set(plan.covers.map(key));
+    if (plan.rises?.length) this.rises = new Map(plan.rises.map(([x, z, h]) => [key([x, z]), h]));
   }
 
   get covers(): readonly Cell[] {
@@ -237,6 +241,8 @@ export class TacticalMap {
 
   /** Ground height at a world point: street level, curbs, and ramps at the crossings. */
   surfaceHeight = (x: number, z: number) => {
+    const rise = this.rises?.get(key([Math.round(x / CELL), Math.round(z / CELL)]));
+    if (rise !== undefined) return rise;
     const { avenueHalf, crossHalf, curb, cuts } = this.plan.street;
     const dx = Math.abs(x) - avenueHalf,
       dz = Math.abs(z) - crossHalf;

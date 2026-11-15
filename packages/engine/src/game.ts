@@ -1,6 +1,7 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
+import { ChainGround } from "./chain-ground.ts";
 import { CELL, TacticalMap, type Cell } from "./map.ts";
 import { describe, type Command, type GameEvent } from "./events.ts";
 import { blackRain, type Scenario } from "./scenario.ts";
@@ -123,7 +124,11 @@ export function initialUnits(scenario: Scenario = blackRain): Unit[] {
       armor: role === "HEAVY" ? 2 : 1,
       mobility: role === "HEAVY" ? 5 : 7,
       // Armed, no utilities until the host's loadout says otherwise (`applyLoadouts`).
-      actions: loadoutActions({ armed: true, utilities: [], demo: enemy ? undefined : { extract: !scenario.versus } }),
+      actions: loadoutActions({
+        armed: true,
+        utilities: [],
+        demo: enemy ? undefined : { extract: !scenario.versus && !scenario.noObjective },
+      }),
       effects: [],
       hunkered: false,
       overwatch: false,
@@ -155,6 +160,37 @@ export interface GameAuthority {
   clearShot(from: Cell, to: Cell): boolean;
   clearThrow(from: Cell, to: Cell): boolean;
   terrain(cell: Cell): "open" | "cover" | "blocked";
+  /** Whether a step between two neighbouring open cells is allowed (an edge may block it); all are when absent. */
+  step?(from: Cell, to: Cell): boolean;
+  /** The cover `at` has with no attacker in mind, for the HUD and the poses; the scene's geometry when absent. */
+  shelter?(at: Cell): number;
+  /** A grenade went off at `at`: whatever the authority keeps of the ground follows. */
+  blast?(at: Cell): void;
+}
+
+/** The demo's flat hunker bonus, on top of whatever cover the ground gives. */
+const HUNKER_BONUS = 25;
+
+/**
+ * The bundled rules on a Move tile grid: moving, cover, sight and throws as
+ * `ghosts::map` has them (`chain-ground.ts`), the odds as `Unit.perform_attack`
+ * works them out. Hunkering, a demo-only order, keeps its flat bonus.
+ */
+export function groundAuthority(ground: ChainGround): GameAuthority {
+  const cover = (from: Unit, at: Unit) => ground.cover(from.pos, at.pos) + (at.hunkered ? HUNKER_BONUS : 0);
+  return {
+    terrain: (cell) => ground.terrain(cell),
+    step: (from, to) => ground.step(from, to),
+    shelter: (at) => ground.shelter(at),
+    clearShot: (from, to) => ground.clearShot(from, to),
+    clearThrow: (from, to) => ground.clearThrow(from, to),
+    blast: (at) => ground.blast(at),
+    cover,
+    chance: (a, b) =>
+      ground.clearShot(a.pos, b.pos)
+        ? ChainGround.hitChance(a.aim, a.range, distance(a.pos, b.pos), cover(a, b) + b.defense)
+        : 0,
+  };
 }
 export class Encounter {
   readonly scenario: Scenario;
@@ -180,6 +216,7 @@ export class Encounter {
   constructor(scenario: Scenario = blackRain) {
     this.scenario = scenario;
     this.map = new TacticalMap(scenario.map);
+    if (scenario.ground) this.authority = groundAuthority(new ChainGround(scenario.ground));
     this.units = initialUnits(scenario);
     this.log = [scenario.lines.opening];
   }
@@ -201,7 +238,7 @@ export class Encounter {
       return !this.allies.length ? "defeat" : !this.enemies.length ? "victory" : null;
     return !this.allies.length
       ? "defeat"
-      : !this.enemies.length && this.secured
+      : !this.enemies.length && (this.secured || this.scenario.noObjective)
         ? "victory"
         : null;
   }
@@ -277,6 +314,7 @@ export class Encounter {
       }
       case "grenade": {
         const u = this.unit(event.unit)!;
+        this.authority?.blast?.(event.at);
         u.ap--;
         spendUse(u, "Grenade");
         for (const { unit, damage, killed } of event.casualties) {
@@ -384,6 +422,10 @@ export class Encounter {
   private groundCover(p: Cell) {
     return this.authority ? this.authority.terrain(p) === "cover" : this.map.isCover(p);
   }
+  /** Whether the edge between two neighbouring cells lets a unit through. */
+  private passable(from: Cell, to: Cell) {
+    return this.authority?.step ? this.authority.step(from, to) : true;
+  }
   walkable(p: Cell, unit?: Unit) {
     return (
       this.groundOpen(p) &&
@@ -404,7 +446,7 @@ export class Encounter {
         [x, z + 1],
         [x, z - 1],
       ] as Cell[]) {
-        if (!found.has(key(p)) && this.walkable(p, unit)) {
+        if (!found.has(key(p)) && this.walkable(p, unit) && this.passable([x, z], p)) {
           const next = [...path, p];
           found.set(key(p), next);
           queue.push(next);
@@ -459,6 +501,7 @@ export class Encounter {
     return this.coverValue(u.pos, u.hunkered, attacker);
   }
   private coverValue(pos: Cell, hunkered: boolean, attacker?: Unit) {
+    if (this.authority?.shelter) return this.authority.shelter(pos) + (hunkered ? HUNKER_BONUS : 0);
     const map = this.map;
     const behindWall = attacker
       ? !map.clearBuildingShot(

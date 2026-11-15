@@ -54,7 +54,7 @@ function sample() {
   put(level, "block-cover", [4, 3], 0);
   put(level, "block-high", [2, 4], 3);
   level.unwalkable.push([6, 0]);
-  level.spawns = [[0, 0], [0, 4], [6, 4], [6, 2]];
+  level.spawns = { a: [[0, 0], [0, 4]], b: [[6, 4], [6, 2]] };
   return level;
 }
 
@@ -74,6 +74,7 @@ test("a level's preset bytes decode to the move grid, row by row", () => {
   // [row, col] is [z, x]
   assert.equal(map.tiles[2][3].t, "wall");
   assert.equal(map.tiles[0][6].t, "unwalkable");
+  // side A's cells, then side B's
   assert.deepEqual(preset.positions, [[0, 0], [4, 0], [4, 6], [2, 6]]);
 });
 
@@ -96,7 +97,7 @@ test("a free-standing cover claims low cover on all four sides, as the baked Bla
 
 test("lengths past 127 take two ULEB128 bytes", () => {
   const level = newLevel(200, 3);
-  level.spawns = [[0, 0], [199, 2]];
+  level.spawns = { a: [[0, 0]], b: [[199, 2]] };
   const preset = toPreset(level);
   assert.equal(preset.bytes[32], 3);
   assert.deepEqual([...preset.bytes.slice(33, 35)], [0xc8, 0x01]);
@@ -111,15 +112,23 @@ test("the chain's rules show as issues", () => {
     mutate(level);
     return toPreset(level).issues.filter((i) => i.level === "error").map((i) => i.text);
   };
+  const sides = (a: [number, number][], b: [number, number][]) => (l: ReturnType<typeof sample>) =>
+    (l.spawns = { a, b });
   assert.deepEqual(issues(() => {}), []);
-  assert.match(issues((l) => (l.spawns = []))[0], /No deployment/);
-  assert.match(issues((l) => (l.spawns = [[0, 0], [1, 0], [2, 0]]))[0], /odd/);
-  assert.match(issues((l) => (l.spawns = [[0, 0], [0, 0]]))[0], /twice/);
-  assert.match(issues((l) => (l.spawns = [[0, 0], [3, 2]]))[0], /wall/);
-  assert.match(issues((l) => (l.spawns = [[0, 0], [6, 0]]))[0], /unwalkable/);
-  assert.match(issues((l) => (l.spawns = [[0, 0], [9, 9]]))[0], /outside/);
+  assert.deepEqual(issues(sides([], [])), ["No side A deployment", "No side B deployment"]);
+  assert.match(issues(sides([[0, 0]], []))[0], /No side B/);
+  assert.match(issues(sides([[0, 0], [1, 0]], [[2, 0]]))[0], /Side A deploys 2, side B 1/);
+  assert.match(issues(sides([[0, 0], [0, 0]], [[1, 0], [2, 0]]))[0], /twice on side A/);
+  assert.match(issues(sides([[0, 0]], [[0, 0]]))[0], /both sides/);
+  assert.match(issues(sides([[0, 0]], [[3, 2]]))[0], /wall/);
+  assert.match(issues(sides([[0, 0]], [[6, 0]]))[0], /unwalkable/);
+  assert.match(issues(sides([[0, 0]], [[9, 9]]))[0], /outside/);
+  assert.match(
+    issues(sides([[0, 0], [1, 0], [2, 0], [4, 0], [5, 0]], [[0, 1], [1, 1], [2, 1], [4, 1], [5, 1]]))[0],
+    /side A has 5 deployment cells: a squad is at most 4/,
+  );
   // Cover is fine to deploy on: only walls and unwalkable tiles abort place_recruit.
-  assert.deepEqual(issues((l) => (l.spawns = [[0, 0], [1, 1]])), []);
+  assert.deepEqual(issues(sides([[0, 0]], [[1, 1]])), []);
 });
 
 test("the editor's own export names the same grid the preset encodes", () => {

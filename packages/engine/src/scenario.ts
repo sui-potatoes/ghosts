@@ -1,6 +1,7 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
+import type { Ground } from "./chain-ground.ts";
 import { koraPlan } from "./district-plan.ts";
 import type { Role } from "./game.ts";
 import type { Cell, MapPlan } from "./map.ts";
@@ -79,6 +80,17 @@ export interface Scenario {
   map: MapPlan;
   units: UnitSpec[];
   relay: Cell;
+  /**
+   * No objective to secure: `relay` is unused, nobody carries Extract, and
+   * clearing the hostiles alone wins (an editor level without an objective).
+   */
+  noObjective?: boolean;
+  /**
+   * The Move tile grid the encounter plays by, when it should move, cover and
+   * see the way a chain match on that grid would (`chain-ground.ts`) rather
+   * than by the scene's own geometry. An editor level under playtest has one.
+   */
+  ground?: Ground;
   briefing: Briefing;
   contract: Contract;
   /** Where it happens: the debrief's sector line, the compass coordinates, the panel's file code. */

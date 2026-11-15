@@ -184,7 +184,7 @@ export class Battlefield {
     const kit = { props: this.destruction.assets };
     this.occlusion.occluders.push(...mapView(game.map.plan.id).build(this.scene, kit));
     if (!mapView(game.map.plan.id).furnishedCover) buildCovers(this.scene, this.space, kit.props);
-    buildRelay(this.scene, this.space, game.relay);
+    if (!game.scenario.noObjective) buildRelay(this.scene, this.space, game.relay);
     for (const { group } of this.occlusion.occluders) group.removeFromParent();
     this.scene.traverse(o => { if (o.userData.supportProp) this.supportedScenery.push(o); });
     for (const o of this.supportedScenery) o.removeFromParent();
@@ -257,6 +257,15 @@ export class Battlefield {
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(viewport);
     this.resize();
+    const extent = mapView(game.map.plan.id).extent;
+    if (extent && !shot) {
+      // A larger stage than the street's: the camera may reach its corners, the sun's shadows cover it.
+      this.controls.maxTargetRadius = Math.max(13, extent);
+      const reach = Math.max(22, extent + 4);
+      Object.assign(this.sun.shadow.camera, { left: -reach, right: reach, top: reach, bottom: -reach });
+      this.sun.shadow.camera.far = Math.max(this.sun.shadow.camera.far, reach * 3);
+      this.sun.shadow.camera.updateProjectionMatrix();
+    }
     const defaults = mapView(game.map.plan.id).defaults;
     if (defaults) {
       this.setTimeOfDay(defaults.time);
@@ -901,6 +910,7 @@ export class Battlefield {
         this.rim,
         time,
       );
+      const exposure = mapView(this.game.map.plan.id).tune?.(this.scene, this.sun, this.ambient, this.rim, time);
       if (this.precipitation.kind === "snow") {
         // Snow in the air scatters light: paler, slightly thicker fog and more light from the sky.
         const fog = this.scene.fog as T.FogExp2,
@@ -909,7 +919,7 @@ export class Battlefield {
         fog.density *= air.density;
         this.ambient.intensity *= air.ambient;
       }
-      this.renderer.toneMappingExposure = p.exposure;
+      this.renderer.toneMappingExposure = exposure ?? p.exposure;
       this.mist.mesh.material.uniforms.tint.value.setHex(p.mist);
       this.air.setLit(p.lights, this.scene);
       this.post.setDaylight(!p.lights);

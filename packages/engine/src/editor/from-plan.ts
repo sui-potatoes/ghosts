@@ -29,7 +29,8 @@ export interface FloorZone {
 }
 
 export interface PlanExtras {
-  spawns?: readonly Cell[];
+  /** Each side's deployment, in plan cells. */
+  spawns?: { a: readonly Cell[]; b: readonly Cell[] };
   relay?: Cell;
   time?: Level["lighting"]["time"];
   floorZones?: readonly FloorZone[];
@@ -138,18 +139,26 @@ export function levelFromPlan(plan: MapPlan, extras: PlanExtras = {}): { level: 
   for (const cell of plan.covers)
     if (!owned.has(cell.join())) put({ asset: coverBlock.uid, at: shift(cell), turn: 0 });
 
-  level.spawns = (extras.spawns ?? [])
-    .map(shift)
-    .filter((c) => c[0] >= 0 && c[0] < level.width && c[1] >= 0 && c[1] < level.depth);
+  const deploy = (cells: readonly Cell[] = []) =>
+    cells.map(shift).filter((c) => c[0] >= 0 && c[0] < level.width && c[1] >= 0 && c[1] < level.depth);
+  level.spawns = { a: deploy(extras.spawns?.a), b: deploy(extras.spawns?.b) };
   if (extras.relay) level.objective = shift(extras.relay);
   level.lighting = { time: extras.time ?? "night" };
   return { level, dropped };
 }
 
-/** A scenario as the editor loads it: its map, its squad's deployment, its relay. */
+/**
+ * A scenario as the editor loads it: its map, its relay, and both sides'
+ * deployment: the squad's cells as side a, the hostiles' start cells as side b,
+ * every one of them (Black Rain fields four against three, which the chain
+ * would refuse as uneven; `presetIssues` says so instead of dropping one).
+ */
 export function levelFromScenario(scenario: Scenario, extras: PlanExtras = {}) {
   const result = levelFromPlan(scenario.map, {
-    spawns: scenario.units.filter((u) => !u.enemy).map((u) => u.pos),
+    spawns: {
+      a: scenario.units.filter((u) => !u.enemy).map((u) => u.pos),
+      b: scenario.units.filter((u) => u.enemy).map((u) => u.pos),
+    },
     relay: scenario.relay,
     ...extras,
   });

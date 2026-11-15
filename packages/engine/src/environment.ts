@@ -24,6 +24,8 @@ export interface MapProp {
   y?: number;
   yaw: number;
   seed: number;
+  /** Stretch along the prop's own x (an edge asset fitted to one cell edge); 1 when absent. */
+  span?: number;
   /** A window frame is removed when its supporting masonry is destroyed. */
   support?: string;
   /** Only solid, waist-high props occupy tactical cover cells. */

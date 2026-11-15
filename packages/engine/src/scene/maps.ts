@@ -23,6 +23,15 @@ export interface MapView {
   /** Interior maps provide their own exposure / fill and omit outdoor atmosphere. */
   interiorLighting?: (scene: T.Scene, key: T.DirectionalLight, ambient: T.HemisphereLight,
     rim: T.DirectionalLight, time: TimeOfDay) => number;
+  /**
+   * Outdoors, after the time-of-day preset is applied: the map's own deviations
+   * from it (an editor level's lighting dials). Returns the exposure to use
+   * instead of the preset's, or nothing to keep it.
+   */
+  tune?: (scene: T.Scene, sun: T.DirectionalLight, ambient: T.HemisphereLight,
+    rim: T.DirectionalLight, time: TimeOfDay) => number | void;
+  /** Metres from the centre the camera may pan and the sun's shadows must reach, past the default stage. */
+  extent?: number;
   /** Load and upload textures before the first build. */
   load(renderer: T.WebGLRenderer): Promise<void>;
   /** Add the scenery; buildings that may hide units come back as occluders. */
@@ -35,8 +44,15 @@ const views: Record<string, MapView> = {
     interiorLighting: applyOfficeLighting, defaults: { time: "night", weather: "clear" } },
 };
 
+const registered = new Map<string, MapView>();
+
+/** Scenery known only at run time (an editor level under playtest), under its plan id. */
+export function registerMapView(id: string, view: MapView) {
+  registered.set(id, view);
+}
+
 export function mapView(id: string): MapView {
-  const view = views[id];
+  const view = views[id] ?? registered.get(id);
   if (!view) throw new Error(`No scenery for map "${id}"`);
   return view;
 }

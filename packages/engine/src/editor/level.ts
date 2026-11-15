@@ -4,13 +4,14 @@
 /**
  * A level as the editor edits and exports it. The editable `Level` is plain
  * data: a grid, catalog placements by uid (on cells, cell edges, surfaces or
- * walls), painted flooring, unwalkable tiles, deployment markers and the
- * light. An export is twofold — `move` is the tile grid shaped after the Move
+ * walls), painted flooring, unwalkable tiles, each side's deployment
+ * markers and the light. An export is twofold — `move` is the tile grid shaped after the Move
  * `Map` object (Empty / Cover-with-sides / Unwalkable / Wall; provisional
  * until the ghosts package lands, when BCS encoding happens at the chain
  * boundary), and `render` is the frontend's dressing: asset uid ↔ grid
  * points, floors, markers and lighting. The export file reimports losslessly.
  */
+import { MAX_RECRUITS } from "@ghosts/squad/model";
 import { assetByUid, floorByUid, type AssetSpec } from "../catalog.ts";
 import { CELL, type Cell } from "../map.ts";
 import { officeFinishes, type OfficeFinish } from "../office/catalog.ts";
@@ -72,6 +73,23 @@ export interface LevelLighting {
   exposure?: number;
 }
 
+/**
+ * A deployment side: `a` is the first player's (the squad in a playtest), `b`
+ * the second's (the hostiles). On chain `Preset.positions` lists a's cells,
+ * then b's.
+ */
+export type Side = "a" | "b";
+export const SIDES: readonly Side[] = ["a", "b"];
+
+/** A side deploys at most a squad: the roster's size (`MAX_RECRUITS`). */
+export const SQUAD_SIZE = MAX_RECRUITS;
+
+/** Each side's deployment cells, in deployment order. */
+export interface Spawns {
+  a: Cell[];
+  b: Cell[];
+}
+
 export interface Level {
   version: 1;
   name: string;
@@ -82,8 +100,8 @@ export interface Level {
   floors: FloorTile[];
   /** Pit / void tiles: walkable by nothing, targetable, no line-of-sight block. */
   unwalkable: Cell[];
-  /** Deployment cells and the objective cell, when authored. */
-  spawns: Cell[];
+  /** Each side's deployment cells, and the objective cell when authored. */
+  spawns: Spawns;
   objective?: Cell;
   lighting: LevelLighting;
   lights: LightSource[];
@@ -98,7 +116,7 @@ export function newLevel(width = 18, depth = 14): Level {
     placements: [],
     floors: [],
     unwalkable: [],
-    spawns: [],
+    spawns: { a: [], b: [] },
     lighting: { time: "night" },
     lights: [],
   };
@@ -129,8 +147,66 @@ export function placementCells(spec: AssetSpec, p: Placement): Cell[] {
   });
 }
 
+/**
+ * Where a placement's mesh sits on the level's own grid, in metres: the
+ * ground point, the yaw, and the stretch along the mesh's x that fits an edge
+ * asset to one cell edge. Edge assets sit on the edge's midpoint (a wall mount
+ * a little into the cell it was placed from); cell assets at their authored
+ * anchor plus their workstation offset, so desk clutter composes.
+ */
+export function placementSeat(spec: AssetSpec, at: Cell, turn: Turn): { x: number; z: number; yaw: number; span: number } {
+  if (spec.place === "edge") {
+    const e = canonicalEdge(at, turn);
+    const [cx, cz] = e.cell;
+    let [x, z] = e.side === "n" ? [cx * CELL, (cz - 0.5) * CELL] : [(cx - 0.5) * CELL, cz * CELL];
+    if (spec.mount === "wall") {
+      const [dx, dz] = [at[0] * CELL - x, at[1] * CELL - z];
+      const length = Math.hypot(dx, dz) || 1;
+      x += (dx / length) * 0.09;
+      z += (dz / length) * 0.09;
+      return { x, z, yaw: -turn * (Math.PI / 2), span: 1 };
+    }
+    return { x, z, yaw: turn * (Math.PI / 2), span: spec.span ? CELL / spec.span : 1 };
+  }
+  const [ax, az] = turnOffset(anchorOf(spec), turn);
+  const [ox, oz] = spec.offset ? turnOffset(spec.offset, turn) : [0, 0];
+  return { x: (at[0] + ax) * CELL + ox, z: (at[1] + az) * CELL + oz, yaw: turn * (Math.PI / 2), span: 1 };
+}
+
 export function inLevel(level: Level, [x, z]: Cell): boolean {
   return x >= 0 && x < level.width && z >= 0 && z < level.depth;
+}
+
+// ---------------------------------------------------------------------------
+// Deployment.
+
+/** The side deploying on `cell`, or null. */
+export function spawnSide(level: Level, cell: Cell): Side | null {
+  for (const side of SIDES) if (level.spawns[side].some((c) => c[0] === cell[0] && c[1] === cell[1])) return side;
+  return null;
+}
+
+/**
+ * `level` with `cell` added to `side`'s deployment (taken off the other side
+ * if it was there), or why not: outside the grid, or the side already holds a
+ * squad's worth. A full side refuses; nothing is dropped to make room.
+ */
+export function addSpawn(level: Level, side: Side, cell: Cell): Level | string {
+  if (!inLevel(level, cell)) return "Outside the grid";
+  const owner = spawnSide(level, cell);
+  if (owner === side) return level;
+  if (level.spawns[side].length >= SQUAD_SIZE)
+    return `Side ${side.toUpperCase()} is full (${SQUAD_SIZE}, a squad): erase one first`;
+  const other: Side = side === "a" ? "b" : "a";
+  const spawns: Spawns = { ...level.spawns, [side]: [...level.spawns[side], cell] };
+  if (owner) spawns[other] = level.spawns[other].filter((c) => c[0] !== cell[0] || c[1] !== cell[1]);
+  return { ...level, spawns };
+}
+
+/** `level` without any deployment on `cell`. */
+export function removeSpawn(level: Level, cell: Cell): Level {
+  const off = (list: Cell[]) => list.filter((c) => c[0] !== cell[0] || c[1] !== cell[1]);
+  return { ...level, spawns: { a: off(level.spawns.a), b: off(level.spawns.b) } };
 }
 
 // ---------------------------------------------------------------------------
@@ -300,7 +376,8 @@ export interface LevelExport {
     placements: [uid: string, x: number, z: number, turn: Turn, rest?: number, finish?: string][];
     floors: [uid: string, x: number, z: number][];
     unwalkable: Cell[];
-    spawns: Cell[];
+    /** Each side's deployment. Files from before sides held one plain list (read as side a). */
+    spawns: Spawns;
     objective?: Cell;
     lighting: LevelLighting;
     lights: [x: number, z: number, color: number, intensity: number, height: number][];
@@ -383,7 +460,7 @@ export function exportLevel(level: Level): LevelExport {
       }),
       floors: level.floors.map((f) => [f.floor, f.at[0], f.at[1]]),
       unwalkable: level.unwalkable,
-      spawns: level.spawns,
+      spawns: { a: level.spawns.a, b: level.spawns.b },
       ...(level.objective ? { objective: level.objective } : {}),
       lighting: level.lighting,
       lights: level.lights.map((l) => [l.at[0], l.at[1], l.color, l.intensity, l.height]),
@@ -394,15 +471,28 @@ export function exportLevel(level: Level): LevelExport {
 /**
  * A level read back from an export. Placements whose uid this build does not
  * know, or that no longer fit, are dropped and counted, so a save outlives
- * removed assets. Mounted items import after everything they rest on.
+ * removed assets. Mounted items import after everything they rest on. A save
+ * from before deployment had sides (one plain list) moves it all to side a
+ * and says so in `migrated`: side b is then still to place.
  */
-export function importLevel(data: unknown): { level: Level; dropped: number } {
+export function importLevel(data: unknown): { level: Level; dropped: number; migrated: boolean } {
   const file = data as Partial<LevelExport>;
   if (file?.["ghosts-level"] !== 1 || !file.render) throw new Error("Not a ghosts level file");
   const r = file.render;
   const level = newLevel(r.size?.[0] ?? 18, r.size?.[1] ?? 14);
   level.name = typeof file.name === "string" ? file.name : "untitled";
-  level.spawns = (r.spawns ?? []).filter((c) => inLevel(level, c));
+  const legacy = Array.isArray(r.spawns);
+  const spawns = (r.spawns ?? { a: [], b: [] }) as Spawns | Cell[];
+  const read = (list: unknown) =>
+    (Array.isArray(list) ? (list as Cell[]) : [])
+      .filter((c) => Array.isArray(c) && inLevel(level, c))
+      .map((c): Cell => [c[0], c[1]]);
+  if (Array.isArray(spawns)) level.spawns = { a: read(spawns), b: [] };
+  else {
+    const a = read(spawns.a);
+    const taken = new Set(a.map(key));
+    level.spawns = { a, b: read(spawns.b).filter((c) => !taken.has(key(c))) };
+  }
   level.unwalkable = (r.unwalkable ?? []).filter((c) => inLevel(level, c));
   if (r.objective && inLevel(level, r.objective)) level.objective = r.objective;
   if (r.lighting?.time) level.lighting = r.lighting;
@@ -442,5 +532,5 @@ export function importLevel(data: unknown): { level: Level; dropped: number } {
       if (canPlace(level, p)) level.placements.push(p);
       else dropped++;
     }
-  return { level, dropped };
+  return { level, dropped, migrated: legacy && level.spawns.a.length > 0 };
 }
