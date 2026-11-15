@@ -142,6 +142,40 @@ test("the playtest moves, covers and sees by the chain's rules for its tiles", (
   assert.equal(game.coverAt(cell(2, 3)), false);
 });
 
+test("glass and tall fences stop a step but not a shot, cover as low, and fall to a grenade", () => {
+  const level = yard();
+  level.placements.push({ asset: "s13", at: [1, 4], turn: 0 }); // glass pane north of [1,4]
+  level.placements.push({ asset: "s15", at: [0, 4], turn: 0 }); // tall chain-link north of [0,4]
+  level.placements.push({ asset: "s06", at: [2, 4], turn: 0 }); // low sheet fence north of [2,4]
+  const game = new Encounter(scenarioFromLevel(level));
+  const cell = (x: number, z: number): Cell => [x - 4, z - 3];
+  const unit = game.unit("v")!;
+  unit.mobility = 12;
+  unit.pos = cell(1, 4);
+  const paths = game.paths(unit);
+  // Straight north through the glass or the fence: never; around them: yes, the long way.
+  assert.ok(paths.get(cell(1, 3).join())!.length > 2, "around the glass, not through it");
+  assert.ok(paths.get(cell(0, 3).join())!.length > 2, "around the fence, not through it");
+  // The low fence next to them is still a step.
+  unit.pos = cell(2, 4);
+  assert.equal(game.paths(unit).get(cell(2, 3).join())?.length, 2);
+  // An order straight through the glass is refused.
+  unit.pos = cell(1, 4);
+  unit.mobility = 1;
+  assert.deepEqual(game.apply({ type: "move", unit: "v", to: cell(1, 3) }), []);
+  assert.deepEqual(unit.pos, cell(1, 4));
+  // A shot through the glass is clear, and the glass covers as low cover.
+  const hostile = game.unit("h1")!;
+  hostile.pos = cell(1, 0);
+  assert.equal(game.shotBlocked(cell(1, 0), cell(1, 4)), false);
+  assert.equal(game.cover(unit, hostile), 25);
+  // A grenade breaks the glass: the step is open again.
+  game.ingest({ type: "grenade", unit: "h1", at: cell(1, 3), casualties: [], environment: [] });
+  unit.mobility = 12;
+  assert.equal(game.paths(unit).get(cell(1, 3).join())?.length, 2);
+  assert.equal(game.cover(unit, hostile), 0);
+});
+
 test("the shipped demos round-trip: Black Rain and Paper Trail playtest where the demo deploys", () => {
   for (const shipped of [blackRain, paperTrail]) {
     const { level } = levelFromScenario(shipped);

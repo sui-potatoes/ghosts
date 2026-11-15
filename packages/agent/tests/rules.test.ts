@@ -184,6 +184,36 @@ test("cover counts on the side facing the shooter only", () => {
     assert.equal(coverBonus(state, 4, 3, 2, 3), 25);
 });
 
+test("a barrier (3) stops a step both ways but not a shot, and protects as low cover", () => {
+    const state = open(3, 5);
+    // glass between (1, 1) and (1, 2), declared on the near tile
+    state.tiles[1][1] = { kind: "cover", left: 0, top: 0, right: 3, bottom: 0 };
+    assert.equal(checkPath(state, 1, 1, [RIGHT]), null);
+    assert.equal(checkPath(state, 1, 2, [LEFT]), null);
+    assert.deepEqual(checkPath(state, 1, 1, [UP, RIGHT, DOWN]), [1, 2], "around it");
+    // declared on the far tile instead
+    state.tiles[1][1] = { kind: "empty" };
+    state.tiles[1][2] = { kind: "cover", left: 3, top: 0, right: 0, bottom: 0 };
+    assert.equal(checkPath(state, 1, 1, [RIGHT]), null);
+    assert.equal(checkPath(state, 1, 2, [LEFT]), null);
+    // a shot along the row crosses it and is clear; from behind it the target has low cover
+    assert.equal(lineOfSight(state, 1, 0, 1, 4), true);
+    assert.equal(coverBonus(state, 1, 0, 1, 2), 25);
+    // the BFS of legal moves goes around it too
+    place(state, 0, 1, 1);
+    state.units[0].stats = { ...state.units[0].stats, mobility: 4 };
+    const legal = legalActions(state, 0, 0).filter((a) => a.kind === "move");
+    const to12 = legal.find((a) => a.to?.[0] === 1 && a.to?.[1] === 2);
+    assert.ok(to12 && !to12.id.endsWith(":r"), `reached the long way: ${to12?.id}`);
+    // high and low on the same edge are unchanged
+    state.tiles[1][2] = { kind: "cover", left: 2, top: 0, right: 0, bottom: 0 };
+    assert.equal(checkPath(state, 1, 0, [RIGHT, RIGHT]), null);
+    assert.equal(lineOfSight(state, 1, 0, 1, 4), false);
+    state.tiles[1][2] = { kind: "cover", left: 1, top: 0, right: 0, bottom: 0 };
+    state.units = [];
+    assert.deepEqual(checkPath(state, 1, 1, [RIGHT]), [1, 2]);
+});
+
 test("next_turn gives only the side whose turn begins its AP back, and buries the fallen", () => {
     const state = open(8, 8);
     place(state, 0, 1, 1, 0);

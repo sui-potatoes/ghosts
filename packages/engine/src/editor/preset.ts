@@ -13,7 +13,7 @@
  * bytes are valid for both.
  */
 import type { Cell } from "../map.ts";
-import { inLevel, SIDES, SQUAD_SIZE, toMoveMap, type Level, type MoveTile, type Side } from "./level.ts";
+import { BARRIER, inLevel, SIDES, SQUAD_SIZE, toMoveMap, type Level, type MoveTile, type Side } from "./level.ts";
 
 /** Cells are `u8` in `Preset.positions`, so a side is at most this long. */
 export const MAX_CHAIN_SIDE = 255;
@@ -118,6 +118,12 @@ export function presetIssues(level: Level): PresetIssue[] {
   const { a, b } = level.spawns;
   if (a.length && b.length && a.length !== b.length)
     err(`Side A deploys ${a.length}, side B ${b.length}: the chain splits the list in half, so both sides need as many`);
+  const barriers = toMoveMap(level).tiles.flat().some((t) => t.t === "cover" && t.sides.includes(BARRIER));
+  if (barriers)
+    warn(
+      "Glass and tall fences export as barriers (cover level 3): only a package with barriers reads them " +
+        "as blocking a step; the deployed one would take them as 75 points of cover a unit walks through",
+    );
   if (level.objective) warn("The objective is not on chain: the contract has no objective tile");
   if (level.lights.length || level.floors.length || level.placements.length)
     warn("Floors, lights, props and lighting are scene dressing: the chain only keeps the tile grid and spawns");

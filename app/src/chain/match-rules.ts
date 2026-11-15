@@ -149,7 +149,14 @@ type Tile = readonly [row: number, col: number];
 
 /** `DEFENSE_BONUS` in `ghosts::map`: what each level of cover takes off the odds. */
 const DEFENSE_BONUS = 25;
+const LOW_COVER = 1;
 const HIGH_COVER = 2;
+/**
+ * `BARRIER` in `ghosts::map` (glass, a tall fence): blocks a step across its edge like
+ * high cover, protects like low cover, never blocks sight. Only the package after the
+ * deployed one knows it; the deployed preset holds none, so a live game never shows one.
+ */
+const BARRIER = 3;
 /** `MAX_RANGE_OFFSET`, `DISTANCE_BONUS` and `DISTANCE_PENALTY` in `ghosts::unit`. */
 const MAX_RANGE_OFFSET = 3;
 const DISTANCE_BONUS = 5;
@@ -164,12 +171,38 @@ export function terrainAt(game: ChainGame, tile: Tile): "open" | "cover" | "bloc
     return type?.$kind === "Cover" ? "cover" : "blocked";
 }
 
-/** `tile_cover!`: the cover on each side of a tile. A wall is high cover all around. */
+/** `tile_cover`: the protection on each side of a tile. A barrier is low, a wall high all around. */
 function tileCover(game: ChainGame, tile: Tile) {
     const type = tileType(game, tile);
-    if (type?.$kind === "Cover") return type.Cover;
+    if (type?.$kind === "Cover") {
+        const level = (side: number) => (side === BARRIER ? LOW_COVER : side);
+        const { left, top, right, bottom } = type.Cover;
+        return { left: level(left), top: level(top), right: level(right), bottom: level(bottom) };
+    }
     const level = type?.$kind === "Wall" ? HIGH_COVER : 0;
     return { left: level, top: level, right: level, bottom: level };
+}
+
+/** The side values as stored on both sides of the edge between neighboring tiles (`side_cover!`). */
+function edgeSides(game: ChainGame, from: Tile, to: Tile): [out: number, back: number] {
+    // a wall has no sides here: it is a wall before it is cover
+    const side = (tile: Tile, name: "left" | "top" | "right" | "bottom") => {
+        const type = tileType(game, tile);
+        return type?.$kind === "Cover" ? type.Cover[name] : 0;
+    };
+    const [dRow, dCol] = [to[0] - from[0], to[1] - from[1]];
+    const out = dRow < 0 ? "top" : dRow > 0 ? "bottom" : dCol < 0 ? "left" : "right";
+    const back = dRow < 0 ? "bottom" : dRow > 0 ? "top" : dCol < 0 ? "right" : "left";
+    return [side(from, out), side(to, back)];
+}
+
+/**
+ * One step of `check_path` between neighboring tiles: the tile can be stood on and
+ * no high cover or barrier closes the edge (`is_edge_impassable!`). Units aside.
+ */
+export function canStep(game: ChainGame, from: Tile, to: Tile): boolean {
+    if (terrainAt(game, to) === "blocked") return false;
+    return !edgeSides(game, from, to).some((side) => side === HIGH_COVER || side === BARRIER);
 }
 
 /** `cover_bonus`: the side facing the shot, or the neighbor's side facing the target. */
@@ -205,14 +238,8 @@ function stepBlocks(
 ): boolean {
     if (tileType(game, to)?.$kind === "Wall") return true;
     if (!highCoverBlocks || !inner) return false;
-    const [a, b] = [tileCover(game, from), tileCover(game, to)];
-    // a wall has no sides here: it is a wall before it is cover
-    const side = (cover: typeof a, tile: Tile, name: keyof typeof a) =>
-        tileType(game, tile)?.$kind === "Cover" ? cover[name] : 0;
-    const [dRow, dCol] = [to[0] - from[0], to[1] - from[1]];
-    const out = dRow < 0 ? "top" : dRow > 0 ? "bottom" : dCol < 0 ? "left" : "right";
-    const back = dRow < 0 ? "bottom" : dRow > 0 ? "top" : dCol < 0 ? "right" : "left";
-    return side(a, from, out) === HIGH_COVER || side(b, to, back) === HIGH_COVER;
+    // `is_edge_high_cover!`: a barrier never blocks a line
+    return edgeSides(game, from, to).includes(HIGH_COVER);
 }
 
 /** `trace_line`: the segment between two tile centers, one edge at a time. */
@@ -258,7 +285,7 @@ function traceLine(game: ChainGame, from: Tile, to: Tile, highCoverBlocks: boole
     return true;
 }
 
-/** `line_of_sight`: walls and high covers block a shot, units and unwalkable tiles don't. */
+/** `line_of_sight`: walls and high covers block a shot; barriers, units and unwalkable tiles don't. */
 export const lineOfSight = (game: ChainGame, from: Tile, to: Tile) =>
     traceLine(game, from, to, true);
 

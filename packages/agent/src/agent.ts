@@ -127,7 +127,7 @@ export interface AgentOptions {
 }
 
 const LEGEND =
-    ". empty, + low cover, = high cover, ~ unwalkable, # wall, A-D your units, w-z enemy units";
+    ". empty, + low cover, | barrier (glass or tall fence: no stepping across, shots pass), = high cover, ~ unwalkable, # wall, A-D your units, w-z enemy units";
 const DEFAULT_LOW_BALANCE_MIST = 100_000_000n;
 
 export class GhostsAgent {
@@ -419,8 +419,8 @@ export class GhostsAgent {
                     if (tile.kind === "wall") return "#";
                     if (tile.kind === "unwalkable") return "~";
                     if (tile.kind !== "cover") return ".";
-                    const high = [tile.left, tile.top, tile.right, tile.bottom].includes(2);
-                    return high ? "=" : "+";
+                    const sides = [tile.left, tile.top, tile.right, tile.bottom];
+                    return sides.includes(2) ? "=" : sides.includes(3) ? "|" : "+";
                 })
                 .join(""),
         );
