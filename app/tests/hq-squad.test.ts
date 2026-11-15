@@ -2,8 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { gunzipSync } from "node:zlib";
 import { test } from "node:test";
 
+import * as T from "three";
+
+import { stagePose, UNARMED_STILL_TIME, SMOKING_DURATION } from "@ghosts/squad/motion/smoking";
 import { fromPreset, normalize, presets } from "@ghosts/squad/appearance/editor-state";
 import { schema } from "@ghosts/squad/appearance/schema";
 import { DEFAULT_ARMOR_COLORS } from "@ghosts/squad/armor-colors";
@@ -18,6 +23,7 @@ import {
 } from "../src/features/headquarters/squad/drafts.ts";
 import { dismissalNote, hireOffer, issuePlan } from "../src/features/headquarters/squad/rules.ts";
 import { rankIcon, rankProgress } from "../src/features/headquarters/squad/ranks.ts";
+import { unarmedMode } from "../src/features/headquarters/squad/unarmed-mode.ts";
 
 const look = (i = 0, voice = 0): Draft => ({
     appearance: normalize(fromPreset(presets[i]), schema),
@@ -109,4 +115,43 @@ test("rank insignia and progress", () => {
     assert.equal(rankIcon("Lieutenant"), "rank3");
     assert.deepEqual(rankProgress("Rookie", 2), { xp: 2, next: 3 });
     assert.equal(rankProgress("Colonel", 200).next, undefined);
+});
+
+// --- The unarmed pose: an easter egg on the stage -------------------------------
+
+for (const sex of ["female", "male"]) {
+    test(`${sex}: the stage holds the rifle with a weapon, smokes without one, holds again once armed`, () => {
+        const clip = T.AnimationClip.parse(
+            JSON.parse(
+                gunzipSync(readFileSync(`public/squad/motions/${sex}-smoking.bin`)).toString(),
+            ),
+        );
+        const armed = stagePose("rifle");
+        assert.equal(armed.motion, null, "a weapon keeps the baked rifle hold");
+        for (const mode of ["loop", "once", "still"] as const) {
+            const bare = stagePose(null, mode);
+            assert.equal(bare.motion, "standing_smoking");
+            assert.equal(bare.motion, clip.name, "the motion exists for this sex");
+        }
+        assert.equal(stagePose(undefined).motion, "standing_smoking");
+        assert.equal(stagePose("sniper").motion, null, "equipping returns to the hold");
+    });
+}
+
+test("reduced motion and battery saving settle the unarmed pose on a still frame", () => {
+    const flags = (reduceMotion: boolean, batterySaver: boolean) => ({
+        reduceMotion,
+        batterySaver,
+    });
+    assert.equal(unarmedMode(flags(false, false), false), "loop");
+    assert.equal(unarmedMode(flags(false, true), false), "once");
+    assert.equal(unarmedMode(flags(true, false), false), "still");
+    assert.equal(unarmedMode(flags(false, false), true), "still", "the OS preference counts");
+    const still = stagePose(null, "still");
+    assert.ok(still.motion);
+    assert.equal(still.time, UNARMED_STILL_TIME);
+    assert.ok(still.time > 0 && still.time < SMOKING_DURATION);
+    const loop = stagePose(null, "loop");
+    assert.ok(loop.motion);
+    assert.equal(loop.time, 0);
 });

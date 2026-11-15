@@ -27,6 +27,7 @@ export class MotionPlayer {
   private last = 0;
   private playing = false;
   private looping = false;
+  private held = false;
   private speed = 1;
   private baseY: number;
   private body?: T.SkinnedMesh;
@@ -59,9 +60,15 @@ export class MotionPlayer {
     cancelAnimationFrame(this.raf);
     this.raf = 0;
     this.last = 0;
-    if (!document.hidden && this.playing)
+    if (!document.hidden && !this.held && this.playing)
       this.raf = requestAnimationFrame(this.tick);
   };
+  /** Stop advancing (and drawing) while the stage is off screen or unfocused; the pose stays. */
+  hold(on: boolean) {
+    if (on === this.held) return;
+    this.held = on;
+    this.visibility();
+  }
   private status() {
     this.report(
       this.action
@@ -90,7 +97,7 @@ export class MotionPlayer {
   }
   private tick = (now: number) => {
     this.raf = 0;
-    if (!this.playing || document.hidden) return;
+    if (!this.playing || document.hidden || this.held) return;
     if (!this.last) this.last = now;
     const delta = now - this.last;
     if (delta >= 1000 / 30) {
@@ -102,7 +109,8 @@ export class MotionPlayer {
     }
     if (this.playing) this.raf = requestAnimationFrame(this.tick);
   };
-  play(clip: T.AnimationClip, loop: boolean, speed: number) {
+  /** `fadeIn` seconds blend from the pose the bones hold now into the clip. */
+  play(clip: T.AnimationClip, loop: boolean, speed: number, fadeIn = 0) {
     this.stop();
     if (clip.name === "standing_smoking" && !this.smoking)
       this.smoking = new SmokingEffect(this.root);
@@ -112,7 +120,9 @@ export class MotionPlayer {
     this.action = this.mixer.clipAction(clip);
     this.action.setLoop(loop ? T.LoopRepeat : T.LoopOnce, loop ? Infinity : 1);
     this.action.clampWhenFinished = true;
-    this.action.reset().play();
+    this.action.reset();
+    if (fadeIn > 0) this.action.fadeIn(fadeIn);
+    this.action.play();
     this.mixer.update(0);
     this.playing = true;
     this.status();

@@ -7,6 +7,7 @@ import { WeaponCarry } from "../motion/weapon-carry";
 import { loadMotions } from "../motion/clips";
 import { MotionPlayer, type MotionState } from "../motion/player";
 import type { Motion } from "../motion/catalog";
+import { stagePose, type UnarmedMode } from "../motion/smoking";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CharacterAssets, type Character, type CharacterLook } from "./character-assets";
 import { EquipmentAssets } from "./equipment-assets";
@@ -26,13 +27,26 @@ export interface RecruitStudio {
     resumeMotion(): void;
     seekMotion(time: number): void;
     stopMotion(): void;
+    /**
+     * How an unarmed recruit's stage plays its pose (see `stagePose`); only a
+     * studio made with `unarmedPose` has one. The host maps reduced motion and
+     * battery saving onto "still" and "once".
+     */
+    unarmedMode(mode: UnarmedMode): void;
     /** Draw every mesh as a wireframe (a development aid); `line` is the edge colour. */
     wireframe(on: boolean, line?: T.ColorRepresentation): void;
     dispose(): void;
 }
+export interface StudioOptions {
+    /** A recruit with no primary weapon leaves the rifle hold for the unarmed pose. */
+    unarmedPose?: boolean;
+}
+/** Seconds the stage takes to ease from the rifle hold into the unarmed pose. */
+const UNARMED_BLEND = 0.6;
 export function createRecruitStudio(
     host: HTMLElement,
     onMotion: (state: MotionState) => void,
+    options: StudioOptions = {},
 ): RecruitStudio {
     const renderer = new T.WebGLRenderer({
         antialias: true,
@@ -122,6 +136,10 @@ export function createRecruitStudio(
     let currentSex: Appearance["sex"] = "female";
     let currentLook: CharacterLook = "operative";
     let motionEpoch = 0;
+    let unarmed = false;
+    let unarmedMode: UnarmedMode = "loop";
+    let offscreen = false;
+    let blurred = false;
     let current: Character | undefined,
         weapon: T.Group | undefined,
         focus: Focus = "body",
@@ -309,6 +327,44 @@ export function createRecruitStudio(
         if (disposed || ticket !== motionEpoch || person !== current) return;
         attachGun(person, gun);
     }
+    /** The stage's pose for a recruit with no weapon; `blend` eases in from the hold. */
+    async function playUnarmed(blend: boolean) {
+        const pose = stagePose(null, unarmedMode);
+        if (!pose.motion || !current || focus !== "body") return;
+        const ticket = ++motionEpoch;
+        const sex = currentSex;
+        const library = await loadMotions(sex);
+        if (disposed || ticket !== motionEpoch || !player || !current) return;
+        const clip = library.get(pose.motion)!.clone();
+        const hips = clip.tracks.find((t) => t.name === "mixamorigHips.position");
+        if (hips)
+            for (let i = 0; i < hips.values.length; i += 3) {
+                hips.values[i] = 0;
+                hips.values[i + 2] = 0;
+            }
+        const live = pose.mode !== "still";
+        player.play(clip, pose.mode === "loop", 1, live && blend ? UNARMED_BLEND : 0);
+        if (!live) player.seek(pose.time);
+        player.hold(offscreen || blurred);
+    }
+    const hold = () => player?.hold(offscreen || blurred);
+    // A stage nobody can see (another tab, a covered panel, an unfocused window)
+    // stops advancing; its pose stays and it resumes where it was.
+    const visible = new IntersectionObserver((entries) => {
+        offscreen = !entries[entries.length - 1].isIntersecting;
+        hold();
+    });
+    visible.observe(host);
+    const onBlur = () => {
+        blurred = true;
+        hold();
+    };
+    const onFocus = () => {
+        blurred = false;
+        hold();
+    };
+    window.addEventListener("blur", onBlur);
+    window.addEventListener("focus", onFocus);
     return {
         async apply(recruit, appearance = recruit.appearance, look = "operative") {
             const ticket = ++epoch;
@@ -371,6 +427,9 @@ export function createRecruitStudio(
                 return;
             }
             motionEpoch++;
+            // The same recruit just lost or gained a weapon: ease between the poses.
+            const easing = Boolean(current) && currentRecruit?.id === recruit.id;
+            const wasArmed = Boolean(weapon);
             player?.dispose();
             currentRecruit = recruit;
             currentLook = look;
@@ -393,6 +452,13 @@ export function createRecruitStudio(
             });
             framing(undefined, focus === "body");
             draw();
+            unarmed = Boolean(options.unarmedPose) && !gun && look !== "office-worker";
+            if (unarmed) void playUnarmed(easing && wasArmed).catch(() => {});
+        },
+        unarmedMode(mode) {
+            if (mode === unarmedMode) return;
+            unarmedMode = mode;
+            if (unarmed) void playUnarmed(false).catch(() => {});
         },
         async playMotion(name, loop, speed) {
             if (!current) throw Error("The character is still loading.");
@@ -440,7 +506,7 @@ export function createRecruitStudio(
                 motionEpoch++;
                 player?.stop();
                 void previewWeapon(false).then(draw);
-            }
+            } else if (unarmed) void playUnarmed(true).catch(() => {});
             framing();
         },
         view(angle) {
@@ -493,6 +559,9 @@ export function createRecruitStudio(
             cancelAnimationFrame(raf);
             observer.disconnect();
             document.removeEventListener("visibilitychange", schedule);
+            visible.disconnect();
+            window.removeEventListener("blur", onBlur);
+            window.removeEventListener("focus", onFocus);
             controls.dispose();
             weapon?.removeFromParent();
             current?.dispose();

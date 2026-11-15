@@ -17,6 +17,30 @@ export const SMOKING_HAND_AXES = [
   [-0.902293, -0.187888, 0.388028],
   [-0.830301, 0.345946, -0.436946],
 ] as const;
+/** How an unarmed recruit's stage plays the easter egg: a looping cigarette, one
+ * drag and then still, or a single still frame (reduced motion). */
+export type UnarmedMode = "loop" | "once" | "still";
+/** The frame the still variants hold, and where one drag ends: the hand at the
+ * mouth, the cigarette between the fingers (the loop's seam), no smoke to simulate. */
+export const UNARMED_STILL_TIME = 0.12;
+export type StagePose =
+  | { motion: null }
+  | { motion: "standing_smoking"; mode: UnarmedMode; time: number };
+/**
+ * What the recruit stage shows: the baked rifle hold (`motion: null`) while a
+ * primary weapon is carried, and the smoking motion once there is none.
+ */
+export function stagePose(
+  primary: string | null | undefined,
+  mode: UnarmedMode = "loop",
+): StagePose {
+  if (primary) return { motion: null };
+  return {
+    motion: "standing_smoking",
+    mode,
+    time: mode === "loop" ? 0 : UNARMED_STILL_TIME,
+  };
+}
 const smooth = (a: number, b: number, t: number) =>
   T.MathUtils.smoothstep(t, a, b);
 /** One captured drag/exhale plus a return blend; the cigarette is already lit. */

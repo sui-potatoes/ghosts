@@ -591,6 +591,7 @@ function Squad(props: SquadProps) {
                     lookPreview ? { ...draft.appearance, ...lookPreview } : draft.appearance
                 }
                 onState={setStage}
+                unarmedPose
             />
         </StagePanel>
     );

@@ -515,6 +515,7 @@ export function Squad({ squad, tab, onTab, glyphs, frame, guard, save }: Props) 
                             : squad.look.appearance
                     }
                     onState={setStage}
+                    unarmedPose
                 />
             </StagePanel>
 

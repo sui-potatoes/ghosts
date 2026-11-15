@@ -12,7 +12,9 @@ import type { RecruitStudio } from "@ghosts/squad/studio/recruit-studio";
 import type { Appearance, Recruit } from "@ghosts/squad/types";
 import { useEffect, useRef, useState } from "react";
 
+import { useSettingsSection } from "../../../settings/store";
 import { useStageAttach } from "../../../ui";
+import { unarmedMode } from "./unarmed-mode";
 import { useWireframe, wireframeColors } from "../../squad/useWireframe";
 
 type CharacterCanvasProps = {
@@ -20,19 +22,45 @@ type CharacterCanvasProps = {
     /** The look to show; a draft while Appearance is being edited. */
     appearance: Appearance;
     onState: (state: { loading: boolean; error?: string }) => void;
+    /** A recruit with no primary weapon leaves the rifle hold for the unarmed pose (an easter egg). */
+    unarmedPose?: boolean;
 };
+
+const REDUCED = "(prefers-reduced-motion: reduce)";
+function useOsReducedMotion() {
+    const [reduced, setReduced] = useState(
+        () => typeof matchMedia === "function" && matchMedia(REDUCED).matches,
+    );
+    useEffect(() => {
+        if (typeof matchMedia !== "function") return;
+        const query = matchMedia(REDUCED);
+        const on = () => setReduced(query.matches);
+        query.addEventListener("change", on);
+        return () => query.removeEventListener("change", on);
+    }, []);
+    return reduced;
+}
 
 /**
  * The recruit studio from `@ghosts/squad/studio` mounted bare: the same
  * character, lighting and turntable Headquarters uses, without the
  * CharacterViewport's own toolbar. It draws only when something changes.
  */
-export function CharacterCanvas({ recruit, appearance, onState }: CharacterCanvasProps) {
+export function CharacterCanvas({
+    recruit,
+    appearance,
+    onState,
+    unarmedPose = false,
+}: CharacterCanvasProps) {
     const attach = useStageAttach();
     const host = useRef<HTMLDivElement>(null);
     const studio = useRef<RecruitStudio | null>(null);
     const [ready, setReady] = useState(false);
     const [wireframe] = useWireframe();
+    const [display] = useSettingsSection("display");
+    const mode = unarmedMode(display, useOsReducedMotion());
+    const latestMode = useRef(mode);
+    latestMode.current = mode;
     const report = useRef(onState);
     report.current = onState;
 
@@ -43,7 +71,10 @@ export function CharacterCanvas({ recruit, appearance, onState }: CharacterCanva
         void import("@ghosts/squad/studio/recruit-studio")
             .then(({ createRecruitStudio }) => {
                 if (cancelled || !host.current) return;
-                const view = createRecruitStudio(host.current, () => {});
+                const view = createRecruitStudio(host.current, () => {}, {
+                    unarmedPose,
+                });
+                view.unarmedMode(latestMode.current);
                 studio.current = view;
                 let face = false;
                 detach = attach({
@@ -75,6 +106,10 @@ export function CharacterCanvas({ recruit, appearance, onState }: CharacterCanva
             studio.current = null;
         };
     }, [attach]);
+
+    useEffect(() => {
+        if (ready) studio.current?.unarmedMode(mode);
+    }, [ready, mode]);
 
     // A different recruit takes a moment to build: the stage says so meanwhile.
     const shownId = useRef<string | null>(null);
