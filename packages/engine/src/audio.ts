@@ -77,7 +77,8 @@ export class CombatAudio {
   private paused = false;
 
   /**
-   * The unit readout locking on: two short, quiet pips on the effects level.
+   * The unit readout locking on: one short, soft, filtered tick (a 30 ms noise
+   * burst through a band-pass near 650 Hz) on the effects level, no tone.
    * Sweeping the pointer across a squad plays it at most every 150 ms.
    */
   lock() {
@@ -87,22 +88,20 @@ export class CombatAudio {
     this.lockedAt = now;
     const audio = (this.context ??= new AudioContext());
     void audio.resume();
-    const start = audio.currentTime;
-    for (const [at, frequency] of [
-      [0, 1480],
-      [0.055, 2220],
-    ]) {
-      const osc = audio.createOscillator();
-      osc.type = "sine";
-      osc.frequency.value = frequency;
-      const gain = audio.createGain();
-      gain.gain.setValueAtTime(0.0001, start + at);
-      gain.gain.exponentialRampToValueAtTime(0.022 * level, start + at + 0.006);
-      gain.gain.exponentialRampToValueAtTime(0.0001, start + at + 0.045);
-      osc.connect(gain).connect(audio.destination);
-      osc.start(start + at);
-      osc.stop(start + at + 0.05);
-    }
+    const buffer = audio.createBuffer(1, Math.ceil(audio.sampleRate * 0.03), audio.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i++)
+      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / data.length, 3);
+    const source = audio.createBufferSource();
+    source.buffer = buffer;
+    const filter = audio.createBiquadFilter();
+    filter.type = "bandpass";
+    filter.frequency.value = 650;
+    filter.Q.value = 0.7;
+    const gain = audio.createGain();
+    gain.gain.value = 0.05 * level;
+    source.connect(filter).connect(gain).connect(audio.destination);
+    source.start();
   }
 
   /** Silence everything and release the audio context; the next encounter starts fresh. */

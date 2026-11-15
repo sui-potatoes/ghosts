@@ -165,14 +165,6 @@
     pointer-events: none;
 }
 
-.gui-title-pitch {
-    margin-top: calc(var(--u) * 4);
-    max-width: calc(var(--u) * 92);
-    font: 400 var(--t-body) / 1.55 var(--font-mono);
-    color: var(--text-secondary);
-    text-wrap: pretty;
-}
-
 /* === Menu rows ======================================================= */
 
 .gui-title-menu {
@@ -402,10 +394,6 @@
         transform: scaleX(0);
         transform-origin: left;
     }
-}
-
-.gui-title[data-intro="full"] .gui-title-pitch {
-    animation: gui-fade 420ms ease-out 640ms both;
 }
 
 /* Rows wipe in one after another; clip and opacity only, so the cursor's

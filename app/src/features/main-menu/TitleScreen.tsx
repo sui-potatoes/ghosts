@@ -224,10 +224,6 @@ function TitleFrame({
             <div className="gui-body gui-title-body">
                 <section className="gui-title-column">
                     <Wordmark />
-                    <p className="gui-title-pitch">
-                        You run a mercenary squad. The corporations run everything else. Take the
-                        contract, bring your people home, bill the client.
-                    </p>
                     <nav className="gui-title-menu" aria-label="Main menu">
                         {rows.map((row, i) => (
                             <TitleRow key={row.id} row={row} index={i} onRun={run} />

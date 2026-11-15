@@ -41,11 +41,22 @@ export function PauseDialog({
         if (!open) setView("menu");
     }, [open]);
 
+    // While Options covers the field, the field's own interface steps aside.
+    const over = open && view === "options";
+    useEffect(() => {
+        if (!over) return;
+        const root = document.documentElement;
+        root.dataset.overField = "";
+        return () => {
+            delete root.dataset.overField;
+        };
+    }, [over]);
+
     if (!open) return null;
     if (view === "options")
         return (
-            // A layer of its own: the settings frame alone would sit under the
-            // encounter's rail, unit tags and objectives.
+            // A layer of its own, translucent over the level; the field's rail,
+            // unit tags and objectives are hidden meanwhile (`data-over-field`).
             <div className="gui-over-field">
                 <SettingsOptions onBack={() => setView("back-from-options")} />
             </div>

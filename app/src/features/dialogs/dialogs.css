@@ -13,12 +13,25 @@
 }
 
 /* A whole screen mounted over the paused encounter (the pause menu's Options):
-   opaque, and above every layer of the field's own interface. */
+   the level shows through dimly, above every layer of the field's own
+   interface. That interface is hidden while it is up (`data-over-field` on
+   <html>), so none of it competes with the settings text. No blur: a filter
+   over the live WebGL canvas costs weak GPUs too much. */
 .gui-over-field {
     position: fixed;
     inset: 0;
     z-index: 210;
-    background: var(--background-color);
+    background: color-mix(in srgb, var(--background-color) 84%, transparent);
+}
+
+/* The settings frame inside is opaque on its own; the layer carries the dim. */
+.gui-over-field > .gui {
+    background-color: transparent;
+}
+
+html[data-over-field] .encounter .workspace > :not(.battlefield),
+html[data-over-field] .encounter .battlefield > :not(#viewport):not(.vignette) {
+    visibility: hidden;
 }
 
 .gui-dialog-stage {
