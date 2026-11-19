@@ -92,6 +92,7 @@ if (!csp) {
       `https://graphql.${network}.sui.io`,
       "https://api.enoki.mystenlabs.com",
       `https://${network}.mvr.mystenlabs.com`,
+      `https://faucet.${network}.sui.io`,
     ])
       if (!connect.includes(host))
         problems.push(`connect-src lacks ${host} (NETWORK is ${network})`);

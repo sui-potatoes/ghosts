@@ -19,7 +19,9 @@ pnpm test         # every package's tests
 ```
 
 Copy `.env.example` to `.env` and set `VITE_ENOKI_API_KEY` to enable Google
-zkLogin. Passkey sign-in works without it.
+zkLogin. Passkey sign-in works without it. `VITE_FAUCET_URL` is optional: the
+testnet faucet the app asks for SUI (default `https://faucet.testnet.sui.io`);
+another host must also be listed in `connect-src` in `public/_headers`.
 
 ## What is here
 

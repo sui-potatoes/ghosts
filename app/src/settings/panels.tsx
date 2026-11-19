@@ -182,30 +182,6 @@ export function AccountPanel() {
             value: NETWORK,
             description: "The Sui network this build talks to. Testnet only.",
         },
-        // Test networks hand out funds. The address rides in the query (the
-        // faucet ignores it today but keeps it) and is copied for pasting.
-        // faucet.sui.io would be the official choice; its proof-of-work flow
-        // is heavier, so the SuiLearn faucet serves for now.
-        ...(NETWORK === "testnet"
-            ? [
-                  {
-                      kind: "action",
-                      id: "faucet",
-                      label: "Add test funds",
-                      value: "faucet.suilearn.io ↗",
-                      description:
-                          "Opens a Sui testnet faucet in a new tab and copies this address, ready to paste there. Test SUI only; it has no real value.",
-                      onConfirm: () => {
-                          navigator.clipboard.writeText(account.address).catch(() => {});
-                          window.open(
-                              `https://faucet.suilearn.io/?address=${account.address}`,
-                              "_blank",
-                              "noopener",
-                          );
-                      },
-                  } satisfies SettingRow,
-              ]
-            : []),
         { kind: "section", id: "access", label: "Account access" },
         {
             kind: "static",

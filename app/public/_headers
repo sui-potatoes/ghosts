@@ -53,8 +53,10 @@
 #                       React style={...} props and the style attribute on <html>. Inline
 #                       <style> elements are NOT allowed (style-src-elem is 'self').
 #   chain hosts         connect-src, the network from src/constants.ts NETWORK (testnet):
-#                       fullnode (gRPC-web), GraphQL, Enoki (zkLogin) and the MVR name registry.
-#                       For mainnet replace "testnet" by "mainnet" in these four hosts;
+#                       fullnode (gRPC-web), GraphQL, Enoki (zkLogin), the MVR name registry
+#                       and the testnet faucet (src/chain/faucet.ts; a build with another
+#                       VITE_FAUCET_URL lists that host here instead).
+#                       For mainnet replace "testnet" by "mainnet" in the hosts that carry it;
 #                       scripts/check-no-external-assets.mjs fails CI when they drift from NETWORK.
 #   https:              connect-src, DELIBERATE OPENING so Settings -> Network can point at any
 #                       TLS fullnode (a custom RPC). http://localhost:* allows a local node.
@@ -64,7 +66,7 @@
 # Google sign-in is a popup that navigates to accounts.google.com and back to our own origin:
 # navigation is not governed by CSP, so no Google host is listed anywhere.
 /*
-  Content-Security-Policy: default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; script-src-attr 'none'; style-src-elem 'self'; style-src-attr 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; worker-src 'self' blob:; manifest-src 'self'; connect-src 'self' blob: data: https://fullnode.testnet.sui.io https://graphql.testnet.sui.io https://api.enoki.mystenlabs.com https://testnet.mvr.mystenlabs.com https: http://localhost:* http://127.0.0.1:*; frame-src 'none'; frame-ancestors 'none'; object-src 'none'; base-uri 'none'; form-action 'self'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; script-src-attr 'none'; style-src-elem 'self'; style-src-attr 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; worker-src 'self' blob:; manifest-src 'self'; connect-src 'self' blob: data: https://fullnode.testnet.sui.io https://graphql.testnet.sui.io https://api.enoki.mystenlabs.com https://testnet.mvr.mystenlabs.com https://faucet.testnet.sui.io https: http://localhost:* http://127.0.0.1:*; frame-src 'none'; frame-ancestors 'none'; object-src 'none'; base-uri 'none'; form-action 'self'; upgrade-insecure-requests
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
   Referrer-Policy: strict-origin-when-cross-origin

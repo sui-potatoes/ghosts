@@ -43,6 +43,7 @@ import {
     WeaponUpgrade,
 } from "./bcs";
 import { movedOn, noteOwned, type ExecutedOrder } from "./fast-lane";
+import { ensureGas } from "./funds";
 import { absorbWrites, current, useBcsObject } from "./objects";
 import { trackSaving } from "./saving";
 import { sendOrder } from "./sender";
@@ -356,6 +357,8 @@ export function useGhostsAction() {
         setError("");
         setBusy(true);
         try {
+            // A balance that cannot pay waits for the faucet request, then the write goes on.
+            if (owner) await trackSaving(ensureGas(owner));
             await trackSaving(steps(list));
             return true;
         } catch (e) {
@@ -377,7 +380,7 @@ export function friendlyError(e: unknown): string {
             message,
         )
     )
-        return "Not enough SUI for the network fee. Add test funds in Settings.";
+        return "Not enough SUI for this action. Try again shortly.";
     if (/reject|cancel|abort(ed)? by user|NotAllowedError/i.test(message)) return "Cancelled.";
     if (/Failed to fetch|NetworkError|timed? ?out/i.test(message))
         return "Connection lost. Try again.";

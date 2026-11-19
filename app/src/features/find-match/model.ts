@@ -26,6 +26,8 @@ export type FindState = {
     starting: boolean;
     /** Another write is in flight: a cancel sent now would be dropped. */
     busy?: boolean;
+    /** The account is being funded for the queue transaction, which waits for it. */
+    funding?: boolean;
 };
 
 export type FindPhase =
@@ -35,6 +37,7 @@ export type FindPhase =
     | "failed"
     | "timeout"
     | "searching"
+    | "funding"
     | "hiring"
     | "starting";
 
@@ -102,6 +105,14 @@ export function findView(s: FindState): FindView {
                 label: "Cancel search",
                 inactive: s.busy ? "Saving a change" : undefined,
             },
+            pending: true,
+        };
+    if (s.funding)
+        return {
+            phase: "funding",
+            headline: "Preparing",
+            note: "Getting your account ready, then the squad queues.",
+            action: { id: "cancel", label: "Cancel search", inactive: "Preparing" },
             pending: true,
         };
     if (s.hiring)

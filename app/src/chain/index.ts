@@ -5,6 +5,7 @@
 // plumbing imported by path from inside src/chain only.
 export { retireSessionKey } from "./alias";
 export { useBalance } from "./balance";
+export { FundsOnSignIn, useFundsWaiting } from "./funds";
 export {
     createAccountTx,
     dismissRecruitTx,

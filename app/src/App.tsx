@@ -52,7 +52,7 @@ const RecruitQa = import.meta.env.VITE_RECRUIT_QA
     : null;
 // QA only: the find-match screen over fixtures, registered in `VITE_FIND_QA=1` builds.
 const FindQa = import.meta.env.VITE_FIND_QA ? lazy(() => import("./features/find-match/qa")) : null;
-import { SquadPreload, TransactionSender } from "./chain";
+import { FundsOnSignIn, SquadPreload, TransactionSender } from "./chain";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { LoadingSpinner } from "./components/LoadingSpinner";
 import { MatchStatus } from "./components/MatchStatus";
@@ -269,6 +269,7 @@ export function App() {
             </Routes>
             <MenuMusic />
             <TransactionSender />
+            <FundsOnSignIn />
             <SquadPreload />
             <SaveIndicator />
             <MatchStatus />

@@ -31,6 +31,7 @@ import {
     useGhostsAccount,
     useGhostsAction,
 } from "./ghosts";
+import { beforeGame } from "./funds";
 import { useSaving } from "./saving";
 
 type Client = ReturnType<typeof useCurrentClient>;
@@ -182,6 +183,8 @@ export function useMatchSearch() {
     const find = async () => {
         if (!owner || busy || hiring) return;
         const { client } = action;
+        // The balance is topped up for this game in the background; waited for only if the queue could not be paid.
+        await beforeGame(owner);
         const known = accountId ?? (await fetchAccountId(client, owner));
         let recruits = account?.recruits;
         if (known && recruits === undefined) {

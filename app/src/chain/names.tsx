@@ -105,7 +105,7 @@ function refusal(message: string): string | null {
         return null;
     }
     if (/gas/i.test(message))
-        return "Not enough SUI to pay the network fee. Add test funds under Account & Sessions.";
+        return "Not enough SUI for this action. Try again shortly.";
     return null;
 }
 
