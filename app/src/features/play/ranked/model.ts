@@ -502,7 +502,7 @@ export function squadIssues(
     if (budget !== null && spent > budget)
         issues.push({
             kind: "over-budget",
-            message: `The squad costs ${cr(spent)}, ${cr(spent - budget)} over the ${cr(budget)} budget.`,
+            message: `${cr(spent - budget)} over the ${cr(budget)} budget.`,
         });
     return issues;
 }

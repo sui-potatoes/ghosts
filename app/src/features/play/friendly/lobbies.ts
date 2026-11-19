@@ -54,6 +54,8 @@ export type Session = {
     builds: boolean;
     /** Your squad has no issues under the rule. */
     ready: boolean;
+    /** What the builder calls each unit (saved unit types by their own names). */
+    labels?: string[];
     /** The first thing wrong with it, while it is not ready. */
     issue: string | null;
     /** Host only: when the arrived opponent has a squad ready. */
@@ -388,6 +390,7 @@ export function updateSquad(
     squad: Loadout[],
     issues: { message: string }[],
     now: number,
+    labels?: string[],
 ): Session | null {
     const state = read(kv);
     const s = state.session;
@@ -398,7 +401,14 @@ export function updateSquad(
         if (!ready) resolvesAt = NEVER;
         else if (resolvesAt === NEVER) resolvesAt = hostActsAt(s.lobby, now);
     }
-    const next: Session = { ...s, squad, ready, issue: issues[0]?.message ?? null, resolvesAt };
+    const next: Session = {
+        ...s,
+        squad,
+        labels,
+        ready,
+        issue: issues[0]?.message ?? null,
+        resolvesAt,
+    };
     write(kv, { ...state, session: next });
     return next;
 }

@@ -226,6 +226,12 @@ export function ruleLabel(rule: Rule, mode: Mode): string {
     return `Budget ${ruleBudget(rule, mode)} cr · ${tierById(rule.tier).name}`;
 }
 
+/** The rule for a narrow row: "Any squad" or "150 cr · Contractor". */
+export function ruleShort(rule: Rule, mode: Mode): string {
+    if (rule.kind === "any") return "Any squad";
+    return `${ruleBudget(rule, mode)} cr · ${tierById(rule.tier).name}`;
+}
+
 /** The budget stepper's options for a size: `[tier id, "150 cr · Contractor"]`, lowest first. */
 export const budgetOptions = (mode: Mode): [string, string][] =>
     standardBudgets(mode).map(({ tier, credits }) => [tier.id, `${credits} cr · ${tier.name}`]);

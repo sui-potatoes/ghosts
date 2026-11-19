@@ -33,6 +33,7 @@ export function standFigures(stands: Stand[], seed: number): (Recruit | null)[] 
         roles: kits.map(fieldRole),
         callsigns: loadouts.map((_, i) => `UNIT ${unitNumber(i)}`),
         names: loadouts.map((_, i) => `Unit ${i + 1}`),
+        types: loadouts.map((_, i) => `Unit ${i + 1}`),
     };
     const recruits = virtualRecruits(side, seed);
     return recruits.map((r, i) => (stands[i] ? r : null));

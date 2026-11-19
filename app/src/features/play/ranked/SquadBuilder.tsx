@@ -69,6 +69,7 @@ import {
 } from "./presets";
 import { ManageSquad, SAVE_SQUAD, SavedSquadList, squadRowId } from "./SavedSquads";
 import { editorOptions, UnitEditor, type EditorStep } from "./UnitEditor";
+import "./ranked.css";
 
 export type SquadBuilderProps = {
     mode: Mode;
@@ -82,9 +83,11 @@ export type SquadBuilderProps = {
      * Called with the squad and what is wrong with it, on mount and on every
      * change. A place with no type yet is left out of `squad`; every issue
      * that names a unit (`unit`) gives its place on the stands, empty ones
-     * included, and an empty place is an issue itself.
+     * included, and an empty place is an issue itself. `labels` name each
+     * unit in `squad` the way the builder does: the player's own saved unit
+     * type, else the preset.
      */
-    onChange: (squad: Loadout[], issues: Issue[]) => void;
+    onChange: (squad: Loadout[], issues: Issue[], labels: string[]) => void;
     /**
      * Where the saved squads and unit types are kept; shared by every screen
      * that mounts the builder unless a host gives its own.
@@ -204,21 +207,6 @@ export function SquadBuilder({
     const setStands = (next: Stand[]) =>
         setSaved((s) => ({ ...s, squads: { ...s.squads, [mode]: next } }));
 
-    const issues = useMemo(
-        () => squadIssues(stands, rating, mode, budget),
-        [stands, rating, mode, budget],
-    );
-    const report = useRef(onChange);
-    report.current = onChange;
-    const issuesKey = JSON.stringify([stands, issues]);
-    useEffect(() => {
-        report.current(
-            stands.filter((s): s is Loadout => !!s),
-            issues,
-        );
-        // The key stands for the squad and its issues.
-    }, [issuesKey]);
-
     /* --- Saved squads and types ------------------------------------------ */
     const [library, setLibraryState] = useState<Library>(() => read(presetsKey, parseLibrary));
     const setLibrary = (next: Library) => {
@@ -235,6 +223,20 @@ export function SquadBuilder({
     }, [presetsKey]);
     const mine = library.types;
     const mySquads = squadsFor(library, mode);
+
+    const issues = useMemo(
+        () => squadIssues(stands, rating, mode, budget),
+        [stands, rating, mode, budget],
+    );
+    const report = useRef(onChange);
+    report.current = onChange;
+    const filled = stands.filter((s): s is Loadout => !!s);
+    const labels = filled.map((u) => typeName(u, rating, library.types));
+    const issuesKey = JSON.stringify([stands, issues, labels]);
+    useEffect(() => {
+        report.current(filled, issues, labels);
+        // The key stands for the squad, its issues and its names.
+    }, [issuesKey]);
 
     /* --- What is open ----------------------------------------------------- */
     const [editing, setEditing] = useState<number | null>(null);

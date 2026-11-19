@@ -372,3 +372,18 @@ test("stored squads keep empty places and drop junk", () => {
     assert.deepEqual(back.squads["3x3"], squad);
     assert.deepEqual(parseSaved('{"v":1,"squads":{"3x3":[null,null,null]}}').squads, {});
 });
+
+test("the builder brings its own styles, so any screen that mounts it is laid out", async () => {
+    const { readFileSync } = await import("node:fs");
+    const builder = readFileSync(
+        new URL("../src/features/play/ranked/SquadBuilder.tsx", import.meta.url),
+        "utf8",
+    );
+    assert.match(builder, /import "\.\/ranked\.css"/);
+    const bar = readFileSync(new URL("../src/ui/gui.css", import.meta.url), "utf8");
+    // The bar's confirm keeps one width whatever the pointer rests on.
+    assert.match(
+        bar,
+        /\.gui-bar-commands \.gui-cmd\[data-action="confirm"\] \{\s+flex: none;\s+width:/,
+    );
+});

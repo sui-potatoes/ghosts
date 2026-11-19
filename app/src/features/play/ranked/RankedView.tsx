@@ -77,7 +77,11 @@ export function RankedView() {
     const [screen, setScreen] = useState<Saved>(load);
     const mode = screen.mode;
     const budget = budgetOf(rating, mode);
-    const [squad, setSquad] = useState<{ units: Loadout[]; issues: Issue[] } | null>(null);
+    const [squad, setSquad] = useState<{
+        units: Loadout[];
+        issues: Issue[];
+        labels: string[];
+    } | null>(null);
     const [search, setSearch] = useState<Search | null>(null);
     // Said once, on arrival, when the tier changed since the last visit.
     const [notice, setNotice] = useState<string | null | undefined>(undefined);
@@ -111,6 +115,7 @@ export function RankedView() {
                 kind: "ranked",
                 mode,
                 squad: squad?.units ?? [],
+                labels: squad?.labels,
                 opponent: { name: search.name, rating: search.rating },
                 returnTo: "/play/ranked",
             });
@@ -198,7 +203,7 @@ export function RankedView() {
                     budget={budget}
                     rating={rating}
                     storageKey={STORE_KEY}
-                    onChange={(units, found) => setSquad({ units, issues: found })}
+                    onChange={(units, found, labels) => setSquad({ units, issues: found, labels })}
                     aside={sizes}
                     action={find}
                     searching={!!search}

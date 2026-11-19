@@ -45,7 +45,7 @@ export default function PlayScreen() {
                         {name && <StatusChip label="Player" value={name} />}
                         <StatusChip
                             label="Rating"
-                            value={`${rankedFacts(rating.rating).tier} ${rating.rating}`}
+                            value={`${rating.rating} · ${rankedFacts(rating.rating).tier}`}
                         />
                     </>
                 }
@@ -135,8 +135,8 @@ function Card({ card, rating }: { card: ModeCard; rating: number }) {
                     </span>
                     {facts.budgets.map((b) => (
                         <span key={b.mode} className="gui-play-fact">
-                            <span className="gui-play-fact-label">{b.mode} credits</span>
-                            <span className="gui-play-fact-value">{b.budget}</span>
+                            <span className="gui-play-fact-label">{b.mode} budget</span>
+                            <span className="gui-play-fact-value">{b.budget} cr</span>
                         </span>
                     ))}
                 </span>

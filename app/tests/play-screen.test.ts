@@ -89,3 +89,20 @@ test("Back from a mode screen goes up to Play; Play's parent is the menu", () =>
     for (const p of ["/play/ranked", "/play/friendly", "/play/match"])
         assert.equal(parentOf(p), "/play");
 });
+
+test("the numbers on the Play screen carry their unit or label", () => {
+    assert.equal(cardOf("factions").locked, "Not open");
+    const screen = readFileSync(
+        new URL("../src/features/play/PlayScreen.tsx", import.meta.url),
+        "utf8",
+    );
+    assert.match(screen, /\{b\.budget\} cr/);
+    assert.match(screen, /\{b\.mode\} budget/);
+    assert.doesNotMatch(screen, /credits</);
+    const panels = readFileSync(
+        new URL("../src/features/settings/panels.tsx", import.meta.url),
+        "utf8",
+    );
+    assert.match(panels, /budgetOf\(r\.rating, "3x3"\)\} cr/);
+    assert.match(panels, /budgetOf\(r\.rating, "4x4"\)\} cr/);
+});

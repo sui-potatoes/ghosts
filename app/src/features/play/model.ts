@@ -66,7 +66,7 @@ const CARDS: Record<ModeId, ModeCard> = {
         tag: "Soon",
         hint: "Missions for three corporations, with influence and standing",
         verb: "Open",
-        locked: "Not open yet",
+        locked: "Not open",
     },
 };
 

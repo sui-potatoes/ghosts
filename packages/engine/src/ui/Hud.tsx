@@ -275,7 +275,7 @@ export function HudHeader({ onMenu }: { onMenu?: () => void }) {
           </li>
           {opponent && (
             <li className="hud-opponent">
-              VS {opponent.name ?? "Unnamed"} <b>{opponent.rating}</b>
+              VS {opponent.name ?? "Unnamed"} · rating <b>{opponent.rating}</b>
             </li>
           )}
         </ul>

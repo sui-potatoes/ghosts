@@ -20,6 +20,7 @@ import {
     ruleBudget,
     ruleLabel,
     ruleRating,
+    ruleShort,
     formatCode,
     linkCode,
     parseCode,
@@ -363,4 +364,35 @@ test("a guest who is not ready keeps the host from starting until the squad fits
     const any = FIXTURES.find((f) => f.rule.kind === "any")!;
     const quick = joinLobby(memory(), any, { squad: [], names: [] }, T0);
     assert.ok(quick.ready && quick.resolvesAt < NEVER);
+});
+
+test("a narrow row reads the rule short, with its units", () => {
+    assert.equal(ruleShort(ANY_RULE, "3x3"), "Any squad");
+    const rule = defaultRule(1500);
+    assert.equal(ruleShort(rule, "3x3"), `${ruleBudget(rule, "3x3")} cr · ${tierOf(1500).name}`);
+    assert.ok(ruleShort(rule, "4x4").length < ruleLabel(rule, "4x4").length);
+});
+
+test("the builder's unit names travel with the session", () => {
+    const kv = memory();
+    const rule = defaultRule(1500);
+    const bring = bringSquad("build", null, "3x3", rule);
+    hostLobby(
+        kv,
+        {
+            mode: "3x3",
+            visibility: "invite",
+            rule,
+            squad: bring.squad,
+            names: bring.names,
+            builds: true,
+            ready: true,
+            you: YOU,
+        },
+        T0,
+        seq(0.1, 0.5, 0.5),
+    );
+    const named = updateSquad(kv, bring.squad, [], T0, ["Marksman", "Runner", "Heavy"])!;
+    assert.deepEqual(named.labels, ["Marksman", "Runner", "Heavy"]);
+    assert.deepEqual(readSession(kv)!.labels, ["Marksman", "Runner", "Heavy"]);
 });

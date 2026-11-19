@@ -254,7 +254,8 @@ export function createPodiumScene(
     let epoch = 0;
 
     const LIGHT_ON = 26;
-    const LIGHT_REST = 9;
+    // Projector mode: a stand the cursor is not on still reads as a unit, not a silhouette.
+    const LIGHT_REST = projector ? 12.5 : 9;
     const LIGHT_GLANCE = 3.5;
     /** The back light's intensity relative to the front spot's. */
     const BACK_SHARE = 0.7;

@@ -57,7 +57,6 @@ import {
     outcomeOf,
     parseMatch,
     gearLine,
-    presetName,
     readSettled,
     RESULT_KEY,
     sessionSlot,
@@ -210,7 +209,7 @@ function IntroBody({
                     <span className="gui-mm-eyebrow">Player</span>
                     <span className="gui-mm-name">{name || "You"}</span>
                     <span className="gui-mm-meta">
-                        {tierOf(rating.rating).name} · {rating.rating}
+                        {tierOf(rating.rating).name} · rating {rating.rating}
                     </span>
                 </div>
                 <span className="gui-mm-vs" aria-label="versus">
@@ -220,7 +219,7 @@ function IntroBody({
                     <span className="gui-mm-eyebrow">Opponent</span>
                     <span className="gui-mm-name">{match.opponent.name}</span>
                     <span className="gui-mm-meta">
-                        {tierOf(match.opponent.rating).name} · {match.opponent.rating}
+                        {tierOf(match.opponent.rating).name} · rating {match.opponent.rating}
                     </span>
                 </div>
             </div>
@@ -257,7 +256,7 @@ function SquadPanel({ label, side }: { label: string; side: MatchPlan["player"] 
             {side.ids.map((id, i) => (
                 <div key={id} className="gui-mm-unit">
                     <span className="gui-mm-sign">{side.callsigns[i]}</span>
-                    <span className="gui-mm-preset">{presetName(side.loadouts[i])}</span>
+                    <span className="gui-mm-preset">{side.types[i]}</span>
                     <span className="gui-mm-gear">{gearLine(side.loadouts[i])}</span>
                 </div>
             ))}

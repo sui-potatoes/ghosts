@@ -295,8 +295,8 @@ function RankedBlock() {
             <ReadoutLine label="Streak" empty={!r.streak}>
                 {streak}
             </ReadoutLine>
-            <ReadoutLine label="Budget 3x3">{budgetOf(r.rating, "3x3")}</ReadoutLine>
-            <ReadoutLine label="Budget 4x4">{budgetOf(r.rating, "4x4")}</ReadoutLine>
+            <ReadoutLine label="Budget 3x3">{`${budgetOf(r.rating, "3x3")} cr`}</ReadoutLine>
+            <ReadoutLine label="Budget 4x4">{`${budgetOf(r.rating, "4x4")} cr`}</ReadoutLine>
             {r.resets > 0 && <ReadoutLine label="Resets">{r.resets}</ReadoutLine>}
             {recent.length > 0 && (
                 <>
@@ -307,7 +307,7 @@ function RankedBlock() {
                                 key={`${e.at}-${e.rating}`}
                                 label={`${e.won ? "Won" : "Lost"} vs ${e.opponent}`}
                             >
-                                {signed(e.delta)}
+                                {`${signed(e.delta)} rating`}
                             </ReadoutLine>
                         ) : (
                             <ReadoutLine key={`${e.at}-reset`} label="Reset">

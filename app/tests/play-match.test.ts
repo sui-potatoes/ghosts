@@ -373,3 +373,32 @@ test("the opponent's units wear their kit's armor and faces the player's units d
         }
     }
 });
+
+// === Unit names from saved types ===
+
+test("a unit keeps the name the player gave its type on the cards and the debrief", () => {
+    const squad = defaultSquad(DEFAULT_RATING, "3x3");
+    const m = match({ squad, labels: ["Assault", "Marksman", "Runner"] });
+    const plan = matchPlan(m);
+    assert.deepEqual(plan.player.types, ["Assault", "Marksman", "Runner"]);
+    // Without a label, or past the end of the list, the preset's name stands.
+    const bare = matchPlan(match({ squad, labels: ["Marksman"] }));
+    assert.equal(bare.player.types[0], "Marksman");
+    assert.equal(bare.player.types[1], presetName(squad[1]));
+    assert.equal(matchPlan(match({ squad })).player.types[0], presetName(squad[0]));
+    // Both sides' seeds ignore the names.
+    assert.deepEqual(plan.player.ids, bare.player.ids);
+    const h = harness();
+    const settled = settleMatch(m, "victory", report(true), h.deps);
+    const debrief = mockDebriefOf(m, plan, settled);
+    const plate = debrief.plates[1];
+    assert.ok(plate.kind === "home" && plate.rankBefore === "Marksman");
+    assert.equal(debrief.opponent, "Nightjar · rating 1520");
+});
+
+test("labels read back as strings only", () => {
+    const m = match({ labels: ["Marksman", "Runner"] });
+    assert.deepEqual(parseMatch(JSON.stringify(m))?.labels, ["Marksman", "Runner"]);
+    assert.equal(parseMatch(JSON.stringify({ ...m, labels: [1, 2] }))?.labels, undefined);
+    assert.equal(parseMatch(JSON.stringify({ ...m, labels: undefined }))?.labels, undefined);
+});

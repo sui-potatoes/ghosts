@@ -44,6 +44,7 @@ import {
     type Loadout,
     type Mode,
 } from "../economy";
+import { issueText } from "../ranked/model";
 import { SquadBuilder } from "../ranked/SquadBuilder";
 import { stageMockMatch } from "../match";
 import { useRating } from "../rating";
@@ -77,6 +78,7 @@ import {
     readiness,
     ruleBudget,
     ruleLabel,
+    ruleShort,
     ruleRating,
     ruleTierName,
     type Rule,
@@ -93,6 +95,8 @@ type View = "landing" | "host" | "join" | "open" | "lobby";
 type Refusal = { message: string } | null;
 
 const COLUMNS = "minmax(0, 520px) minmax(0, 420px) minmax(0, 1fr)";
+/** The lobby with the builder gives it the whole body. */
+const WIDE = "minmax(0, 1fr)";
 const TITLES: Record<View, string> = {
     landing: "Friendly",
     host: "Host",
@@ -217,17 +221,26 @@ export function FriendlyView() {
     };
 
     /** The builder reported the player's squad. */
-    const onSquad = useCallback((squad: Loadout[], issues: Issue[]) => {
+    const onSquad = useCallback((squad: Loadout[], issues: Issue[], labels: string[]) => {
         const s = readSession(kv());
         if (!s) return;
-        const message = issues[0]?.message ?? null;
+        const message = issues[0] ? issueText(issues[0]) : null;
         if (
             s.ready === (issues.length === 0) &&
             s.issue === message &&
+            JSON.stringify(s.labels) === JSON.stringify(labels) &&
             JSON.stringify(s.squad) === JSON.stringify(squad)
         )
             return;
-        setSession(updateSquad(kv(), squad, issues, Date.now()));
+        setSession(
+            updateSquad(
+                kv(),
+                squad,
+                issues.map((i) => ({ message: issueText(i) })),
+                Date.now(),
+                labels,
+            ),
+        );
     }, []);
 
     // A share link opens the join flow with its code; the query is spent.
@@ -266,6 +279,7 @@ export function FriendlyView() {
                 kind: "friendly",
                 mode: s.lobby.mode,
                 squad: s.squad,
+                labels: s.labels,
                 opponent: { name: opponent.name, rating: opponent.rating },
                 rule: matchRule(s.lobby.rule, s.lobby.mode),
                 returnTo: FRIENDLY_ROUTE,
@@ -323,7 +337,9 @@ export function FriendlyView() {
                         )}
                     </>
                 }
-                columns={COLUMNS}
+                columns={
+                    view === "lobby" && session?.builds && phase !== "cancelled" ? WIDE : COLUMNS
+                }
                 commands={<FocusCommandBar glyphs={glyphs} />}
                 overlay={
                     leaving && session ? (
@@ -587,7 +603,7 @@ function HostSetup({
 }) {
     const squadOptions: [string, string][] = hasSaved
         ? [
-              ["saved", "Your squad"],
+              ["saved", "Your recruits"],
               ["build", "Build one"],
           ]
         : [["build", "Build one"]];
@@ -662,7 +678,7 @@ function HostSetup({
                         title="Squad"
                         hint={
                             hasSaved
-                                ? "Bring your squad, or build one for this match"
+                                ? "Bring your recruits, or build a squad for this match"
                                 : "Build a squad for this match"
                         }
                         options={squadOptions}
@@ -690,7 +706,7 @@ function HostSetup({
                 </ReadoutLine>
                 {squadKind !== "build" && rule.kind === "any" && (
                     <>
-                        <Eyebrow>Your squad</Eyebrow>
+                        <Eyebrow>Your recruits</Eyebrow>
                         <SquadLines squad={squad} names={names} />
                     </>
                 )}
@@ -718,7 +734,17 @@ function SquadLines({ squad, names }: { squad: Loadout[]; names: string[] }) {
 // === Lobby ==================================================================
 
 /** The code as a large, copyable block: one press copies it. */
-function CodeBlock({ code, copied, copy }: { code: string; copied: boolean; copy: () => void }) {
+function CodeBlock({
+    code,
+    copied,
+    copy,
+    compact,
+}: {
+    code: string;
+    copied: boolean;
+    copy: () => void;
+    compact?: boolean;
+}) {
     const { props } = useFocusable<HTMLButtonElement>({
         id: "code",
         group: "main",
@@ -728,7 +754,13 @@ function CodeBlock({ code, copied, copy }: { code: string; copied: boolean; copy
         commands: [{ action: "confirm", label: copied ? "Copied" : "Copy code", run: copy }],
     });
     return (
-        <button type="button" tabIndex={-1} className="gui-row gfr-code" {...props}>
+        <button
+            type="button"
+            tabIndex={-1}
+            className="gui-row gfr-code"
+            data-compact={compact || undefined}
+            {...props}
+        >
             <span className="gfr-code-label">Invite code</span>
             <span className="gfr-code-text" aria-label={code.split("").join(" ")}>
                 {formatCode(code)}
@@ -757,7 +789,7 @@ function LobbyView({
     skip: () => void;
     start: () => void;
     end: () => void;
-    onSquad: (squad: Loadout[], issues: Issue[]) => void;
+    onSquad: (squad: Loadout[], issues: Issue[], labels: string[]) => void;
 }) {
     const { lobby } = session;
     const phase = phaseOf(session, now);
@@ -782,6 +814,107 @@ function LobbyView({
                     {lobby.host.name} closed the lobby before it started.
                 </EmptyState>
             </Panel>
+        );
+    }
+
+    if (session.builds) {
+        const status = !session.ready
+            ? (session.issue ?? "Build your squad")
+            : host
+              ? (block ?? "Ready to start")
+              : "Waiting for the host to start";
+        return (
+            <SquadBuilder
+                mode={lobby.mode}
+                budget={budget}
+                rating={ruleRating(lobby.rule)}
+                storageKey={BUILDER_KEY}
+                onChange={onSquad}
+                aside={
+                    <div className="gfr-aside">
+                        <CodeBlock
+                            compact
+                            code={lobby.code}
+                            copied={copied === "code"}
+                            copy={() => copy("code", formatCode(lobby.code))}
+                        />
+                        <ListRow
+                            id="link"
+                            group="lobby"
+                            name="Share link"
+                            kind={link.replace(/^https?:\/\//, "")}
+                            tag={copied === "link" ? "Copied" : "Copy"}
+                            tagTone={copied === "link" ? "accent" : "default"}
+                            title="Share link"
+                            hint="Opens the join screen with the code filled in"
+                            instant
+                            commands={[
+                                {
+                                    action: "confirm",
+                                    label: "Copy link",
+                                    run: () => copy("link", link),
+                                },
+                            ]}
+                        />
+                        <div className="gfr-match">
+                            <ReadoutLine label="Match">
+                                {`${lobby.mode} · ${lobby.visibility === "open" ? "Open to anyone" : "Invite only"}`}
+                            </ReadoutLine>
+                        </div>
+                        <ReadoutLine label="Squads">
+                            {ruleLabel(lobby.rule, lobby.mode)}
+                        </ReadoutLine>
+                        <ReadoutLine
+                            label={host ? "Opponent" : "Host"}
+                            empty={host && them === "absent"}
+                        >
+                            {host
+                                ? them === "absent"
+                                    ? "Waiting for someone to join"
+                                    : `${session.opponent.name} · ${tier} · ${them === "ready" ? "Ready" : "Building"}`
+                                : `${lobby.host.name} · ${tier} · Ready`}
+                        </ReadoutLine>
+                        <ReadoutLine label="You" empty={!session.ready}>
+                            {session.ready ? "Ready" : "Building"}
+                        </ReadoutLine>
+                        <ReadoutLine label="Status" empty>
+                            {status}
+                        </ReadoutLine>
+                        {QA_SKIP && host && phase === "waiting" && (
+                            <ActionRow
+                                id="arrive"
+                                group="lobby"
+                                label="Bring in the opponent"
+                                title="Bring in the opponent"
+                                hint="Skips the wait"
+                                instant
+                                commands={[{ action: "confirm", label: "Bring in", run: skip }]}
+                            />
+                        )}
+                    </div>
+                }
+                action={
+                    host ? (
+                        <ActionRow
+                            id="start"
+                            group="start"
+                            label="Start match"
+                            title="Start match"
+                            hint={block ?? "Both squads deploy"}
+                            instant
+                            commands={[
+                                {
+                                    action: "confirm",
+                                    label: "Start match",
+                                    tone: "primary",
+                                    deny: block ?? undefined,
+                                    run: start,
+                                },
+                            ]}
+                        />
+                    ) : undefined
+                }
+            />
         );
     }
 
@@ -985,9 +1118,9 @@ function JoinView({
                         group="main"
                         label="Squad"
                         title="Squad"
-                        hint="Bring your squad, or build one for this match"
+                        hint="Bring your recruits, or build a squad for this match"
                         options={[
-                            ["saved", "Your squad"],
+                            ["saved", "Your recruits"],
                             ["build", "Build one"],
                         ]}
                         value={squadKind}
@@ -1000,9 +1133,7 @@ function JoinView({
                     label="Join"
                     title="Join"
                     hint={
-                        budget === null
-                            ? "Bring any squad"
-                            : `Build a squad of up to ${budget} credits`
+                        budget === null ? "Bring any squad" : `Build a squad of up to ${budget} cr`
                     }
                     instant
                     commands={[
@@ -1152,10 +1283,10 @@ function OpenGames({
                             id={`open-${lobby.id}`}
                             group="main"
                             name={lobby.host.name}
-                            kind={`${lobby.mode} · ${ruleLabel(lobby.rule, lobby.mode)}`}
+                            kind={`${lobby.mode} · ${ruleShort(lobby.rule, lobby.mode)}`}
                             tag={ageLabel(now - lobby.openedAt)}
                             title={lobby.host.name}
-                            hint={`${tierOf(lobby.host.rating).name}, ${ruleLabel(lobby.rule, lobby.mode)}, open ${ageLabel(now - lobby.openedAt)}`}
+                            hint={`${tierOf(lobby.host.rating).name} host · open ${ageLabel(now - lobby.openedAt)}`}
                             instant
                             commands={[
                                 { action: "confirm", label: "Join", run: () => join(lobby) },

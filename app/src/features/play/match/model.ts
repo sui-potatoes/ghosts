@@ -65,6 +65,12 @@ export type MockMatch = {
      * cards. The opponent's squad follows it. Absent for ranked (their rating's tier).
      */
     rule?: { budget: number | null; rating: number; label: string };
+    /**
+     * What each unit is called on the cards, in squad order: the player's own
+     * name for a saved unit type, else the preset. Absent or short, the
+     * preset's name stands.
+     */
+    labels?: string[];
     /** Set by `stageMockMatch`; the seed of everything drawn for the match. */
     id?: string;
 };
@@ -126,11 +132,17 @@ export function parseMatch(raw: string | null): MockMatch | null {
             typeof r.label === "string"
                 ? r
                 : undefined;
-        const { rule: _drop, ...rest } = m as MockMatch;
+        const { rule: _drop, labels: _labels, ...rest } = m as MockMatch;
         void _drop;
+        void _labels;
+        const labels =
+            Array.isArray(m.labels) && m.labels.every((l) => typeof l === "string")
+                ? m.labels
+                : undefined;
         return {
             ...rest,
             ...(rule ? { rule } : {}),
+            ...(labels ? { labels } : {}),
             returnTo: typeof m.returnTo === "string" ? m.returnTo : "/play",
         };
     } catch {
@@ -313,6 +325,8 @@ export type Side = {
     callsigns: string[];
     /** Full names. */
     names: string[];
+    /** What each unit's type is called on the cards and plates. */
+    types: string[];
 };
 
 function sideOf(
@@ -333,6 +347,7 @@ function sideOf(
         names: loadouts.map(
             (_, i) => `${(faces[i % faces.length] ?? FACES[0]).name} ${pick(SURNAMES, random)}`,
         ),
+        types: loadouts.map(presetName),
     };
 }
 
@@ -379,10 +394,12 @@ export function matchPlan(match: MockMatch): MatchPlan {
     const random = seeded(seed);
     const size = squadSize(match.mode);
     const squad = match.squad.slice(0, size);
+    const player = sideOf("a", squad, PLAYER_CALLSIGNS, random);
+    player.types = player.types.map((t, i) => match.labels?.[i] || t);
     return {
         id: matchIdOf(match),
         seed,
-        player: sideOf("a", squad, PLAYER_CALLSIGNS, random),
+        player,
         opponent: sideOf(
             "b",
             match.rule
@@ -605,7 +622,7 @@ export function mockDebriefOf(match: MockMatch, plan: MatchPlan, settled: Settle
         const r = report.recruits.find((u) => u.id === id);
         const kills = r?.kills ?? 0;
         const kia = r?.kia ?? false;
-        const rank = presetName(side.loadouts[i]);
+        const rank = side.types[i];
         const changes = changesText(side.loadouts[i]);
         const field = {
             role: itemById(side.kits[i].primary)?.name ?? "Rifle",
@@ -647,7 +664,7 @@ export function mockDebriefOf(match: MockMatch, plan: MatchPlan, settled: Settle
             `${two(report.turns)} turns · ${survivors} / ${total} returned${lost ? ` · ${lost} lost` : ""} · ${kills} ${kills === 1 ? "kill" : "kills"}`,
             ...ratingLines(match.kind, settled.rating),
         ],
-        opponent: `${match.opponent.name} · ${match.opponent.rating}`,
+        opponent: `${match.opponent.name} · rating ${match.opponent.rating}`,
         rating: null,
         plates,
         replacement: null,

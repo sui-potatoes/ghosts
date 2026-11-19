@@ -79,6 +79,9 @@
 
 /* Phone: one column; the squad panel waits behind the main one. */
 @media (max-width: 720px) {
+    .gui .gfr-match {
+        display: none;
+    }
     .gui-body:has(> .gfr-main) {
         grid-template-columns: minmax(0, 1fr) !important;
     }
@@ -92,4 +95,31 @@
         font-size: calc(var(--t-title) * 1.3);
         letter-spacing: 0.12em;
     }
+}
+
+/* The lobby inside the builder's panel: the code, the link and who is where. */
+.gui .gfr-aside {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.gui .gfr-aside .gui-readout {
+    flex: none;
+    grid-template-columns: calc(var(--u) * 22) minmax(0, 1fr);
+}
+.gui .gfr-code[data-compact] {
+    height: var(--h-m);
+    min-height: var(--h-m);
+    padding-top: 0;
+    padding-bottom: 0;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas: "label text state";
+    column-gap: calc(var(--u) * 3);
+    row-gap: 0;
+}
+.gfr-code[data-compact] .gfr-code-text {
+    font-size: var(--t-body);
+    letter-spacing: 0.14em;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }

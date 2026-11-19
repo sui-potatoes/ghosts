@@ -1208,6 +1208,13 @@
     text-overflow: ellipsis;
 }
 
+/* The bar's confirm keeps one width whatever it names ("Choose" or "Choose · Sniper"):
+   a long name ends in an ellipsis instead of pushing the other commands. */
+.gui-bar-commands .gui-cmd[data-action="confirm"] {
+    flex: none;
+    width: calc(var(--u) * 64);
+}
+
 /* Primary: the heaviest thing on the bar, the HUD's End Turn in miniature. */
 .gui-cmd[data-tone="primary"] {
     min-width: calc(var(--u) * 44);
@@ -1323,6 +1330,12 @@ span.gui-cmd {
     .gui-cmd[data-tone="primary"],
     .gui-cmd[data-tone="danger"][data-action="confirm"] {
         min-width: 0;
+    }
+    /* The hint needs the room more than a steady width does: the label ends in an ellipsis. */
+    .gui-bar-commands .gui-cmd[data-action="confirm"] {
+        flex: none;
+        width: auto;
+        max-width: calc(var(--u) * 38);
     }
     .gui-bar-rule {
         margin: 0;
