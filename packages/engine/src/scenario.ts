@@ -86,6 +86,11 @@ export interface Scenario {
    */
   noObjective?: boolean;
   /**
+   * The host introduced the encounter itself (a mock match's versus card): it
+   * opens on the field, without the deployment briefing.
+   */
+  skipBriefing?: boolean;
+  /**
    * The Move tile grid the encounter plays by, when it should move, cover and
    * see the way a chain match on that grid would (`chain-ground.ts`) rather
    * than by the scene's own geometry. An editor level under playtest has one.

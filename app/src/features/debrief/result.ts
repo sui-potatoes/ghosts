@@ -113,6 +113,8 @@ export type FieldRecord = {
     /** Experience inside the level reached, out of `levelXp`. */
     progress: number;
     levelXp: number;
+    /** The plate's hint in place of the level line (a mock match's units earn no experience). */
+    hint?: string;
 };
 
 export type Plate =
@@ -324,6 +326,7 @@ export function rankLabels(
 export function fieldHint(plate: Extract<Plate, { kind: "home" }>): string {
     const f = plate.field;
     if (!f) return "Home";
+    if (f.hint) return f.hint;
     const next = `${f.progress} / ${f.levelXp} XP to level ${f.level + 1}`;
     return plate.promoted ? `Promoted to level ${f.level} · ${next}` : next;
 }

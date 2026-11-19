@@ -10,7 +10,7 @@ export type { Deployment } from "./contract.ts";
 export { DEFAULT_KEY_FILE, loadOrCreateKey } from "./key.ts";
 export * from "./names.ts";
 export * from "./rules.ts";
-export { createSandbox, type SandboxOptions } from "./sandbox.ts";
+export { createSandbox, type SandboxOptions, type SquadUnit } from "./sandbox.ts";
 export { createSuiBackend, type SuiBackendOptions } from "./sui.ts";
 export * from "./types.ts";
 export * from "./wake.ts";

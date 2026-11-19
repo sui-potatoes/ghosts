@@ -59,6 +59,19 @@ export interface SandboxOptions {
     /** Time source, so tests can run the clock past a deadline. */
     now?: () => number;
     startingBalanceMist?: bigint;
+    /**
+     * Both squads by side, in place of your recruits and the made-up opponent: each unit as
+     * `unit::from_recruit` would make it. A side fields as many as it has spawn positions.
+     */
+    squads?: [SquadUnit[], SquadUnit[]];
+    /** Spawn positions in place of `map::black_rain_positions`: the first half is the first player's. */
+    positions?: [number, number][];
+}
+
+/** A unit a side deploys with `SandboxOptions.squads`: its stats and the actions it carries. */
+export interface SquadUnit {
+    stats: Stats;
+    actions: UnitActionEntry[];
 }
 
 const YOU = "0x0000000000000000000000000000000000000000000000000000000000000a01";
@@ -179,7 +192,8 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
     /** `new_game`: the first half of the spawn positions goes to the first player. */
     function freshGame(waiting: string, finder: string): GameState {
         const map = MapBcs.parse(Uint8Array.from(Buffer.from(BLACK_RAIN, "hex")));
-        const half = BLACK_RAIN_POSITIONS.length / 2;
+        const spawns = options.positions ?? BLACK_RAIN_POSITIONS;
+        const half = spawns.length / 2;
         return {
             id: hexId("9", ++games),
             version: String(++version),
@@ -189,7 +203,7 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
             players: [waiting, finder],
             squads: [[], []],
             fallen: [],
-            positions: [BLACK_RAIN_POSITIONS.slice(0, half), BLACK_RAIN_POSITIONS.slice(half)],
+            positions: [spawns.slice(0, half), spawns.slice(half)],
             history: [],
             missed: [0, 0],
             abandonedBy: null,
@@ -243,13 +257,16 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
         const records: GameRecord[] = [];
         const open = state.positions[side].length;
         // our recruits come from the account, armed ones first; the opponent's are made up
-        const squad: Recruit[] =
-            side === yourSide
-                ? [...home].sort((a, b) => Number(b.armed) - Number(a.armed)).slice(0, open)
-                : Array.from({ length: open }, () => hire(true, [fragGrenade()]));
-        for (const recruit of squad) {
+        const fielded = options.squads?.[side].slice(0, open);
+        const squad: Recruit[] = fielded
+            ? fielded.map(() => hire(true))
+            : side === yourSide
+              ? [...home].sort((a, b) => Number(b.armed) - Number(a.armed)).slice(0, open)
+              : Array.from({ length: open }, () => hire(true, [fragGrenade()]));
+        for (const [i, recruit] of squad.entries()) {
             const [x, y] = state.positions[side].pop()!;
-            const stats = recruit.armed ? ARMED : UNARMED;
+            const given = fielded?.[i];
+            const stats = given ? given.stats : recruit.armed ? ARMED : UNARMED;
             state.units.push({
                 recruit: recruit.id,
                 owner: state.players[side],
@@ -264,10 +281,12 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
                 ammoMax: stats.ammo,
                 stats,
                 // `from_recruit`: base, weapon, then each utility's actions, none merged
-                actions: [
-                    ...(recruit.armed ? ARMED_ACTIONS() : UNARMED_ACTIONS()),
-                    ...recruit.utilities.flatMap((utility) => structuredClone(utility.actions)),
-                ],
+                actions: given
+                    ? structuredClone(given.actions)
+                    : [
+                          ...(recruit.armed ? ARMED_ACTIONS() : UNARMED_ACTIONS()),
+                          ...recruit.utilities.flatMap((utility) => structuredClone(utility.actions)),
+                      ],
             });
             carried.set(recruit.id, recruit.utilities);
             records.push({ kind: "placed", x, y });

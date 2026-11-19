@@ -27,6 +27,7 @@ const ids = (s: MenuState) => menuRows(s).map((r) => r.id);
 test("signed out: a Sign In row after the demos; Find Match asks to sign in first", () => {
     const s = state({ signedIn: false });
     assert.deepEqual(ids(s), [
+        "play",
         "demo-black-rain",
         "demo-paper-trail",
         "sign-in",
@@ -41,6 +42,21 @@ test("signed out: a Sign In row after the demos; Find Match asks to sign in firs
     assert.equal(match.verb, "Sign in");
     assert.equal(match.instant, true);
     assert.equal(match.locked, undefined);
+});
+
+test("Play is the first, primary row; Find Match stays below under its own name", () => {
+    for (const signedIn of [true, false]) {
+        const rows = menuRows(state({ signedIn }));
+        assert.equal(rows[0].id, "play");
+        assert.equal(rows[0].label, "Play");
+        assert.equal(rows[0].primary, true);
+        assert.equal(rows[0].instant, true);
+        assert.equal(rows[0].locked, undefined);
+        assert.equal(rows.find((r) => r.id === "match")?.label, "Find Match");
+    }
+    // Play stays reachable while searching, hiring or suspended.
+    for (const m of [{ searching: true }, { hiring: true }, { suspendedMin: 2 }, { playing: true }])
+        assert.equal(menuRows(state({}, m))[0].locked, undefined);
 });
 
 test("signed in: no Sign In row; Find Match opens its screen on the first click", () => {
@@ -83,15 +99,15 @@ test("disabled rows stay in place with their reason", () => {
 
 test("the cursor starts at the top, or on the row the player left from", () => {
     const rows = menuRows(state());
-    assert.equal(startRow(rows, null), "demo-black-rain");
+    assert.equal(startRow(rows, null), "play");
     assert.equal(startRow(rows, { id: "headquarters", index: 3 }), "headquarters");
     // Signed in since: Sign In is gone, the row now in its place takes the cursor.
-    assert.equal(startRow(rows, { id: "sign-in", index: 2 }), rows[2].id);
+    assert.equal(startRow(rows, { id: "sign-in", index: 3 }), rows[3].id);
     assert.equal(startRow(rows, { id: "install", index: 99 }), "settings");
 });
 
 test("Back on the title goes to the top row, never off the screen", () => {
-    assert.equal(backTarget(menuRows(state())), "demo-black-rain");
+    assert.equal(backTarget(menuRows(state())), "play");
     assert.equal(backTarget([]), null);
 });
 

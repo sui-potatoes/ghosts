@@ -1,0 +1,113 @@
+/* Copyright (c) Sui Potatoes */
+/* SPDX-License-Identifier: MIT */
+
+/* The mock match's versus card and empty state. Scoped by the gui-mm prefix. */
+
+.gui-mm {
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--u) * 4);
+    width: 100%;
+    max-width: 720px;
+    min-width: 0;
+    min-height: 0;
+    margin: 0 auto;
+    align-self: center;
+}
+
+.gui-mm-empty {
+    max-width: 480px;
+}
+
+.gui-mm-versus {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: calc(var(--u) * 4);
+}
+
+.gui-mm-side {
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--u) * 1);
+    min-width: 0;
+    padding: calc(var(--u) * 4);
+    border: 1px solid var(--line);
+    background: var(--fill);
+}
+
+.gui-mm-side[data-side="b"] {
+    text-align: right;
+    align-items: flex-end;
+}
+
+.gui-mm-eyebrow {
+    font: 600 var(--t-micro) / 1.2 var(--font-mono);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--disabled-color);
+}
+
+.gui-mm-name {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font: 600 var(--t-title) / 1.2 var(--font-mono);
+    color: var(--text-color);
+}
+
+.gui-mm-meta {
+    font: 400 var(--t-label) / 1.3 var(--font-mono);
+    color: color-mix(in srgb, var(--text-color) 70%, transparent);
+}
+
+.gui-mm-vs {
+    font: 700 var(--t-title) / 1 var(--font-mono);
+    letter-spacing: 0.12em;
+    color: var(--accent-color);
+}
+
+.gui-mm-facts {
+    margin: 0;
+    text-align: center;
+    font: 400 var(--t-label) / 1.4 var(--font-mono);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: color-mix(in srgb, var(--text-color) 70%, transparent);
+}
+
+.gui-mm-squad .gui-panel-body {
+    padding: calc(var(--u) * 2) calc(var(--u) * 3);
+}
+
+.gui-mm-go {
+    display: flex;
+    flex-direction: column;
+}
+
+.gui-mm-note {
+    text-align: center;
+    padding-top: 0;
+}
+
+@media (max-width: 640px) {
+    .gui-mm-versus {
+        grid-template-columns: minmax(0, 1fr);
+        gap: calc(var(--u) * 2);
+    }
+
+    .gui-mm-side[data-side="b"] {
+        text-align: left;
+        align-items: flex-start;
+    }
+
+    .gui-mm-vs {
+        font-size: var(--t-body);
+    }
+}
+
+/* At phone width the bar's hint gives way (ellipsis) instead of widening the frame. */
+.gui:has(.gui-mm) :is(.gui-bar, .gui-header) {
+    min-width: 0;
+}

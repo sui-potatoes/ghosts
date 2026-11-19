@@ -10,6 +10,7 @@
  */
 
 export type RowId =
+    | "play"
     | "demo-black-rain"
     | "demo-paper-trail"
     | "sign-in"
@@ -127,6 +128,16 @@ export function matchRow(state: MenuState): MenuRow {
 /** Every row, top to bottom. Disabled entries stay in place, refused with their reason. */
 export function menuRows(state: MenuState): MenuRow[] {
     const rows: MenuRow[] = [
+        // The way into every mode: three cards on `/play`. Find Match stays
+        // below under its own name; it is the real on-chain queue.
+        {
+            id: "play",
+            label: "Play",
+            hint: "Ranked, friendly, faction wars",
+            verb: "Play",
+            primary: true,
+            instant: true,
+        },
         // The playable contracts, named like the briefings name them; the
         // location is what the bar says about each.
         {

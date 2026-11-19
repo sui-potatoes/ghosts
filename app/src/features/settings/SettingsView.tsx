@@ -25,6 +25,7 @@ import {
     type GlyphSet,
 } from "../../ui";
 import { useAccountBits, type AccountBits } from "./account";
+import { useRatingQaSeed } from "./rating-qa";
 import { stepTab, TABS, type TabId } from "./model";
 import {
     AccountPanel,
@@ -49,6 +50,8 @@ export type SettingsContext = {
     rpc: RpcDraft;
     /** The view's own prompt (leaving with an unsaved endpoint), over any panel's. */
     prompt: ReactNode;
+    /** Mounted over a match (the pause menu's Options): nothing that changes the player. */
+    inMatch: boolean;
 };
 
 const Context = createContext<SettingsContext | null>(null);
@@ -76,6 +79,7 @@ export function SettingsView({
     backLabel,
     onBack,
     account: fixture,
+    inMatch = false,
 }: {
     tab: TabId;
     onTab: (tab: TabId) => void;
@@ -86,7 +90,9 @@ export function SettingsView({
     onBack: () => void;
     /** Account data for a fixture harness; the live account otherwise. */
     account?: AccountBits;
+    inMatch?: boolean;
 }) {
+    useRatingQaSeed();
     const glyphs = useGlyphSet();
     const live = useAccountBits();
     const account = fixture ?? live;
@@ -146,6 +152,7 @@ export function SettingsView({
         account,
         rpc,
         prompt,
+        inMatch,
     };
     const Panel = PANELS[tab];
 

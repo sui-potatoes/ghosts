@@ -1,0 +1,197 @@
+/* Ranked builder: size choice, budget and the squad. Scoped under .gui. */
+
+.gui .grk-side .gui-panel-body {
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--u) * 3);
+}
+.gui .grk-sizes {
+    display: flex;
+    flex-direction: column;
+}
+.gui .grk-readouts {
+    display: flex;
+    flex-direction: column;
+}
+.gui .grk-notice {
+    color: var(--accent-color);
+}
+.gui .grk-preview {
+    margin-top: auto;
+}
+.gui .grk-main .gui-panel-body {
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--u) * 3);
+}
+.gui .grk-main .gui-row-kind {
+    text-transform: none;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.gui .grk-section {
+    display: flex;
+    justify-content: space-between;
+    gap: calc(var(--u) * 3);
+    padding: calc(var(--u) * 3) calc(var(--u) * 3) calc(var(--u) * 1);
+    font: 500 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--disabled-color);
+}
+
+/* Unit row */
+.gui .grk-unit {
+    position: relative;
+    display: flex;
+    gap: calc(var(--u) * 3);
+    width: 100%;
+    padding: calc(var(--u) * 3);
+    text-align: left;
+    font: 400 var(--t-body) / 1.2 var(--font-mono);
+    color: var(--text-color);
+    border-bottom: 1px solid var(--line);
+}
+.gui .grk-unit[data-focused] {
+    background: var(--band);
+    color: var(--on-band);
+    animation: gui-band-in 110ms var(--snap);
+}
+.gui .grk-unit[data-subject]::before {
+    content: "";
+    position: absolute;
+    left: calc(var(--u) * -2);
+    top: 25%;
+    bottom: 25%;
+    width: 2px;
+    background: var(--accent-color);
+}
+.gui .grk-unit-no {
+    font: 400 var(--t-micro) / 1.6 var(--font-mono);
+    letter-spacing: 0.1em;
+    color: var(--disabled-color);
+}
+.gui .grk-unit-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--u) * 1.5);
+}
+.gui .grk-unit-head {
+    display: flex;
+    justify-content: space-between;
+    gap: calc(var(--u) * 3);
+}
+.gui .grk-unit-name {
+    font-weight: 500;
+}
+.gui .grk-unit-price {
+    font: 500 var(--t-micro) / 1.4 var(--font-mono);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    font-variant-numeric: tabular-nums;
+}
+.gui .grk-unit-price[data-tone="warn"] {
+    color: var(--warn-color);
+}
+.gui .grk-unit-role,
+.gui .grk-unit-gear,
+.gui .grk-stats {
+    font: 400 var(--t-label) / 1.3 var(--font-mono);
+    color: var(--text-secondary);
+}
+.gui .grk-unit[data-focused] .grk-unit-role,
+.gui .grk-unit[data-focused] .grk-unit-gear,
+.gui .grk-unit[data-focused] .grk-stats,
+.gui .grk-unit[data-focused] .grk-unit-no {
+    color: var(--on-band-soft);
+}
+.gui .grk-unit-gear {
+    display: flex;
+    flex-wrap: wrap;
+    gap: calc(var(--u) * 1) calc(var(--u) * 4);
+}
+.gui .grk-unit-gear > span,
+.gui .grk-stat {
+    display: inline-flex;
+    align-items: center;
+    gap: calc(var(--u) * 1.5);
+}
+.gui .grk-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: calc(var(--u) * 1) calc(var(--u) * 4);
+    font-variant-numeric: tabular-nums;
+}
+.gui .grk-stat-short {
+    font-size: var(--t-micro);
+    letter-spacing: 0.1em;
+}
+
+/* Stat comparison under the picker */
+.gui .grk-detail {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--u) * 2);
+}
+.gui .grk-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: calc(var(--u) * 1) calc(var(--u) * 4);
+}
+.gui .grk-cell {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas: "label value" "delta delta";
+    font: 400 var(--t-label) / 1.3 var(--font-mono);
+    font-variant-numeric: tabular-nums;
+}
+.gui .grk-cell-label {
+    grid-area: label;
+    color: var(--text-secondary);
+}
+.gui .grk-cell-value {
+    grid-area: value;
+}
+.gui .grk-cell-delta {
+    grid-area: delta;
+    min-height: 1.3em;
+    font-size: var(--t-micro);
+}
+.gui .grk-cell[data-trend="buff"] .grk-cell-delta {
+    color: var(--buff);
+}
+.gui .grk-cell[data-trend="nerf"] .grk-cell-delta {
+    color: var(--nerf);
+}
+
+/* Phone: the match panel stacks over the squad and stays in view */
+@media (max-width: 720px) {
+    .gui:has(> .gui-body > .grk-side) {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .gui-body:has(> .grk-side) {
+        grid-template-columns: minmax(0, 1fr) !important;
+        grid-template-rows: auto minmax(0, 1fr);
+        padding: calc(var(--u) * 3) 16px;
+    }
+    .gui .grk-side .gui-panel-body {
+        gap: calc(var(--u) * 2);
+    }
+    .gui .grk-sizes {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+    }
+    .gui .grk-readouts,
+    .gui .grk-preview {
+        display: none;
+    }
+    .gui .grk-detail-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}

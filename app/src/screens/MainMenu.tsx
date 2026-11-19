@@ -74,6 +74,8 @@ function Title() {
     const ops: TitleOps = {
         run: (id: RowId) => {
             switch (id) {
+                case "play":
+                    return navigate("/play");
                 case "demo-black-rain":
                     return navigate("/demo");
                 case "demo-paper-trail":

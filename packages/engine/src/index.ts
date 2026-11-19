@@ -9,6 +9,8 @@
  * `/sounds`, `/demo-assets`, `/editor`).
  */
 import { closeDebrief, reset, showBriefing } from "./actions";
+import { encounterReport, type EncounterDebrief } from "./aftermath/report";
+import { session } from "./session";
 
 export { correctEncounter, followOpponent } from "./actions";
 
@@ -47,4 +49,17 @@ export function closeEncounterDebrief() {
 /** Show the briefing over the field. */
 export function openBriefing() {
   showBriefing("intel");
+}
+
+/**
+ * The mounted encounter's after-action report as it stands now, for a host
+ * that ends it early (a forfeit): who is down, kills so far, the turn.
+ */
+export function encounterSnapshot(): EncounterDebrief {
+  const { game } = session;
+  return {
+    report: encounterReport(game),
+    operation: game.scenario.briefing.title,
+    sector: game.scenario.location.sector,
+  };
 }

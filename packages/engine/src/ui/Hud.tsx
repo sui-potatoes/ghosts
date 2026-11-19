@@ -241,7 +241,7 @@ export function HudHeader({ onMenu }: { onMenu?: () => void }) {
       : game.result === "defeat"
         ? "Squad lost"
         : game.phase === "enemy"
-          ? game.scenario.versus
+          ? game.scenario.versus || inspect.opponent
             ? "Opponent's turn"
             : "Hostile turn"
           : "Your turn";
@@ -273,7 +273,7 @@ export function HudHeader({ onMenu }: { onMenu?: () => void }) {
               {down}/{game.hostileCount}
             </b>
           </li>
-          {game.scenario.versus && opponent && (
+          {opponent && (
             <li className="hud-opponent">
               VS {opponent.name ?? "Unnamed"} <b>{opponent.rating}</b>
             </li>

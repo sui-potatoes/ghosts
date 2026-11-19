@@ -28,6 +28,18 @@ const Demo = lazy(() => import("./screens/Demo"));
 const Match = lazy(() => import("./screens/Match"));
 // The level editor brings three.js and the full asset catalog.
 const Editor = lazy(() => import("./screens/Editor"));
+// Play modes: the cards are light; the squad builder and the mock match load with their routes.
+const PlayScreen = lazy(() => import("./features/play/PlayScreen"));
+const RankedScreen = lazy(() =>
+    import("./features/play/ranked").then((m) => ({ default: m.RankedScreen })),
+);
+const FriendlyScreen = lazy(() =>
+    import("./features/play/friendly").then((m) => ({ default: m.FriendlyScreen })),
+);
+// The mock match is an encounter too: three.js and the combat assets come with it.
+const MockMatchScreen = lazy(() =>
+    import("./features/play/match").then((m) => ({ default: m.MockMatchScreen })),
+);
 // A design sample of the shared menu language; no menu entry, no account.
 const UiSample = lazy(() => import("./features/ui-sample/UiSample"));
 // QA only: the match result over fixtures, registered in `VITE_RESULT_QA=1` builds.
@@ -58,6 +70,8 @@ function MenuMusic() {
         pathname === "/" ||
         pathname === "/menu-classic" ||
         pathname === "/find" ||
+        pathname === "/play" ||
+        (pathname.startsWith("/play/") && pathname !== "/play/match") ||
         pathname.startsWith("/settings") ||
         pathname.startsWith("/headquarters");
     useEffect(() => {
@@ -126,6 +140,40 @@ export function App() {
                     }
                 />
                 <Route path="/find" element={<FindMatch />} />
+                <Route
+                    path="/play"
+                    element={
+                        <Suspense fallback={<LoadingSpinner />}>
+                            <PlayScreen />
+                        </Suspense>
+                    }
+                />
+                <Route
+                    path="/play/ranked"
+                    element={
+                        <Suspense fallback={<LoadingSpinner />}>
+                            <RankedScreen />
+                        </Suspense>
+                    }
+                />
+                <Route
+                    path="/play/friendly"
+                    element={
+                        <Suspense fallback={<LoadingSpinner />}>
+                            <FriendlyScreen />
+                        </Suspense>
+                    }
+                />
+                <Route
+                    path="/play/match"
+                    element={
+                        <ErrorBoundary scope="match" fullScreen={false}>
+                            <Suspense fallback={<LoadingSpinner />}>
+                                <MockMatchScreen />
+                            </Suspense>
+                        </ErrorBoundary>
+                    }
+                />
                 <Route
                     path="/match"
                     element={

@@ -125,6 +125,36 @@
     flex: none;
 }
 
+/* The Player panel's two columns stack on a phone, the body scrolling. */
+@media (max-width: 720px) {
+    /* The frame's single track would otherwise grow to the seven tabs' width. */
+    .gui:has(.gset-rank) {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .gui-body:has(> .gset-rank) {
+        grid-template-columns: minmax(0, 1fr) !important;
+        grid-template-rows: none;
+        grid-auto-rows: min-content;
+        overflow-y: auto;
+    }
+    .gui-body:has(> .gset-rank) > .gset-c2,
+    .gui-body:has(> .gset-rank) > .gset-c3 {
+        grid-column: 1;
+    }
+}
+
+.gset-rank .gui-readout {
+    grid-template-columns: calc(var(--u) * 28) minmax(0, 1fr);
+}
+.gset-rank .gui-readout-label {
+    white-space: nowrap;
+}
+
+.gset-rank .gui-note {
+    margin: calc(var(--u) * 3) 0 0;
+    padding: 0 calc(var(--u) * 3);
+}
+
 /* === Controller diagram ============================================= */
 
 .gset-diagram-panel {

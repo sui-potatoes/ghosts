@@ -1,0 +1,249 @@
+/* Copyright (c) Sui Potatoes */
+/* SPDX-License-Identifier: MIT */
+
+/* The Play screen: three mode cards. Scoped by the gui-play prefix. */
+
+/* The body is a grid item of the frame: let it shrink below its content's width. */
+.gui-body:has(> .gui-play) {
+    min-width: 0;
+}
+
+.gui-play {
+    min-width: 0;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+    gap: calc(var(--u) * 3);
+    min-height: 0;
+    max-width: 1180px;
+    width: 100%;
+    margin: 0 auto;
+}
+
+.gui-play-cards {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: calc(var(--u) * 4);
+    min-height: 0;
+    align-items: stretch;
+    max-height: 560px;
+    align-self: center;
+    width: 100%;
+}
+
+.gui-play-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--u) * 4);
+    min-width: 0;
+    min-height: 0;
+    padding: calc(var(--u) * 5);
+    border: 1px solid var(--line);
+    background: var(--fill);
+    color: var(--text-color);
+    white-space: normal;
+    text-align: left;
+    overflow: hidden;
+    transition:
+        border-color 90ms linear,
+        background 90ms linear,
+        transform 90ms ease-out;
+}
+
+.gui-play-card[data-focused] {
+    border-color: var(--line-strong);
+    background: color-mix(in srgb, var(--accent-color) 7%, var(--fill));
+}
+
+.gui-play-art {
+    display: grid;
+    place-items: center;
+    flex: 0 1 auto;
+    height: clamp(96px, 30vh, 190px);
+    min-height: 0;
+    color: var(--accent-color);
+}
+
+.gui-play-art svg {
+    height: 100%;
+    width: auto;
+    max-width: 100%;
+    aspect-ratio: 1;
+}
+
+.gui-play-ink {
+    fill: currentColor;
+    stroke: none;
+}
+
+.gui-play-card[data-focused] .gui-play-art svg {
+    filter: drop-shadow(0 0 6px color-mix(in srgb, var(--accent-color) 45%, transparent));
+}
+
+.gui-play-card[data-inactive] .gui-play-art {
+    color: var(--text-secondary);
+    opacity: 0.6;
+}
+
+.gui-play-card[data-inactive] .gui-play-name {
+    color: var(--text-secondary);
+}
+
+.gui-play-text {
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--u) * 2);
+}
+
+.gui-play-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: calc(var(--u) * 2);
+}
+
+.gui-play-name {
+    font: 600 var(--t-title) / 1.1 var(--font-mono);
+    letter-spacing: 0;
+}
+
+.gui-play-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: calc(var(--u) * 1.5);
+    flex: none;
+    font: 500 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: var(--track);
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+
+.gui-play-tag[data-open] {
+    color: var(--accent-color);
+}
+
+.gui-play-line {
+    font: 400 var(--t-body) / 1.45 var(--font-mono);
+    color: var(--text-secondary);
+}
+
+.gui-play-facts {
+    margin-top: auto;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: calc(var(--u) * 2) calc(var(--u) * 4);
+    padding-top: calc(var(--u) * 3);
+    border-top: 1px solid var(--line);
+}
+
+.gui-play-fact {
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--u) * 0.5);
+    min-width: 0;
+}
+
+.gui-play-fact-label {
+    font: 500 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: var(--track);
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+
+.gui-play-fact-value {
+    font: 500 var(--t-body) / 1.2 var(--font-mono);
+}
+
+.gui-play-note {
+    font: 400 var(--t-micro) / 1.4 var(--font-mono);
+    letter-spacing: var(--track);
+    text-transform: uppercase;
+    text-align: center;
+    color: var(--disabled-color);
+}
+
+/* Phone and narrow windows: the cards stack, art beside text, one line each. */
+@media (max-width: 760px) {
+    .gui-play {
+        grid-template-rows: minmax(0, 1fr) auto;
+    }
+    .gui-play-cards {
+        grid-template-columns: minmax(0, 1fr);
+        grid-auto-rows: minmax(min-content, 1fr);
+        gap: calc(var(--u) * 3);
+        max-height: none;
+        align-self: stretch;
+        overflow-y: auto;
+        scrollbar-width: none;
+    }
+    .gui-play-cards::-webkit-scrollbar {
+        display: none;
+    }
+    .gui-play-card {
+        display: grid;
+        grid-template-columns: 72px minmax(0, 1fr);
+        grid-template-rows: auto auto;
+        align-content: center;
+        align-items: center;
+        gap: calc(var(--u) * 2) calc(var(--u) * 4);
+        padding: calc(var(--u) * 3) calc(var(--u) * 4);
+        min-height: 112px;
+    }
+    .gui-play-art {
+        grid-row: 1 / span 2;
+    }
+    .gui-play-art {
+        height: auto;
+    }
+    .gui-play-art svg {
+        width: 72px;
+        height: auto;
+    }
+    .gui-play-name {
+        font-size: var(--t-body);
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+    }
+    .gui-play-line[data-more] {
+        display: none;
+    }
+    .gui-play-facts {
+        grid-column: 2;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: calc(var(--u) * 2) calc(var(--u) * 3);
+        padding-top: calc(var(--u) * 2);
+    }
+    .gui-play-fact-label {
+        letter-spacing: 0.08em;
+    }
+}
+
+/* Short windows (a phone in landscape, a small laptop): drop the second line. */
+@media (min-width: 761px) and (max-height: 640px) {
+    .gui-play-line[data-more] {
+        display: none;
+    }
+    .gui-play-card {
+        gap: calc(var(--u) * 2);
+        padding: calc(var(--u) * 4);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .gui-play-card {
+        transition: none;
+    }
+}
+
+/* The command bar's hint is one nowrap line; on a phone it must shrink, not widen the frame. */
+.gui:has(.gui-play) :is(.gui-bar, .gui-header) {
+    min-width: 0;
+}
+
+/* Stacked cards on a phone: the arrows hint is dropped to leave room for Open and Back. */
+@media (max-width: 760px) {
+    .gui:has(.gui-play) .gui-cmd[data-action="nav"] {
+        display: none;
+    }
+}

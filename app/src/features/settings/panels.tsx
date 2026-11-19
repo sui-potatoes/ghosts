@@ -33,6 +33,8 @@ import {
     type PadCombatAction,
 } from "@ghosts/engine/keys";
 
+import { budgetOf, tierOf } from "../play/economy";
+import { canReset, DEFAULT_RATING, resetRating, useRating } from "../play/rating";
 import { previewDialogue, previewEffect } from "../../audio";
 import type { SessionTermination } from "../../chain";
 import { usePad } from "../../components/PadHints";
@@ -187,43 +189,136 @@ function SignInGate({ what }: { what: string }) {
 // === Player =================================================================
 
 export function PlayerPanel() {
-    const { account } = useSettingsContext();
+    const { account, inMatch } = useSettingsContext();
     const [renaming, setRenaming] = useState(false);
-    if (!account.address) return <SignInGate what="your name" />;
+    const signedIn = !!account.address;
+    const label = signedIn ? "Player" : "Rating";
     return (
         <SettingsFrame
-            columns={ONE}
+            columns={TWO}
             status={account.namePending && <StatusChip label="Name" value="Saving" state="busy" />}
             overlay={renaming && <NamePrompt close={() => setRenaming(false)} />}
         >
-            <Panel label="Player" className="gset-c2 gset-fit">
-                <List label="Player">
-                    <ValueRow
-                        id="player-name"
-                        group="rows"
-                        label="Name"
-                        value={
-                            <>
-                                {account.name}
-                                {account.generated && <span className="gset-note">generated</span>}
-                            </>
-                        }
-                        title="Name"
-                        hint="Your call sign, shown to other players"
-                        instant
-                        commands={[
-                            {
-                                action: "confirm",
-                                label: "Rename",
-                                tone: "primary",
-                                deny: account.namePending ? "Saving" : undefined,
-                                run: () => setRenaming(true),
-                            },
-                        ]}
-                    />
+            <Panel label={label} className="gset-c2 gset-fit gset-rank">
+                <List label={label}>
+                    {signedIn && (
+                        <ValueRow
+                            id="player-name"
+                            group="rows"
+                            label="Name"
+                            value={
+                                <>
+                                    {account.name}
+                                    {account.generated && (
+                                        <span className="gset-note">generated</span>
+                                    )}
+                                </>
+                            }
+                            title="Name"
+                            hint="Your call sign, shown to other players"
+                            instant
+                            commands={[
+                                {
+                                    action: "confirm",
+                                    label: "Rename",
+                                    tone: "primary",
+                                    deny: account.namePending ? "Saving" : undefined,
+                                    run: () => setRenaming(true),
+                                },
+                            ]}
+                        />
+                    )}
+                    <RatingResetRow inMatch={!!inMatch} />
                 </List>
             </Panel>
+            <RankedBlock />
         </SettingsFrame>
+    );
+}
+
+/** The commit row: arm, then confirm; inactive from the default down and during a match. */
+function RatingResetRow({ inMatch }: { inMatch: boolean }) {
+    const rating = useRating();
+    const deny = inMatch
+        ? "Not during a match"
+        : canReset(rating)
+          ? undefined
+          : `Only a rating above ${DEFAULT_RATING} can be reset`;
+    return (
+        <ActionRow
+            id="rating-reset"
+            group="rows"
+            label={`Reset rating to ${DEFAULT_RATING}`}
+            tone="danger"
+            title={`Reset rating to ${DEFAULT_RATING}`}
+            hint={`Your rating goes back to ${DEFAULT_RATING}; peak and record stay. This cannot be undone`}
+            commands={[
+                {
+                    action: "confirm",
+                    label: "Reset",
+                    tone: "danger",
+                    deny,
+                    run: () => {
+                        resetRating();
+                    },
+                },
+            ]}
+        />
+    );
+}
+
+const signed = (n: number) => (n > 0 ? `+${n}` : String(n));
+
+/**
+ * The mock ranked rating on this device: tier, rating, record and what the tier
+ * buys. Not the on-chain rating: that one would be read from the account
+ * (`useMatchSearch` / `acc.rating()`) and shown beside this, never merged in.
+ */
+function RankedBlock() {
+    const r = useRating();
+    const tier = tierOf(r.rating);
+    const rate = r.games ? `${Math.round((r.wins / r.games) * 100)}%` : "-";
+    const streak = r.streak > 0 ? `W${r.streak}` : r.streak < 0 ? `L${-r.streak}` : "-";
+    const recent = r.history.slice(0, 5);
+    return (
+        <Panel variant="ghost" label="Ranked" className="gset-c3 gset-fit gset-rank">
+            <ReadoutLine label="Tier">{tier.name}</ReadoutLine>
+            <ReadoutLine label="Rating">{r.rating}</ReadoutLine>
+            <ReadoutLine label="Peak">{r.peak}</ReadoutLine>
+            <ReadoutLine label="Games">{r.games}</ReadoutLine>
+            <ReadoutLine label="Won / lost">
+                {r.wins} / {r.losses}
+            </ReadoutLine>
+            <ReadoutLine label="Win rate" empty={!r.games}>
+                {rate}
+            </ReadoutLine>
+            <ReadoutLine label="Streak" empty={!r.streak}>
+                {streak}
+            </ReadoutLine>
+            <ReadoutLine label="Budget 3x3">{budgetOf(r.rating, "3x3")}</ReadoutLine>
+            <ReadoutLine label="Budget 4x4">{budgetOf(r.rating, "4x4")}</ReadoutLine>
+            {r.resets > 0 && <ReadoutLine label="Resets">{r.resets}</ReadoutLine>}
+            {recent.length > 0 && (
+                <>
+                    <Eyebrow>Recent</Eyebrow>
+                    {recent.map((e) =>
+                        e.kind === "game" ? (
+                            <ReadoutLine
+                                key={`${e.at}-${e.rating}`}
+                                label={`${e.won ? "Won" : "Lost"} vs ${e.opponent}`}
+                            >
+                                {signed(e.delta)}
+                            </ReadoutLine>
+                        ) : (
+                            <ReadoutLine key={`${e.at}-reset`} label="Reset">
+                                {e.from} to {e.to}
+                            </ReadoutLine>
+                        ),
+                    )}
+                </>
+            )}
+            <p className="gui-note">Preview: this rating is kept on this device only.</p>
+        </Panel>
     );
 }
 

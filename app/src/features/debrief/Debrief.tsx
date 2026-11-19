@@ -317,7 +317,10 @@ function plateHint(plate: Plate, done: boolean): string | undefined {
     if (!done) return undefined;
     if (plate.kind === "home" && plate.field) return fieldHint(plate);
     if (plate.kind === "kia" && plate.field)
-        return `${plate.field.full}. Killed in action; ${plate.field.kills} confirmed kills`;
+        return (
+            plate.field.hint ??
+            `${plate.field.full}. Killed in action; ${plate.field.kills} confirmed kills`
+        );
     if (plate.kind === "kia")
         return `${plate.turn ? `Fell on turn ${plate.turn}. ` : ""}The dog tag came home; the slot is open`;
     if (plate.promoted) {

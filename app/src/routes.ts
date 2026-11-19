@@ -12,7 +12,9 @@
 
 /** The route a Back press leads to; null at the top (the menu). */
 export function parentOf(pathname: string): string | null {
-    return pathname === "/" ? null : "/";
+    if (pathname === "/") return null;
+    // The mode screens hang off the Play cards.
+    return pathname.startsWith("/play/") ? "/play" : "/";
 }
 
 /** Route path by history index, kept by the shell as the player moves. */

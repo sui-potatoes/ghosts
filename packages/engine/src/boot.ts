@@ -112,7 +112,7 @@ export function boot(options: BootOptions): () => void {
       // The briefing first: an encounter that is already over opens its debrief once it closes.
       if (s.game.scenario.versus) {
         if (s.game.phase === "enemy") void watchOpponent();
-      } else if (!shot) showBriefing("deploy");
+      } else if (!shot && !s.game.scenario.skipBriefing) showBriefing("deploy");
       refresh();
       if (shot) {
         if (shot.time && shot.time in timePresets)

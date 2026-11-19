@@ -62,6 +62,7 @@ function OptionsScreen({ onBack }: { onBack: () => void }) {
             location={["Paused", "Options"]}
             backLabel="Paused"
             onBack={onBack}
+            inMatch
         />
     );
 }

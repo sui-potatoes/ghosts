@@ -74,7 +74,8 @@ export function MatchStatus() {
     const { searching, playing, busy, error, cancel } = useMatchSearch();
     useMatchmakingDriver();
 
-    if (["/demo", "/editor", "/match"].some((path) => pathname.startsWith(path))) return null;
+    if (["/demo", "/editor", "/match", "/play/match"].some((path) => pathname.startsWith(path)))
+        return null;
     // Headquarters and the title show the search in their own header.
     if (pathname === "/headquarters" || pathname === "/find") return null;
     if (pathname === "/" && !CLASSIC_TITLE) return null;

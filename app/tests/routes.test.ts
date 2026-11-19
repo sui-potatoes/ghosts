@@ -15,6 +15,8 @@ test("every screen's parent is the menu; the menu has none", () => {
         "/ui-sample",
     ])
         assert.equal(parentOf(p), "/");
+    assert.equal(parentOf("/play"), "/");
+    assert.equal(parentOf("/play/ranked"), "/play");
     assert.equal(parentOf("/"), null);
 });
 
