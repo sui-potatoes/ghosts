@@ -3,6 +3,7 @@
 
 import type { Ground } from "./chain-ground.ts";
 import { koraPlan } from "./district-plan.ts";
+import type { Appearance } from "@ghosts/squad/types";
 import type { Role } from "./game.ts";
 import type { Cell, MapPlan } from "./map.ts";
 
@@ -36,6 +37,8 @@ export const roleKits: Record<Role, Kit> = {
 export interface UnitSpec {
   /** The hostile's loadout, when not its role's (`roleKits`). */
   kit?: Kit;
+  /** How a hostile looks, when not the default roster's face in a showcase armor tier (`null` armor: none). */
+  look?: { appearance?: Appearance; armor?: string | null };
   id: string;
   name: string;
   full: string;

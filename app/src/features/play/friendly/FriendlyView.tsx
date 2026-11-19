@@ -10,7 +10,7 @@
  * landing, because starting spends the lobby.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { savedRecruits, SQUAD_STORAGE_KEY } from "@ghosts/squad/model";
@@ -30,6 +30,7 @@ import {
     Stepper,
     TextField,
     useFocusable,
+    useFocusStore,
     useGlyphSet,
     type Command,
 } from "../../../ui";
@@ -53,6 +54,7 @@ import {
 } from "./lobbies";
 import {
     ageLabel,
+    asksBeforeClosing,
     bringSquad,
     formatCode,
     FRIENDLY_ROUTE,
@@ -111,6 +113,9 @@ export function FriendlyView() {
     const [typing, setTyping] = useState("");
     const [prompt, setPrompt] = useState(false);
     const [copied, setCopied] = useState<string | null>(null);
+    // The host shared the code or link, so someone may be on the way.
+    const [shared, setShared] = useState(false);
+    const [leaving, setLeaving] = useState(false);
     const saved = useMemo(savedSquad, []);
     const copyTimer = useRef(0);
     const now = useNow(view === "lobby" ? 500 : view === "open" ? 2000 : null);
@@ -120,6 +125,7 @@ export function FriendlyView() {
     const goView = (next: View) => {
         setRefusal(null);
         setPrompt(false);
+        setLeaving(false);
         setView(next);
     };
 
@@ -171,6 +177,7 @@ export function FriendlyView() {
 
     const copy = (what: string, text: string) => {
         const done = () => {
+            setShared(true);
             setCopied(what);
             window.clearTimeout(copyTimer.current);
             copyTimer.current = window.setTimeout(() => setCopied(null), 2200);
@@ -213,6 +220,12 @@ export function FriendlyView() {
         goView(session?.role === "guest" ? "open" : "landing");
     };
 
+    // A host lobby with an opponent in it, or whose code went out, is not closed by a slip:
+    // Esc, Back and Cancel match ask first (the answer to the prompt is Keep lobby by Esc).
+    const asksFirst =
+        view === "lobby" && !!session && !!phase && asksBeforeClosing(session.role, phase, shared);
+    const leaveLobby = () => (asksFirst ? setLeaving(true) : endLobby());
+
     const back: Command =
         view === "landing"
             ? { action: "back", label: "Play", run: leaveScreen }
@@ -220,7 +233,7 @@ export function FriendlyView() {
               ? {
                     action: "back",
                     label: session?.role === "host" ? "Cancel match" : "Leave",
-                    run: endLobby,
+                    run: leaveLobby,
                 }
               : { action: "back", label: "Friendly", run: () => goView("landing") };
 
@@ -243,7 +256,32 @@ export function FriendlyView() {
                 columns={COLUMNS}
                 commands={<FocusCommandBar glyphs={glyphs} />}
                 overlay={
-                    prompt && view === "join" ? (
+                    leaving && session ? (
+                        <Prompt
+                            id="prompt-leave"
+                            tone="danger"
+                            eyebrow="Friendly match"
+                            title="Cancel this match?"
+                            lines={[
+                                ["Code", formatCode(session.lobby.code)],
+                                [
+                                    "Opponent",
+                                    phase === "waiting" ? "Nobody yet" : session.opponent.name,
+                                ],
+                            ]}
+                            confirm={{
+                                label: "Cancel match",
+                                run: () => {
+                                    setLeaving(false);
+                                    endLobby();
+                                },
+                            }}
+                            cancel={{ label: "Keep lobby", run: () => setLeaving(false) }}
+                            glyphs={glyphs}
+                        >
+                            The code stops working and anyone in the lobby is sent away.
+                        </Prompt>
+                    ) : prompt && view === "join" ? (
                         <CodePrompt
                             value={typing}
                             onChange={(v) => {
@@ -296,6 +334,7 @@ export function FriendlyView() {
                                 ),
                             );
                             started.current = false;
+                            setShared(false);
                             setView("lobby");
                         }}
                     />
@@ -356,7 +395,7 @@ export function FriendlyView() {
                         copied={copied}
                         skip={() => setSession(arriveNow(kv(), Date.now()))}
                         start={() => startMatch(session)}
-                        end={endLobby}
+                        end={leaveLobby}
                     />
                 )}
                 {view === "lobby" && !session && (
@@ -828,6 +867,13 @@ function OpenGames({
 }) {
     const [size, setSize] = useState<"any" | Mode>("any");
     const games = openGames(now, size);
+    // The cursor starts on the first game, not on the size filter above it.
+    const store = useFocusStore();
+    useLayoutEffect(() => {
+        const first = openGames(Date.now())[0];
+        if (first) store.focus(`open-${first.id}`, false);
+        // Once, on arrival.
+    }, [store]);
     return (
         <Panel
             label="Open games"

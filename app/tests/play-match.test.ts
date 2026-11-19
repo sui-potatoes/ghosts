@@ -25,10 +25,15 @@ import {
     BASIC_KIT,
     fieldKit,
     fieldRole,
+    gearLine,
     matchPlan,
     mockDebriefOf,
+    opponentFaces,
+    opponentLooks,
     opponentSquad,
     parseMatch,
+    playerFaces,
+    presetName,
     ratingLines,
     settleMatch,
     spawnsFor,
@@ -295,4 +300,38 @@ test("a staged match reads back only when it is whole", () => {
     assert.equal(parseMatch(JSON.stringify({ kind: "ranked", mode: "5x5", squad: [] })), null);
     const m = match();
     assert.deepEqual(parseMatch(JSON.stringify(m)), m);
+});
+
+test("a modified unit is named so on the versus card and the debrief plate", () => {
+    const assault = preset("assault");
+    const modified: Loadout = { ...assault, armor: "armor-1" };
+    assert.equal(presetName(assault), "Assault");
+    assert.equal(presetName(modified), "Assault · modified");
+    assert.match(gearLine(modified), /Standard Rifle · Light Armor/);
+});
+
+test("the opponent's units wear their kit's armor and faces the player's units do not", () => {
+    for (const mode of ["3x3", "4x4"] as const) {
+        for (const id of ["m-a", "m-b", "m-c", "m-d", "m-e"]) {
+            const plan = matchPlan(match({ mode, squad: defaultSquad(DEFAULT_RATING, mode), id }));
+            const size = squadSize(mode);
+            const mine = playerFaces(plan.seed, size).map((f) => f.name);
+            const theirs = opponentFaces(plan.seed, size).map((f) => f.name);
+            assert.equal(theirs.length, size);
+            assert.equal(new Set(theirs).size, size, "no face twice in a squad");
+            // the six presets cover two squads of three; a 4x4 can repeat only what it must
+            const shared = theirs.filter((name) => mine.includes(name)).length;
+            assert.ok(shared <= Math.max(0, 2 * size - 6), `${shared} shared`);
+            const looks = opponentLooks(plan);
+            assert.deepEqual(
+                looks.map((l) => l.armor),
+                plan.opponent.kits.map((k) => k.armor),
+            );
+            // same seed, same result
+            assert.deepEqual(
+                opponentFaces(plan.seed, size).map((f) => f.name),
+                theirs,
+            );
+        }
+    }
 });

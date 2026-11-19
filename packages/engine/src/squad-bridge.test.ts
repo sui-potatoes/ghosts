@@ -53,3 +53,11 @@ test("no saved squad falls back to the showcase, and personnel text cannot becom
   assert.equal(deploymentLooks([],initialUnits()).get('v')!.armorId,'nyx-mid');
   assert.equal(escapeHTML('<b>"Vex" & Co</b>'),'&lt;b&gt;&quot;Vex&quot; &amp; Co&lt;/b&gt;');
 });
+test("a hostile's spec look sets its face and armor; the others keep the showcase", () => {
+  const units=initialUnits(), foes=units.filter(u=>u.enemy), face=initialSquad().recruits[3].appearance;
+  const specs=[{id:foes[0].id,name:'x',full:'x',role:'ASSAULT',pos:[0,0],color:'#000',enemy:true,look:{appearance:face,armor:'spectre'}}] as never;
+  const looks=deploymentLooks(null,units,specs);
+  assert.equal(looks.get(foes[0].id)!.armorId,'spectre');
+  assert.equal(looks.get(foes[0].id)!.appearance,face);
+  assert.notEqual(looks.get(foes[1].id)!.armorId,'spectre');
+});

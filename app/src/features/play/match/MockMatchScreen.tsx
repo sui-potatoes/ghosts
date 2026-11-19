@@ -35,18 +35,15 @@ import { useBack } from "../../../hooks/useBack";
 import { usePlayerName } from "../../../hooks/usePlayerName";
 import {
     ActionRow,
-    claimScreenBack,
     EmptyState,
     FocusCommandBar,
     FocusRoot,
     Panel,
-    ReadoutLine,
     ScreenFrame,
     StatusChip,
     useFocusStore,
     useGlyphSet,
 } from "../../../ui";
-import { itemById } from "@ghosts/squad/catalog";
 import { tierOf } from "../economy";
 import { PREVIEW_LINE } from "../model";
 import { useRating } from "../rating";
@@ -59,6 +56,7 @@ import {
     matchTitle,
     outcomeOf,
     parseMatch,
+    gearLine,
     presetName,
     readSettled,
     RESULT_KEY,
@@ -127,9 +125,6 @@ function Play({ match }: { match: MockMatch }) {
         readSettled(sessionSlot(RESULT_KEY), plan.id),
     );
     const [field, setField] = useState(false);
-    // The match answers Back itself on every step (the field with its pause
-    // menu), so the shell's go-up never races it, even between screens.
-    useEffect(() => claimScreenBack(), []);
 
     const finish = (outcome: MatchOutcome, debrief: EncounterDebrief) =>
         setSettled(settleMatch(match, outcome, debrief));
@@ -233,14 +228,10 @@ function IntroBody({
                 {matchTitle(match)} · {LEVEL_NAME} ·{" "}
                 {match.kind === "ranked" ? "Rating at stake" : "Rating unchanged"}
             </p>
-            <Panel label="Your squad" meta={`${side.ids.length} units`} className="gui-mm-squad">
-                {side.ids.map((id, i) => (
-                    <ReadoutLine key={id} label={side.callsigns[i]}>
-                        {presetName(side.loadouts[i])} · {itemById(side.kits[i].primary)?.name} ·{" "}
-                        {itemById(side.kits[i].armor)?.name}
-                    </ReadoutLine>
-                ))}
-            </Panel>
+            <div className="gui-mm-squads">
+                <SquadPanel label="Your squad" side={side} />
+                <SquadPanel label="Their squad" side={plan.opponent} />
+            </div>
             <div className="gui-mm-go">
                 <ActionRow
                     id="mm-deploy"
@@ -256,6 +247,21 @@ function IntroBody({
             </div>
             <p className="gui-note gui-mm-note">{PREVIEW_LINE}</p>
         </div>
+    );
+}
+
+/** One side's squad on the versus card: callsign, preset (and that it was modified), the gear by its economy names. */
+function SquadPanel({ label, side }: { label: string; side: MatchPlan["player"] }) {
+    return (
+        <Panel label={label} meta={`${side.ids.length} units`} className="gui-mm-squad">
+            {side.ids.map((id, i) => (
+                <div key={id} className="gui-mm-unit">
+                    <span className="gui-mm-sign">{side.callsigns[i]}</span>
+                    <span className="gui-mm-preset">{presetName(side.loadouts[i])}</span>
+                    <span className="gui-mm-gear">{gearLine(side.loadouts[i])}</span>
+                </div>
+            ))}
+        </Panel>
     );
 }
 

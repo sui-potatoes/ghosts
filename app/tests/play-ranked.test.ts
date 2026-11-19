@@ -5,10 +5,16 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+    TIERS,
+    allItems,
     budgetOf,
+    changesFrom,
+    changesText,
     defaultSquad,
     itemsFor,
+    presetLabel,
     presetsFor,
+    PRESETS,
     priceOf,
     squadSize,
     type Loadout,
@@ -200,4 +206,66 @@ test("an opponent is near the player's rating", () => {
         assert.ok(Math.abs(o.rating - RATING) <= 60);
     }
     assert.ok(opponentFor(10, () => 0).rating >= 0);
+});
+
+test("what the tier has not unlocked is listed after the rest, with its reason, and cannot be chosen", () => {
+    const rookie = TIERS[0];
+    const rating = rookie.min;
+    const squad = defaultSquad(rating, "3x3");
+    const sections = pickSections(squad, 0, rating, "3x3");
+    const presets = sections[0].options;
+    const open = presetsFor(rating).map((p) => p.id);
+    // available first, locked after, every locked preset accounted for
+    const firstLocked = presets.findIndex((o) => o.locked);
+    assert.ok(firstLocked >= 0, "the lowest tier has presets it has not unlocked");
+    assert.ok(presets.slice(0, firstLocked).every((o) => !o.locked));
+    assert.ok(presets.slice(firstLocked).every((o) => o.locked));
+    assert.equal(presets.length, PRESETS.length);
+    for (const o of presets.filter((o) => !o.locked))
+        assert.ok(open.includes(o.key.slice("preset:".length)));
+    for (const slot of SLOTS) {
+        const options = sections.find((s) => s.group === slot)!.options;
+        const swappable = options.filter((o) => !o.locked).length > 0;
+        if (!swappable) continue;
+        const wanted = allItems().filter((i) => i.slot === slot);
+        // every catalog item of the slot appears once: unlocked ones plain, the rest locked
+        assert.equal(
+            options.filter((o) => o.key.startsWith(`${slot}:`) && o.key !== "utility:none").length,
+            wanted.length,
+        );
+        for (const o of options.filter((o) => o.locked)) {
+            const item = allItems().find((i) => `${slot}:${i.id}` === o.key)!;
+            assert.equal(o.locked, `Unlocks at ${TIERS.find((t) => t.id === item.tier)!.name}`);
+            assert.ok(!itemsFor(rating, slot).some((i) => i.id === item.id));
+        }
+    }
+    // a locked preset names the lowest tier that opens all its items
+    for (const o of presets.filter((o) => o.locked)) assert.match(o.locked!, /^Unlocks at \w+/);
+    // choosing one changes nothing
+    const lockedOne = presets.find((o) => o.locked)!;
+    assert.equal(applyOption(squad, 0, lockedOne, rating), squad);
+    // the top tier has nothing locked
+    const top = TIERS[TIERS.length - 1].min;
+    const all = pickSections(defaultSquad(top, "3x3"), 0, top, "3x3").flatMap((s) => s.options);
+    assert.ok(all.every((o) => !o.locked));
+});
+
+test("a unit that differs from its preset says so, and what changed", () => {
+    const assault = PRESETS.find((p) => p.id === "assault")!;
+    const plain = { ...assault.loadout };
+    assert.equal(presetLabel(plain), assault.name);
+    assert.deepEqual(changesFrom(plain), []);
+    assert.equal(changesText(plain), "");
+    const lighter = swapItem([plain], 0, "armor", "armor-1", RATING)[0];
+    assert.equal(lighter.preset, "assault");
+    assert.equal(presetLabel(lighter), `${assault.name} · modified`);
+    const changes = changesFrom(lighter);
+    assert.equal(changes.length, 1);
+    assert.equal(changes[0].slot, "armor");
+    assert.match(changesText(lighter), /^Armor: .+ instead of .+$/);
+    // swapping back is no longer modified
+    assert.equal(
+        presetLabel(swapItem([lighter], 0, "armor", assault.loadout.armor, RATING)[0]),
+        assault.name,
+    );
 });

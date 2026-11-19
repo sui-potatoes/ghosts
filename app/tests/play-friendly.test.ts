@@ -7,6 +7,7 @@ import { test } from "node:test";
 import {
     CODE_ALPHABET,
     ageLabel,
+    asksBeforeClosing,
     bringSquad,
     codeFromId,
     formatCode,
@@ -210,4 +211,13 @@ test("joining: the host starts after a moment, or closes the lobby", () => {
     const c = joinLobby(kv, cancels, { squad: [], names: [] }, T0);
     assert.equal(phaseOf(c, c.resolvesAt), "cancelled");
     assert.deepEqual(recentCodes(kv), [cancels.code, ok.code]);
+});
+
+test("a host's lobby asks before closing once an opponent is in or the code went out", () => {
+    assert.equal(asksBeforeClosing("host", "waiting", false), false);
+    assert.equal(asksBeforeClosing("host", "waiting", true), true);
+    assert.equal(asksBeforeClosing("host", "ready", false), true);
+    assert.equal(asksBeforeClosing("host", "ready", true), true);
+    assert.equal(asksBeforeClosing("guest", "waiting", true), false);
+    assert.equal(asksBeforeClosing("guest", "starting", false), false);
 });

@@ -79,9 +79,6 @@
 
 /* Phone: one column; the squad panel waits behind the main one. */
 @media (max-width: 720px) {
-    .gui:has(.gfr-main) {
-        grid-template-columns: minmax(0, 1fr);
-    }
     .gui-body:has(> .gfr-main) {
         grid-template-columns: minmax(0, 1fr) !important;
     }

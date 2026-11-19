@@ -10,7 +10,7 @@ import items from "../../catalog/items.json" with { type: "json" };
 import { loadoutActions, type UnitAction } from "./action-registry.ts";
 import type { Unit, Weapon } from "./game.ts";
 import type { IntelSource } from "./intel.ts";
-import { roleKits, type Kit, type Scenario } from "./scenario.ts";
+import { roleKits, type Kit, type Scenario, type UnitSpec } from "./scenario.ts";
 
 export interface DeploymentLook {
   appearance: Appearance;
@@ -26,9 +26,10 @@ const showcase = ["nyx-mid", "nyx", "nyx-heavy", "nyx"];
  * The look of every unit: allies from the host's saved recruits (the one with
  * their id, else by squad order, however the hostiles are mixed in among them),
  * hostiles and missing recruits from the default roster. Without a saved squad
- * the showcase armor tiers are worn. The recruits are only read.
+ * the showcase armor tiers are worn. A hostile whose spec has a `look` wears
+ * that face and armor instead. The recruits are only read.
  */
-export function deploymentLooks(recruits: readonly Recruit[] | null, units: Unit[]): Map<string, DeploymentLook> {
+export function deploymentLooks(recruits: readonly Recruit[] | null, units: Unit[], specs: readonly UnitSpec[] = []): Map<string, DeploymentLook> {
   const saved = !!recruits?.length;
   const defaults = initialSquad().recruits;
   const roster = saved ? recruits! : defaults;
@@ -37,9 +38,10 @@ export function deploymentLooks(recruits: readonly Recruit[] | null, units: Unit
     const own = unit.enemy ? undefined : roster.find((r) => r.id === unit.id) ?? roster[allies];
     if (!unit.enemy) allies++;
     const recruit = own ?? defaults[i % defaults.length];
+    const look = unit.enemy ? specs.find((spec) => spec.id === unit.id)?.look : undefined;
     return [unit.id, {
-      appearance: recruit.appearance,
-      armorId: saved && own ? recruit.equipment.armor : showcase[i % showcase.length],
+      appearance: look?.appearance ?? recruit.appearance,
+      armorId: look?.armor !== undefined ? look.armor : saved && own ? recruit.equipment.armor : showcase[i % showcase.length],
       armorColors: unit.enemy
         ? { ...DEFAULT_ARMOR_COLORS, primary: "#454144", accent: "#c98177" }
         : recruit.armorColors,

@@ -7,7 +7,7 @@
  * `model.ts`; every preset, item, price and number comes from the economy.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import {
@@ -29,12 +29,15 @@ import {
     ActionRow,
     Eyebrow,
     useFocusState,
+    useFocusStore,
     useFocusable,
     useGlyphSet,
     type Command,
 } from "../../../ui";
 import {
     budgetOf,
+    changesFrom,
+    changesText,
     itemOf,
     presetsFor,
     priceOf,
@@ -295,9 +298,20 @@ export function RankedView() {
                         />
                     )}
                 </Panel>
+                <StartOn id="unit-0" />
             </ScreenFrame>
         </FocusRoot>
     );
+}
+
+/** The cursor starts on the first unit, where the work is, not on the size row. */
+function StartOn({ id }: { id: string }) {
+    const store = useFocusStore();
+    useLayoutEffect(() => {
+        store.focus(id, false);
+        // Once, on arrival.
+    }, [store, id]);
+    return null;
 }
 
 /* === Squad ============================================================ */
@@ -307,10 +321,10 @@ function itemName(id: string | null): string {
 }
 
 function presetName(unit: Loadout, rating: number): string {
-    return (
+    const name =
         presetOf(rating, unit.preset)?.name ??
-        unit.preset.charAt(0).toUpperCase() + unit.preset.slice(1)
-    );
+        unit.preset.charAt(0).toUpperCase() + unit.preset.slice(1);
+    return changesFrom(unit).length > 0 ? `${name} · modified` : name;
 }
 
 function StatCells({ unit }: { unit: Loadout }) {
@@ -371,12 +385,16 @@ function UnitRow({
     onEdit: () => void;
 }) {
     const preset = presetOf(rating, unit.preset);
+    const modified = changesFrom(unit).length > 0;
     const { props } = useFocusable<HTMLButtonElement>({
         id: `unit-${index}`,
         group: "squad",
         instant: true,
         title: `Unit ${index + 1} · ${presetName(unit, rating)}`,
-        hint: problem?.message ?? preset?.role ?? "Change preset, weapon, armor or utility",
+        hint:
+            problem?.message ??
+            (modified ? changesText(unit) : preset?.role) ??
+            "Change preset, weapon, armor or utility",
         commands: [{ action: "confirm", label: "Edit", tone: "primary", run: onEdit }],
     });
     return (
@@ -393,7 +411,11 @@ function UnitRow({
                             : `${priceOf(unit)} cr`}
                     </span>
                 </span>
-                {preset && <span className="grk-unit-role">{preset.role}</span>}
+                {preset && (
+                    <span className="grk-unit-role">
+                        {modified ? changesText(unit) : preset.role}
+                    </span>
+                )}
                 <span className="grk-unit-gear">
                     <span>
                         <Icon name={SLOT_ICON.primary} size={12} />
@@ -448,7 +470,7 @@ function UnitPicker({
     const start = current ? `pick-preset:${current.id}` : undefined;
 
     const close: Command = { action: "back", label: "Done", run: onClose };
-    const shown = previewed && !previewed.current ? previewed : null;
+    const shown = previewed && !previewed.current && !previewed.locked ? previewed : null;
     const after = shown?.unit ?? unit;
     const changes = statChanges(unit, after).filter((c) => c.delta !== 0);
 
@@ -515,10 +537,12 @@ function PickSectionRows({
             </div>
             {section.options.map((option) => {
                 const summary = changeSummary(statChanges(unit, option.unit));
-                const line =
-                    option.group === "preset"
-                        ? `${option.leftAfter >= 0 ? `${option.leftAfter} left` : `${-option.leftAfter} over`} · ${option.role}`
-                        : `${option.price} cr${summary ? ` · ${summary}` : ""}`;
+                const line = option.locked
+                    ? option.locked
+                    : option.group === "preset"
+                      ? `${option.leftAfter >= 0 ? `${option.leftAfter} left` : `${-option.leftAfter} over`} · ${option.role}`
+                      : `${option.price} cr${summary ? ` · ${summary}` : ""}`;
+                const deny = fixed ?? option.locked;
                 return (
                     <ListRow
                         key={option.key}
@@ -540,10 +564,11 @@ function PickSectionRows({
                             option.current ? "accent" : option.leftAfter < 0 ? "warn" : "default"
                         }
                         selected={option.current}
+                        locked={!!option.locked}
                         title={option.name}
                         hint={
-                            fixed
-                                ? fixed
+                            deny
+                                ? deny
                                 : `${option.leftAfter >= 0 ? `${option.leftAfter} credits left` : `${-option.leftAfter} credits over`} if chosen`
                         }
                         commands={[
@@ -551,7 +576,7 @@ function PickSectionRows({
                                 action: "confirm",
                                 label: option.current ? "Equipped" : "Choose",
                                 tone: "primary",
-                                deny: fixed,
+                                deny,
                                 run: () => onPick(option),
                             },
                             close,

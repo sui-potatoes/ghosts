@@ -208,3 +208,16 @@ export function bringSquad(
         names: Array.from({ length: size }, (_, i) => `Unit ${i + 1}`),
     };
 }
+
+/**
+ * Whether closing a lobby asks first: a host's lobby with an opponent in it, or
+ * whose code or link was copied (so someone may be on the way). A host still
+ * alone with nothing shared closes at once; a guest can always rejoin.
+ */
+export function asksBeforeClosing(
+    role: "host" | "guest",
+    phase: "waiting" | "ready" | "starting" | "cancelled",
+    shared: boolean,
+): boolean {
+    return role === "host" && (phase !== "waiting" || shared);
+}

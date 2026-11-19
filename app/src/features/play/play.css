@@ -235,15 +235,3 @@
         transition: none;
     }
 }
-
-/* The command bar's hint is one nowrap line; on a phone it must shrink, not widen the frame. */
-.gui:has(.gui-play) :is(.gui-bar, .gui-header) {
-    min-width: 0;
-}
-
-/* Stacked cards on a phone: the arrows hint is dropped to leave room for Open and Back. */
-@media (max-width: 760px) {
-    .gui:has(.gui-play) .gui-cmd[data-action="nav"] {
-        display: none;
-    }
-}

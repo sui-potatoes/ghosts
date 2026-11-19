@@ -84,7 +84,7 @@ export function boot(options: BootOptions): () => void {
         if (!s.battlefield) renderer.dispose();
       });
       await loadOperatives(renderer);
-      await loadNativeIdentities(s.game.units, deploymentLooks(squad, s.game.units));
+      await loadNativeIdentities(s.game.units, deploymentLooks(squad, s.game.units, s.game.scenario.units));
       await mapView(s.game.map.plan.id).load(renderer);
       await loadDestruction();
       if (disposed) return;

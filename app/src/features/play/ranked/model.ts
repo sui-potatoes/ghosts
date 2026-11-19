@@ -10,15 +10,19 @@
  */
 
 import {
+    allItems,
     budgetOf,
     defaultSquad,
     itemOf,
     itemsFor,
+    PRESETS,
     presetsFor,
     priceOf,
     squadSize,
+    TIERS,
     tierOf,
     unitStats,
+    unlockTierOf,
     validateSquad,
     type Issue,
     type Loadout,
@@ -137,6 +141,8 @@ export type PickOption = {
     /** Credits left for the squad if this were chosen. */
     leftAfter: number;
     current: boolean;
+    /** Why the player's tier does not allow it yet: `Unlocks at Contractor`. */
+    locked?: string;
 };
 
 export type PickSection = {
@@ -146,6 +152,9 @@ export type PickSection = {
     fixed?: string;
     options: PickOption[];
 };
+
+const unlockText = (tier: string | undefined): string =>
+    tier ? `Unlocks at ${tier}` : "Not available yet";
 
 /** The sections of the picker for one unit: presets first, then each slot. */
 export function pickSections(
@@ -200,6 +209,22 @@ export function pickSections(
             ),
         },
     ];
+    // What the tier has not unlocked yet follows what it has, each with its reason.
+    const open = new Set(presets.map((p) => p.id));
+    sections[0].options.push(
+        ...PRESETS.filter((p) => !open.has(p.id)).map((preset) => ({
+            ...option(
+                `preset:${preset.id}`,
+                "preset",
+                preset.name,
+                preset.role,
+                { ...preset.loadout },
+                priceOf(preset.loadout),
+                false,
+            ),
+            locked: unlockText(unlockTierOf(preset.loadout)?.name),
+        })),
+    );
 
     for (const slot of SLOTS) {
         const have = unit[slot];
@@ -224,13 +249,28 @@ export function pickSections(
             options.push(
                 option("utility:none", slot, "None", "", withItem(unit, slot, null), 0, !have),
             );
+        const shown = new Set(items.map((item) => item.id));
+        const later = allItems()
+            .filter((item) => item.slot === slot && !shown.has(item.id))
+            .map((item) => ({
+                ...option(
+                    `${slot}:${item.id}`,
+                    slot,
+                    item.name,
+                    "",
+                    withItem(unit, slot, item.id),
+                    item.price,
+                    false,
+                ),
+                locked: unlockText(TIERS.find((t) => t.id === item.tier)?.name),
+            }));
         const swappable = canSwap(unit, slot, rating);
         const preset = presetOf(rating, unit.preset);
         sections.push({
             group: slot,
             title: SLOT_NAMES[slot],
             fixed: swappable ? undefined : `Fixed on ${preset?.name ?? "this preset"}`,
-            options: swappable ? options : options.filter((o) => o.current),
+            options: swappable ? [...options, ...later] : options.filter((o) => o.current),
         });
     }
     return sections;
@@ -243,6 +283,7 @@ export function applyOption(
     option: PickOption,
     rating: number,
 ): Loadout[] {
+    if (option.locked) return squad;
     if (option.group === "preset") {
         const preset = presetOf(rating, option.key.slice("preset:".length));
         return preset ? choosePreset(squad, index, preset) : squad;
@@ -270,6 +311,10 @@ const LABELS: Record<string, [label: string, short: string]> = {
     aim: ["Aim", "AIM"],
     damage: ["Damage", "DMG"],
     range: ["Range", "RNG"],
+    dodge: ["Dodge", "DOD"],
+    critChance: ["Crit chance", "CRT"],
+    ammo: ["Ammo", "AMO"],
+    grenades: ["Grenades", "GRE"],
 };
 
 const round = (n: number) => Math.round(n * 10) / 10;

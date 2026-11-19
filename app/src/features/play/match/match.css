@@ -8,11 +8,18 @@
     flex-direction: column;
     gap: calc(var(--u) * 4);
     width: 100%;
-    max-width: 720px;
+    max-width: 920px;
     min-width: 0;
     min-height: 0;
     margin: 0 auto;
     align-self: center;
+    /* A card taller than the screen scrolls inside itself, never past the header. */
+    max-height: 100%;
+    overflow-y: auto;
+}
+
+.gui-mm > * {
+    flex: none;
 }
 
 .gui-mm-empty {
@@ -20,6 +27,9 @@
 }
 
 .gui-mm-versus {
+    width: 100%;
+    max-width: 720px;
+    margin: 0 auto;
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
     align-items: center;
@@ -77,8 +87,41 @@
     color: color-mix(in srgb, var(--text-color) 70%, transparent);
 }
 
+.gui-mm-squads {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: calc(var(--u) * 3);
+    min-height: 0;
+}
+
 .gui-mm-squad .gui-panel-body {
     padding: calc(var(--u) * 2) calc(var(--u) * 3);
+}
+
+.gui-mm-unit {
+    display: grid;
+    grid-template-columns: calc(var(--u) * 18) minmax(0, 1fr);
+    column-gap: calc(var(--u) * 3);
+    align-items: baseline;
+    padding: calc(var(--u) * 1.5) 0;
+}
+
+.gui-mm-sign {
+    grid-row: span 2;
+    font: 500 var(--t-micro) / 1.4 var(--font-mono);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--disabled-color);
+}
+
+.gui-mm-preset {
+    font: 500 var(--t-body) / 1.3 var(--font-mono);
+    color: var(--text-color);
+}
+
+.gui-mm-gear {
+    font: 400 var(--t-label) / 1.3 var(--font-mono);
+    color: var(--text-secondary);
 }
 
 .gui-mm-go {
@@ -92,22 +135,35 @@
 }
 
 @media (max-width: 640px) {
-    .gui-mm-versus {
+    .gui-mm {
+        gap: calc(var(--u) * 3);
+    }
+
+    .gui-mm-squads {
         grid-template-columns: minmax(0, 1fr);
         gap: calc(var(--u) * 2);
     }
 
-    .gui-mm-side[data-side="b"] {
-        text-align: left;
-        align-items: flex-start;
+    /* The two names stay side by side; each box is tighter. */
+    .gui-mm-versus {
+        gap: calc(var(--u) * 2);
+    }
+
+    .gui-mm-side {
+        padding: calc(var(--u) * 3);
+    }
+
+    .gui-mm-name {
+        font-size: var(--t-body);
     }
 
     .gui-mm-vs {
         font-size: var(--t-body);
     }
-}
 
-/* At phone width the bar's hint gives way (ellipsis) instead of widening the frame. */
-.gui:has(.gui-mm) :is(.gui-bar, .gui-header) {
-    min-width: 0;
+    .gui-mm-unit {
+        grid-template-columns: calc(var(--u) * 16) minmax(0, 1fr);
+        column-gap: calc(var(--u) * 2);
+        padding: calc(var(--u) * 1) 0;
+    }
 }

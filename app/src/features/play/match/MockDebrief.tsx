@@ -65,7 +65,7 @@ function Screen({ match, plan, settled, figures: squad, onAgain, onMenu }: MockD
                 primary={{
                     label: "Play again",
                     hint:
-                        match.kind === "ranked" ? "Back to the squad builder" : "Back to the lobby",
+                        match.kind === "ranked" ? "Back to the squad builder" : "Back to Friendly",
                     run: onAgain,
                 }}
             />

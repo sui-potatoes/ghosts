@@ -35,8 +35,10 @@ import type { Debrief, Plate } from "../../debrief/result.ts";
 import {
     defaultSquad,
     itemsFor,
+    changesText,
+    itemOf,
     kitOf,
-    presetOf,
+    presetLabel,
     presetsFor,
     squadSize,
     tierOf,
@@ -219,8 +221,16 @@ const RECRUIT_ROLE: Record<FieldRole, RecruitRole> = {
     SPECIALIST: "Support",
 };
 
-/** The preset's name, else its id as written. */
-export const presetName = (loadout: Loadout) => presetOf(loadout.preset)?.name ?? loadout.preset;
+/** The preset's name, else its id as written; `Assault · modified` once a slot was swapped. */
+export const presetName = (loadout: Loadout) => presetLabel(loadout);
+
+/** A loadout in the economy's own item names: `Standard Rifle · Light Armor · Frag Grenade`. */
+export function gearLine(loadout: Loadout): string {
+    return [loadout.weapon, loadout.armor, loadout.utility]
+        .filter((id): id is string => !!id)
+        .map((id) => itemOf(id)?.name ?? id)
+        .join(" · ");
+}
 
 const PLAYER_CALLSIGNS = [
     "KESTREL",
@@ -359,14 +369,46 @@ export function matchPlan(match: MockMatch): MatchPlan {
     };
 }
 
+/** The faces of the player's units: a seeded slice of the identity presets. */
+export const playerFaces = (seed: number, count: number) =>
+    draw(FACES, Math.min(FACES.length, count), seeded(seed ^ 0x2545f491));
+
+/**
+ * The faces of the opponent's units: the presets the player's units do not
+ * wear first, so the squads share a face only when there are too few presets
+ * (6 presets, 4 a side: two shared).
+ */
+export function opponentFaces(seed: number, count: number) {
+    const mine = playerFaces(seed, count);
+    const random = seeded(seed ^ 0x7f4a7c15);
+    const rest = FACES.filter((f) => !mine.includes(f));
+    const fresh = draw(rest, Math.min(count, rest.length), random);
+    return [...fresh, ...draw(mine, count - fresh.length, random)];
+}
+
+/**
+ * The opponent's hostiles as the engine dresses them (`UnitSpec.look`): the
+ * armor their kit names, and a face the player's units do not wear.
+ */
+export function opponentLooks(plan: MatchPlan) {
+    const side = plan.opponent;
+    const faces = opponentFaces(plan.seed, side.ids.length);
+    return side.ids.map((_, i) => {
+        const face = faces[i % faces.length] ?? FACES[0];
+        return {
+            appearance: normalize({ ...fromPreset(face), name: side.names[i] }, schema),
+            armor: side.kits[i].armor,
+        };
+    });
+}
+
 /**
  * The player's side as recruits the engine deploys (`Encounter`'s `squad`):
  * matched to units by id, wearing their armor, named by callsign, a face from
  * the editor's presets. Rookies with no fittings; nothing is saved.
  */
 export function virtualRecruits(side: Side, seed: number): Recruit[] {
-    const random = seeded(seed ^ 0x2545f491);
-    const faces = draw(FACES, Math.min(FACES.length, side.ids.length), random);
+    const faces = playerFaces(seed, side.ids.length);
     return side.ids.map((id, i) => {
         const face = faces[i % faces.length] ?? FACES[0];
         const kit = side.kits[i];
@@ -535,6 +577,7 @@ export function mockDebriefOf(match: MockMatch, plan: MatchPlan, settled: Settle
         const kills = r?.kills ?? 0;
         const kia = r?.kia ?? false;
         const rank = presetName(side.loadouts[i]);
+        const changes = changesText(side.loadouts[i]);
         const field = {
             role: itemById(side.kits[i].primary)?.name ?? "Rifle",
             full: side.names[i],
@@ -542,7 +585,7 @@ export function mockDebriefOf(match: MockMatch, plan: MatchPlan, settled: Settle
             level: 1,
             progress: 0,
             levelXp: 0,
-            hint: `${side.names[i]}. ${kia ? "Killed in action" : "Came home"} · ${kills} confirmed ${kills === 1 ? "kill" : "kills"}`,
+            hint: `${side.names[i]}. ${kia ? "Killed in action" : "Came home"} · ${kills} confirmed ${kills === 1 ? "kill" : "kills"}${changes ? `. ${changes}` : ""}`,
         };
         const name = r?.name ?? side.callsigns[i];
         if (kia) return { kind: "kia", id, name, rank, turn: null, field };

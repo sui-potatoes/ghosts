@@ -57,6 +57,7 @@
     width: calc(100vw / var(--gui-zoom));
     height: calc(100dvh / var(--gui-zoom));
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: var(--h-l) minmax(0, 1fr) var(--h-l);
     overflow: hidden;
     color: var(--text-color);
@@ -1113,6 +1114,9 @@
     letter-spacing: 0.24em;
     text-transform: uppercase;
     color: var(--disabled-color);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .gui-bar-hint {
@@ -1150,7 +1154,8 @@
     display: flex;
     align-items: center;
     gap: calc(var(--u) * 1);
-    flex: none;
+    flex: 0 1 auto;
+    min-width: 0;
 }
 
 .gui-bar-rule {
@@ -1175,6 +1180,17 @@
     transition:
         background 80ms linear,
         transform 80ms linear;
+}
+
+/* A command gives way before the frame widens: its label ends in an ellipsis. */
+.gui-cmd {
+    min-width: 0;
+}
+
+.gui-cmd-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* Primary: the heaviest thing on the bar, the HUD's End Turn in miniature. */
@@ -1258,6 +1274,44 @@ span.gui-cmd {
     transform: translateY(1px);
     background: color-mix(in srgb, var(--text-color) 14%, transparent);
     animation: none;
+}
+
+/*
+ * Phone width. The bar is one line: the hint (what the cursor is on, or why it
+ * cannot run) takes what the commands leave and ends in an ellipsis, the title
+ * and the arrows hint (a touch screen has no arrows) step aside, and the
+ * commands tighten. The frame's one implicit column may not outgrow the
+ * viewport, so no screen needs its own overflow workaround.
+ */
+@media (max-width: 560px) {
+    .gui-bar {
+        gap: calc(var(--u) * 3);
+        padding: 0 calc(var(--u) * 3);
+    }
+    .gui-bar-title,
+    .gui-bar-commands .gui-cmd[data-action="nav"],
+    .gui-bar-commands .gui-cmd[data-action="nav"] + .gui-bar-rule {
+        display: none;
+    }
+    .gui-bar-context {
+        flex: 1 1 0;
+    }
+    .gui-bar-hint {
+        font-size: var(--t-label);
+    }
+    .gui-cmd,
+    .gui-cmd[data-tone="primary"],
+    .gui-cmd[data-tone="danger"][data-action="confirm"] {
+        gap: calc(var(--u) * 2);
+        padding: 0 calc(var(--u) * 2);
+    }
+    .gui-cmd[data-tone="primary"],
+    .gui-cmd[data-tone="danger"][data-action="confirm"] {
+        min-width: 0;
+    }
+    .gui-bar-rule {
+        margin: 0;
+    }
 }
 
 /* === Prompt ========================================================= */

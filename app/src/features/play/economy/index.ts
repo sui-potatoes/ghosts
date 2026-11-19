@@ -274,6 +274,47 @@ export function priceOf(loadout: Loadout): number {
     );
 }
 
+/** One slot where a unit differs from the preset it started from. */
+export type Change = { slot: Slot; from: string | null; to: string | null };
+
+const nameOfItem = (id: string | null): string | null => (id ? (itemOf(id)?.name ?? id) : null);
+
+/**
+ * How a unit differs from its preset's own loadout, slot by slot, in item
+ * names. Empty for an unchanged unit and for one whose preset is not listed.
+ */
+export function changesFrom(loadout: Loadout): Change[] {
+    const base = presetOf(loadout.preset)?.loadout;
+    if (!base) return [];
+    return ALL_SLOTS.filter((slot) => base[slot] !== loadout[slot]).map((slot) => ({
+        slot,
+        from: nameOfItem(base[slot]),
+        to: nameOfItem(loadout[slot]),
+    }));
+}
+
+/** `Assault`, or `Assault · modified` once any slot has been swapped. */
+export function presetLabel(loadout: Loadout): string {
+    const name = presetOf(loadout.preset)?.name ?? loadout.preset;
+    return changesFrom(loadout).length > 0 ? `${name} · modified` : name;
+}
+
+/** `Armor: Light Armor instead of Medium Armor`, one line per change joined with a middle dot. */
+export function changesText(loadout: Loadout): string {
+    return changesFrom(loadout)
+        .map(
+            (c) =>
+                `${c.slot.charAt(0).toUpperCase()}${c.slot.slice(1)}: ${c.to ?? "none"} instead of ${c.from ?? "none"}`,
+        )
+        .join(" · ");
+}
+
+/** The lowest tier that unlocks every item of a loadout, or null when none does. */
+export function unlockTierOf(loadout: Loadout): Tier | null {
+    const ids = [loadout.weapon, loadout.armor, loadout.utility].filter((id): id is string => !!id);
+    return TIERS.find((t) => ids.every((id) => t.items.includes(id))) ?? null;
+}
+
 export const squadPrice = (squad: Loadout[]): number =>
     squad.reduce((sum, unit) => sum + priceOf(unit), 0);
 

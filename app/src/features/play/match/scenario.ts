@@ -15,7 +15,14 @@ import type { Scenario, UnitSpec } from "@ghosts/engine";
 import { demoLevels, playtestScenario, type Level } from "@ghosts/engine/editor";
 
 import { squadSize } from "../economy";
-import { LEVEL_NAME, matchTitle, spawnsFor, type MatchPlan, type MockMatch } from "./model";
+import {
+    LEVEL_NAME,
+    matchTitle,
+    opponentLooks,
+    spawnsFor,
+    type MatchPlan,
+    type MockMatch,
+} from "./model";
 
 /** The level a match of `mode` plays on: Black Rain, no objective, the mode's spawns. */
 export function matchLevel(mode: MockMatch["mode"]): Level {
@@ -35,6 +42,7 @@ export function matchScenario(match: MockMatch, plan: MatchPlan): Scenario {
     const allies = base.units.filter((u) => !u.enemy).slice(0, size);
     const hostiles = base.units.filter((u) => u.enemy).slice(0, size);
     const { player, opponent } = plan;
+    const looks = opponentLooks(plan);
     const units: UnitSpec[] = [
         ...allies.map((u, i): UnitSpec => ({
             ...u,
@@ -50,6 +58,7 @@ export function matchScenario(match: MockMatch, plan: MatchPlan): Scenario {
             full: opponent.names[i],
             role: opponent.roles[i],
             kit: opponent.kits[i],
+            look: looks[i],
         })),
     ];
     const title = matchTitle(match);

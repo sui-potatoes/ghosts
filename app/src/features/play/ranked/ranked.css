@@ -172,9 +172,6 @@
 
 /* Phone: the match panel stacks over the squad and stays in view */
 @media (max-width: 720px) {
-    .gui:has(> .gui-body > .grk-side) {
-        grid-template-columns: minmax(0, 1fr);
-    }
     .gui-body:has(> .grk-side) {
         grid-template-columns: minmax(0, 1fr) !important;
         grid-template-rows: auto minmax(0, 1fr);
