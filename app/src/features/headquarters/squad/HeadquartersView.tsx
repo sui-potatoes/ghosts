@@ -20,7 +20,12 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 import { useNavigate } from "react-router-dom";
 
 import { stopPreview, uiTick } from "../../../audio";
-import { FREE_RECRUITS, type ChainRecruit, type RecruitEdit } from "../../../chain";
+import {
+    FREE_RECRUITS,
+    useFundsWaiting,
+    type ChainRecruit,
+    type RecruitEdit,
+} from "../../../chain";
 import {
     FocusRoot,
     List,
@@ -204,6 +209,7 @@ export function HeadquartersView({ data, ops }: { data: HqData; ops: HqOps }) {
         return () => window.clearTimeout(timer);
     }, [incoming, data.busy]);
     const pending = data.busy || incoming;
+    const preparing = useFundsWaiting();
 
     // From the workspace too: recruits on file stand lit, the new ones come up.
     async function hireSquad() {
@@ -223,6 +229,7 @@ export function HeadquartersView({ data, ops }: { data: HqData; ops: HqOps }) {
     const status = (
         <>
             <MatchChip match={data.match} onSearch={() => setPrompt({ kind: "search" })} />
+            {preparing && <StatusChip label="Account" value="Preparing" state="busy" />}
             {data.saving ? (
                 <StatusChip label="Records" value="Saving" state="busy" />
             ) : (

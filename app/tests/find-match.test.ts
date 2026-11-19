@@ -39,6 +39,15 @@ test("hiring, then searching with a cancel", () => {
     assert.equal(v.action.id, "cancel");
 });
 
+test("preparing the account comes first, with the cancel held back", () => {
+    const v = view({ funding: true, hiring: true, starting: true });
+    assert.equal(v.phase, "funding");
+    assert.equal(v.pending, true);
+    assert.equal(v.headline, "Preparing");
+    assert.equal(v.action.inactive, "Preparing");
+    assert.equal(view({ funding: true, searching: true, elapsedMs: 5_000 }).phase, "searching");
+});
+
 test("a search past its time says so and leaves the queue", () => {
     const v = view({ searching: true, elapsedMs: 130_000 });
     assert.equal(v.phase, "timeout");

@@ -12,7 +12,7 @@ import { useCurrentAccount } from "@mysten/dapp-kit-react";
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { SEARCH_TIMEOUT_MS, useMatchSearch } from "../chain";
+import { SEARCH_TIMEOUT_MS, useFundsWaiting, useMatchSearch } from "../chain";
 import { FindMatch } from "../features/find-match/FindMatch";
 import { useGoUp } from "../hooks/useGoUp";
 import { requestSignIn } from "../signIn";
@@ -20,6 +20,7 @@ import { requestSignIn } from "../signIn";
 export default function FindMatchScreen() {
     const account = useCurrentAccount();
     const match = useMatchSearch();
+    const preparing = useFundsWaiting();
     const navigate = useNavigate();
     const leave = useGoUp();
 
@@ -36,6 +37,7 @@ export default function FindMatchScreen() {
                     playing: !!match.playing,
                     searching: !!match.searching,
                     hiring: match.hiring,
+                    funding: preparing,
                     suspendedMin:
                         match.suspendedUntilMs > Date.now()
                             ? Math.ceil((match.suspendedUntilMs - Date.now()) / 60_000)

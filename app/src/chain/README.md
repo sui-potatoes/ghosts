@@ -51,6 +51,15 @@ is what the screens and the future encounter driver import.
   `useAssignedName` reads the default name back as the cross-device source of
   truth for `usePlayerName`.
 
+- `faucet.ts`, `faucet-pow.ts`, `faucet-solver.ts`, `faucet-worker.ts` — test SUI
+  from the testnet faucet (`VITE_FAUCET_URL`): fetch a challenge, solve its
+  Argon2d proof of work in module workers (inline in slices without workers),
+  post the proof, wait for the balance. Typed `FaucetError`s, no retries.
+- `funds-core.ts`, `funds.ts` — the balance keeper: a signed-in address under 1 SUI
+  (`TRIGGER_BALANCE_SUI`) is topped up to at least 2 SUI (`TARGET_BALANCE_SUI`), checked after sign-in, before every game, before
+  a write and after every transaction; background unless the balance cannot pay.
+  The fast lane pays from the address balance when the address holds no coin
+  (what the faucet pays into). No control and no link: players never ask.
 - `bcs.ts` — the BCS schemas mirroring the on-chain types of the ghosts Move
   package (`Registry`, `Account`, `Recruit` with its `Metadata`/`Visuals`,
   gear and the table wrapper). Field order mirrors the Move structs.

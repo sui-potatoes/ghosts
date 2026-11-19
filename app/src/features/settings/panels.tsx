@@ -422,32 +422,6 @@ export function AccountPanel() {
                         title="Network"
                         hint="The Sui network this build plays on"
                     />
-                    {account.network === "testnet" && (
-                        <ValueRow
-                            id="account-faucet"
-                            group="rows"
-                            label="Test funds"
-                            value="faucet.suilearn.io ↗"
-                            title="Add test funds"
-                            hint="Opens a testnet faucet and copies your address; test SUI has no value"
-                            instant
-                            commands={[
-                                {
-                                    action: "confirm",
-                                    label: "Open",
-                                    tone: "primary",
-                                    run: () => {
-                                        navigator.clipboard.writeText(address).catch(() => {});
-                                        window.open(
-                                            `https://faucet.suilearn.io/?address=${address}`,
-                                            "_blank",
-                                            "noopener",
-                                        );
-                                    },
-                                },
-                            ]}
-                        />
-                    )}
                     <ValueRow
                         id="account-recovery"
                         group="rows"

@@ -112,8 +112,13 @@ const signatures = new Map<string, Promise<boolean[]>>();
 const signatureKey = (packageId: string, moduleName: string, name: string) =>
     `${normalizeSuiAddress(packageId)}::${moduleName}::${name}`;
 
+/**
+ * What pays for an order: a coin, or, for an address holding SUI only as an
+ * address balance (what the faucet pays into), the balance itself, which has no
+ * reference to pass.
+ */
 interface Gas {
-    ref: { objectId: string; version: string; digest: string };
+    ref: { objectId: string; version: string; digest: string } | null;
     balance: bigint;
 }
 
@@ -123,6 +128,8 @@ export class FastLane {
     private readonly grpc: SuiGrpcClient;
     private gas: Promise<Gas> | null = null;
     private price: Promise<bigint> | null = null;
+    /** The epoch and chain an address-balance order is valid in, read once. */
+    private validity: Promise<{ epoch: bigint; chain: string }> | null = null;
 
     constructor(
         client: ReturnType<typeof useCurrentClient>,
@@ -164,17 +171,46 @@ export class FastLane {
     }
 
     private gasCoin(): Promise<Gas> {
-        this.gas ??= this.grpc.core.listCoins({ owner: this.owner }).then(({ objects }) => {
+        this.gas ??= this.grpc.core.listCoins({ owner: this.owner }).then(async ({ objects }) => {
             const coin = objects.reduce<(typeof objects)[number] | null>(
                 (best, c) => (!best || BigInt(c.balance) > BigInt(best.balance) ? c : best),
                 null,
             );
-            if (!coin) throw new Error("Insufficient SUI balance");
-            const { objectId, version, digest } = coin;
-            return { ref: { objectId, version, digest }, balance: BigInt(coin.balance) };
+            if (coin) {
+                const { objectId, version, digest } = coin;
+                return { ref: { objectId, version, digest }, balance: BigInt(coin.balance) };
+            }
+            // No coin: SUI paid straight into the address balance pays the fee too.
+            const { balance } = await this.grpc.core.getBalance({ owner: this.owner });
+            const held = BigInt(balance.addressBalance);
+            if (held <= 0n) throw new Error("Insufficient SUI balance");
+            return { ref: null, balance: held };
         });
         this.gas.catch(() => (this.gas = null));
         return this.gas;
+    }
+
+    /** The validity window of an order paid from the address balance: this epoch and the next. */
+    private async expiration() {
+        this.validity ??= Promise.all([
+            this.grpc.core.getCurrentSystemState(),
+            this.grpc.core.getChainIdentifier(),
+        ]).then(([{ systemState }, { chainIdentifier }]) => ({
+            epoch: BigInt(systemState.epoch),
+            chain: chainIdentifier,
+        }));
+        this.validity.catch(() => (this.validity = null));
+        const { epoch, chain } = await this.validity;
+        return {
+            ValidDuring: {
+                minEpoch: String(epoch),
+                maxEpoch: String(epoch + 1n),
+                minTimestamp: null,
+                maxTimestamp: null,
+                chain,
+                nonce: Math.floor(Math.random() * 2 ** 32),
+            },
+        };
     }
 
     private gasPrice(): Promise<bigint> {
@@ -206,7 +242,11 @@ export class FastLane {
         tx.setSenderIfNotSet(this.owner);
         tx.setGasPrice(price);
         tx.setGasBudget(gas.balance < BUDGET ? gas.balance : BUDGET);
-        tx.setGasPayment([gas.ref]);
+        if (gas.ref) tx.setGasPayment([gas.ref]);
+        else {
+            tx.setGasPayment([]);
+            tx.setExpiration(await this.expiration());
+        }
         const bytes = await tx.build({ client: this.grpc });
         const { signature } = await signer.signTransaction(bytes);
         return { bytes, signature, gas };
@@ -342,6 +382,7 @@ export class FastLane {
                 rebuilt = true;
                 this.gas = null;
                 this.price = null;
+                this.validity = null;
                 this.forgetOwned(order);
                 await sleep(500);
                 signed = await this.sign(order, signer);
@@ -356,8 +397,18 @@ export class FastLane {
         gas: Gas,
     ): ExecutedOrder {
         const effects = executed?.effects;
-        const coin = effects?.gasObject;
-        if (coin?.objectId && coin.outputVersion !== undefined && coin.outputDigest) {
+        const coin = gas.ref ? effects?.gasObject : undefined;
+        if (!gas.ref) {
+            // Paid from the address balance: no coin moved on. Track what is left, and
+            // read it again when it runs low or the balance may have been topped up.
+            const used = effects?.gasUsed;
+            const left =
+                gas.balance -
+                (BigInt(used?.computationCost ?? 0) +
+                    BigInt(used?.storageCost ?? 0) -
+                    BigInt(used?.storageRebate ?? 0));
+            this.gas = left >= 2n * BUDGET ? Promise.resolve({ ref: null, balance: left }) : null;
+        } else if (coin?.objectId && coin.outputVersion !== undefined && coin.outputDigest) {
             const used = effects?.gasUsed;
             const spent =
                 BigInt(used?.computationCost ?? 0) +

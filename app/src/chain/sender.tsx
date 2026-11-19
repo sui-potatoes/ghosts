@@ -24,6 +24,7 @@ import { useEffect } from "react";
 import { GHOSTS } from "../constants";
 import { activeSessionSigner, authorizeDevice, expireSessionKey } from "./alias";
 import type { ExecutedTransaction } from "./executor";
+import { afterTransaction } from "./funds";
 import { FastLane, type ExecutedOrder, type Order } from "./fast-lane";
 import { trackSaving } from "./saving";
 import { supportsSessionKeys } from "./session-key";
@@ -108,6 +109,7 @@ export function TransactionSender() {
                 signer,
                 include: { effects: true, events: true, objectTypes: true },
             });
+            afterTransaction(owner);
             if (result.FailedTransaction) {
                 throw new Error(
                     `Transaction failed: ${result.FailedTransaction.status.error?.message}`,
@@ -136,7 +138,14 @@ export function TransactionSender() {
             return trackSaving(turn);
         };
         send = (tx, opts) => inLine(() => run(tx, opts));
-        sendOrderNow = (order) => inLine(async () => fast.execute(order, await signerNow()));
+        sendOrderNow = (order) =>
+            inLine(async () => {
+                try {
+                    return await fast.execute(order, await signerNow());
+                } finally {
+                    afterTransaction(owner);
+                }
+            });
         fastLane = fast;
         return () => {
             send = null;
