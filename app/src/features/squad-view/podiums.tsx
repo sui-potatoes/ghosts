@@ -31,6 +31,8 @@ type CanvasProps = {
     turn?: number;
     /** The podium being inspected (a glance of light on a dark one). */
     inspect?: number | null;
+    /** Motion reduced by the game's own setting: focus and lights jump (the OS preference always counts). */
+    still?: boolean;
     onAnchors: (anchors: Anchor[]) => void;
     onState?: (state: { loading: boolean; error?: string }) => void;
 };
@@ -45,6 +47,7 @@ export function PodiumCanvas({
     instant,
     turn,
     inspect = null,
+    still = false,
     onAnchors,
     onState,
 }: CanvasProps) {
@@ -59,6 +62,8 @@ export function PodiumCanvas({
     const count = useRef(figures.length);
     const detail = useRef(full);
     const lamps = useRef(projector);
+    const calm = useRef(still);
+    calm.current = still;
     useEffect(() => {
         let cancelled = false;
         void import("./podium-scene")
@@ -68,6 +73,7 @@ export function PodiumCanvas({
                     count: count.current,
                     full: detail.current,
                     projector: lamps.current,
+                    still: () => calm.current,
                 });
                 scene.current = view;
                 layout.current(view.anchors());

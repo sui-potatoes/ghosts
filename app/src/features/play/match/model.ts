@@ -59,6 +59,12 @@ export type MockMatch = {
     opponent: { name: string; rating: number };
     /** Where Back and the debrief return to. */
     returnTo: string;
+    /**
+     * The squad rule of a friendly match: the credits a squad may cost (null for
+     * no limit), the rating whose tier unlocks the gear, and its name for the
+     * cards. The opponent's squad follows it. Absent for ranked (their rating's tier).
+     */
+    rule?: { budget: number | null; rating: number; label: string };
     /** Set by `stageMockMatch`; the seed of everything drawn for the match. */
     id?: string;
 };
@@ -112,8 +118,19 @@ export function parseMatch(raw: string | null): MockMatch | null {
             typeof m.opponent.name === "string" &&
             Number.isFinite(m.opponent.rating);
         if (!ok) return null;
+        const r = m.rule;
+        const rule =
+            r &&
+            (r.budget === null || Number.isFinite(r.budget)) &&
+            Number.isFinite(r.rating) &&
+            typeof r.label === "string"
+                ? r
+                : undefined;
+        const { rule: _drop, ...rest } = m as MockMatch;
+        void _drop;
         return {
-            ...(m as MockMatch),
+            ...rest,
+            ...(rule ? { rule } : {}),
             returnTo: typeof m.returnTo === "string" ? m.returnTo : "/play",
         };
     } catch {
@@ -326,10 +343,16 @@ function sideOf(
  * rating (budget, tier, size). Eight draws that all fail give the economy's
  * `defaultSquad`.
  */
-export function opponentSquad(rating: number, mode: Mode, seed: number): Loadout[] {
+export function opponentSquad(
+    rating: number,
+    mode: Mode,
+    seed: number,
+    budget?: number | null,
+): Loadout[] {
     const random = seeded(seed ^ 0x5bd1e995);
     const open = presetsFor(rating);
-    if (!open.length) return defaultSquad(rating, mode);
+    const fallback = () => defaultSquad(rating, mode, budget ?? undefined);
+    if (!open.length) return fallback();
     const slots: Slot[] = ["weapon", "armor", "utility"];
     for (let attempt = 0; attempt < 8; attempt++) {
         const squad = Array.from({ length: squadSize(mode) }, () => {
@@ -343,9 +366,9 @@ export function opponentSquad(rating: number, mode: Mode, seed: number): Loadout
             }
             return unit;
         });
-        if (!validateSquad(squad, rating, mode).length) return squad;
+        if (!validateSquad(squad, rating, mode, budget).length) return squad;
     }
-    return defaultSquad(rating, mode);
+    return fallback();
 }
 
 /** Everything drawn for a match: both sides, from the match's seed. */
@@ -362,7 +385,9 @@ export function matchPlan(match: MockMatch): MatchPlan {
         player: sideOf("a", squad, PLAYER_CALLSIGNS, random),
         opponent: sideOf(
             "b",
-            opponentSquad(match.opponent.rating, match.mode, seed),
+            match.rule
+                ? opponentSquad(match.rule.rating, match.mode, seed, match.rule.budget)
+                : opponentSquad(match.opponent.rating, match.mode, seed),
             OPPONENT_CALLSIGNS,
             random,
         ),
@@ -436,6 +461,10 @@ export const kindName = (kind: MockMatch["kind"]) => (kind === "ranked" ? "Ranke
 /** The header's name for the match: "Ranked 3x3", "Friendly 4x4". */
 export const matchTitle = (match: Pick<MockMatch, "kind" | "mode">) =>
     `${kindName(match.kind)} ${match.mode}`;
+
+/** What the header chip says about the match: the squad rule when it has one, else its kind. */
+export const matchChip = (match: Pick<MockMatch, "kind" | "rule">): string =>
+    match.rule?.label ?? kindName(match.kind);
 
 export const LEVEL_NAME = "Black Rain";
 
@@ -614,6 +643,7 @@ export function mockDebriefOf(match: MockMatch, plan: MatchPlan, settled: Settle
         note: settled.outcome === "forfeit" && match.kind === "ranked" ? "Counts as a loss" : null,
         lines: [
             `${matchTitle(match)} · ${LEVEL_NAME}`,
+            ...(match.rule ? [`Squads: ${match.rule.label}`] : []),
             `${two(report.turns)} turns · ${survivors} / ${total} returned${lost ? ` · ${lost} lost` : ""} · ${kills} ${kills === 1 ? "kill" : "kills"}`,
             ...ratingLines(match.kind, settled.rating),
         ],

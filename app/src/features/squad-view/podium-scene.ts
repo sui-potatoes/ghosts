@@ -121,6 +121,11 @@ export type PodiumSceneOptions = {
      * strike (a fast rise, a flicker, settling) instead of easing up.
      */
     projector?: boolean;
+    /**
+     * Whether motion is reduced besides the OS preference (the game's own
+     * setting): focus and inspect jump instead of easing. Read on each change.
+     */
+    still?: () => boolean;
 };
 
 /** A projector strike: the light's share of its target over time (ms): rise, flicker, settle. */
@@ -151,7 +156,7 @@ export function strikeAt(ms: number): number {
 export function createPodiumScene(
     host: HTMLElement,
     onLayout: (anchors: Anchor[]) => void,
-    { count = PODIUMS, full = false, projector = false }: PodiumSceneOptions = {},
+    { count = PODIUMS, full = false, projector = false, still }: PodiumSceneOptions = {},
 ): PodiumScene {
     const renderer = new T.WebGLRenderer({
         antialias: true,
@@ -323,7 +328,8 @@ export function createPodiumScene(
     const animate = () => {
         if (!raf && !disposed) raf = requestAnimationFrame(step);
     };
-    const reducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const reducedMotion = () =>
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches || !!still?.();
     const jump = () => {
         for (const slot of slots)
             for (const pair of [slot.forward, slot.yaw, slot.light]) pair[0] = pair[1];

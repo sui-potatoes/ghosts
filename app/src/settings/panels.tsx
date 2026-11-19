@@ -180,7 +180,7 @@ export function AccountPanel() {
             id: "network",
             label: "Network",
             value: NETWORK,
-            description: "The Sui network this build talks to. Testnet only for now.",
+            description: "The Sui network this build talks to. Testnet only.",
         },
         // Test networks hand out funds. The address rides in the query (the
         // faucet ignores it today but keeps it) and is copied for pasting.

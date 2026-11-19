@@ -8,8 +8,18 @@ import {
     CODE_ALPHABET,
     ageLabel,
     asksBeforeClosing,
+    ANY_RULE,
     bringSquad,
+    budgetOptions,
+    buildsSquad,
     codeFromId,
+    defaultRule,
+    matchRule,
+    parseRule,
+    readiness,
+    ruleBudget,
+    ruleLabel,
+    ruleRating,
     formatCode,
     linkCode,
     parseCode,
@@ -17,6 +27,7 @@ import {
     typingProblem,
     withCheck,
 } from "../src/features/play/friendly/model.ts";
+import { defaultSquad, TIERS, tierOf } from "../src/features/play/economy/index.ts";
 import {
     FIXTURES,
     arriveNow,
@@ -25,10 +36,14 @@ import {
     joinLobby,
     leaveSession,
     lookupCode,
+    NEVER,
     openGames,
+    opponentState,
     phaseOf,
     readSession,
     recentCodes,
+    startBlock,
+    updateSquad,
     type KV,
 } from "../src/features/play/friendly/lobbies.ts";
 
@@ -125,10 +140,10 @@ test("ages read in plain units", () => {
 });
 
 test("the squad brought is the default without a saved one, and sized to the mode", () => {
-    const none = bringSquad("saved", null, "4x4", 1500);
+    const none = bringSquad("saved", null, "4x4");
     assert.equal(none.kind, "default");
     assert.equal(none.squad.length, 4);
-    const saved = bringSquad("saved", [{ role: "Assault", callsign: "VEX" }], "3x3", 1500);
+    const saved = bringSquad("saved", [{ role: "Assault", callsign: "VEX" }], "3x3");
     assert.equal(saved.kind, "saved");
     assert.equal(saved.squad.length, 3);
     assert.deepEqual(saved.names, ["VEX", "Unit 2", "Unit 3"]);
@@ -158,7 +173,16 @@ test("hosting: code, arrival, ready, cancel", () => {
     const kv = memory();
     const s = hostLobby(
         kv,
-        { mode: "3x3", visibility: "invite", squad: [], names: [], you: YOU },
+        {
+            mode: "3x3",
+            visibility: "invite",
+            rule: ANY_RULE,
+            squad: [],
+            names: [],
+            builds: false,
+            ready: true,
+            you: YOU,
+        },
         T0,
         seq(0.1, 0.5),
     );
@@ -220,4 +244,123 @@ test("a host's lobby asks before closing once an opponent is in or the code went
     assert.equal(asksBeforeClosing("host", "ready", true), true);
     assert.equal(asksBeforeClosing("guest", "waiting", true), false);
     assert.equal(asksBeforeClosing("guest", "starting", false), false);
+});
+
+// === The squad rule ===
+
+test("standard budgets come from the tiers, per size, lowest first", () => {
+    for (const mode of ["3x3", "4x4"] as const) {
+        const options = budgetOptions(mode);
+        assert.equal(options.length, TIERS.length);
+        options.forEach(([id, label], i) => {
+            assert.equal(id, TIERS[i].id);
+            assert.equal(label, `${TIERS[i].budget[mode]} cr · ${TIERS[i].name}`);
+        });
+    }
+});
+
+test("a rule maps to a budget, a rating and a label; changing size keeps the tier", () => {
+    const rule = { kind: "budget", tier: "contractor" } as const;
+    assert.equal(ruleBudget(rule, "3x3"), TIERS[1].budget["3x3"]);
+    assert.equal(ruleBudget(rule, "4x4"), TIERS[1].budget["4x4"]);
+    assert.equal(ruleRating(rule), TIERS[1].min);
+    assert.equal(ruleLabel(rule, "3x3"), `Budget ${TIERS[1].budget["3x3"]} cr · Contractor`);
+    assert.equal(ruleBudget(ANY_RULE, "3x3"), null);
+    assert.equal(ruleLabel(ANY_RULE, "4x4"), "Any squad");
+    // Any unlocks everything: the top tier's rating.
+    assert.equal(tierOf(ruleRating(ANY_RULE)).id, TIERS[TIERS.length - 1].id);
+    assert.equal(defaultRule(1500).tier, tierOf(1500).id);
+    assert.deepEqual(parseRule({ kind: "budget", tier: "nope" }), ANY_RULE);
+    assert.deepEqual(matchRule(rule, "3x3"), {
+        budget: TIERS[1].budget["3x3"],
+        rating: TIERS[1].min,
+        label: ruleLabel(rule, "3x3"),
+    });
+});
+
+test("readiness: a squad is ready when it fits the rule", () => {
+    const rookie = { kind: "budget", tier: "rookie" } as const;
+    const fit = bringSquad("build", null, "3x3", rookie);
+    assert.equal(fit.kind, "build");
+    assert.deepEqual(readiness(fit.squad, rookie, "3x3"), []);
+    // The same squad on a bigger table is fine; a rookie squad is over a too-small budget.
+    const rich = defaultSquad(TIERS[3].min, "3x3");
+    assert.ok(readiness(rich, rookie, "3x3").length > 0);
+    assert.deepEqual(readiness(rich, ANY_RULE, "3x3"), []);
+    assert.equal(buildsSquad(rookie, "saved"), true);
+    assert.equal(buildsSquad(ANY_RULE, "saved"), false);
+    assert.equal(buildsSquad(ANY_RULE, "build"), true);
+});
+
+test("fixtures and the feed carry rules, deterministic from the seed", () => {
+    assert.equal(FIXTURES.find((f) => f.code.startsWith("HARBER2"))!.rule.kind, "any");
+    assert.ok(FIXTURES.some((f) => f.rule.kind === "budget"));
+    const feed = openGames(T0 + 600_000);
+    assert.deepEqual(
+        feed.map((l) => l.rule),
+        openGames(T0 + 600_000).map((l) => l.rule),
+    );
+    const kinds = new Set(
+        Array.from({ length: 40 }, (_, i) =>
+            openGames(T0 + i * 20_000).flatMap((l) => l.rule.kind),
+        ).flat(),
+    );
+    assert.deepEqual([...kinds].sort(), ["any", "budget"]);
+    for (const l of openGames(T0, "any", 7, "budget")) assert.equal(l.rule.kind, "budget");
+    for (const l of openGames(T0, "any", 7, "any")) assert.equal(l.rule.kind, "any");
+});
+
+test("lobby lifecycle under a budget: ready follows the squad, Start waits for both", () => {
+    const kv = memory();
+    const rule = defaultRule(1500);
+    const bring = bringSquad("build", null, "3x3", rule);
+    const s = hostLobby(
+        kv,
+        {
+            mode: "3x3",
+            visibility: "open",
+            rule,
+            squad: bring.squad,
+            names: bring.names,
+            builds: true,
+            ready: true,
+            you: YOU,
+        },
+        T0,
+        seq(0.1, 0.5, 0.5),
+    );
+    assert.equal(s.lobby.rule, rule);
+    assert.equal(startBlock(s, T0), "Waiting for an opponent");
+    assert.equal(opponentState(s, s.resolvesAt), "building");
+    assert.match(startBlock(s, s.resolvesAt)!, /building a squad/);
+    assert.equal(opponentState(s, s.opponentReadyAt), "ready");
+    assert.equal(startBlock(s, s.opponentReadyAt), null);
+    // The builder reports a squad over budget: not ready, with the reason.
+    const over = defaultSquad(TIERS[3].min, "3x3");
+    const issues = readiness(over, rule, "3x3");
+    const bad = updateSquad(kv, over, issues, T0)!;
+    assert.equal(bad.ready, false);
+    assert.equal(startBlock(bad, bad.opponentReadyAt), issues[0].message);
+    const good = updateSquad(kv, bring.squad, [], T0)!;
+    assert.equal(startBlock(good, good.opponentReadyAt), null);
+    // Skipping the wait moves readiness with the arrival.
+    const early = arriveNow(kv, T0 + 100)!;
+    assert.equal(opponentState(early, T0 + 100), "building");
+    assert.equal(early.opponentReadyAt - early.resolvesAt, s.opponentReadyAt - s.resolvesAt);
+});
+
+test("a guest who is not ready keeps the host from starting until the squad fits", () => {
+    const kv = memory();
+    const lobby = FIXTURES.find((f) => f.rule.kind === "budget" && !f.full && !f.cancels)!;
+    const g = joinLobby(kv, lobby, { squad: [], names: [], builds: true, ready: false }, T0);
+    assert.equal(g.resolvesAt, NEVER);
+    assert.equal(phaseOf(g, T0 + 1e9), "waiting");
+    const ready = updateSquad(kv, [], [], T0 + 5000)!;
+    assert.equal(phaseOf(ready, ready.resolvesAt), "starting");
+    const again = updateSquad(kv, [], [{ message: "over" }], T0 + 6000)!;
+    assert.equal(again.resolvesAt, NEVER);
+    // An any-squad guest bringing a saved squad is ready at once.
+    const any = FIXTURES.find((f) => f.rule.kind === "any")!;
+    const quick = joinLobby(memory(), any, { squad: [], names: [] }, T0);
+    assert.ok(quick.ready && quick.resolvesAt < NEVER);
 });

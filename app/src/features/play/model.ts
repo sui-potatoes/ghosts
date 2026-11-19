@@ -66,7 +66,7 @@ const CARDS: Record<ModeId, ModeCard> = {
         tag: "Soon",
         hint: "Missions for three corporations, with influence and standing",
         verb: "Open",
-        locked: "Faction wars are not open yet",
+        locked: "Not open yet",
     },
 };
 
@@ -93,6 +93,3 @@ export function rankedFacts(rating: number): RankedFacts {
         budgets: SIZES.map((mode) => ({ mode, budget: budgetOf(rating, mode) })),
     };
 }
-
-/** The one quiet line on every mock screen. */
-export const PREVIEW_LINE = "Preview: these modes run on this device for now.";

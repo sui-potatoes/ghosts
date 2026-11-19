@@ -1102,14 +1102,21 @@
     );
 }
 
+/*
+ * The context takes whatever the commands leave, never its text's width, and
+ * both lines are always there at a fixed height: a hint appearing, changing
+ * length or going away moves nothing in the bar.
+ */
 .gui-bar-context {
     display: flex;
     flex-direction: column;
     gap: calc(var(--u) * 1.5);
+    flex: 1 1 0;
     min-width: 0;
 }
 
 .gui-bar-title {
+    height: 10px;
     font: 500 var(--t-micro) / 1 var(--font-mono);
     letter-spacing: 0.24em;
     text-transform: uppercase;
@@ -1123,8 +1130,16 @@
     display: flex;
     align-items: center;
     gap: calc(var(--u) * 2);
+    height: 16px;
     font: 400 var(--t-body) / 1.2 var(--font-mono);
     color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.gui-bar-hint-text {
+    min-width: 0;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;

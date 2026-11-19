@@ -34,7 +34,17 @@ import {
     useGlyphSet,
     type Command,
 } from "../../../ui";
-import { presetsFor, squadSize, tierOf, type Mode } from "../economy";
+import {
+    presetLabel,
+    priceOf,
+    squadPrice,
+    squadSize,
+    tierOf,
+    type Issue,
+    type Loadout,
+    type Mode,
+} from "../economy";
+import { SquadBuilder } from "../ranked/SquadBuilder";
 import { stageMockMatch } from "../match";
 import { useRating } from "../rating";
 import {
@@ -45,10 +55,14 @@ import {
     leaveSession,
     lookupCode,
     openGames,
+    opponentState,
     phaseOf,
     readSession,
     recentCodes,
+    startBlock,
+    updateSquad,
     type Lobby,
+    type RuleFilter,
     type Session,
     type Visibility,
 } from "./lobbies";
@@ -56,6 +70,16 @@ import {
     ageLabel,
     asksBeforeClosing,
     bringSquad,
+    budgetOptions,
+    buildsSquad,
+    defaultRule,
+    matchRule,
+    readiness,
+    ruleBudget,
+    ruleLabel,
+    ruleRating,
+    ruleTierName,
+    type Rule,
     formatCode,
     FRIENDLY_ROUTE,
     linkCode,
@@ -76,6 +100,12 @@ const TITLES: Record<View, string> = {
     open: "Open",
     lobby: "Lobby",
 };
+
+/** Where the lobby's builder keeps its squad, apart from ranked's. */
+const BUILDER_KEY = "ghosts:friendly-squad";
+
+/** QA builds only: a button that skips the opponent's arrival wait. */
+const QA_SKIP = Boolean(import.meta.env.VITE_FRIENDLY_QA);
 
 const kv = (): Storage => window.sessionStorage;
 
@@ -108,7 +138,11 @@ export function FriendlyView() {
     const [view, setView] = useState<View>(() => (readSession(kv()) ? "lobby" : "landing"));
     const [mode, setMode] = useState<Mode>("3x3");
     const [visibility, setVisibility] = useState<Visibility>("invite");
+    const [ruleKind, setRuleKind] = useState<Rule["kind"]>("budget");
+    const [tier, setTier] = useState(() => (defaultRule(rating) as { tier: string }).tier);
+    const rule: Rule = ruleKind === "any" ? { kind: "any" } : { kind: "budget", tier };
     const [squadKind, setSquadKind] = useState<SquadKind>("saved");
+    const [candidate, setCandidate] = useState<Lobby | null>(null);
     const [refusal, setRefusal] = useState<Refusal>(null);
     const [typing, setTyping] = useState("");
     const [prompt, setPrompt] = useState(false);
@@ -117,12 +151,15 @@ export function FriendlyView() {
     const [shared, setShared] = useState(false);
     const [leaving, setLeaving] = useState(false);
     const saved = useMemo(savedSquad, []);
+    const hasSaved = saved !== null && saved.length > 0;
+    const kind: SquadKind = hasSaved ? squadKind : "build";
     const copyTimer = useRef(0);
     const now = useNow(view === "lobby" ? 500 : view === "open" ? 2000 : null);
 
     useEffect(() => () => window.clearTimeout(copyTimer.current), []);
 
     const goView = (next: View) => {
+        setCandidate(null);
         setRefusal(null);
         setPrompt(false);
         setLeaving(false);
@@ -132,33 +169,66 @@ export function FriendlyView() {
     const leaveScreen = () => navigate("/play", { replace: true });
 
     /** Try a code the player typed, pasted or followed; true when it led into a lobby. */
-    const attempt = useCallback(
-        (input: string): boolean => {
-            const t = Date.now();
-            const found = lookupCode(kv(), input, t);
-            if (!found.ok) {
-                setRefusal({ message: found.message });
-                return false;
+    const attempt = useCallback((input: string): boolean => {
+        const t = Date.now();
+        const found = lookupCode(kv(), input, t);
+        if (!found.ok) {
+            setRefusal({ message: found.message });
+            return false;
+        }
+        setRefusal(null);
+        setPrompt(false);
+        if (found.own) {
+            const own = readSession(kv());
+            if (own && own.lobby.id === found.lobby.id) {
+                setSession(own);
+                setView("lobby");
+                return true;
             }
-            setRefusal(null);
-            setPrompt(false);
-            if (found.own) {
-                const own = readSession(kv());
-                if (own && own.lobby.id === found.lobby.id) {
-                    setSession(own);
-                    setView("lobby");
-                    return true;
-                }
-                setRefusal({ message: "That match is closed" });
-                return false;
-            }
-            const bring = bringSquad(squadKind, saved, found.lobby.mode, rating);
-            setSession(joinLobby(kv(), found.lobby, bring, t));
-            setView("lobby");
-            return true;
-        },
-        [rating, saved, squadKind],
-    );
+            setRefusal({ message: "That match is closed" });
+            return false;
+        }
+        // The rule is shown before joining; Join on that screen enters the lobby.
+        setCandidate(found.lobby);
+        setView("join");
+        return true;
+    }, []);
+
+    /** Enter a lobby as the guest, bringing a squad that fits its rule. */
+    const enterLobby = (lobby: Lobby) => {
+        const t = Date.now();
+        const b = bringSquad(kind, saved, lobby.mode, lobby.rule);
+        started.current = false;
+        setSession(
+            joinLobby(
+                kv(),
+                lobby,
+                {
+                    ...b,
+                    builds: buildsSquad(lobby.rule, b.kind),
+                    ready: readiness(b.squad, lobby.rule, lobby.mode).length === 0,
+                },
+                t,
+            ),
+        );
+        setCandidate(null);
+        setRefusal(null);
+        setView("lobby");
+    };
+
+    /** The builder reported the player's squad. */
+    const onSquad = useCallback((squad: Loadout[], issues: Issue[]) => {
+        const s = readSession(kv());
+        if (!s) return;
+        const message = issues[0]?.message ?? null;
+        if (
+            s.ready === (issues.length === 0) &&
+            s.issue === message &&
+            JSON.stringify(s.squad) === JSON.stringify(squad)
+        )
+            return;
+        setSession(updateSquad(kv(), squad, issues, Date.now()));
+    }, []);
 
     // A share link opens the join flow with its code; the query is spent.
     const linked = useRef(false);
@@ -197,6 +267,7 @@ export function FriendlyView() {
                 mode: s.lobby.mode,
                 squad: s.squad,
                 opponent: { name: opponent.name, rating: opponent.rating },
+                rule: matchRule(s.lobby.rule, s.lobby.mode),
                 returnTo: FRIENDLY_ROUTE,
             });
             finishSession(kv());
@@ -237,7 +308,7 @@ export function FriendlyView() {
                 }
               : { action: "back", label: "Friendly", run: () => goView("landing") };
 
-    const bring = bringSquad(squadKind, saved, mode, rating);
+    const bring = bringSquad(kind, saved, mode, rule);
 
     return (
         <FocusRoot back={back}>
@@ -246,7 +317,6 @@ export function FriendlyView() {
                 onLocation={back.run}
                 status={
                     <>
-                        <StatusChip label="Preview" value="This device" state="idle" />
                         {copied && <StatusChip label="Clipboard" value="Copied" />}
                         {phase === "starting" && (
                             <StatusChip label="Match" value="Starting" state="live" />
@@ -313,12 +383,14 @@ export function FriendlyView() {
                         setMode={setMode}
                         visibility={visibility}
                         setVisibility={setVisibility}
-                        squadKind={bring.kind}
+                        rule={rule}
+                        setRuleKind={setRuleKind}
+                        setTier={setTier}
+                        squadKind={kind}
                         setSquadKind={setSquadKind}
-                        hasSaved={saved !== null && saved.length > 0}
+                        hasSaved={hasSaved}
+                        squad={bring.squad}
                         names={bring.names}
-                        loadouts={bring.squad.map((l) => l.preset)}
-                        rating={rating}
                         create={() => {
                             setSession(
                                 hostLobby(
@@ -326,8 +398,11 @@ export function FriendlyView() {
                                     {
                                         mode,
                                         visibility,
+                                        rule,
                                         squad: bring.squad,
                                         names: bring.names,
+                                        builds: buildsSquad(rule, bring.kind),
+                                        ready: readiness(bring.squad, rule, mode).length === 0,
                                         you: { name: "You", rating },
                                     },
                                     Date.now(),
@@ -341,6 +416,15 @@ export function FriendlyView() {
                 )}
                 {view === "join" && (
                     <JoinView
+                        candidate={candidate}
+                        enter={enterLobby}
+                        otherCode={() => {
+                            setCandidate(null);
+                            setPrompt(true);
+                        }}
+                        hasSaved={hasSaved}
+                        squadKind={kind}
+                        setSquadKind={setSquadKind}
                         typing={typing}
                         refusal={prompt ? null : refusal}
                         openPrompt={() => setPrompt(true)}
@@ -377,11 +461,7 @@ export function FriendlyView() {
                                 });
                                 return;
                             }
-                            started.current = false;
-                            const b = bringSquad(squadKind, saved, lobby.mode, rating);
-                            setSession(joinLobby(kv(), found.lobby, b, Date.now()));
-                            setRefusal(null);
-                            setView("lobby");
+                            enterLobby(found.lobby);
                         }}
                         host={() => goView("host")}
                         refusal={refusal}
@@ -394,6 +474,7 @@ export function FriendlyView() {
                         copy={copy}
                         copied={copied}
                         skip={() => setSession(arriveNow(kv(), Date.now()))}
+                        onSquad={onSquad}
                         start={() => startMatch(session)}
                         end={leaveLobby}
                     />
@@ -480,33 +561,37 @@ function HostSetup({
     setMode,
     visibility,
     setVisibility,
+    rule,
+    setRuleKind,
+    setTier,
     squadKind,
     setSquadKind,
     hasSaved,
+    squad,
     names,
-    loadouts,
-    rating,
     create,
 }: {
     mode: Mode;
     setMode: (m: Mode) => void;
     visibility: Visibility;
     setVisibility: (v: Visibility) => void;
+    rule: Rule;
+    setRuleKind: (k: Rule["kind"]) => void;
+    setTier: (tier: string) => void;
     squadKind: SquadKind;
     setSquadKind: (k: SquadKind) => void;
     hasSaved: boolean;
+    squad: Loadout[];
     names: string[];
-    loadouts: string[];
-    rating: number;
     create: () => void;
 }) {
-    const presets = presetsFor(rating);
     const squadOptions: [string, string][] = hasSaved
         ? [
               ["saved", "Your squad"],
-              ["default", "Default squad"],
+              ["build", "Build one"],
           ]
-        : [["default", "Default squad"]];
+        : [["build", "Build one"]];
+    const budget = ruleBudget(rule, mode);
     return (
         <>
             <Panel label="Host a match" className="gfr-main">
@@ -541,19 +626,50 @@ function HostSetup({
                     onChange={(v) => setVisibility(v as Visibility)}
                 />
                 <Stepper
-                    id="host-squad"
+                    id="host-rule"
                     group="main"
-                    label="Squad"
-                    title="Squad"
+                    label="Squads"
+                    title="Squads"
                     hint={
-                        hasSaved
-                            ? "The squad saved on this device, or a default one"
-                            : "Nothing saved on this device: a default squad is used"
+                        rule.kind === "any"
+                            ? "No credit limit and every item available"
+                            : "Both players build within the budget, with the gear of that rank"
                     }
-                    options={squadOptions}
-                    value={squadKind}
-                    onChange={(v) => setSquadKind(v as SquadKind)}
+                    options={[
+                        ["any", "Any"],
+                        ["budget", "Budgeted"],
+                    ]}
+                    value={rule.kind}
+                    onChange={(v) => setRuleKind(v as Rule["kind"])}
                 />
+                {rule.kind === "budget" && (
+                    <Stepper
+                        id="host-budget"
+                        group="main"
+                        label="Budget"
+                        title="Budget"
+                        hint="The standard budget of a rank; it also sets the gear"
+                        options={budgetOptions(mode)}
+                        value={rule.tier}
+                        onChange={setTier}
+                    />
+                )}
+                {rule.kind === "any" && (
+                    <Stepper
+                        id="host-squad"
+                        group="main"
+                        label="Squad"
+                        title="Squad"
+                        hint={
+                            hasSaved
+                                ? "Bring your squad, or build one for this match"
+                                : "Build a squad for this match"
+                        }
+                        options={squadOptions}
+                        value={squadKind}
+                        onChange={(v) => setSquadKind(v as SquadKind)}
+                    />
+                )}
                 <ActionRow
                     id="host-create"
                     group="main"
@@ -564,18 +680,37 @@ function HostSetup({
                     commands={[{ action: "confirm", label: "Open lobby", run: create }]}
                 />
             </Panel>
-            <Panel label="Squad" meta={`${squadSize(mode)} units`} className="gfr-side">
-                {names.map((name, i) => (
-                    <ReadoutLine key={i} label={name}>
-                        {presets.find((p) => p.id === loadouts[i])?.name ?? loadouts[i]}
-                    </ReadoutLine>
-                ))}
-                {!hasSaved && (
-                    <p className="gui-note">
-                        Nothing saved on this device, so a default squad plays.
-                    </p>
+            <Panel label="Rules" meta={ruleLabel(rule, mode)} className="gfr-side">
+                <ReadoutLine label="Size">{`${squadSize(mode)} units each`}</ReadoutLine>
+                <ReadoutLine label="Budget">
+                    {budget === null ? "None" : `${budget} cr`}
+                </ReadoutLine>
+                <ReadoutLine label="Gear">
+                    {ruleTierName(rule) ? `${ruleTierName(rule)} and below` : "Everything"}
+                </ReadoutLine>
+                {squadKind !== "build" && rule.kind === "any" && (
+                    <>
+                        <Eyebrow>Your squad</Eyebrow>
+                        <SquadLines squad={squad} names={names} />
+                    </>
+                )}
+                {(squadKind === "build" || rule.kind === "budget") && (
+                    <p className="gui-note">You build the squad in the lobby.</p>
                 )}
             </Panel>
+        </>
+    );
+}
+
+/** One line per unit: its preset and what it costs. */
+function SquadLines({ squad, names }: { squad: Loadout[]; names: string[] }) {
+    return (
+        <>
+            {squad.map((unit, i) => (
+                <ReadoutLine key={i} label={names[i] ?? `Unit ${i + 1}`}>
+                    {`${presetLabel(unit)} · ${priceOf(unit)} cr`}
+                </ReadoutLine>
+            ))}
         </>
     );
 }
@@ -613,6 +748,7 @@ function LobbyView({
     skip,
     start,
     end,
+    onSquad,
 }: {
     session: Session;
     now: number;
@@ -621,14 +757,17 @@ function LobbyView({
     skip: () => void;
     start: () => void;
     end: () => void;
+    onSquad: (squad: Loadout[], issues: Issue[]) => void;
 }) {
     const { lobby } = session;
-    const { rating } = useRating();
     const phase = phaseOf(session, now);
     const host = session.role === "host";
     const link = shareLink(lobby.code, window.location.origin);
     const opponent = host ? session.opponent : lobby.host;
     const tier = tierOf(opponent.rating).name;
+    const them = opponentState(session, now);
+    const block = startBlock(session, now);
+    const budget = ruleBudget(lobby.rule, lobby.mode);
 
     if (phase === "cancelled") {
         return (
@@ -673,19 +812,22 @@ function LobbyView({
                     ]}
                 />
                 <Eyebrow>In the lobby</Eyebrow>
-                <ReadoutLine label={host ? "You" : "Host"}>
-                    {host ? "You, host" : lobby.host.name}
+                <ReadoutLine label="Squads">{ruleLabel(lobby.rule, lobby.mode)}</ReadoutLine>
+                <ReadoutLine label="You">
+                    {`${host ? "Host" : "Guest"} · ${session.ready ? "Ready" : "Building"}`}
                 </ReadoutLine>
-                <ReadoutLine label={host ? "Opponent" : "You"} empty={host && phase === "waiting"}>
+                <ReadoutLine label={host ? "Opponent" : "Host"} empty={host && them === "absent"}>
                     {host
-                        ? phase === "waiting"
+                        ? them === "absent"
                             ? "Waiting for someone to join"
-                            : `${session.opponent.name} · ${tier}`
-                        : "You, guest"}
+                            : `${session.opponent.name} · ${tier} · ${them === "ready" ? "Ready" : "Building"}`
+                        : `${lobby.host.name} · ${tier} · Ready`}
                 </ReadoutLine>
                 {!host && (
                     <ReadoutLine label="Status" empty>
-                        Waiting for the host to start
+                        {session.ready
+                            ? "Waiting for the host to start"
+                            : (session.issue ?? "Build your squad")}
                     </ReadoutLine>
                 )}
                 {host && (
@@ -700,21 +842,21 @@ function LobbyView({
                                 action: "confirm",
                                 label: "Start",
                                 tone: "primary",
-                                deny: phase === "ready" ? undefined : "Waiting for an opponent",
+                                deny: block ?? undefined,
                                 run: start,
                             },
                         ]}
                     />
                 )}
-                {host && phase === "waiting" && (
+                {QA_SKIP && host && phase === "waiting" && (
                     <ActionRow
                         id="arrive"
                         group="main"
-                        label="Preview: an opponent arrives now"
-                        title="Preview only"
-                        hint="Skips the wait; a simulated opponent joins the lobby"
+                        label="Bring in the opponent"
+                        title="Bring in the opponent"
+                        hint="Skips the wait"
                         instant
-                        commands={[{ action: "confirm", label: "Bring in opponent", run: skip }]}
+                        commands={[{ action: "confirm", label: "Bring in", run: skip }]}
                     />
                 )}
                 <ActionRow
@@ -734,20 +876,28 @@ function LobbyView({
                     ]}
                 />
             </Panel>
-            <Panel label="Squad" meta={`${session.squad.length} units`} className="gfr-side">
-                {session.names.map((name, i) => (
-                    <ReadoutLine key={i} label={name}>
-                        {presetName(session.squad[i]?.preset, rating)}
-                    </ReadoutLine>
-                ))}
+            <Panel
+                label="Your squad"
+                meta={
+                    budget === null
+                        ? `${squadPrice(session.squad)} cr`
+                        : `${squadPrice(session.squad)} / ${budget} cr`
+                }
+                className="gfr-side"
+            >
+                <SquadLines squad={session.squad} names={session.names} />
+                {session.builds && (
+                    <SquadBuilder
+                        mode={lobby.mode}
+                        budget={budget}
+                        rating={ruleRating(lobby.rule)}
+                        storageKey={BUILDER_KEY}
+                        onChange={onSquad}
+                    />
+                )}
             </Panel>
         </>
     );
-}
-
-function presetName(id: string | undefined, rating: number): string {
-    if (!id) return "";
-    return presetsFor(rating).find((p) => p.id === id)?.name ?? id;
 }
 
 // === Join ===================================================================
@@ -793,12 +943,24 @@ function CodePrompt({
 }
 
 function JoinView({
+    candidate,
+    enter,
+    otherCode,
+    hasSaved,
+    squadKind,
+    setSquadKind,
     typing,
     refusal,
     openPrompt,
     paste,
     pick,
 }: {
+    candidate: Lobby | null;
+    enter: (lobby: Lobby) => void;
+    otherCode: () => void;
+    hasSaved: boolean;
+    squadKind: SquadKind;
+    setSquadKind: (k: SquadKind) => void;
     typing: string;
     refusal: Refusal;
     openPrompt: () => void;
@@ -806,6 +968,64 @@ function JoinView({
     pick: (code: string) => void;
 }) {
     const recent = useMemo(() => recentCodes(kv()), []);
+    if (candidate) {
+        const { rule, mode, host } = candidate;
+        const budget = ruleBudget(rule, mode);
+        return (
+            <Panel label="Match found" meta={formatCode(candidate.code)} className="gfr-main">
+                <ReadoutLine label="Host">{`${host.name} · ${tierOf(host.rating).name}`}</ReadoutLine>
+                <ReadoutLine label="Size">{mode}</ReadoutLine>
+                <ReadoutLine label="Squads">{ruleLabel(rule, mode)}</ReadoutLine>
+                <ReadoutLine label="Gear">
+                    {ruleTierName(rule) ? `${ruleTierName(rule)} and below` : "Everything"}
+                </ReadoutLine>
+                {rule.kind === "any" && hasSaved && (
+                    <Stepper
+                        id="join-squad"
+                        group="main"
+                        label="Squad"
+                        title="Squad"
+                        hint="Bring your squad, or build one for this match"
+                        options={[
+                            ["saved", "Your squad"],
+                            ["build", "Build one"],
+                        ]}
+                        value={squadKind}
+                        onChange={(v) => setSquadKind(v as SquadKind)}
+                    />
+                )}
+                <ActionRow
+                    id="join-enter"
+                    group="main"
+                    label="Join"
+                    title="Join"
+                    hint={
+                        budget === null
+                            ? "Bring any squad"
+                            : `Build a squad of up to ${budget} credits`
+                    }
+                    instant
+                    commands={[
+                        {
+                            action: "confirm",
+                            label: "Join",
+                            tone: "primary",
+                            run: () => enter(candidate),
+                        },
+                    ]}
+                />
+                <ActionRow
+                    id="join-other"
+                    group="main"
+                    label="Use another code"
+                    title="Use another code"
+                    hint="Back to the code field"
+                    instant
+                    commands={[{ action: "confirm", label: "Another code", run: otherCode }]}
+                />
+            </Panel>
+        );
+    }
     return (
         <Panel label="Join with a code" className="gfr-main">
             <ReadoutLine label="Code" empty={!typing}>
@@ -866,7 +1086,8 @@ function OpenGames({
     refusal: Refusal;
 }) {
     const [size, setSize] = useState<"any" | Mode>("any");
-    const games = openGames(now, size);
+    const [ruleFilter, setRuleFilter] = useState<RuleFilter>("all");
+    const games = openGames(now, size, undefined, ruleFilter);
     // The cursor starts on the first game, not on the size filter above it.
     const store = useFocusStore();
     useLayoutEffect(() => {
@@ -894,6 +1115,20 @@ function OpenGames({
                 value={size}
                 onChange={(v) => setSize(v as "any" | Mode)}
             />
+            <Stepper
+                id="open-rule"
+                group="main"
+                label="Squads"
+                title="Squads"
+                hint="Show one rule only"
+                options={[
+                    ["all", "All"],
+                    ["any", "Any squad"],
+                    ["budget", "Budgeted"],
+                ]}
+                value={ruleFilter}
+                onChange={(v) => setRuleFilter(v as RuleFilter)}
+            />
             {refusal && (
                 <ReadoutLine label="Refused">
                     <span className="gfr-warn">{refusal.message}</span>
@@ -917,10 +1152,10 @@ function OpenGames({
                             id={`open-${lobby.id}`}
                             group="main"
                             name={lobby.host.name}
-                            kind={`${lobby.mode} · ${tierOf(lobby.host.rating).name}`}
+                            kind={`${lobby.mode} · ${ruleLabel(lobby.rule, lobby.mode)}`}
                             tag={ageLabel(now - lobby.openedAt)}
                             title={lobby.host.name}
-                            hint={`${lobby.mode}, open ${ageLabel(now - lobby.openedAt)}`}
+                            hint={`${tierOf(lobby.host.rating).name}, ${ruleLabel(lobby.rule, lobby.mode)}, open ${ageLabel(now - lobby.openedAt)}`}
                             instant
                             commands={[
                                 { action: "confirm", label: "Join", run: () => join(lobby) },

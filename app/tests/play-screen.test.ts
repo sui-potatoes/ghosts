@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { budgetOf, tierOf } from "../src/features/play/economy/index.ts";
@@ -43,6 +44,32 @@ test("no card names the chain or a key", () => {
             [card.name, card.hint, card.locked ?? "", ...card.lines].join(" "),
             /chain|wallet|enter|esc/i,
         );
+});
+
+test("the screen reads as a finished product: no preview or this-device disclaimers", () => {
+    const copy = modeCards().flatMap((c) => [
+        c.name,
+        c.hint,
+        c.verb,
+        c.tag ?? "",
+        c.locked ?? "",
+        ...c.lines,
+    ]);
+    assert.doesNotMatch(copy.join(" "), /preview|mock|this device|for now/i);
+    const screen = readFileSync(
+        new URL("../src/features/play/PlayScreen.tsx", import.meta.url),
+        "utf8",
+    );
+    const panels = readFileSync(
+        new URL("../src/features/settings/panels.tsx", import.meta.url),
+        "utf8",
+    );
+    const rating = panels.slice(
+        panels.indexOf("function RankedBlock"),
+        panels.indexOf("function NamePrompt"),
+    );
+    assert.ok(rating.length > 0);
+    for (const text of [screen, rating]) assert.doesNotMatch(text, /Preview:|this device|for now/i);
 });
 
 test("the ranked facts are whatever the economy returns", () => {

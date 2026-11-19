@@ -69,7 +69,7 @@ export function matchScenario(match: MockMatch, plan: MatchPlan): Scenario {
         noObjective: true,
         skipBriefing: true,
         briefing: {
-            issuer: `${title.toUpperCase()} / PREVIEW`,
+            issuer: title.toUpperCase(),
             title,
             setting: `${LEVEL_NAME} / ${match.mode} against ${match.opponent.name}.`,
             contract: [`Defeat every unit of ${match.opponent.name}'s squad.`],
@@ -84,7 +84,7 @@ export function matchScenario(match: MockMatch, plan: MatchPlan): Scenario {
         location: { ...base.location, sector: LEVEL_NAME, code: "PL–00.000" },
         contract: {
             employer: match.kind === "ranked" ? "RANKED" : "FRIENDLY",
-            division: "PREVIEW",
+            division: match.rule ? match.rule.label.toUpperCase() : "—",
             value: "—",
             threat: match.mode,
             threatLevel: 3,

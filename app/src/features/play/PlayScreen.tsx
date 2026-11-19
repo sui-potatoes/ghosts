@@ -25,7 +25,7 @@ import {
     type Command,
 } from "../../ui";
 import { ModeArt } from "./icons";
-import { PREVIEW_LINE, modeCards, rankedFacts, type ModeCard } from "./model";
+import { modeCards, rankedFacts, type ModeCard } from "./model";
 import { useRating } from "./rating";
 import "./play.css";
 
@@ -73,7 +73,6 @@ function Cards({ rating }: { rating: number }) {
                     <Card key={card.id} card={card} rating={rating} />
                 ))}
             </div>
-            <p className="gui-play-note">{PREVIEW_LINE}</p>
         </div>
     );
 }

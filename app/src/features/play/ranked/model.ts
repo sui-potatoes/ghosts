@@ -31,6 +31,7 @@ import {
     type Slot,
     type UnitStats,
 } from "../economy/index.ts";
+import { sameLoadout, type SavedType } from "./presets.ts";
 
 export const SIZES: Mode[] = ["3x3", "4x4"];
 export const SLOTS: Slot[] = ["weapon", "armor", "utility"];
@@ -42,7 +43,10 @@ export const SLOT_NAMES: Record<Slot, string> = {
 
 export const STORE_KEY = "ghosts:play-ranked";
 
-export type Squads = Partial<Record<Mode, Loadout[]>>;
+/** One place in the squad: a unit, or nobody yet (a type has to be chosen first). */
+export type Stand = Loadout | null;
+
+export type Squads = Partial<Record<Mode, Stand[]>>;
 
 /** What the builder keeps between visits. */
 export type Saved = {
@@ -55,45 +59,78 @@ export type Saved = {
 
 /* === Credits ========================================================== */
 
-export const squadCost = (squad: Loadout[]): number =>
-    squad.reduce((sum, unit) => sum + priceOf(unit), 0);
+/** `55 cr`. */
+export const cr = (n: number): string => `${n} cr`;
+
+/** `+15 cr`, `−10 cr`, `+0 cr`. */
+export const crDelta = (n: number): string =>
+    n > 0 ? `+${n} cr` : n < 0 ? `\u2212${-n} cr` : "+0 cr";
+
+/** What remains after a choice: `leaves 25 cr`, `20 cr over`, or `No limit`. */
+export const leavesText = (left: number | null): string =>
+    left === null ? "No limit" : left >= 0 ? `leaves ${left} cr` : `${-left} cr over`;
+
+export const squadCost = (squad: Stand[]): number =>
+    squad.reduce((sum, unit) => sum + (unit ? priceOf(unit) : 0), 0);
 
 export type BudgetView = {
-    budget: number;
+    /** Null: no limit. */
+    budget: number | null;
     spent: number;
-    /** Negative when over. */
-    left: number;
+    /** Negative when over; null without a limit. */
+    left: number | null;
     over: boolean;
 };
 
-export function budgetView(squad: Loadout[], rating: number, mode: Mode): BudgetView {
-    const budget = budgetOf(rating, mode);
+/** The squad against its budget; the tier's when none is given, null for no limit. */
+export function budgetView(
+    squad: Stand[],
+    rating: number,
+    mode: Mode,
+    budget: number | null = budgetOf(rating, mode),
+): BudgetView {
     const spent = squadCost(squad);
+    if (budget === null) return { budget, spent, left: null, over: false };
     return { budget, spent, left: budget - spent, over: spent > budget };
 }
 
 /* === The squad ======================================================== */
 
 /** A squad of the right size for `mode`: what fits is kept, new places are filled with the default. */
-export function fitSquad(squad: Loadout[], rating: number, mode: Mode): Loadout[] {
+export function fitSquad<T extends Stand>(
+    squad: T[],
+    rating: number,
+    mode: Mode,
+    budget: number | null = budgetOf(rating, mode),
+): (T | Loadout)[] {
     const size = squadSize(mode);
     if (squad.length === size) return squad;
     if (squad.length > size) return squad.slice(0, size);
-    const fill = defaultSquad(rating, mode);
+    const fill = defaultSquad(rating, mode, budget ?? Number.POSITIVE_INFINITY);
     return [...squad, ...fill.slice(squad.length, size)];
 }
 
-const replaceAt = (squad: Loadout[], index: number, unit: Loadout): Loadout[] =>
+const replaceAt = <T extends Stand>(squad: T[], index: number, unit: T): T[] =>
     squad.map((u, i) => (i === index ? unit : u));
+
+/** Clear a place: the unit goes, its type has to be chosen again. */
+export function clearUnit(squad: Stand[], index: number): Stand[] {
+    if (index < 0 || index >= squad.length) return squad;
+    return replaceAt<Stand>(squad, index, null);
+}
 
 export function presetOf(rating: number, id: string): Preset | undefined {
     return presetsFor(rating).find((preset) => preset.id === id);
 }
 
 /** Start the unit over from a preset. */
-export function choosePreset(squad: Loadout[], index: number, preset: Preset): Loadout[] {
+export function choosePreset<T extends Stand>(
+    squad: T[],
+    index: number,
+    preset: Preset,
+): (T | Loadout)[] {
     if (index < 0 || index >= squad.length) return squad;
-    return replaceAt(squad, index, { ...preset.loadout });
+    return replaceAt<T | Loadout>(squad, index, { ...preset.loadout });
 }
 
 /** Whether the unit's preset lets the slot change. A preset the economy no longer lists is not held to it. */
@@ -110,38 +147,56 @@ export function withItem(unit: Loadout, slot: Slot, id: string | null): Loadout 
 }
 
 /** Swap one slot of one unit; refused (the same squad back) when the preset fixes the slot. */
-export function swapItem(
-    squad: Loadout[],
+export function swapItem<T extends Stand>(
+    squad: T[],
     index: number,
     slot: Slot,
     id: string | null,
     rating: number,
-): Loadout[] {
+): (T | Loadout)[] {
     const unit = squad[index];
     if (!unit || !canSwap(unit, slot, rating)) return squad;
     if (id !== null && !itemOf(id)) return squad;
-    return replaceAt(squad, index, withItem(unit, slot, id));
+    return replaceAt<T | Loadout>(squad, index, withItem(unit, slot, id));
 }
 
 /* === The picker's options ============================================= */
 
+/** What the builder needs to price a choice: whose tier, which size, how much to spend. */
+export type Limits = {
+    rating: number;
+    mode: Mode;
+    /** Null: no limit. */
+    budget: number | null;
+};
+
+export const tierLimits = (rating: number, mode: Mode): Limits => ({
+    rating,
+    mode,
+    budget: budgetOf(rating, mode),
+});
+
 export type PickOption = {
-    /** Unique within the picker: `preset:assault`, `weapon:rifle`, `utility:none`. */
+    /** Unique within the picker: `preset:assault`, `mine:k3x`, `weapon:rifle`, `utility:none`. */
     key: string;
     group: "preset" | Slot;
     name: string;
-    /** The preset's role line; empty for items. */
+    /** The preset's role line; empty for items and saved types. */
     role: string;
+    /** The catalog's description of an item; empty for types. */
+    description: string;
+    /** A saved type of the player's own. */
+    mine: boolean;
     /** What the unit would carry if this were chosen. */
     unit: Loadout;
-    /** The item's own price, or the whole unit's for a preset. */
+    /** The item's own price, or the whole unit's for a type. */
     price: number;
     /** What the unit would cost more (+) or less (-) than it does now. */
     delta: number;
-    /** Credits left for the squad if this were chosen. */
-    leftAfter: number;
+    /** Credits left for the squad if this were chosen; null without a limit. */
+    leftAfter: number | null;
     current: boolean;
-    /** Why the player's tier does not allow it yet: `Unlocks at Contractor`. */
+    /** Why the player's tier does not allow it: `Unlocks at Contractor`. */
     locked?: string;
 };
 
@@ -154,78 +209,99 @@ export type PickSection = {
 };
 
 const unlockText = (tier: string | undefined): string =>
-    tier ? `Unlocks at ${tier}` : "Not available yet";
+    tier ? `Unlocks at ${tier}` : "Not available at this tier";
 
-/** The sections of the picker for one unit: presets first, then each slot. */
-export function pickSections(
-    squad: Loadout[],
-    index: number,
-    rating: number,
-    mode: Mode,
-): PickSection[] {
+/** Why a loadout cannot be fielded at this rating, or undefined when it can. */
+export function lockedReason(loadout: Loadout, rating: number): string | undefined {
+    const open = tierOf(rating).items;
+    const ids = [loadout.weapon, loadout.armor, loadout.utility].filter((id): id is string => !!id);
+    if (ids.every((id) => open.includes(id))) return undefined;
+    return unlockText(unlockTierOf(loadout)?.name);
+}
+
+function optionMaker(squad: Stand[], index: number, limits: Limits) {
     const unit = squad[index];
-    if (!unit) return [];
-    const now = priceOf(unit);
-    const left = budgetView(squad, rating, mode).left;
-    const option = (
+    const now = unit ? priceOf(unit) : 0;
+    const left = budgetView(squad, limits.rating, limits.mode, limits.budget).left;
+    return (
         key: string,
         group: PickOption["group"],
         name: string,
-        role: string,
         next: Loadout,
         price: number,
         current: boolean,
+        extra: Partial<PickOption> = {},
     ): PickOption => {
         const delta = priceOf(next) - now;
         return {
             key,
             group,
             name,
-            role,
+            role: "",
+            description: "",
+            mine: false,
             unit: next,
             price,
             delta,
-            leftAfter: left - delta,
+            leftAfter: left === null ? null : left - delta,
             current,
+            ...extra,
         };
     };
+}
 
-    const presets = presetsFor(rating);
-    const sections: PickSection[] = [
-        {
-            group: "preset",
-            title: "Preset",
-            options: presets.map((preset) =>
-                option(
-                    `preset:${preset.id}`,
-                    "preset",
-                    preset.name,
-                    preset.role,
-                    { ...preset.loadout },
-                    priceOf(preset.loadout),
-                    preset.id === unit.preset &&
-                        SLOTS.every((slot) => preset.loadout[slot] === unit[slot]),
-                ),
-            ),
-        },
-    ];
-    // What the tier has not unlocked yet follows what it has, each with its reason.
+/**
+ * The unit type step: the built-in types the tier allows, then those it does
+ * not (each with its reason), then the player's own saved types.
+ */
+export function typeSection(
+    squad: Stand[],
+    index: number,
+    limits: Limits,
+    mine: SavedType[] = [],
+): PickSection {
+    const unit = squad[index];
+    const option = optionMaker(squad, index, limits);
+    const presets = presetsFor(limits.rating);
     const open = new Set(presets.map((p) => p.id));
-    sections[0].options.push(
-        ...PRESETS.filter((p) => !open.has(p.id)).map((preset) => ({
-            ...option(
-                `preset:${preset.id}`,
+    const builtIn = (preset: Preset, locked?: string) =>
+        option(
+            `preset:${preset.id}`,
+            "preset",
+            preset.name,
+            { ...preset.loadout },
+            priceOf(preset.loadout),
+            !!unit && sameLoadout(preset.loadout, unit),
+            { role: preset.role, ...(locked ? { locked } : {}) },
+        );
+    const options = [
+        ...presets.map((preset) => builtIn(preset)),
+        ...PRESETS.filter((p) => !open.has(p.id)).map((preset) =>
+            builtIn(preset, unlockText(unlockTierOf(preset.loadout)?.name)),
+        ),
+        ...mine.map((type) => {
+            const locked = lockedReason(type.loadout, limits.rating);
+            return option(
+                `mine:${type.id}`,
                 "preset",
-                preset.name,
-                preset.role,
-                { ...preset.loadout },
-                priceOf(preset.loadout),
-                false,
-            ),
-            locked: unlockText(unlockTierOf(preset.loadout)?.name),
-        })),
-    );
+                type.name,
+                { ...type.loadout },
+                priceOf(type.loadout),
+                !!unit && sameLoadout(type.loadout, unit),
+                { mine: true, ...(locked ? { locked } : {}) },
+            );
+        }),
+    ];
+    return { group: "preset", title: "Unit type", options };
+}
 
+/** The equipment step: weapon, armor and utility for the unit's type. Empty for a place with no unit. */
+export function gearSections(squad: Stand[], index: number, limits: Limits): PickSection[] {
+    const unit = squad[index];
+    if (!unit) return [];
+    const { rating } = limits;
+    const option = optionMaker(squad, index, limits);
+    const sections: PickSection[] = [];
     for (const slot of SLOTS) {
         const have = unit[slot];
         const listed = itemsFor(rating, slot);
@@ -239,52 +315,75 @@ export function pickSections(
                 `${slot}:${item.id}`,
                 slot,
                 item.name,
-                "",
                 withItem(unit, slot, item.id),
                 item.price,
                 item.id === have,
+                {
+                    description: item.description,
+                    ...(tierOf(rating).items.includes(item.id)
+                        ? {}
+                        : { locked: unlockText(TIERS.find((t) => t.id === item.tier)?.name) }),
+                },
             ),
         );
         if (slot === "utility")
             options.push(
-                option("utility:none", slot, "None", "", withItem(unit, slot, null), 0, !have),
+                option("utility:none", slot, "None", withItem(unit, slot, null), 0, !have, {
+                    description: "Nothing in the utility slot.",
+                }),
             );
         const shown = new Set(items.map((item) => item.id));
         const later = allItems()
             .filter((item) => item.slot === slot && !shown.has(item.id))
-            .map((item) => ({
-                ...option(
+            .map((item) =>
+                option(
                     `${slot}:${item.id}`,
                     slot,
                     item.name,
-                    "",
                     withItem(unit, slot, item.id),
                     item.price,
                     false,
+                    {
+                        description: item.description,
+                        locked: unlockText(TIERS.find((t) => t.id === item.tier)?.name),
+                    },
                 ),
-                locked: unlockText(TIERS.find((t) => t.id === item.tier)?.name),
-            }));
+            );
         const swappable = canSwap(unit, slot, rating);
         const preset = presetOf(rating, unit.preset);
         sections.push({
             group: slot,
             title: SLOT_NAMES[slot],
-            fixed: swappable ? undefined : `Fixed on ${preset?.name ?? "this preset"}`,
+            fixed: swappable ? undefined : `Fixed on ${preset?.name ?? "this type"}`,
             options: swappable ? [...options, ...later] : options.filter((o) => o.current),
         });
     }
     return sections;
 }
 
-/** Apply a picker option to the squad: a preset starts over, an item swaps its slot. */
-export function applyOption(
-    squad: Loadout[],
+/** Both steps at the tier's budget: the types first, then each slot. */
+export function pickSections(
+    squad: Stand[],
+    index: number,
+    rating: number,
+    mode: Mode,
+    budget: number | null = budgetOf(rating, mode),
+): PickSection[] {
+    if (!squad[index]) return [];
+    const limits = { rating, mode, budget };
+    return [typeSection(squad, index, limits), ...gearSections(squad, index, limits)];
+}
+
+/** Apply a picker option to the squad: a type starts the unit over, an item swaps its slot. */
+export function applyOption<T extends Stand>(
+    squad: T[],
     index: number,
     option: PickOption,
     rating: number,
-): Loadout[] {
-    if (option.locked) return squad;
+): (T | Loadout)[] {
+    if (option.locked || index < 0 || index >= squad.length) return squad;
     if (option.group === "preset") {
+        if (option.mine) return replaceAt<T | Loadout>(squad, index, { ...option.unit });
         const preset = presetOf(rating, option.key.slice("preset:".length));
         return preset ? choosePreset(squad, index, preset) : squad;
     }
@@ -371,19 +470,68 @@ export function changeSummary(changes: StatChange[], max = 2): string {
 
 export type Gate = { ok: true } | { ok: false; reason: string };
 
-const issueText = (issue: Issue): string =>
-    issue.unit === undefined ? issue.message : `Unit ${issue.unit + 1}: ${issue.message}`;
+/**
+ * Everything wrong with the squad, each unit's issues naming its place
+ * (`unit` is the place's index, empty places included), then the budget.
+ * The economy checks each unit; the budget is the one given (null: none).
+ */
+export function squadIssues(
+    squad: Stand[],
+    rating: number,
+    mode: Mode,
+    budget: number | null = budgetOf(rating, mode),
+): Issue[] {
+    const issues: Issue[] = [];
+    if (squad.length !== squadSize(mode))
+        issues.push({ kind: "size", message: `A ${mode} squad has ${squadSize(mode)} units.` });
+    squad.forEach((unit, i) => {
+        if (!unit) {
+            issues.push({ kind: "illegal", unit: i, message: `Choose a type for unit ${i + 1}.` });
+            return;
+        }
+        for (const issue of validateSquad([unit], rating, "3x3")) {
+            if (issue.kind === "size" || issue.kind === "over-budget") continue;
+            issues.push({
+                ...issue,
+                unit: i,
+                message: issue.message.replace(/^Unit 1\b/, `Unit ${i + 1}`),
+            });
+        }
+    });
+    const spent = squadCost(squad);
+    if (budget !== null && spent > budget)
+        issues.push({
+            kind: "over-budget",
+            message: `The squad costs ${cr(spent)}, ${cr(spent - budget)} over the ${cr(budget)} budget.`,
+        });
+    return issues;
+}
+
+export const issueText = (issue: Issue): string =>
+    issue.unit === undefined || /^Unit \d/.test(issue.message) || /unit \d+\.$/.test(issue.message)
+        ? issue.message
+        : `Unit ${issue.unit + 1}: ${issue.message}`;
 
 /** Whether the squad may go into the queue; if not, the first thing wrong with it. */
-export function startGate(squad: Loadout[], rating: number, mode: Mode): Gate {
-    const issues = validateSquad(squad, rating, mode);
+export function startGate(
+    squad: Stand[],
+    rating: number,
+    mode: Mode,
+    budget: number | null = budgetOf(rating, mode),
+): Gate {
+    const issues = squadIssues(squad, rating, mode, budget);
     return issues.length === 0 ? { ok: true } : { ok: false, reason: issueText(issues[0]) };
 }
 
-/** The issues that name a unit, by unit index. */
-export function unitIssues(squad: Loadout[], rating: number, mode: Mode): Map<number, Issue[]> {
+/** The issues that name a unit, by place. */
+export function unitIssues(
+    squad: Stand[],
+    rating: number,
+    mode: Mode,
+    budget: number | null = budgetOf(rating, mode),
+): Map<number, Issue[]> {
     const byUnit = new Map<number, Issue[]>();
-    for (const issue of validateSquad(squad, rating, mode)) {
+    for (const issue of squadIssues(squad, rating, mode, budget)) {
         if (issue.unit === undefined) continue;
         byUnit.set(issue.unit, [...(byUnit.get(issue.unit) ?? []), issue]);
     }
@@ -445,10 +593,10 @@ export function parseSaved(raw: string | null): Saved {
             if (
                 Array.isArray(list) &&
                 list.length > 0 &&
-                list.every(isLoadout) &&
-                list.every(known)
+                list.some((unit) => unit !== null) &&
+                list.every((unit) => unit === null || (isLoadout(unit) && known(unit)))
             )
-                squads[mode] = list.map((unit) => ({ ...unit }));
+                squads[mode] = list.map((unit: Stand) => (unit ? { ...unit } : null));
         }
         const seen = data.seen;
         return {
@@ -471,11 +619,18 @@ export function parseSaved(raw: string | null): Saved {
 export const serializeSaved = (saved: Saved): string => JSON.stringify(saved);
 
 /** The squad to show for a size: the one remembered, else what fits from the other size, else the default. */
-export function squadFor(saved: Saved, rating: number, mode: Mode): Loadout[] {
+export function squadFor(
+    saved: Saved,
+    rating: number,
+    mode: Mode,
+    budget: number | null = budgetOf(rating, mode),
+): Stand[] {
     const own = saved.squads[mode];
-    if (own) return fitSquad(own, rating, mode);
+    if (own) return fitSquad(own, rating, mode, budget);
     const other = SIZES.map((m) => saved.squads[m]).find((s) => s && s.length > 0);
-    return other ? fitSquad(other, rating, mode) : defaultSquad(rating, mode);
+    return other
+        ? fitSquad(other, rating, mode, budget)
+        : defaultSquad(rating, mode, budget ?? Number.POSITIVE_INFINITY);
 }
 
 /** Switch size: the squad that was last built for it comes back; the first time, the other one's units carry over. */
@@ -483,7 +638,7 @@ export function switchMode(
     saved: Saved,
     rating: number,
     from: Mode,
-    squad: Loadout[],
+    squad: Stand[],
     to: Mode,
 ): Saved {
     const squads: Squads = { ...saved.squads, [from]: squad };
@@ -501,15 +656,17 @@ export function tierNotice(
     saved: Saved,
     rating: number,
     mode: Mode,
-    squad: Loadout[],
+    squad: Stand[],
 ): string | null {
     const tier = tierOf(rating);
     const was = saved.seen;
     if (!was || was.tier === tier.id) return null;
     const { budget, left, over } = budgetView(squad, rating, mode);
-    const lead = `You are now ${tier.name}. The ${mode} budget is ${budget}`;
-    if (over) return `${lead}, ${-left} less than this squad costs. Trim it before the next match.`;
-    if (budget > was.budget && left > 0) return `${lead}, with ${left} left to spend.`;
+    const lead = `You are now ${tier.name}. The ${mode} budget is ${cr(budget ?? 0)}`;
+    const rest = left ?? 0;
+    if (over)
+        return `${lead}, ${cr(-rest)} less than this squad costs. Trim it before the next match.`;
+    if ((budget ?? 0) > was.budget && rest > 0) return `${lead}, with ${cr(rest)} left to spend.`;
     return `${lead}.`;
 }
 
@@ -517,3 +674,44 @@ export const seenNow = (rating: number, mode: Mode): Saved["seen"] => {
     const tier = tierOf(rating);
     return { tier: tier.id, name: tier.name, budget: budgetOf(rating, mode) };
 };
+
+/* === Saved squads against the current limits ========================== */
+
+/**
+ * Why a saved squad cannot be loaded under these limits, or null: a unit
+ * with gear the tier has not unlocked first, then the budget.
+ */
+export function savedSquadRefusal(
+    units: Stand[],
+    rating: number,
+    mode: Mode,
+    budget: number | null,
+): string | null {
+    const issues = squadIssues(units, rating, mode, budget);
+    const first =
+        issues.find((i) => i.kind === "locked") ??
+        issues.find((i) => i.kind !== "over-budget") ??
+        issues[0];
+    if (!first) return null;
+    if (first.kind === "over-budget" && budget !== null) {
+        const spent = squadCost(units);
+        return `Costs ${cr(spent)}: ${cr(spent - budget)} over the budget`;
+    }
+    return issueText(first);
+}
+
+/** The type's name for a unit: the saved type it is exactly, else its preset (`Assault · modified`). */
+export function typeName(unit: Loadout, rating: number, mine: SavedType[] = []): string {
+    const own = mine.find((t) => sameLoadout(t.loadout, unit));
+    if (own) return own.name;
+    const preset = presetOf(rating, unit.preset);
+    const name = preset?.name ?? unit.preset.charAt(0).toUpperCase() + unit.preset.slice(1);
+    const base = preset?.loadout;
+    return base && !sameLoadout(base, unit) ? `${name} · modified` : name;
+}
+
+/** The unit's gear in the economy's names: `Standard Rifle · Light Armor · No utility`. */
+export function gearText(unit: Loadout): string {
+    const name = (id: string | null) => (id ? (itemOf(id)?.name ?? id) : null);
+    return [name(unit.weapon), name(unit.armor), name(unit.utility) ?? "No utility"].join(" · ");
+}

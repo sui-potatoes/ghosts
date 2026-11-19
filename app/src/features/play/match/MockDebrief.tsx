@@ -16,6 +16,7 @@ import { FocusRoot, StatusChip, useGlyphSet, type Command } from "../../../ui";
 import { DebriefView } from "../../debrief/Debrief";
 import { HqCommandBar } from "../../headquarters/frame";
 import {
+    matchChip,
     matchTitle,
     mockDebriefOf,
     type MatchPlan,
@@ -59,7 +60,7 @@ function Screen({ match, plan, settled, figures: squad, onAgain, onMenu }: MockD
                 frame={{
                     location: ["Play", matchTitle(match), "Result"],
                     onLeave: onMenu,
-                    status: <StatusChip label="Mode" value="Preview" />,
+                    status: <StatusChip label="Match" value={matchChip(match)} />,
                     commands: <HqCommandBar glyphs={glyphs} error="" clearError={() => {}} />,
                 }}
                 primary={{

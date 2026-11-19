@@ -20,6 +20,7 @@ import {
     PRICES,
     squadPrice,
     squadSize,
+    standardBudgets,
     tierOf,
     TIERS,
     unitStats,
@@ -185,4 +186,30 @@ test("unit stats are the chain's: fieldStats of the matching squad items", () =>
         armor: "nyx-mid",
         utility: "frag",
     });
+});
+
+test("standardBudgets lists one budget per tier for a size", () => {
+    for (const mode of MODES) {
+        const list = standardBudgets(mode);
+        assert.deepEqual(
+            list.map((b) => b.tier.id),
+            TIERS.map((t) => t.id),
+        );
+        for (const { tier, credits } of list) assert.equal(credits, tier.budget[mode]);
+    }
+});
+
+test("validateSquad takes a budget of its own: undefined is the tier's, null is none", () => {
+    const rich = Array.from({ length: 3 }, () => preset("heavy"));
+    const top = TIERS[TIERS.length - 1].min;
+    const tierBudget = budgetOf(top, "3x3");
+    const over = (budget?: number | null) =>
+        validateSquad(rich, top, "3x3", budget).some((i) => i.kind === "over-budget");
+    assert.equal(over(), squadPrice(rich) > tierBudget);
+    assert.equal(over(undefined), over());
+    assert.equal(over(null), false);
+    assert.equal(over(squadPrice(rich)), false);
+    assert.equal(over(squadPrice(rich) - 1), true);
+    // Gear is still checked against the rating's tier whatever the budget.
+    assert.ok(validateSquad(rich, 0, "3x3", null).some((i) => i.kind === "locked"));
 });

@@ -49,15 +49,18 @@ export function CommandBar({
     const nav = commands.filter((c) => c.action === "nav");
     return (
         <footer className="gui-bar">
+            {/* Both lines always render (empty when there is nothing to say): the bar keeps its shape. */}
             <div className="gui-bar-context">
-                {title && <span className="gui-bar-title">{title}</span>}
+                <span className="gui-bar-title">{title}</span>
                 {deny ? (
                     <span key={denyKey} className="gui-bar-hint" data-deny>
                         <i className="gui-warn-mark" aria-hidden />
-                        {deny}
+                        <span className="gui-bar-hint-text">{deny}</span>
                     </span>
                 ) : (
-                    hint && <span className="gui-bar-hint">{hint}</span>
+                    <span className="gui-bar-hint">
+                        <span className="gui-bar-hint-text">{hint}</span>
+                    </span>
                 )}
             </div>
             <div className="gui-bar-commands">

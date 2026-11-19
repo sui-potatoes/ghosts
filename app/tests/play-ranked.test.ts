@@ -37,6 +37,16 @@ import {
     switchMode,
     tierNotice,
     SLOTS,
+    clearUnit,
+    cr,
+    crDelta,
+    gearSections,
+    leavesText,
+    savedSquadRefusal,
+    squadIssues,
+    tierLimits,
+    typeName,
+    typeSection,
 } from "../src/features/play/ranked/model.ts";
 
 const RATING = 1500;
@@ -268,4 +278,97 @@ test("a unit that differs from its preset says so, and what changed", () => {
         presetLabel(swapItem([lighter], 0, "armor", assault.loadout.armor, RATING)[0]),
         assault.name,
     );
+});
+
+test("credit labels always carry their unit", () => {
+    assert.equal(cr(55), "55 cr");
+    assert.equal(crDelta(15), "+15 cr");
+    assert.equal(crDelta(-10), "−10 cr");
+    assert.equal(crDelta(0), "+0 cr");
+    assert.equal(leavesText(25), "leaves 25 cr");
+    assert.equal(leavesText(-20), "20 cr over");
+    assert.equal(leavesText(null), "No limit");
+});
+
+test("a unit is built in two steps: type first, then its equipment", () => {
+    const limits = tierLimits(RATING, "3x3");
+    const squad = defaultSquad(RATING, "3x3");
+    const types = typeSection(squad, 0, limits);
+    assert.ok(types.options.every((o) => o.group === "preset"));
+    const gear = gearSections(squad, 0, limits);
+    assert.deepEqual(
+        gear.map((s) => s.group),
+        ["weapon", "armor", "utility"],
+    );
+    // a place with no unit offers no equipment, only types
+    const empty = clearUnit(squad, 1);
+    assert.equal(empty[1], null);
+    assert.deepEqual(gearSections(empty, 1, limits), []);
+    assert.ok(typeSection(empty, 1, limits).options.length > 0);
+    // choosing a type resets the equipment to the type's kit
+    const swapped = swapItem(squad, 0, "armor", "armor-1", RATING);
+    const assault = typeSection(swapped, 0, limits).options.find(
+        (o) => o.key === "preset:assault",
+    )!;
+    const back = applyOption(swapped, 0, assault, RATING);
+    assert.deepEqual(back[0], PRESETS.find((p) => p.id === "assault")!.loadout);
+});
+
+test("saved types are listed under the built-in ones and choose their own loadout", () => {
+    const limits = tierLimits(RATING, "3x3");
+    const squad = defaultSquad(RATING, "3x3");
+    const loadout: Loadout = {
+        preset: "assault",
+        weapon: "rifle-1",
+        armor: "armor-1",
+        utility: null,
+    };
+    const mine = [{ id: "t1", name: "Breacher", loadout }];
+    const options = typeSection(squad, 0, limits, mine).options;
+    const own = options.filter((o) => o.mine);
+    assert.equal(own.length, 1);
+    assert.equal(options[options.length - 1].key, "mine:t1");
+    assert.deepEqual(applyOption(squad, 0, own[0], RATING)[0], loadout);
+    assert.equal(typeName(loadout, RATING, mine), "Breacher");
+    assert.equal(typeName(loadout, RATING), "Assault · modified");
+    // a saved type with gear above the tier is locked with its reason
+    const heavy = [{ id: "t2", name: "Tank", loadout: { ...loadout, armor: "armor-3" } }];
+    const locked = typeSection(squad, 0, tierLimits(0, "3x3"), heavy).options.find((o) => o.mine)!;
+    assert.match(locked.locked!, /^Unlocks at /);
+    assert.equal(applyOption(squad, 0, locked, 0), squad);
+});
+
+test("issues name the place, an empty place is one, and the budget is the one given", () => {
+    const squad = clearUnit(defaultSquad(RATING, "3x3"), 1);
+    const issues = squadIssues(squad, RATING, "3x3");
+    const empty = issues.find((i) => i.unit === 1);
+    assert.ok(empty && /unit 2/i.test(empty.message));
+    assert.equal(startGate(squad, RATING, "3x3").ok, false);
+    // no limit: the dearest squad is never over budget
+    const top = TIERS[TIERS.length - 1].min;
+    const dear = defaultSquad(top, "4x4", Number.POSITIVE_INFINITY);
+    assert.deepEqual(squadIssues(dear, top, "4x4", null), []);
+    assert.equal(budgetView(dear, top, "4x4", null).left, null);
+    // a small budget the host set is enforced
+    const tight = squadIssues(dear, top, "4x4", 10);
+    assert.ok(tight.some((i) => i.kind === "over-budget" && i.message.includes("cr")));
+    // a locked item names the unit's place, not its place among the filled ones
+    const locked = [null, { ...squad[0]!, weapon: "rifle-3" }, squad[2]];
+    const found = squadIssues(locked, TIERS[0].min, "3x3").find((i) => i.kind === "locked");
+    assert.equal(found?.unit, 1);
+});
+
+test("a saved squad that does not fit says why", () => {
+    const squad = defaultSquad(RATING, "3x3") as Loadout[];
+    assert.equal(savedSquadRefusal(squad, RATING, "3x3", budgetOf(RATING, "3x3")), null);
+    assert.match(savedSquadRefusal(squad, RATING, "3x3", 10)!, /cr over the budget$/);
+    const plasma = squad.map((u) => ({ ...u, weapon: "rifle-3" }));
+    assert.match(savedSquadRefusal(plasma, TIERS[0].min, "3x3", null)!, /unlocks at/);
+});
+
+test("stored squads keep empty places and drop junk", () => {
+    const squad = clearUnit(defaultSquad(RATING, "3x3"), 2);
+    const back = parseSaved(serializeSaved({ ...emptySaved(), squads: { "3x3": squad } }));
+    assert.deepEqual(back.squads["3x3"], squad);
+    assert.deepEqual(parseSaved('{"v":1,"squads":{"3x3":[null,null,null]}}').squads, {});
 });

@@ -150,11 +150,6 @@
     white-space: nowrap;
 }
 
-.gset-rank .gui-note {
-    margin: calc(var(--u) * 3) 0 0;
-    padding: 0 calc(var(--u) * 3);
-}
-
 /* === Controller diagram ============================================= */
 
 .gset-diagram-panel {

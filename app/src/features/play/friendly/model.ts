@@ -16,8 +16,16 @@
  * stays client-side. The share link carries the formatted code.
  */
 
-import type { Loadout, Mode } from "../economy/index.ts";
-import { defaultSquad, presetsFor, squadSize } from "../economy/index.ts";
+import type { Issue, Loadout, Mode, Tier } from "../economy/index.ts";
+import {
+    defaultSquad,
+    presetsFor,
+    squadSize,
+    standardBudgets,
+    TIERS,
+    tierOf,
+    validateSquad,
+} from "../economy/index.ts";
 
 export const CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
 export const CODE_LENGTH = 8;
@@ -183,7 +191,75 @@ export function squadFromRecruits(
     });
 }
 
-export type SquadKind = "saved" | "default";
+// === The squad rule =========================================================
+
+/**
+ * What a host decides about squads: any squad at all, or ranked rules at a
+ * tier (that tier's budget for the size and the gear it unlocks). The tier is
+ * stored, not the credits, so changing the size keeps the same tier.
+ */
+export type Rule = { kind: "any" } | { kind: "budget"; tier: string };
+
+export const ANY_RULE: Rule = { kind: "any" };
+
+/** Budgeted at the tier of a rating: the host's default. */
+export const defaultRule = (rating: number): Rule => ({ kind: "budget", tier: tierOf(rating).id });
+
+const tierById = (id: string): Tier => TIERS.find((t) => t.id === id) ?? TIERS[0];
+
+/** The credits a squad may cost under the rule, null for no limit. */
+export function ruleBudget(rule: Rule, mode: Mode): number | null {
+    return rule.kind === "any" ? null : tierById(rule.tier).budget[mode];
+}
+
+/** The rating the rule prices gear at: the tier's lowest, or the top tier's for any squad. */
+export const ruleRating = (rule: Rule): number =>
+    rule.kind === "any" ? TIERS[TIERS.length - 1].min : tierById(rule.tier).min;
+
+/** The rank whose gear the rule unlocks, null for any squad (everything). */
+export const ruleTierName = (rule: Rule): string | null =>
+    rule.kind === "any" ? null : tierById(rule.tier).name;
+
+/** "Any squad" or "Budget 150 cr · Contractor". */
+export function ruleLabel(rule: Rule, mode: Mode): string {
+    if (rule.kind === "any") return "Any squad";
+    return `Budget ${ruleBudget(rule, mode)} cr · ${tierById(rule.tier).name}`;
+}
+
+/** The budget stepper's options for a size: `[tier id, "150 cr · Contractor"]`, lowest first. */
+export const budgetOptions = (mode: Mode): [string, string][] =>
+    standardBudgets(mode).map(({ tier, credits }) => [tier.id, `${credits} cr · ${tier.name}`]);
+
+/** The rule as a match carries it (`MockMatch.rule`). */
+export const matchRule = (rule: Rule, mode: Mode) => ({
+    budget: ruleBudget(rule, mode),
+    rating: ruleRating(rule),
+    label: ruleLabel(rule, mode),
+});
+
+/** What is wrong with a squad under the rule; none means it is ready. */
+export const readiness = (squad: Loadout[], rule: Rule, mode: Mode): Issue[] =>
+    validateSquad(squad, ruleRating(rule), mode, ruleBudget(rule, mode));
+
+/** A rule read back from storage, any when it does not read. */
+export function parseRule(value: unknown): Rule {
+    const r = value as { kind?: unknown; tier?: unknown } | null;
+    if (
+        r &&
+        r.kind === "budget" &&
+        typeof r.tier === "string" &&
+        TIERS.some((t) => t.id === r.tier)
+    )
+        return { kind: "budget", tier: r.tier };
+    return ANY_RULE;
+}
+
+/** Whether the lobby's squad is built in the builder: always when budgeted, on request for any squad. */
+export const buildsSquad = (rule: Rule, kind: SquadKind): boolean =>
+    rule.kind === "budget" || kind === "build";
+
+/** `build` is a default squad edited in the builder. */
+export type SquadKind = "saved" | "default" | "build";
 
 export type Bring = { squad: Loadout[]; names: string[]; kind: SquadKind };
 
@@ -192,19 +268,27 @@ export function bringSquad(
     kind: SquadKind,
     saved: { role: string; callsign: string }[] | null,
     mode: Mode,
-    rating: number,
+    rule: Rule = ANY_RULE,
 ): Bring {
     const size = squadSize(mode);
+    if (rule.kind === "budget") {
+        // Under a budget the squad starts as the default one and is built to fit.
+        return {
+            kind: "build",
+            squad: defaultSquad(ruleRating(rule), mode, ruleBudget(rule, mode) ?? undefined),
+            names: Array.from({ length: size }, (_, i) => `Unit ${i + 1}`),
+        };
+    }
     if (kind === "saved" && saved && saved.length > 0) {
         return {
             kind: "saved",
-            squad: squadFromRecruits(saved, mode, rating),
+            squad: squadFromRecruits(saved, mode, ruleRating(rule)),
             names: Array.from({ length: size }, (_, i) => saved[i]?.callsign ?? `Unit ${i + 1}`),
         };
     }
     return {
-        kind: "default",
-        squad: defaultSquad(rating, mode),
+        kind: kind === "build" ? "build" : "default",
+        squad: defaultSquad(ruleRating(rule), mode),
         names: Array.from({ length: size }, (_, i) => `Unit ${i + 1}`),
     };
 }

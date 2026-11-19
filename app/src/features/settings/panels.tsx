@@ -317,7 +317,6 @@ function RankedBlock() {
                     )}
                 </>
             )}
-            <p className="gui-note">Preview: this rating is kept on this device only.</p>
         </Panel>
     );
 }
@@ -547,7 +546,7 @@ export function AccountPanel() {
                         id="account-recovery"
                         group="rows"
                         label="Recovery"
-                        value="Not available yet"
+                        value="Not available"
                         tone="dim"
                         title="Recovery wallet"
                         hint="A second authorizer for a lost passkey or provider"
@@ -848,7 +847,7 @@ export function ControlsPanel() {
                             label={MENU_LABELS[action]}
                             value={<KeyCaps keys={controls.bindings[action]} />}
                             title={MENU_LABELS[action]}
-                            hint={`${ACTION_LABELS[action]}. Menu keys are fixed for now`}
+                            hint={`${ACTION_LABELS[action]}. Menu keys are fixed`}
                         />
                     ))}
                 </List>

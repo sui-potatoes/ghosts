@@ -11,7 +11,7 @@
 .gui-play {
     min-width: 0;
     display: grid;
-    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-rows: minmax(0, 1fr);
     gap: calc(var(--u) * 3);
     min-height: 0;
     max-width: 1180px;
@@ -154,18 +154,10 @@
     font: 500 var(--t-body) / 1.2 var(--font-mono);
 }
 
-.gui-play-note {
-    font: 400 var(--t-micro) / 1.4 var(--font-mono);
-    letter-spacing: var(--track);
-    text-transform: uppercase;
-    text-align: center;
-    color: var(--disabled-color);
-}
-
 /* Phone and narrow windows: the cards stack, art beside text, one line each. */
 @media (max-width: 760px) {
     .gui-play {
-        grid-template-rows: minmax(0, 1fr) auto;
+        grid-template-rows: minmax(0, 1fr);
     }
     .gui-play-cards {
         grid-template-columns: minmax(0, 1fr);

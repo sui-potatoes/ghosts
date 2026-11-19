@@ -153,6 +153,44 @@ test("the opponent squad is legal, sized to the mode and fixed by the seed", () 
             }
 });
 
+test("a friendly rule decides the opponent's squad: its budget and its gear", () => {
+    const rule = { budget: 125, rating: 0, label: "Budget 125 cr · Rookie" };
+    for (let seed = 1; seed < 40; seed++) {
+        const squad = opponentSquad(rule.rating, "3x3", seed, rule.budget);
+        assert.deepEqual(validateSquad(squad, rule.rating, "3x3", rule.budget), []);
+    }
+    const free = opponentSquad(2500, "4x4", 3, null);
+    assert.deepEqual(validateSquad(free, 2500, "4x4", null), []);
+    // matchPlan follows the rule over the opponent's own rating; ranked is untouched.
+    const base = {
+        kind: "friendly",
+        mode: "3x3",
+        squad: defaultSquad(0, "3x3"),
+        returnTo: "/",
+    } as const;
+    const m = { ...base, opponent: { name: "x", rating: 2500 }, id: "q1", rule };
+    const plan = matchPlan(m);
+    assert.deepEqual(plan.opponent.loadouts, opponentSquad(0, "3x3", plan.seed, 125));
+    const { rule: _unused, ...ranked } = m;
+    void _unused;
+    const rp = matchPlan({ ...ranked, kind: "ranked" });
+    assert.deepEqual(rp.opponent.loadouts, opponentSquad(2500, "3x3", rp.seed));
+});
+
+test("a staged match keeps its rule through storage, and drops a malformed one", () => {
+    const rule = { budget: null, rating: 1900, label: "Any squad" };
+    const m = {
+        kind: "friendly",
+        mode: "3x3",
+        squad: [{}],
+        opponent: { name: "x", rating: 1 },
+        rule,
+    };
+    assert.deepEqual(parseMatch(JSON.stringify(m))?.rule, rule);
+    assert.equal(parseMatch(JSON.stringify({ ...m, rule: { budget: "a" } }))?.rule, undefined);
+    assert.equal(parseMatch(JSON.stringify({ ...m, rule: undefined }))?.rule, undefined);
+});
+
 test("different seeds give different opponents", () => {
     const squads = new Set(
         Array.from({ length: 12 }, (_, seed) =>

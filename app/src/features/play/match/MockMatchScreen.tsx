@@ -45,7 +45,6 @@ import {
     useGlyphSet,
 } from "../../../ui";
 import { tierOf } from "../economy";
-import { PREVIEW_LINE } from "../model";
 import { useRating } from "../rating";
 import { MatchPause } from "./MatchPause";
 import { MockDebrief } from "./MockDebrief";
@@ -53,6 +52,7 @@ import {
     LEVEL_NAME,
     MATCH_KEY,
     matchPlan,
+    matchChip,
     matchTitle,
     outcomeOf,
     parseMatch,
@@ -176,7 +176,7 @@ function Intro({
             <ScreenFrame
                 location={["Play", title]}
                 onLocation={onLeave}
-                status={<StatusChip label="Mode" value="Preview" />}
+                status={<StatusChip label="Match" value={matchChip(match)} />}
                 columns="minmax(0, 1fr)"
                 commands={<FocusCommandBar glyphs={glyphs} />}
             >
@@ -227,6 +227,7 @@ function IntroBody({
             <p className="gui-mm-facts">
                 {matchTitle(match)} · {LEVEL_NAME} ·{" "}
                 {match.kind === "ranked" ? "Rating at stake" : "Rating unchanged"}
+                {match.rule ? ` · Squads: ${match.rule.label}` : ""}
             </p>
             <div className="gui-mm-squads">
                 <SquadPanel label="Your squad" side={side} />
@@ -245,7 +246,6 @@ function IntroBody({
                     ]}
                 />
             </div>
-            <p className="gui-note gui-mm-note">{PREVIEW_LINE}</p>
         </div>
     );
 }

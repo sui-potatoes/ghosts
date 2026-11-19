@@ -243,6 +243,11 @@ export function budgetOf(rating: number, mode: Mode): number {
     return tierOf(rating).budget[mode];
 }
 
+/** The standard budgets for a size, one per tier, lowest first. */
+export function standardBudgets(mode: Mode): { tier: Tier; credits: number }[] {
+    return TIERS.map((tier) => ({ tier, credits: tier.budget[mode] }));
+}
+
 const unlocked = (rating: number, id: string | null) =>
     id === null || tierOf(rating).items.includes(id);
 
@@ -320,7 +325,17 @@ export const squadPrice = (squad: Loadout[]): number =>
 
 const SLOT_NAMES: Record<Slot, string> = { weapon: "weapon", armor: "armor", utility: "utility" };
 
-export function validateSquad(squad: Loadout[], rating: number, mode: Mode): Issue[] {
+/**
+ * The checks on a squad. `budget` undefined is the rating's tier budget (ranked);
+ * a number is that many credits (a friendly match's rule); null is no credit limit.
+ * Gear is always checked against the rating's tier.
+ */
+export function validateSquad(
+    squad: Loadout[],
+    rating: number,
+    mode: Mode,
+    budget?: number | null,
+): Issue[] {
     const issues: Issue[] = [];
     const tier = tierOf(rating);
     if (squad.length !== squadSize(mode))
@@ -371,11 +386,11 @@ export function validateSquad(squad: Loadout[], rating: number, mode: Mode): Iss
         }
     });
     const total = squadPrice(squad);
-    const budget = tier.budget[mode];
-    if (total > budget)
+    const limit = budget === undefined ? tier.budget[mode] : budget;
+    if (limit !== null && total > limit)
         issues.push({
             kind: "over-budget",
-            message: `The squad costs ${total} credits; the budget is ${budget}.`,
+            message: `The squad costs ${total} credits; the budget is ${limit}.`,
         });
     return issues;
 }
