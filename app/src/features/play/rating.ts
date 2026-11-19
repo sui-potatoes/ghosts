@@ -194,6 +194,14 @@ export function applyResult(
 /** A rating can be reset to the default only from above it, never from below. */
 export const canReset = (state: RatingState): boolean => state.rating > DEFAULT_RATING;
 
+/** Why the reset row is inactive, or `undefined` when it can be pressed. */
+export const resetDeny = (state: RatingState, inMatch: boolean): string | undefined =>
+    inMatch
+        ? "Not during a match"
+        : canReset(state)
+          ? undefined
+          : `Only a rating above ${DEFAULT_RATING} can be reset`;
+
 /**
  * Pure reset. From above the default: the rating becomes exactly the default and the
  * deviation goes back to a newcomer's (as `glicko::default()`, the contract's state for

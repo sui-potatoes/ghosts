@@ -34,7 +34,7 @@ import {
 } from "@ghosts/engine/keys";
 
 import { budgetOf, tierOf } from "../play/economy";
-import { canReset, DEFAULT_RATING, resetRating, useRating } from "../play/rating";
+import { DEFAULT_RATING, resetDeny, resetRating, useRating } from "../play/rating";
 import { previewDialogue, previewEffect } from "../../audio";
 import type { SessionTermination } from "../../chain";
 import { usePad } from "../../components/PadHints";
@@ -191,13 +191,24 @@ function SignInGate({ what }: { what: string }) {
 export function PlayerPanel() {
     const { account, inMatch } = useSettingsContext();
     const [renaming, setRenaming] = useState(false);
+    const [resetting, setResetting] = useState(false);
+    const rating = useRating();
     const signedIn = !!account.address;
     const label = signedIn ? "Player" : "Rating";
     return (
         <SettingsFrame
             columns={TWO}
             status={account.namePending && <StatusChip label="Name" value="Saving" state="busy" />}
-            overlay={renaming && <NamePrompt close={() => setRenaming(false)} />}
+            overlay={
+                renaming ? (
+                    <NamePrompt close={() => setRenaming(false)} />
+                ) : (
+                    resetting &&
+                    !resetDeny(rating, !!inMatch) && (
+                        <ResetPrompt rating={rating.rating} close={() => setResetting(false)} />
+                    )
+                )
+            }
         >
             <Panel label={label} className="gset-c2 gset-fit gset-rank">
                 <List label={label}>
@@ -228,7 +239,7 @@ export function PlayerPanel() {
                             ]}
                         />
                     )}
-                    <RatingResetRow inMatch={!!inMatch} />
+                    <RatingResetRow inMatch={!!inMatch} open={() => setResetting(true)} />
                 </List>
             </Panel>
             <RankedBlock />
@@ -236,14 +247,9 @@ export function PlayerPanel() {
     );
 }
 
-/** The commit row: arm, then confirm; inactive from the default down and during a match. */
-function RatingResetRow({ inMatch }: { inMatch: boolean }) {
-    const rating = useRating();
-    const deny = inMatch
-        ? "Not during a match"
-        : canReset(rating)
-          ? undefined
-          : `Only a rating above ${DEFAULT_RATING} can be reset`;
+/** A one-press row that opens the reset prompt; inactive from the default down and during a match. */
+function RatingResetRow({ inMatch, open }: { inMatch: boolean; open: () => void }) {
+    const deny = resetDeny(useRating(), inMatch);
     return (
         <ActionRow
             id="rating-reset"
@@ -251,19 +257,35 @@ function RatingResetRow({ inMatch }: { inMatch: boolean }) {
             label={`Reset rating to ${DEFAULT_RATING}`}
             tone="danger"
             title={`Reset rating to ${DEFAULT_RATING}`}
-            hint={`Your rating goes back to ${DEFAULT_RATING}; peak and record stay. This cannot be undone`}
-            commands={[
-                {
-                    action: "confirm",
-                    label: "Reset",
-                    tone: "danger",
-                    deny,
-                    run: () => {
-                        resetRating();
-                    },
-                },
-            ]}
+            hint={`Your rating goes back to ${DEFAULT_RATING}; peak and record stay`}
+            instant
+            commands={[{ action: "confirm", label: "Reset", tone: "danger", deny, run: open }]}
         />
+    );
+}
+
+/** The reset question; Reset writes the rating and closes. */
+function ResetPrompt({ rating, close }: { rating: number; close: () => void }) {
+    const { glyphs } = useSettingsContext();
+    return (
+        <Prompt
+            id="prompt-rating-reset"
+            tone="danger"
+            eyebrow="Rating"
+            title="Reset your rating?"
+            hint={`Rating ${rating} returns to ${DEFAULT_RATING}`}
+            confirm={{
+                label: "Reset",
+                run: () => {
+                    resetRating();
+                    close();
+                },
+            }}
+            cancel={{ label: "Keep rating", run: close }}
+            glyphs={glyphs}
+        >
+            {`Your rating returns to ${DEFAULT_RATING}. Peak and record stay.`}
+        </Prompt>
     );
 }
 

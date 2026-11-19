@@ -13,6 +13,7 @@ import {
     glickoStep,
     HISTORY_MAX,
     parseRating,
+    resetDeny,
     resetState,
     type RatingState,
 } from "../src/features/play/rating.ts";
@@ -191,4 +192,14 @@ test("an old record without the new fields still loads", () => {
     assert.equal(s.peak, 1600);
     assert.equal(s.deviation, DEFAULT_DEVIATION);
     assert.deepEqual(s.history, []);
+});
+
+test("the reset row is active only above the default and outside a match", () => {
+    assert.equal(resetDeny(at(1720), false), undefined);
+    assert.equal(resetDeny(at(1720), true), "Not during a match");
+    assert.equal(
+        resetDeny(at(DEFAULT_RATING), false),
+        `Only a rating above ${DEFAULT_RATING} can be reset`,
+    );
+    assert.equal(resetDeny(at(1400), true), "Not during a match");
 });
