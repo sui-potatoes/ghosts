@@ -41,6 +41,7 @@ import {
     type GameRecord,
     type GameState,
     type Stats,
+    type Tile,
     type Unit,
     type UnitActionEntry,
 } from "./types.ts";
@@ -66,6 +67,8 @@ export interface SandboxOptions {
     squads?: [SquadUnit[], SquadUnit[]];
     /** Spawn positions in place of `map::black_rain_positions`: the first half is the first player's. */
     positions?: [number, number][];
+    /** A grid in place of Black Rain's, for experiments: rows of tiles, every row as long as the first. */
+    tiles?: Tile[][];
 }
 
 /** A unit a side deploys with `SandboxOptions.squads`: its stats and the actions it carries. */
@@ -197,7 +200,9 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
         return {
             id: hexId("9", ++games),
             version: String(++version),
-            ...gridSize(map),
+            ...(options.tiles
+                ? { rows: options.tiles.length, cols: options.tiles[0].length }
+                : gridSize(map)),
             turn: 0,
             active: 0,
             players: [waiting, finder],
@@ -209,7 +214,7 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
             abandonedBy: null,
             deadlineMs: now() + DEPLOY_LIMIT_MS,
             status: { kind: "deploying" },
-            tiles: decodeTiles(map),
+            tiles: options.tiles ? structuredClone(options.tiles) : decodeTiles(map),
             units: [],
         };
     }
