@@ -51,13 +51,13 @@ import {
 /** Equator radius of the body. */
 const R = 0.0295;
 /** Top of the body's neck: the fuze's thread shank stands on it. */
-const NECK = 0.037;
+export const NECK = 0.037;
 /** Pin axis (parallel to Z) through the ears and the lever's flanges. */
-const PIN: [number, number] = [0.0153, 0.0545];
+export const PIN: [number, number] = [0.0153, 0.0545];
 const PIN_R = 0.00085;
 /** The pull ring lies in the plane z = RING_Z; its top passes through the pin's eye. */
-const RING_Z = 0.0178;
-const RING_R = 0.0105;
+export const RING_Z = 0.0178;
+export const RING_R = 0.0105;
 /** Hook tip of the lever under the hinge lug: what the lever rolls on when released. */
 const HOOK: [number, number] = [-0.0122, 0.0554];
 /** Under-face of the lever over the fuze top (also the striker's top). */
@@ -145,7 +145,7 @@ export function fragGrenadeFinish(base: WeaponFinish = familyFinish()) {
 // ---------------------------------------------------------------------------
 // Revolved surfaces with real grooves.
 
-interface Ring {
+export interface Ring {
   y: number;
   /** Base radius. */
   r: number;
@@ -157,7 +157,7 @@ interface Strip {
   /** Flat facets (tiles, groove walls) instead of the smooth profile normal. */
   flat: boolean;
 }
-type Rect = [number, number, number, number];
+export type Rect = [number, number, number, number];
 
 /**
  * Surface of revolution through `rings` (ordered along the profile, bottom
@@ -166,7 +166,7 @@ type Rect = [number, number, number, number];
  * and k + 1) takes `strip(k)`. UVs: u around, v along the profile length,
  * packed into `rect`.
  */
-function revolve(
+export function revolve(
   g: WeaponGeometry,
   rings: Ring[],
   columns: number[],
@@ -251,7 +251,7 @@ function revolve(
 }
 
 /** Rescales a part's UVs into an atlas rectangle. */
-function pack(geo: T.BufferGeometry, rect: Rect) {
+export function pack(geo: T.BufferGeometry, rect: Rect) {
   const uv = geo.getAttribute("uv") as T.BufferAttribute | undefined;
   if (!uv) return geo;
   let u0 = Infinity,
@@ -276,7 +276,7 @@ function pack(geo: T.BufferGeometry, rect: Rect) {
 }
 
 // UV atlas: one island per part family, shared by both details.
-const UV = {
+export const UV = {
   body: [0, 0, 1, 0.56] as Rect,
   fuze: [0, 0.58, 0.5, 0.86] as Rect,
   selector: [0, 0.88, 0.5, 1] as Rect,
@@ -287,7 +287,7 @@ const UV = {
 };
 
 /** Revolved profile [y, r] about +Y, UVs packed. */
-function lathe(
+export function lathe(
   g: WeaponGeometry,
   m: T.Material,
   profile: number[][],
@@ -413,7 +413,7 @@ function body(g: WeaponGeometry, m: WeaponFinish) {
 }
 
 /** Carry stud under the base: a mushroom head for the vest's keyhole holder. */
-function stud(g: WeaponGeometry, m: WeaponFinish) {
+export function stud(g: WeaponGeometry, m: WeaponFinish, dy = 0) {
   lathe(
     g,
     m.rubber,
@@ -426,7 +426,7 @@ function stud(g: WeaponGeometry, m: WeaponFinish) {
       [-0.0431, 0.0082],
       [-0.0435, 0.007],
       [-0.0435, 0],
-    ],
+    ].map(([y, r]) => [y + dy, r]),
     seg(16, 6),
     UV.hardware,
   );
@@ -435,7 +435,7 @@ function stud(g: WeaponGeometry, m: WeaponFinish) {
 // ---------------------------------------------------------------------------
 // Fuze
 
-function fuze(g: WeaponGeometry, m: WeaponFinish) {
+export function fuze(g: WeaponGeometry, m: WeaponFinish) {
   const y0 = NECK;
   // Thread shank between the body's neck lip and the jam ring: three crests
   // show; the rest of the thread is inside the neck.
@@ -639,9 +639,14 @@ function fuze(g: WeaponGeometry, m: WeaponFinish) {
 // ---------------------------------------------------------------------------
 // Lever: one pressed sheet, swept along its inner-face line in the XY plane.
 
-/** Inner-face line from the hook tip, over the fuze top, down the +X side. */
-function leverLine(): { at: [number, number]; width: number; dish: number }[] {
-  const pts: { at: [number, number]; width: number; dish: number }[] = [
+/** A control point of the lever's inner-face line: where, how wide, and how
+ * much it dishes to the body's curve (1: to the frag's equator). */
+export type LeverPoint = { at: [number, number]; width: number; dish: number };
+
+/** The lever's head: from the hook tip over the fuze top to where it turns
+ * down past the ears. Shared by every grenade on this fuze. */
+export function leverHead(): LeverPoint[] {
+  return [
     { at: HOOK, width: 0.0075, dish: 0 },
     { at: [-0.0139, 0.0554], width: 0.0075, dish: 0 },
     { at: [-0.0146, 0.0562], width: 0.0075, dish: 0 },
@@ -655,6 +660,11 @@ function leverLine(): { at: [number, number]; width: number; dish: number }[] {
     { at: [0.0184, 0.051], width: 0.0146, dish: 0 },
     { at: [0.0189, 0.0455], width: 0.0136, dish: 0.3 },
   ];
+}
+
+/** Inner-face line from the hook tip, over the fuze top, down the +X side. */
+function leverLine(): LeverPoint[] {
+  const pts = leverHead();
   // Down the body, 1 mm off the tile tops, narrowing to a rounded tail.
   const ys = [0.039, 0.034, 0.028, 0.021, 0.013, 0.004, -0.004, -0.0105];
   ys.forEach((y, i) => {
@@ -735,8 +745,17 @@ function cap(ring: T.Vector3[], want: T.Vector3) {
   return geo;
 }
 
-function lever(g: WeaponGeometry, m: WeaponFinish) {
-  const ctrl = leverLine();
+/** Samples the low lever keeps: the control points that carry a bend. */
+const LOW_LEVER = [0, 3, 5, 7, 9, 10, 11, 15, 19, 21];
+
+/** The lever along `ctrl` (the frag's own line by default); `low` picks the
+ * control points the low model keeps. Points past the head take one sample each. */
+export function lever(
+  g: WeaponGeometry,
+  m: WeaponFinish,
+  ctrl: LeverPoint[] = leverLine(),
+  low: number[] = LOW_LEVER,
+) {
   const curve = new T.CatmullRomCurve3(
     ctrl.map((c) => new T.Vector3(c.at[0], c.at[1], 0)),
     false,
@@ -745,7 +764,7 @@ function lever(g: WeaponGeometry, m: WeaponFinish) {
   const last = ctrl.length - 1;
   // High: four samples per span. Low: the control points that carry a bend.
   const ts = isLow()
-    ? [0, 3, 5, 7, 9, 10, 11, 15, 19, 21].map((i) => i / last)
+    ? low.map((i) => i / last)
     : Array.from({ length: last + 1 }, (_, i) => i).flatMap((i) =>
         i === last ? [1] : i < 12 ? [i / last, (i + 0.5) / last] : [i / last],
       );
@@ -859,7 +878,7 @@ function lever(g: WeaponGeometry, m: WeaponFinish) {
 // ---------------------------------------------------------------------------
 // Pin, ring, keeper
 
-function pin(g: WeaponGeometry, m: WeaponFinish) {
+export function pin(g: WeaponGeometry, m: WeaponFinish) {
   const [px, py] = PIN;
   const z0 = isLow() ? -0.0078 : -0.0076;
   // Shank through both ears and flanges; the eye in the YZ plane holds the ring.
@@ -899,7 +918,7 @@ function pin(g: WeaponGeometry, m: WeaponFinish) {
 
 /** Polymer keeper on the jam ring: a C-clip that snaps over the pull ring's
  * inboard edge so it cannot snag. Thumb it off before pulling. */
-function keeper(g: WeaponGeometry, m: WeaponFinish) {
+export function keeper(g: WeaponGeometry, m: WeaponFinish) {
   // Too small to matter on a belt or in flight: the low model has none.
   if (isLow()) return;
   // Ring wire where the keeper holds it: its inboard edge, running along Y.
@@ -984,7 +1003,7 @@ export function createFragGrenade(
   return root;
 }
 
-function lowMaterial() {
+export function lowMaterial() {
   return new T.MeshStandardMaterial({
     name: "00_Baked",
     vertexColors: true,
@@ -994,7 +1013,7 @@ function lowMaterial() {
 }
 
 /** One mesh per part: the slot colours go into vertex colours. */
-function collapse(group: T.Group, material: T.Material) {
+export function collapse(group: T.Group, material: T.Material) {
   const parts: T.BufferGeometry[] = [];
   for (const mesh of group.children) {
     if (!(mesh instanceof T.Mesh)) continue;

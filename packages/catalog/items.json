@@ -515,6 +515,32 @@
             ]
         },
         {
+            "id": "smoke-grenade",
+            "type": "utility",
+            "status": "planned",
+            "name": "Smoke Grenade",
+            "description": "Thrown up to 5 tiles; every unit within 2 tiles of the target, friend or foe, is smoked until the end of the next turn: it shoots at −20 aim and no shot at it hits better than 40%. Grenades ignore smoke. One per match.",
+            "stats": null,
+            "actions": [],
+            "chain": null,
+            "clientIds": [
+                "smoke"
+            ]
+        },
+        {
+            "id": "flashbang",
+            "type": "utility",
+            "status": "planned",
+            "name": "Flashbang",
+            "description": "Stun grenade. Thrown up to 5 tiles; every unit within 1 tile of the target, friend or foe, is stunned unless it dodges: it can't act until its side's next turn is over. No damage. One per match.",
+            "stats": null,
+            "actions": [],
+            "chain": null,
+            "clientIds": [
+                "flash"
+            ]
+        },
+        {
             "id": "sidearm",
             "type": "weapon",
             "status": "app",

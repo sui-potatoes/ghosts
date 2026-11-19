@@ -8,6 +8,7 @@
  * `CharacterCanvas` (`../squad/CharacterCanvas.tsx`).
  */
 
+import type { ArmoryUtility } from "@ghosts/squad/studio/armory-utilities";
 import type { Equipment, WeaponAttachments } from "@ghosts/squad/types";
 import { useEffect, useRef, useState } from "react";
 
@@ -17,7 +18,7 @@ import type { WeaponStage } from "./gear-stage";
 
 type GearCanvasProps = {
     /** Undefined empties the turntable; the canvas stays up for the next item. */
-    model?: Equipment["model"];
+    model?: Equipment["model"] | ArmoryUtility;
     attachments?: WeaponAttachments;
     /** A weapon finish id; Factory when unset. */
     skin?: string;

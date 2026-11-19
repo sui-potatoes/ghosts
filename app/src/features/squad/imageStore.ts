@@ -16,8 +16,9 @@ const CACHE = "ghosts-images";
 const RENDER_VERSION = 1;
 /** Bump when gear built in code (not loaded from files) changes: the long
  * guns and their fittings are built by `@ghosts/squad/studio/held-weapons`.
- * 3: the thumbnails are drawn by Headquarters' own lit, transparent capture. */
-const GEAR_VERSION = 3;
+ * 3: the thumbnails are drawn by Headquarters' own lit, transparent capture.
+ * 4: the smoke grenade and the flashbang join the set. */
+const GEAR_VERSION = 4;
 /** Portraits kept; looks edited away from age out first. */
 const MAX_PORTRAITS = 96;
 

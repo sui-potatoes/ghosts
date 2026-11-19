@@ -17,7 +17,11 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { acquireArmoryWeapon, isArmoryGun } from "@ghosts/squad/studio/armory-weapons";
 import { loadArmorySkin, type ArmorySkin } from "@ghosts/squad/studio/armory-skins";
-import { acquireArmoryUtility, isArmoryUtility } from "@ghosts/squad/studio/armory-utilities";
+import {
+    acquireArmoryUtility,
+    isArmoryUtility,
+    type ArmoryUtility,
+} from "@ghosts/squad/studio/armory-utilities";
 import { EquipmentAssets } from "@ghosts/squad/studio/equipment-assets";
 import { applyWireframe, type WireframeColors } from "@ghosts/squad/studio/wireframe";
 import type { Equipment, WeaponAttachments } from "@ghosts/squad/types";
@@ -29,7 +33,11 @@ export interface WeaponStage {
      * resolve quietly. `skin` is a weapon finish id; Factory when unset or
      * when its files cannot be had.
      */
-    show(model: Equipment["model"], attachments?: WeaponAttachments, skin?: string): Promise<void>;
+    show(
+        model: Equipment["model"] | ArmoryUtility,
+        attachments?: WeaponAttachments,
+        skin?: string,
+    ): Promise<void>;
     /** Empty the turntable (gear with no model in the game). */
     clear(): void;
     /** Turn the turntable to `angle` radians (absolute; the stage host owns it). */
@@ -146,7 +154,12 @@ export function createWeaponStage(host: HTMLElement): WeaponStage {
             let object: T.Object3D;
             let letGo: (() => void) | undefined;
             let small = false;
-            if (isArmoryGun(model)) {
+            if (isArmoryUtility(model)) {
+                const utility = acquireArmoryUtility(model);
+                object = utility.model;
+                letGo = utility.release;
+                small = true;
+            } else if (isArmoryGun(model)) {
                 // A finish's files are fetched the first time it is shown.
                 let finish: ArmorySkin | undefined;
                 if (skin && skin !== FACTORY_SKIN)
@@ -155,11 +168,6 @@ export function createWeaponStage(host: HTMLElement): WeaponStage {
                 const weapon = acquireArmoryWeapon(model, attachments, finish);
                 object = weapon.model;
                 letGo = weapon.release;
-            } else if (isArmoryUtility(model)) {
-                const utility = acquireArmoryUtility(model);
-                object = utility.model;
-                letGo = utility.release;
-                small = true;
             } else {
                 object = await assets.get(model, attachments);
             }

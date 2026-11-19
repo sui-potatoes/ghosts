@@ -42,7 +42,7 @@ One entry per item a recruit can carry. Any recruit can carry any item: nothing 
 | --- | --- |
 | `id` | Stable name of the item in this catalog |
 | `type` | `weapon`, `armor`, `upgrade` (fits a weapon) or `utility` |
-| `status` | `chain`: created by `move/packages/ghosts/sources/recruit/items.move`. `app`: shown in the app's squad screens only, with no on-chain item behind it |
+| `status` | `chain`: created by `move/packages/ghosts/sources/recruit/items.move`. `app`: shown in the app's squad screens only, with no on-chain item behind it. `planned`: designed, not in the contract; listed only in the Armory's requisition catalog, where it cannot be requisitioned, and read by nothing that builds transactions, decodes objects, prices or plays a match. It has no `kind` and no `chain` |
 | `name` | The item's name: for `chain` items, exactly the name the contract gives the object |
 | `description` | One or two sentences for the UI |
 | `tier` | Tier 1 to 3 where the item has tiers |

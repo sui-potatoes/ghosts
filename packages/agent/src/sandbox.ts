@@ -69,6 +69,21 @@ export interface SandboxOptions {
     positions?: [number, number][];
     /** A grid in place of Black Rain's, for experiments: rows of tiles, every row as long as the first. */
     tiles?: Tile[][];
+    /**
+     * Experiments: what a `grenade` throw does in place of the frag's blast, once its AP and
+     * use are spent. Return the records, or null to blast as usual.
+     */
+    throwEffect?: (state: GameState, unit: Unit, tx: number, ty: number) => GameRecord[] | null;
+    /** Experiments: the hit chance of a shot as the rules give it, adjusted (an aim debuff, say). */
+    adjustHitChance?: (
+        state: GameState,
+        unit: Unit,
+        tx: number,
+        ty: number,
+        chance: number,
+    ) => number;
+    /** Experiments: called once `next_turn` has passed the turn and reset the AP. */
+    afterNextTurn?: (state: GameState) => void;
 }
 
 /** A unit a side deploys with `SandboxOptions.squads`: its stats and the actions it carries. */
@@ -362,7 +377,10 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
                       100,
                       (range > 0 ? coverBonus(state, x, y, tx, ty) : 0) + target!.stats.defense,
                   );
-        const chance = hitChance(stats, range, defense);
+        const base = hitChance(stats, range, defense);
+        const chance = options.adjustHitChance
+            ? options.adjustHitChance(state, unit, tx, ty, base)
+            : base;
 
         unit.ap = 0;
         unit.ammo -= 1;
@@ -424,6 +442,7 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
         state.turn = ended.turn;
         state.active = ended.active;
         state.units = ended.units;
+        options.afterNextTurn?.(state);
         const records: GameRecord[] = [{ kind: "next_turn", turn: state.turn }];
         if (state.turn >= MAX_TURNS) over(state, { kind: "stalemate", by: null });
         else state.deadlineMs = now() + turnLimitMs(state.turn);
@@ -481,7 +500,8 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
                 )!;
                 unit.ap -= 1;
                 if (spent.uses !== null) spent.uses -= 1;
-                records = [
+                const custom = options.throwEffect?.(state, unit, action.tx, action.ty) ?? null;
+                records = custom ?? [
                     { kind: "grenade", from: [action.x, action.y], to: [action.tx, action.ty] },
                     ...explode(
                         state,

@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import * as T from "three";
+import { createFlashbang, flashbangFinish } from "./flashbang.ts";
 import { createFragGrenade, fragGrenadeFinish } from "./frag-grenade.ts";
+import { createSmokeGrenade, smokeGrenadeFinish } from "./smoke-grenade.ts";
 import type { Equipment } from "../types.ts";
 
 /**
@@ -18,11 +20,19 @@ import type { Equipment } from "../types.ts";
  * offline bake, which the stage does not run.
  */
 
-/** Catalog models (`Equipment.model`) the stage has a utility model for. */
-export type ArmoryUtility = "grenade";
-export const isArmoryUtility = (
-  model: Equipment["model"],
-): model is ArmoryUtility => model === "grenade";
+/** Models the stage has a utility model for: the catalog's (`Equipment.model`)
+ * and the Armory-only `smoke` and `flash`, which no recruit can carry. */
+export type ArmoryUtility =
+  Extract<Equipment["model"], "grenade"> | "smoke" | "flash";
+const UTILITIES: readonly string[] = ["grenade", "smoke", "flash"];
+export const isArmoryUtility = (model: string): model is ArmoryUtility =>
+  UTILITIES.includes(model);
+
+/** Upright, leaning a little away so lever, pin and band all show. */
+const lean = (root: T.Group) => {
+  root.rotation.set(0, 0, T.MathUtils.degToRad(-12));
+  return root;
+};
 
 /** How each utility stands on the stage. */
 const DISPLAY = {
@@ -37,6 +47,16 @@ const DISPLAY = {
       root.rotation.set(0, 0, T.MathUtils.degToRad(-12));
       return root;
     },
+  },
+  smoke: {
+    build: () =>
+      lean(
+        createSmokeGrenade({ detail: "high", finish: smokeGrenadeFinish() }),
+      ),
+  },
+  flash: {
+    build: () =>
+      lean(createFlashbang({ detail: "high", finish: flashbangFinish() })),
   },
 } satisfies Record<ArmoryUtility, { build(): T.Group }>;
 
