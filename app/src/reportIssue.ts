@@ -4,6 +4,9 @@
 /** The public repository, the one place its address is written. */
 export const SOURCE_URL = "https://github.com/sui-potatoes/ghosts";
 
+/** The studio behind the game, linked from the title's credit line. */
+export const POTATOES_URL = "https://potatoes.app";
+
 /** GitHub and browsers cut or refuse very long addresses. */
 export const MAX_ISSUE_URL = 6000;
 

@@ -23,6 +23,7 @@ import {
 } from "react";
 
 import { TitleBackdrop } from "../../components/TitleBackdrop";
+import { POTATOES_URL } from "../../reportIssue";
 import { useFitScale } from "../../hooks/useFitScale";
 import { getSettings } from "../../settings/store";
 import {
@@ -352,7 +353,20 @@ function BuildLine({ data }: { data: TitleData }) {
             <a href={data.source} target="_blank" rel="noreferrer" tabIndex={-1}>
                 Source
             </a>
-            <span>© Sui Potatoes</span>
+            <span>
+                © {/* Enter follows the link; the menu's confirm must not also fire a row. */}
+                <a
+                    className="gui-title-credit"
+                    href={POTATOES_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onKeyDown={(e) => {
+                        if (e.key === "Enter") e.stopPropagation();
+                    }}
+                >
+                    Sui Potatoes
+                </a>
+            </span>
         </div>
     );
 }

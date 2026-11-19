@@ -106,6 +106,17 @@
     .gui-title-build a:hover {
         color: var(--text-secondary);
     }
+
+    .gui-title-build a.gui-title-credit:hover {
+        text-decoration: underline;
+        text-underline-offset: calc(var(--u) * 1);
+    }
+}
+
+.gui-title-build a.gui-title-credit:focus-visible {
+    color: var(--text-color);
+    text-decoration: underline;
+    text-underline-offset: calc(var(--u) * 1);
 }
 
 .gui-title-chip {

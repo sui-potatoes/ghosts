@@ -14,7 +14,7 @@ import { useFitScale } from "../hooks/useFitScale";
 import { useMenuNav } from "../hooks/useMenuNav";
 import { useInstall } from "../install";
 import { requestSignIn } from "../signIn";
-import { SOURCE_URL as SOURCE } from "../reportIssue";
+import { POTATOES_URL, SOURCE_URL as SOURCE } from "../reportIssue";
 
 type Entry = {
     label: string;
@@ -164,7 +164,12 @@ export default function MainMenuClassic() {
                 ) : (
                     <span>dev build</span>
                 )}
-                <span>© Sui Potatoes</span>
+                <span>
+                    ©{" "}
+                    <a href={POTATOES_URL} target="_blank" rel="noopener noreferrer">
+                        Sui Potatoes
+                    </a>
+                </span>
                 <a href={SOURCE} target="_blank" rel="noreferrer">
                     Source
                 </a>
