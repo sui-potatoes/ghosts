@@ -7,7 +7,8 @@
  *
  *   ghosts-fleet init --agents 10 --fund 0.15   keys, configs, funds (the faucet, then the CLI wallet),
  *                                               an Account and a name each; stakes seats hire too
- *   ghosts-fleet names --agents 10              a player name for every seat that has none
+ *   ghosts-fleet names --agents 10              every seat named ai-<word>: a seat with none gets one, any
+ *                                               other name is renamed, one already ai-<word> is left
  *   ghosts-fleet run --agents 6                 leave on: ranked 3x3 back to back, paused and capped
  *                                               (--per-hour 12, --pause 5-30 seconds); Ctrl-C stops
  *                                               after the games in progress, a third one at once
@@ -36,7 +37,7 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
 import { gamesPlayed } from "../agent.ts";
-import { callsign, ensureName, NAME_ATTEMPTS } from "../callsign.ts";
+import { ensureFleetName, fleetName } from "../callsign.ts";
 import { ensureSeat, readSeatRecord, runSeat } from "../fleet.ts";
 import { agentFromEnv } from "../config.ts";
 import { TRIGGER_BALANCE } from "../funds.ts";
@@ -171,7 +172,8 @@ async function readySeat(seat: number) {
     try {
         const ready = await ensureSeat(agent, seat, recordFile(seat));
         const account = await agent.backend.account();
-        const name = ready.name.kind === "failed" ? `no name (${ready.name.message})` : ready.name.name;
+        const name =
+            ready.name.kind === "failed" ? `name failed (${ready.name.message})` : (ready.name.name ?? "no name");
         const note = ready.name.kind === "no_registry" ? ` (${ready.name.message})` : "";
         const made = ready.fresh ? "new account" : "account";
         console.log(
@@ -185,17 +187,21 @@ async function readySeat(seat: number) {
     return agent;
 }
 
-/** A name for every seat without one: the seat's callsigns, the next on "taken". */
+/** Every seat to `ai-<word>`: a name for one with none, a rename for one with another form. */
 async function names() {
     for (const seat of seats) {
         const agent = agentFromEnv({ ...process.env, ...env(seat) });
         try {
-            const outcome = await ensureName(agent, seat);
+            const outcome = await ensureFleetName(agent, seat);
             if (outcome.kind === "no_registry") console.log(`agent-${seat} ${outcome.message}`);
             else if (outcome.kind === "kept") console.log(`agent-${seat} already ${outcome.name}`);
-            else console.log(`agent-${seat} named ${outcome.name} (try ${outcome.tries})`);
+            else {
+                const verb = outcome.from ? `renamed ${outcome.from} to` : "named";
+                const pair = outcome.combined ? ", two words: every single word was taken" : "";
+                console.log(`agent-${seat} ${verb} ${outcome.name} (try ${outcome.tries}${pair})`);
+            }
         } catch (error) {
-            console.log(`agent-${seat} no name: ${(error as Error).message}`);
+            console.log(`agent-${seat} name failed: ${(error as Error).message}`);
             process.exitCode = 1;
         }
     }
@@ -364,9 +370,9 @@ async function bots() {
                 ...(values.patience ? ["--patience", values.patience] : []),
                 "--games",
                 String(games),
-                // only used if the seat has no name yet: a callsign of its own
+                // only used if the seat has no name yet: its first fleet name
                 "--name",
-                callsign(seat, NAME_ATTEMPTS),
+                fleetName(seat, 0),
             ],
             { env: { ...process.env, ...env(seat) }, stdio: ["ignore", "pipe", "pipe"] },
         ),

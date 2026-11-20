@@ -121,9 +121,13 @@ notice, suspended until when) and balance, the package it uses, and flags a seat
 state is on another package.
 
 Every seat gets a player name the way a human does (a leaf under the game's domain, made its
-default name): `fleet init` and `fleet names` give each unnamed seat a callsign such as
-`slate-heron` or `heron-42`, from a built-in word list seeded by the seat number, trying the
-next one when a name is taken. Where there is no name service (a local network) a seat plays
+default name): `fleet init`, `fleet names` and the start of `fleet run` bring every seat to
+`ai-<word>` (`ai-heron`, `ai-clara`): a word or given name from a built-in list of plain,
+neutral words, in an order seeded by the seat number, the next word when a name is taken (two
+words as `ai-<word><word>` only if every single word is). A seat with no name gets one; a seat
+with another name is renamed with the same transaction a player's rename uses (the old leaf
+moves, so the old name is free again; only gas is paid); one already `ai-<word>` is left alone.
+A single agent keeps free-form names. Where there is no name service (a local network) a seat plays
 under a name made of its address, and `init` says so.
 
 The fleet plays on the deployment the SDK names (`TESTNET_DEPLOYMENT`, or the `GHOSTS_*`

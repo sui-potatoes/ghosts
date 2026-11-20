@@ -1,7 +1,7 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
-/** Fleet seats: callsigns, names with "taken" retries, a seat made ready, the run loop, the stop. */
+/** Fleet seats: ai-<word> names with "taken" retries, a seat made ready, the run loop, the stop. */
 
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -11,7 +11,15 @@ import { test } from "node:test";
 
 import { GhostsAgent } from "../src/agent.ts";
 import type { Backend } from "../src/backend.ts";
-import { callsign, ensureName, NAME_ATTEMPTS } from "../src/callsign.ts";
+import {
+    ensureFleetName,
+    fleetName,
+    FLEET_PREFIX,
+    isFleetName,
+    PAIR_ATTEMPTS,
+    WORDS,
+    wordOrder,
+} from "../src/callsign.ts";
 import { ensureSeat, readSeatRecord, runSeat, settleSeat } from "../src/fleet.ts";
 import { nameProblem } from "../src/names.ts";
 import { ALL_LOADOUTS, loadoutOfUnit, unitFromLoadout } from "../src/ranked.ts";
@@ -21,19 +29,42 @@ import { pollingWake } from "../src/wake.ts";
 
 const fast = { wake: pollingWake(1) };
 
-test("callsigns read like players, follow the label rules, and repeat per seed", () => {
-    const seen = new Set<string>();
-    for (let seed = 1; seed <= 200; seed++) {
-        for (let attempt = 0; attempt < 4; attempt++) {
-            const name = callsign(seed, attempt);
+test("the word list is plain, unique and fits the registry's rules", () => {
+    assert.ok(WORDS.length >= 200, `${WORDS.length} words`);
+    assert.equal(new Set(WORDS).size, WORDS.length, "no duplicates");
+    for (const word of WORDS) {
+        assert.match(word, /^[a-z]+$/, word);
+        assert.equal(nameProblem(FLEET_PREFIX + word), null, word);
+    }
+});
+
+test("fleet names are ai-<word>, repeat per seed and run through the seat's own order", () => {
+    for (let seed = 1; seed <= 50; seed++) {
+        const order = wordOrder(seed);
+        assert.deepEqual([...order].sort(), [...WORDS].sort(), "a shuffle of the list");
+        assert.deepEqual(wordOrder(seed), order);
+        for (let attempt = 0; attempt < 5; attempt++) {
+            const name = fleetName(seed, attempt);
+            assert.equal(name, `ai-${order[attempt]}`, "the next word on each attempt");
+            assert.match(name, /^ai-[a-z]+$/);
             assert.equal(nameProblem(name), null, name);
-            assert.match(name, /^[a-z]+-([a-z]+|\d{2})$/);
-            assert.equal(callsign(seed, attempt), name, "the same seed proposes the same name");
-            seen.add(name);
+            assert.equal(fleetName(seed, attempt), name, "the same seed proposes the same name");
         }
     }
-    assert.ok(seen.size > 700, `${seen.size} different callsigns`);
-    assert.notEqual(callsign(3, 0), callsign(3, 1), "the next attempt is another name");
+    assert.notEqual(fleetName(1, 0), fleetName(2, 0), "seats start on different words");
+    assert.ok(isFleetName("ai-heron") && !isFleetName("ai-heron-2") && !isFleetName("fleet-mcp-3"));
+    assert.ok(!isFleetName("ai-") && !isFleetName("ai-42") && !isFleetName(null));
+});
+
+test("past the last word a name is two words, never a number", () => {
+    const seen = new Set<string>();
+    for (let attempt = 0; attempt < WORDS.length + PAIR_ATTEMPTS; attempt++) {
+        const name = fleetName(4, attempt);
+        assert.equal(nameProblem(name), null, name);
+        assert.match(name, /^ai-[a-z]+$/);
+        seen.add(name);
+    }
+    assert.equal(seen.size, WORDS.length + PAIR_ATTEMPTS, "all different");
 });
 
 /** A sandbox whose name registration says "taken" for the first `taken` names. */
@@ -51,31 +82,75 @@ function takenBackend(taken: number, options: SandboxOptions = {}) {
     return { wrapped, tried };
 }
 
-test("a seat with no name takes its first free callsign, the next one on taken", async () => {
+test("a seat with no name takes its first free word, the next one on taken", async () => {
     const { wrapped, tried } = takenBackend(2);
     const agent = new GhostsAgent(wrapped, fast);
-    const outcome = await ensureName(agent, 5);
-    assert.deepEqual(tried, [callsign(5, 0), callsign(5, 1), callsign(5, 2)]);
-    assert.deepEqual(outcome, { kind: "taken_now", name: callsign(5, 2), tries: 3 });
-    assert.equal(await agent.backend.name(), callsign(5, 2));
-    assert.deepEqual(await ensureName(agent, 5), { kind: "kept", name: callsign(5, 2) }, "idempotent");
+    const outcome = await ensureFleetName(agent, 5);
+    assert.deepEqual(tried, [fleetName(5, 0), fleetName(5, 1), fleetName(5, 2)]);
+    assert.deepEqual(outcome, { kind: "named", name: fleetName(5, 2), from: null, tries: 3, combined: false });
+    assert.equal(await agent.backend.name(), fleetName(5, 2));
+    assert.deepEqual(await ensureFleetName(agent, 5), { kind: "kept", name: fleetName(5, 2) }, "idempotent");
+    assert.equal(tried.length, 3, "a seat already ai-<word> sends nothing");
 });
 
-test("all callsigns taken is a clear refusal; another error is not swallowed", async () => {
-    const agent = new GhostsAgent(takenBackend(NAME_ATTEMPTS).wrapped, fast);
-    await assert.rejects(ensureName(agent, 1), /all taken/);
+test("a seat with another name is renamed, one already ai-<word> is left alone", async () => {
+    const tried: string[] = [];
+    let current: string | null = "fleet-bot-1-67637";
+    const sandbox = createSandbox();
+    const backend: Backend = {
+        ...sandbox,
+        name: async () => current,
+        async setName(name) {
+            tried.push(name);
+            if (tried.length === 1) throw new ActionError("name_taken", "That name is taken.");
+            current = name;
+            return sandbox.setName(name);
+        },
+    };
+    const agent = new GhostsAgent(backend, fast);
+    assert.deepEqual(await ensureFleetName(agent, 3), {
+        kind: "named",
+        name: fleetName(3, 1),
+        from: "fleet-bot-1-67637",
+        tries: 2,
+        combined: false,
+    });
+    assert.deepEqual(tried, [fleetName(3, 0), fleetName(3, 1)]);
+    assert.deepEqual(await ensureFleetName(agent, 3), { kind: "kept", name: fleetName(3, 1) });
+    assert.equal(tried.length, 2);
+    // a near miss is the wrong form too
+    current = "ai-heron-2";
+    assert.equal((await ensureFleetName(agent, 3)).kind, "named");
+});
+
+test("when every single word is taken the name is two words, and says so", async () => {
+    const { wrapped, tried } = takenBackend(WORDS.length);
+    const outcome = await ensureFleetName(new GhostsAgent(wrapped, fast), 2);
+    assert.deepEqual(outcome, {
+        kind: "named",
+        name: fleetName(2, WORDS.length),
+        from: null,
+        tries: WORDS.length + 1,
+        combined: true,
+    });
+    assert.equal(tried.length, WORDS.length + 1);
+});
+
+test("every name taken is a clear refusal; another error is not swallowed", async () => {
+    const agent = new GhostsAgent(takenBackend(WORDS.length + PAIR_ATTEMPTS).wrapped, fast);
+    await assert.rejects(ensureFleetName(agent, 1), /all taken/);
     const broken: Backend = {
         ...createSandbox(),
         setName: async () => {
             throw new ActionError("low_balance", "No gas.");
         },
     };
-    await assert.rejects(ensureName(new GhostsAgent(broken, fast), 1), /No gas/);
+    await assert.rejects(ensureFleetName(new GhostsAgent(broken, fast), 1), /No gas/);
 });
 
 test("a network without the names registry is reported, not a failure", async () => {
     const backend: Backend = { ...createSandbox(), nameService: false, name: async () => "player-abc123" };
-    const outcome = await ensureName(new GhostsAgent(backend, fast), 1);
+    const outcome = await ensureFleetName(new GhostsAgent(backend, fast), 1);
     assert.equal(outcome.kind, "no_registry");
     assert.match((outcome as { message: string }).message, /no name service/);
 });
@@ -88,8 +163,8 @@ test("a seat is made ready where it plays: an Account, a name and a record of th
         const record = join(dir, "agent-1.deployment.json");
         const ready = await ensureSeat(agent, 1, record);
         assert.equal(ready.fresh, true, "no Account on this deployment: one is made");
-        assert.equal(ready.name.kind, "taken_now");
-        assert.deepEqual(readSeatRecord(record), { package: "0xnew", account: ready.account, name: callsign(1, 0) });
+        assert.equal(ready.name.kind, "named");
+        assert.deepEqual(readSeatRecord(record), { package: "0xnew", account: ready.account, name: fleetName(1, 0) });
         const again = await ensureSeat(agent, 1, record);
         assert.deepEqual([again.fresh, again.name.kind], [false, "kept"]);
         assert.equal((await agent.backend.account())?.recruits, 0, "ranked seats hire nobody");

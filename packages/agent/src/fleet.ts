@@ -13,7 +13,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 import { playGames, type GhostsAgent } from "./agent.ts";
 import { referencePolicy, type Policy } from "./bot.ts";
-import { ensureName, type NameOutcome } from "./callsign.ts";
+import { ensureFleetName, type NameOutcome } from "./callsign.ts";
 import { describeSquad, loadoutOfUnit, type Loadout } from "./ranked.ts";
 import { ActionError } from "./types.ts";
 
@@ -34,8 +34,9 @@ export function readSeatRecord(path: string): SeatRecord | null {
 
 /**
  * Get a seat ready on the agent's deployment: an `Account` on its registry (created, and funded,
- * when the package was republished or the seat is new), and a player name (`ensureName`). The
- * record says what it is ready on. A name that cannot be had is reported, never thrown.
+ * when the package was republished or the seat is new), and an `ai-<word>` player name
+ * (`ensureFleetName`). The record says what it is ready on. A name that cannot be had is
+ * reported, never thrown.
  */
 export async function ensureSeat(
     agent: GhostsAgent,
@@ -48,7 +49,7 @@ export async function ensureSeat(
     if (!account) throw new ActionError("no_account", "Setup made no account.");
     let name: NameOutcome | { kind: "failed"; message: string };
     try {
-        name = await ensureName(agent, seed);
+        name = await ensureFleetName(agent, seed);
     } catch (error) {
         name = { kind: "failed", message: (error as Error).message };
     }
@@ -56,7 +57,7 @@ export async function ensureSeat(
         const record: SeatRecord = {
             package: agent.backend.packageId,
             account: account.id,
-            name: "name" in name ? name.name : null,
+            name: "name" in name ? name.name : await agent.backend.name().catch(() => null),
         };
         writeFileSync(recordPath, JSON.stringify(record));
     }
@@ -155,7 +156,7 @@ export async function runSeat(agent: GhostsAgent, options: RunOptions): Promise<
     agent.mode = { kind: "ranked", size: options.size ?? 3 };
     const started: number[] = [];
     const lines: GameLine[] = [];
-    const seat = await agent.backend.name();
+    let seat = await agent.backend.name();
     let failures = 0;
 
     while (!signal.aborted) {
@@ -214,6 +215,7 @@ export async function runSeat(agent: GhostsAgent, options: RunOptions): Promise<
         }
         if (results.length === 0 || !game) continue;
         const after = await agent.backend.account();
+        seat = await agent.backend.name().catch(() => seat);
         const line: GameLine = {
             game,
             seat,
