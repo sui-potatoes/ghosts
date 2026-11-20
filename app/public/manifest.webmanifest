@@ -1,7 +1,7 @@
 {
     "name": "Ghosts",
     "short_name": "Ghosts",
-    "description": "Squad tactics in a grim cyberpunk noir, played on the Sui blockchain.",
+    "description": "Turn-based squad tactics in a cyberpunk noir. Ranked and friendly matches, Training, and matches to spectate live or as replays.",
     "start_url": "/",
     "scope": "/",
     "id": "/",
@@ -11,14 +11,30 @@
     "background_color": "#0a0b0d",
     "theme_color": "#0a0b0d",
     "icons": [
-        { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-        { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+        {
+            "src": "/icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "/icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any"
+        },
         {
             "src": "/icon-maskable-512.png",
             "sizes": "512x512",
             "type": "image/png",
             "purpose": "maskable"
         },
-        { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
-    ]
+        {
+            "src": "/favicon.svg",
+            "sizes": "any",
+            "type": "image/svg+xml",
+            "purpose": "any"
+        }
+    ],
+    "categories": ["games"]
 }
