@@ -31,13 +31,12 @@ export const GHOSTS: {
     lobbies: string;
     rules: string;
 } = {
-    package: "0xdbd205dbe67b44f721933e20b95010b8e01c7c1316ff32540d7af4cb46b4246e",
-    registry: "0xaa4e35823c515cf91bbcb53311f10d6fccc2d4e4bc148fa8bb7d43f250d79589",
-    matchmaker: "0x93791ca35a785341beff57c4d59647e26da06d923c8666e67d204e401dbd017e",
-    preset: "0x5e37e87da2aca8ce31b0a2ac918ea76fa376ba9d8c02e61e976d5c9c7c2ebff1",
-    lobbies: "0x81afce11aa84fc75c08ebee3565670961002122986396444c32333f7fb72185f",
-    // Set by the publish agent: the `Rules` object the package's `init` shares. All zeros until then.
-    rules: "0x0000000000000000000000000000000000000000000000000000000000000000",
+    package: "0x55020cb734b77cec16c17fa216df136b1d2955f17606549f7d43fcbd461b76db",
+    registry: "0x5e035047bc45e546d9bc6ff423fd71d84b544453036d2c346a451b392e5ee434",
+    matchmaker: "0x11cb5f36c2d72deae4965c6029ecc854cf252774b0dc8c3c22ba64df7f180bd9",
+    preset: "0xa29eaae6fd01e9e13d379ccf16ca7ac040f867edf072825e0722cc521efb2232",
+    lobbies: "0x1a0e0cfebaaa1e9ca54b918fb22049b6fb1aaeb7bfe2ad61d63f15afaf806af5",
+    rules: "0x5d37a13a7fd691e0fe52ba4bfb40b1999481dff80df0b4cb0cb92870116b6f00",
 };
 
 /** Same Google OAuth client as `app/`; both origins are registered on it. */
