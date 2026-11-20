@@ -46,6 +46,11 @@ function inBuilding(plan: MapPlan, [x, z]: Cell) {
     });
 }
 
+/** The `TileType` tags a unit can stand on: `Empty` and `Cover`. */
+const STANDABLE = [0, 1];
+/** The `TileType` tag of an `Obstacle`. */
+const OBSTACLE = 4;
+
 const u16 = (value: number) => [value & 0xff, value >> 8];
 const hex = (bytes: number[]) => bytes.map((b) => b.toString(16).padStart(2, "0")).join("");
 
@@ -64,16 +69,17 @@ function encode({ map }: Scenario) {
         bytes.push(cols);
         const row: number[] = [];
         for (let x = minX; x <= maxX; x++) {
-            // `TileType` by declaration order, a low cover on every side of a
-            // `Cover`, then an empty `Option<Unit>`
+            // `TileType` by declaration order, then an empty `Option<Unit>`: a
+            // scene's cover prop fills its cell, so it is an `Obstacle` (4), low
+            // cover to its neighbors that no unit stands on
             const kind = tactical.isCover([x, z])
-                ? 1
+                ? OBSTACLE
                 : tactical.open([x, z])
                   ? 0
                   : inBuilding(plan, [x, z])
                     ? 3
                     : 2;
-            bytes.push(kind, ...(kind === 1 ? [1, 1, 1, 1] : []), 0);
+            bytes.push(kind, 0);
             row.push(kind);
         }
         kinds.push(row);
@@ -92,10 +98,22 @@ const functions = MAPS.map(({ fn, doc, scenario, spawns }) => {
         throw new Error(`${fn}: repeated spawn`);
     // A cell is `[x, z]` in the scene and `[row, col]` on chain.
     const tiles = spawns.map(([x, z]) => [z - minZ, x - minX]);
-    // a spawn is `Empty` as baked: not a cover, a wall or an unwalkable tile
-    for (const [i, [row, col]] of tiles.entries())
-        if (kinds[row]?.[col] !== 0)
-            throw new Error(`${fn}: spawn [${spawns[i]}] is not empty ground on chain`);
+    // a spawn is `Empty` as baked: not a cover, an obstacle, a wall or an
+    // unwalkable tile; and a unit deployed there has a tile to step onto
+    for (const [i, [row, col]] of tiles.entries()) {
+        const kind = kinds[row]?.[col];
+        if (kind === OBSTACLE)
+            throw new Error(`${fn}: spawn [${spawns[i]}] is an obstacle on chain`);
+        if (kind !== 0) throw new Error(`${fn}: spawn [${spawns[i]}] is not empty ground on chain`);
+        const around = [
+            [row - 1, col],
+            [row + 1, col],
+            [row, col - 1],
+            [row, col + 1],
+        ];
+        if (!around.some(([r, c]) => STANDABLE.includes(kinds[r]?.[c] ?? -1)))
+            throw new Error(`${fn}: spawn [${spawns[i]}] has no tile to step onto`);
+    }
 
     const positions = tiles.map(([row, col]) => `vector[${row}, ${col}]`).join(", ");
     console.log(`${fn}: ${rows}x${cols}, ${bytes.length} bytes, ${spawns.length / 2} a side`);

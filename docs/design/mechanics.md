@@ -14,7 +14,7 @@ Conventions. Paths are relative to the repo root; `S/` = `move/packages/ghosts/s
 | --- | --- | --- |
 | `Map` | `id: ID`, `grid: Grid<Tile>`, `fallen: vector<Unit>` (units killed since the last `bury`, already taken off their tiles) | `S/map/map.move:87` |
 | `Tile` | `tile_type: TileType`, `unit: Option<Unit>` (copy, store) | `S/map/map.move:56` |
-| `TileType` | enum `Empty`, `Cover { left, top, right, bottom: u8 }`, `Unwalkable`, `Wall` (BCS tags 0..3 in that order) | `S/map/map.move:64`, `:722` |
+| `TileType` | enum `Empty`, `Cover { left, top, right, bottom: u8 }`, `Unwalkable`, `Wall`, `Obstacle` (BCS tags 0..4 in that order) | `S/map/map.move`, `TileType`, `peel_without_units` |
 | `Grid<T>` | `grid: vector<vector<T>>`, `rows: u16`, `cols: u16` | `G/grid.move:41` |
 
 Cover side values: `NO_COVER` 0, `LOW_COVER` 1, `HIGH_COVER` 2 (`S/map/map.move:37-42`). Side names are tile-local: `top` is the side towards row x-1, `bottom` towards x+1, `left` towards column y-1, `right` towards y+1 (see 1.2; `side_cover!` at `S/map/map.move:512`). The type does not validate side values: `from_bcs` takes any `u8` (`:724-729`); only 0, 1 and 2 are given meaning (a value of 3 would be read as a cover worth 75 and would not block lines or paths, since those test `== HIGH_COVER`; this is derived from the code, not run).
@@ -24,7 +24,10 @@ Cover side values: `NO_COVER` 0, `LOW_COVER` 1, `HIGH_COVER` 2 (`S/map/map.move:
 | `Empty` | yes | no | no | no | yes | |
 | `Cover` | yes | a side with `HIGH_COVER` blocks the edge it faces; `LOW_COVER` never blocks (`:584`, `:529`) | a high side blocks an inner edge it faces (`:683-687`); low never | no | yes | destroyed (becomes `Empty`) by explosions with `env_damage` (`:446-451`); gives the cover bonus (section 4) |
 | `Unwalkable` | no (`ETileIsUnwalkable`, `place_recruit` `:138`; paths `:583`) | blocks entering it | no | no | yes (an area weapon or a grenade may target it; a single-target attack needs a unit on the tile, so no) | docs: "water or a pit" (`:78`) |
-| `Wall` | no (`ETileIsWall`, `:139`; paths `:583`) | blocks entering it | yes, always, also on the end edges (`:684`) | yes | no: `ETileIsWall` for area weapons (`:239`) and grenades (`:391`); a single-target shot needs a unit, and none can stand on a wall | counts as `HIGH_COVER` on all four sides for the cover bonus of a neighbor (`:369`); not destroyed by explosions (only `Cover` is, `:447`) |
+| `Wall` | no (`ETileIsWall`, `:139`; paths `:583`) | blocks entering it | yes, always, also on the end edges (`:684`) | yes | no: `ETileIsWall` for area weapons (`:239`) and grenades (`:391`); a single-target shot needs a unit, and none can stand on a wall | counts as `HIGH_COVER` on all four sides for the cover bonus of a neighbor (`:369`); not destroyed by explosions (only `Cover` and `Obstacle` are, `:447`) |
+| `Obstacle` | walk over, never stand on: `place_unit` aborts `ETileIsObstacle` (11); a path may cross it but not end on it (`ETileIsObstacle`) nor step from it onto another obstacle (`EObstaclesInARow`, 12); see 2.2 | no: it has no sides, so no edge is high | no | no | yes for an area weapon or a grenade; a single-target shot needs a unit, and none stands on an obstacle | counts as `LOW_COVER` on all four sides for the cover bonus of a neighbor (`tile_cover!`); destroyed (becomes `Empty`) by explosions with `env_damage` |
+
+An obstacle, in the owner's words, is "something that can be hovered over": it acts as a low cover on each side and cannot be walked onto. It gives low cover (25) on each of its four sides to units on the neighboring tiles; no unit can ever stand on it (not as the end of a move, not at deploy or spawn); a move may pass over it (the vault), and that step counts as one tile of distance like any other. Two obstacles in a row cannot be passed: the step off an obstacle lands on a tile a unit can stand on. A `Cover` tile is still edge cover a unit stands on, 1 to 3 sides as designed; a `Cover` low on all four sides stays legal and standable, but no baked level uses it for a prop any more.
 
 A tile with a unit is not walkable for anyone else (`:582`), but units block neither line of sight nor line of throw.
 
@@ -55,7 +58,7 @@ Entry-function arguments (all `u16` unless noted): `move_unit(game, acc, clock, 
 | --- | --- |
 | 32 | `id` (address); presets are stored with 32 zero bytes and the `id` is overwritten (`:696`) |
 | ULEB128 | number of rows, then per row: ULEB128 column count, then the tiles |
-| per tile | 1 byte tag (0 Empty, 1 Cover, 2 Unwalkable, 3 Wall); for Cover 4 more bytes in the order `left, top, right, bottom`; then `Option<Unit>` (1 byte `0` for none, `1` + a `Unit` for some) |
+| per tile | 1 byte tag (0 Empty, 1 Cover, 2 Unwalkable, 3 Wall, 4 Obstacle); for Cover 4 more bytes in the order `left, top, right, bottom` (no other tag has fields); then `Option<Unit>` (1 byte `0` for none, `1` + a `Unit` for some). An empty tile, a wall or an obstacle is 2 bytes, a cover 6 |
 | 2 + 2 | `rows`, `cols` as `u16` little-endian (read, ignored) |
 | ULEB128 | `fallen`: number of units, then the units |
 
@@ -63,24 +66,24 @@ Entry-function arguments (all `u16` unless noted): `move_unit(game, acc, clock, 
 
 ### 1.4 `black_rain`
 
-`black_rain` (`S/map/map.move:693`) is a generated 14 rows x 18 columns map (rows 0-13, columns 0-17) of the Kōra district. The block between `maps:begin`/`maps:end` is written by `pnpm --dir app build:map-preset`, i.e. `app/scripts/build-map-preset.ts`, which reads the engine scenario `blackRain` (`packages/engine/src/scenario.ts:74`) through `TacticalMap` (`packages/engine/src/map.ts`): a cell the scene calls cover becomes `Cover {1,1,1,1}` (low on all four sides), an open cell `Empty`, a building footprint `Wall`, anything else `Unwalkable` (`app/scripts/build-map-preset.ts:65-68`). Decoded from the bytes: 178 `Empty`, 64 `Wall`, 10 `Cover` (all `1,1,1,1`), 0 `Unwalkable`. So on this map no high cover exists, and the only things that block movement and sight are walls and units. Spawn cells are `[row, col]`, swapped from the scene's `[x, z]` (`:87`).
+`black_rain` (`S/map/map.move:693`) is a generated 14 rows x 18 columns map (rows 0-13, columns 0-17) of the Kōra district. The block between `maps:begin`/`maps:end` is written by `pnpm --dir app build:map-preset`, i.e. `app/scripts/build-map-preset.ts`, which reads the engine scenario `blackRain` (`packages/engine/src/scenario.ts:74`) through `TacticalMap` (`packages/engine/src/map.ts`): a cell the scene calls cover holds a prop (a barrier, a crate, cargo, barrels, a fence sheet, a smoking barrel) and becomes an `Obstacle`, an open cell `Empty`, a building footprint `Wall`, anything else `Unwalkable` (`encode` in the script). The script also checks that every spawn is `Empty` (not an obstacle) and has at least one `Empty` or `Cover` neighbor. Decoded from the bytes (556, before obstacles 596): 178 `Empty`, 64 `Wall`, 10 `Obstacle`, 0 `Cover`, 0 `Unwalkable`. So on this map no high cover exists; walls and units block movement and sight, obstacles block standing and give their neighbors low cover. Spawn cells are `[row, col]`, swapped from the scene's `[x, z]` (`:87`).
 
 ```
     cols  0         1
-          012345678901234567       o = side 0 spawn   e = side 1 spawn
-   0      #####........#####       c = low cover      # = Wall
+          012345678901234567       A = side 0 spawn   B = side 1 spawn
+   0      #####........#####       o = Obstacle       # = Wall
    1      #####........#####
-   2      #####.......c#####
-   3      #####.e..c...#####
-   4      .....c.....e......
-   5      ..............e...
-   6      .............cc...
+   2      #####.......o#####
+   3      #####.B..o...#####
+   4      .....o.....B......
+   5      ..............B...
+   6      .............oo...
    7      ..................
    8      ..................
-   9      ###...cc...cc.....
+   9      ###...oo...oo.....
   10      ###...............
-  11      ###c..o...o..####.
-  12      ###.....o....####.
+  11      ###o..A...A..####.
+  12      ###.....A....####.
   13      .............####.
 ```
 
@@ -112,18 +115,20 @@ Check order and aborts:
 
 1. `path.length > 2`, else `EPathTooShort` (6).
 2. `x0 < rows && y0 < cols`, else `ETileOutOfBounds` (7).
-3. `check_path` returns `None` -> `EPathUnwalkable` (3). In `check_path` (`:563-590`), for a path with at least one step: the start tile must be walkable (not Wall/Unwalkable); then for every step, the target tile (a) must hold no unit (any unit, either side), (b) must be walkable, (c) the edge crossed must not be high cover on either side: `side_cover(source, d) == HIGH || side_cover(target, inverse(d)) == HIGH` (`is_edge_high_cover!`, `:529`). A step off the grid at the low end aborts in `cursor.move_to` (`EOutOfBounds`, 0); past the high end it aborts in the grid index (`EIndexOutOfBounds`).
+3. `trace_path(map, path, strict = true)`, the walk `check_path` makes too (there with `strict = false`, returning `None` where `move_unit` aborts). For a path with at least one step: the start tile must be standable (`Empty` or `Cover`), else `EPathUnwalkable` (3); then for every step, the target tile (a) must hold no unit (any unit, either side), (b) must be neither `Wall` nor `Unwalkable`, (c) the edge crossed must not be high cover on either side: `side_cover(source, d) == HIGH || side_cover(target, inverse(d)) == HIGH` (`is_edge_high_cover!`); each of these aborts `EPathUnwalkable` (3); (d) if the source tile is an `Obstacle`, the target must not be one: `EObstaclesInARow` (12). After the last step, the end tile must not be an `Obstacle`: `ETileIsObstacle` (11). A step off the grid at the low end aborts in `cursor.move_to` (`EOutOfBounds`, 0); past the high end it aborts in the grid index (`EIndexOutOfBounds`).
 4. The unit is taken off the start tile (aborts if empty) and `Unit.perform_move(distance)`: `has_action(Move)` else `EActionNotAllowed` (5); `mobility >= distance` else `ERangeExceeded` (1); `ap > 0` else `ENoAP` (3); then `ap -= 1` (`S/map/unit.move:71-78`).
 5. The unit is placed on the last tile of the path, and `Move(path)` is recorded.
 
 Rules that follow:
 
 - AP cost: 1 AP per move order, whatever its length up to `mobility`. `mobility` (7 for a recruit, 6 with heavy armor) is the maximum number of direction bytes in one order. A unit with 2 AP can order two moves.
-- Per-side cover rule: only `HIGH_COVER` (2) blocks. It blocks a step when the side of the tile being left that faces the step, or the side of the tile being entered that faces back, is high. "Faces the step": for `up` the leaving tile's `top` and the entering tile's `bottom`; `down`: `bottom` / `top`; `left`: `left` / `right`; `right`: `right` / `left` (`side_cover!` `:512-525`, `inverse!` `G/direction.move:150-162`). The three other sides of a tile do not matter for that step. Low cover never blocks; a unit may stand on and pass through low cover tiles.
+- Per-side cover rule: only `HIGH_COVER` (2) blocks. It blocks a step when the side of the tile being left that faces the step, or the side of the tile being entered that faces back, is high. "Faces the step": for `up` the leaving tile's `top` and the entering tile's `bottom`; `down`: `bottom` / `top`; `left`: `left` / `right`; `right`: `right` / `left` (`side_cover!` `:512-525`, `inverse!` `G/direction.move:150-162`). The three other sides of a tile do not matter for that step. Low cover never blocks; a unit may stand on and pass through low cover tiles. An `Obstacle` has no sides: a step onto or off it is blocked only by a high side of the `Cover` tile on the other end of the edge.
 - Intermediate tiles must be free of units, and so must the destination. The moving unit is still on its start tile while the path is checked (it is extracted at `:184`), so a path cannot cross or end on its own start tile.
 - Nothing else happens at the destination: no reaction, pick-up or terrain effect.
 
-Worked example (run), `black_rain`, a unit at `(11,6)`, `path = [11, 6, 1, 1, 2]`: up to `(10,6)` (empty), up to `(9,6)` (low cover: allowed), right to `(9,7)` (low cover: allowed). `distance = 3 <= 7`. Result: the unit stands at `(9,7)`, `(11,6)` is empty, AP 2 -> 1, record `Move([11,6,1,1,2])`.
+Worked example (run, `black_rain_vault_costs_its_steps`), `black_rain`, a unit at `(11,6)`, `path = [11, 6, 1, 1, 1]`: up to `(10,6)` (empty), up onto `(9,6)` (an obstacle: passed over), up to `(8,6)` (empty: the vault lands). `distance = 3`: allowed with mobility 3 (the unit stands at `(8,6)`, `(11,6)` is empty, AP 2 -> 1, record `Move([11,6,1,1,1])`), refused with mobility 2 (`ERangeExceeded`, `black_rain_vault_out_of_range_fail`).
+
+The example this section used to give, `[11, 6, 1, 1, 2]` (up to `(10,6)`, up onto `(9,6)`, right onto `(9,7)`), is now refused with `EObstaclesInARow`: `(9,6)` and `(9,7)` are both obstacles, and the path would also end on one. Neither can be stood on.
 
 High-cover example (`T/map/map.move:178-192`): with `Cover{right: HIGH}` at `(0,0)`, `[0,0,right]` and `[0,1,left]` are both blocked (the edge is high from either tile), while `[0,0,down,right,left]` is allowed.
 
@@ -131,11 +136,50 @@ High-cover example (`T/map/map.move:178-192`): with `Cover{right: HIGH}` at `(0,
 
 `check_path` accepts a direction byte only if it is exactly `up`, `right`, `down` or `left` (1, 2, 4, 8); any other byte, a diagonal (3, 6, 9, 12) or 0 included, makes the path invalid and `move_unit` aborts with `EPathUnwalkable` (`S/map/map.move`, `check_path`; test `test_check_path_orthogonal_only` in `T/map/map.move`). Changed after commit 80498e7: before, diagonal bytes were accepted, moved two tiles of distance for one step and read only the `right` side of both tiles for cover.
 
+### 2.2 Distance, obstacles and reach
+
+How a move is counted, the same on chain and in every client:
+
+1. A path is a start tile and a list of steps; each step goes to one of the four orthogonal neighbors (2.1).
+2. The distance of a move is the number of steps in its path, `path.length - 2`. A step onto an obstacle and the step off it count one tile each, like any other step. The contract does not ask for the shortest path: a longer path to the same tile costs its own length.
+3. Every tile a step goes onto is free of units (either side) and is not a `Wall` or `Unwalkable`; the edge crossed has no high side. A step onto an `Obstacle` must be followed by a step onto a standable tile: two obstacles in a row cannot be passed (obstacle, ground, obstacle, ground is fine).
+4. The destination, the last tile, is standable: `Empty` or `Cover` (edge cover), never an `Obstacle`, and free of units.
+5. `mobility` (effective stats) bounds the number of steps: `distance <= mobility`.
+6. A move costs 1 AP, whatever its distance (`Unit.perform_move`).
+
+Landing a vault: as every tile a path steps onto must be free of units (3), the tile after an obstacle is always free, mid-path or at the end; no path makes two units share a tile.
+
+Reach: the tiles a unit can move to in one order are the standable, unit-free tiles (other than its own) at a breadth-first distance of 1 to `mobility` from it, where the search steps orthogonally onto any unit-free tile that is not a `Wall` or `Unwalkable`, across no high edge, and never from an obstacle onto an obstacle; an obstacle is searched through but not listed. Each tile's number of steps is its breadth-first distance, the fewest steps a valid path to it takes. As every rule is a rule of one step (its two tiles and the edge between them) or of the last tile, the breadth-first search over tiles is exact.
+
+Reach tables (run, `black_rain_reach` in `T/map/map.move`, constants `BLACK_RAIN_REACH_3` and `BLACK_RAIN_REACH_7`): a unit at side 0's spawn `(11,6)` on `black_rain`, alone on the map. For mobility 3 the test also tries every path of up to 3 steps through `check_path` and gets the same set. `(x,y)` is `(row,col)`.
+
+Mobility 3, 20 tiles:
+
+| Steps | Tiles | `(row,col)` |
+| ---: | ---: | --- |
+| 1 | 4 | (10,6) (11,5) (11,7) (12,6) |
+| 2 | 7 | (10,5) (10,7) (11,4) (11,8) (12,5) (12,7) (13,6) |
+| 3 | 9 | (8,6) (9,5) (10,4) (10,8) (11,9) (12,4) (12,8) (13,5) (13,7) |
+
+Mobility 7, 70 tiles:
+
+| Steps | Tiles | `(row,col)` |
+| ---: | ---: | --- |
+| 1 | 4 | (10,6) (11,5) (11,7) (12,6) |
+| 2 | 7 | (10,5) (10,7) (11,4) (11,8) (12,5) (12,7) (13,6) |
+| 3 | 9 | (8,6) (9,5) (10,4) (10,8) (11,9) (12,4) (12,8) (13,5) (13,7) |
+| 4 | 12 | (7,6) (8,5) (8,7) (9,4) (9,8) (10,3) (10,9) (11,10) (12,3) (12,9) (13,4) (13,8) |
+| 5 | 12 | (6,6) (7,5) (7,7) (8,4) (8,8) (9,3) (9,9) (10,10) (11,11) (12,10) (13,3) (13,9) |
+| 6 | 13 | (5,6) (6,5) (6,7) (7,4) (7,8) (8,3) (8,9) (9,10) (10,11) (11,12) (12,11) (13,2) (13,10) |
+| 7 | 13 | (4,6) (5,5) (5,7) (6,4) (6,8) (7,3) (7,9) (8,2) (8,10) (10,12) (12,12) (13,1) (13,11) |
+
+`(8,6)` at 3 steps and `(8,7)` at 4 are reached over the obstacles `(9,6)` and `(9,7)`, at the same distance as over open ground; `(9,6)` and `(9,7)` themselves are not in the set.
+
 ## 3. Lines
 
 `line_of_sight(map, x0, y0, x1, y1)` = `trace_line(.., high_cover_blocks = true)`; `line_of_throw` = `trace_line(.., false)` (`S/map/map.move:596-604`). Attacks use sight, grenades use throw.
 
-| | Wall in a tile entered | High cover on a crossed inner edge | Low cover | `Unwalkable` | Units |
+| | Wall in a tile entered | High cover on a crossed inner edge | Low cover or `Obstacle` | `Unwalkable` | Units |
 | --- | --- | --- | --- | --- | --- |
 | Line of sight | blocks | blocks | no | no | no |
 | Line of throw | blocks | no | no | no | no |
@@ -203,6 +247,7 @@ Rules (all from the code above):
 
 - Only the sides facing the attacker count; the others are ignored. There is no separate flanking bonus: a shot from a direction whose facing sides are bare is simply uncovered.
 - For the four straight directions the target tile's own side wins when it is not 0, even if lower than the neighbor's (a low side on the target hides a high side on the neighbor); the neighbor is read only when the target's side is 0. Diagonals take the max of the two target sides first, then the max of the two neighbor sides.
+- An `Obstacle` counts as `LOW_COVER` on all four sides (`tile_cover!`), so a unit next to an obstacle has 25 against a shot from across it (the fallback column above) and 0 from its open sides; a unit diagonal to an obstacle gets nothing from it, as the fallback reads only orthogonal neighbors. This is what a four-sided low `Cover` tile gives its neighbors (`obstacle_gives_low_cover`, `obstacle_lowers_the_hit_chance`). The target itself never stands on an obstacle.
 - A `Wall` counts as `HIGH_COVER` on all four sides (`tile_cover!`, `:365-372`), so a wall on the neighbor tile between attacker and target gives 50. An `Unwalkable` neighbor gives 0 (`T/map/map.move:305-306`). Tests: `(0,1)` shooting `(2,1)` with a wall at `(1,1)` gives 50; from `(2,0)` gives 0 (`T/map/map.move:301-303`).
 - Only a neighbor on the attacker's side is read, so the indexes `x1 + 1` and so on stay inside the grid.
 - The values are not additive: the result is the maximum, 0, 25 or 50.
@@ -279,7 +324,7 @@ Single target, after a hit (`map.move:257-273`): the target unit is extracted fr
 
 Area weapon (`radius > 0`, `map.move:252-255`): the hit roll covers the whole blast; on a hit `explode(rng, x1, y1, radius, d, env_damage, can_dodge)` is called with the damage rolled above (crit and plus-one included, no per-target crit record). Misses record only `Miss` and have no effect. No catalogue weapon has `area_size > 0` (8.2), the code path exists and is tested (`T/map/map_tests.move:231-300`).
 
-`explode` (`:413-455`): records `Explosion(x, y, radius)`. Cells: `Grid.von_neumann_neighbors(center, radius)` (clipped to the grid, center excluded), then the center is appended and visited last. Order for radius 1: `(x-1,y), (x,y-1), (x+1,y), (x,y+1)`; radius 2: `(x-2,y), (x,y-2), (x-1,y), (x,y-1), (x+1,y), (x,y+1), (x+2,y), (x,y+2)`, then the diagonals `(x-1,y-1), (x-1,y+1), (x+1,y-1), (x+1,y+1)`; radius 3 and more: row-major over the bounding square (`G/cell.move:135-176`). Per cell: if a unit stands there it takes `apply_damage` (one record: `Dodged` or `Damage(dmg)`, then `UnitKIA` if it fell), whoever it belongs to, the attacker included; if `env_damage`, a `Cover` tile becomes `Empty` (units or not). Walls and `Unwalkable` tiles are unchanged. Line of sight is not checked from the blast center to the cells.
+`explode` (`:413-455`): records `Explosion(x, y, radius)`. Cells: `Grid.von_neumann_neighbors(center, radius)` (clipped to the grid, center excluded), then the center is appended and visited last. Order for radius 1: `(x-1,y), (x,y-1), (x+1,y), (x,y+1)`; radius 2: `(x-2,y), (x,y-2), (x-1,y), (x,y-1), (x+1,y), (x,y+1), (x+2,y), (x,y+2)`, then the diagonals `(x-1,y-1), (x-1,y+1), (x+1,y-1), (x+1,y+1)`; radius 3 and more: row-major over the bounding square (`G/cell.move:135-176`). Per cell: if a unit stands there it takes `apply_damage` (one record: `Dodged` or `Damage(dmg)`, then `UnitKIA` if it fell), whoever it belongs to, the attacker included; if `env_damage`, a `Cover` or `Obstacle` tile becomes `Empty` (units or not). Walls and `Unwalkable` tiles are unchanged; an `Obstacle` becomes `Empty` like a `Cover`, after which it is ground: standable, no cover. Line of sight is not checked from the blast center to the cells.
 
 AP and ammo: an attack sets AP to 0 and spends 1 ammo whether it hits or not (`unit.move:133-134`). There is no kill refund.
 
@@ -309,7 +354,7 @@ Constants (`S/map/map.move:47-51`): `GRENADE_RANGE` = 5, `GRENADE_RADIUS` = 2, `
 5. `Unit.perform_grenade`: `has_action(Grenade)` else `EActionNotAllowed` (5); `ap > 0` else `ENoAP` (3); `spend_use(Grenade)`: the first `Grenade` action with a use left, else `ENoUsesLeft` (6); then `ap -= 1` (`unit.move:92-100`). No ammo is used; a grenade does not end the unit's activation (a unit with 2 AP may throw then move).
 6. Records `Grenade{origin, target}`, then `explode(rng, x1, y1, 2, 4, env_damage = true, can_dodge = false)`.
 
-There is no hit roll, scatter or miss: the grenade always explodes at the target tile. The area is the diamond of Manhattan radius 2 around the target (13 cells, fewer at the map edge): the target, the 4 cells at distance 1 and the 8 at distance 2; cells are visited in the order given in 5.2 with the target last. Every unit on those cells takes `GRENADE_DAMAGE` reduced by its armor (`4 - armor`, minimum 1), cannot dodge (but `apply_damage` still draws one number per unit), and records `Damage(n)` and, if it falls, `UnitKIA`. Allies, enemies and the thrower are treated the same; the thrower may throw at its own tile or within 2 tiles of itself (run by the existing test: thrower at `(0,0)` throwing at `(0,2)` gives `[Grenade([0,0],[0,2]), Explosion(0,2,2), Damage(4)]`, HP 10 to 6, `T/map/map_tests.move:312-333`). Every `Cover` tile in the area (occupied or not) becomes `Empty`; `Wall` and `Unwalkable` tiles are untouched; line of sight from the center to the cells in the area is not checked, so a grenade also damages units behind a wall within 2 tiles of the target.
+There is no hit roll, scatter or miss: the grenade always explodes at the target tile. The area is the diamond of Manhattan radius 2 around the target (13 cells, fewer at the map edge): the target, the 4 cells at distance 1 and the 8 at distance 2; cells are visited in the order given in 5.2 with the target last. Every unit on those cells takes `GRENADE_DAMAGE` reduced by its armor (`4 - armor`, minimum 1), cannot dodge (but `apply_damage` still draws one number per unit), and records `Damage(n)` and, if it falls, `UnitKIA`. Allies, enemies and the thrower are treated the same; the thrower may throw at its own tile or within 2 tiles of itself (run by the existing test: thrower at `(0,0)` throwing at `(0,2)` gives `[Grenade([0,0],[0,2]), Explosion(0,2,2), Damage(4)]`, HP 10 to 6, `T/map/map_tests.move:312-333`). Every `Cover` tile (occupied or not) and every `Obstacle` in the area becomes `Empty`; a grenade may be thrown onto an obstacle (only a `Wall` is refused); `Wall` and `Unwalkable` tiles are untouched; line of sight from the center to the cells in the area is not checked, so a grenade also damages units behind a wall within 2 tiles of the target.
 
 Steps 1-4 are `Map.thrower`, shared by all three grenades (6.1).
 
@@ -511,7 +556,7 @@ Facts about the code at this commit; nothing here is a recommendation.
 - A path cannot cross or end on the moving unit's own start tile, as the unit is still on it during `check_path` (`:180-186`).
 - Cover side values other than 0, 1, 2 are accepted by `from_bcs`, with `cover_bonus` multiplying by 25 in `u8` (a value of 11 or more would overflow and abort) (`:724-729`, `:362`).
 - The cover bonus uses only the dominant axis of the shot (a diagonal only at `|dx| == |dy|`), and the line of sight uses the exact segment; the two can disagree about which side the shot arrives from.
-- In the preset `black_rain`, every cover is low on all sides, so high cover (and the sight-blocking cover rule) is never used by the shipped map; there are no `Unwalkable` tiles (`:693`, 1.4).
+- In the preset `black_rain`, every cover prop is an `Obstacle` and there are no `Cover` tiles, so high cover (and the sight-blocking cover rule) is never used by the shipped map; there are no `Unwalkable` tiles (1.4).
 - A kill frees the tile at once but the recruit dies only at the next turn change or `complete_game` (`S/ghosts.move:650-658`); a unit that fell can no longer be targeted.
 - The chain's win by abandonment or forfeit gives the winner's survivors 1 XP, and none if fewer than 2 turns were played (`S/ghosts.move:584-594`).
 - `MAX_TURNS` 60 counts both sides' turns, so a game is at most 30 turns per side (`S/ghosts.move:90`, `:479`).

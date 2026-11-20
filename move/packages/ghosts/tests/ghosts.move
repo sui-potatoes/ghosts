@@ -4471,6 +4471,21 @@ fun test_new_level_spawn_on_wall_fail() {
     abort
 }
 
+/// A spawn on an obstacle is no spawn: a unit passes over one, never stands on
+/// it.
+#[test, expected_failure(abort_code = EBadLevel)]
+fun test_new_level_spawn_on_obstacle_fail() {
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    f.ts.next_tx(@0);
+    let cap = f.ts.take_from_sender<RulesCap>();
+    let map = sui::bcs::to_bytes(&f.preset.map);
+    // (9, 6) is a barrier on Black Rain
+    assert!(f.preset.map.is_tile_obstacle(9, 6));
+    new_level(&cap, "Barred", map, vector[vector[9, 6], vector[11, 6]], f.ts.ctx());
+    abort
+}
+
 // === Events ===
 
 /// Every game is announced once, as it is created, whatever its mode: listed but

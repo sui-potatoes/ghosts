@@ -229,3 +229,157 @@ fun p_flashbang() {
     let _ = map.perform_flashbang(0, 0, 1, 1);
     teardown(map, attacker, target);
 }
+
+// === Obstacles ===
+//
+// Read with `sui move test -s bench_test`: on Black Rain, Alice's recruit at
+// (11, 6) and Bob's at (3, 6), against `q_black_rain_baseline`. Moves of the
+// same length over ground and over obstacles; a shot up column 6 at (8, 6),
+// beside the obstacle at (9, 6), the cover tile that was there, or neither;
+// a frag at (9, 7) clearing the two obstacles there or the two cover tiles.
+
+/// Black Rain, or `black_rain_as_covers`, with the two recruits on it.
+fun setup_black_rain(covers: bool, ctx: &mut TxContext): (map::Map, Recruit, Recruit) {
+    let id = ctx.fresh_object_address().to_id();
+    let mut map = if (covers) map::black_rain_as_covers(id) else map::black_rain(id);
+    let (r1, r3) = (recruit_one(ctx), recruit_two(ctx));
+    map.place_recruit(&r1, 11, 6);
+    map.place_recruit(&r3, 3, 6);
+    (map, r1, r3)
+}
+
+/// Move Alice's recruit along `steps` on Black Rain.
+fun walk(steps: vector<u8>) {
+    let ctx = &mut tx_context::dummy();
+    let (mut map, r1, r3) = setup_black_rain(false, ctx);
+    let mut path = vector[11, 6];
+    path.append(steps);
+    map.move_unit(path);
+    teardown(map, r1, r3);
+}
+
+/// A shooter that never misses at (12, 6) shoots the target at (8, 6), if
+/// `shoot`: beside an obstacle, a cover tile (`covers`) or nothing (`open`) at
+/// (9, 6).
+fun shoot_up_the_column(covers: bool, open: bool, shoot: bool) {
+    let ctx = &mut tx_context::dummy();
+    let mut map = if (covers) map::black_rain_as_covers(@1.to_id())
+    else map::black_rain(@1.to_id());
+    if (open) map.clear_tile_for_testing(9, 6);
+    let mut shooter = recruit::default(ctx);
+    let aim = stats_builder::new().aim(62).damage(1).spread(0).crit_chance(0).build_weapon();
+    shooter.add_weapon(weapon::new(b"Test".to_string(), aim, ctx));
+    let target = recruit::default(ctx);
+    map.place_recruit(&shooter, 12, 6);
+    map.place_recruit(&target, 8, 6);
+    let mut rng = random::new_generator_from_seed_for_testing(b"bench");
+    if (shoot) {
+        let _ = map.perform_attack(&mut rng, 12, 6, 8, 6);
+    };
+    teardown(map, shooter, target);
+}
+
+/// Alice's recruit moves to (8, 3) and, if `throw`, throws a frag at (9, 7).
+fun frag_at_the_barrier(covers: bool, throw: bool) {
+    use grid::direction::{up, left};
+
+    let ctx = &mut tx_context::dummy();
+    let (mut map, r1, r3) = setup_black_rain(covers, ctx);
+    map.move_unit(vector[11, 6, up!(), left!(), up!(), left!(), up!(), left!()]);
+    let mut rng = random::new_generator_from_seed_for_testing(b"bench");
+    if (throw) {
+        let _ = map.perform_grenade(&mut rng, 8, 3, 9, 7);
+    };
+    teardown(map, r1, r3);
+}
+
+#[test]
+fun q_black_rain_baseline() {
+    let ctx = &mut tx_context::dummy();
+    let (map, r1, r3) = setup_black_rain(false, ctx);
+    teardown(map, r1, r3);
+}
+
+#[test]
+/// Three steps over ground: (11, 6) to (11, 9).
+fun r_move_3_plain() {
+    use grid::direction::right;
+    walk(vector[right!(), right!(), right!()])
+}
+
+#[test]
+/// Three steps over the obstacle at (9, 6): (11, 6) to (8, 6).
+fun s_move_3_vault() {
+    use grid::direction::up;
+    walk(vector[up!(), up!(), up!()])
+}
+
+#[test]
+/// Seven steps over ground: (11, 6) to (5, 5).
+fun t_move_7_plain() {
+    use grid::direction::{up, left};
+    walk(vector[left!(), up!(), up!(), up!(), up!(), up!(), up!()])
+}
+
+#[test]
+/// Seven steps over the obstacle at (9, 6): (11, 6) to (4, 6).
+fun u_move_7_vault() {
+    use grid::direction::up;
+    walk(vector[up!(), up!(), up!(), up!(), up!(), up!(), up!()])
+}
+
+#[test]
+/// Seven steps over the obstacles at (9, 7) and (9, 6), up one column and
+/// down the next: (11, 6) to (10, 6).
+fun v_move_7_two_vaults() {
+    use grid::direction::{up, down, left, right};
+    walk(vector[right!(), up!(), up!(), up!(), left!(), down!(), down!()])
+}
+
+#[test]
+/// `w_attack_open` but the shot.
+fun w_attack_open_baseline() { shoot_up_the_column(false, true, false) }
+
+#[test]
+/// The target at (8, 6) beside nothing: (9, 6) cleared.
+fun w_attack_open() { shoot_up_the_column(false, true, true) }
+
+#[test]
+/// `x_attack_beside_obstacle` but the shot.
+fun x_attack_beside_obstacle_baseline() { shoot_up_the_column(false, false, false) }
+
+#[test]
+/// The target at (8, 6) beside the obstacle at (9, 6).
+fun x_attack_beside_obstacle() { shoot_up_the_column(false, false, true) }
+
+#[test]
+/// `y_attack_beside_cover_tile` but the shot.
+fun y_attack_beside_cover_tile_baseline() { shoot_up_the_column(true, false, false) }
+
+#[test]
+/// The target at (8, 6) beside the cover tile at (9, 6), low on all four sides.
+fun y_attack_beside_cover_tile() { shoot_up_the_column(true, false, true) }
+
+#[test]
+/// `q_black_rain_baseline` on `black_rain_as_covers`.
+fun q_black_rain_baseline_cover_tiles() {
+    let ctx = &mut tx_context::dummy();
+    let (map, r1, r3) = setup_black_rain(true, ctx);
+    teardown(map, r1, r3);
+}
+
+#[test]
+/// A frag clears the obstacles at (9, 6) and (9, 7).
+fun z_frag_clears_obstacles() { frag_at_the_barrier(false, true) }
+
+#[test]
+/// `z_frag_clears_obstacles` but the throw.
+fun z_frag_clears_obstacles_baseline() { frag_at_the_barrier(false, false) }
+
+#[test]
+/// `z_frag_clears_cover_tiles` but the throw.
+fun z_frag_clears_cover_tiles_baseline() { frag_at_the_barrier(true, false) }
+
+#[test]
+/// A frag clears the cover tiles at (9, 6) and (9, 7).
+fun z_frag_clears_cover_tiles() { frag_at_the_barrier(true, true) }

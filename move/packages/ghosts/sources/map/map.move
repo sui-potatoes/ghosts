@@ -33,11 +33,16 @@ const ETileIsWall: u64 = 8;
 const ENoLineOfSight: u64 = 9;
 /// Decoded `Map.units` do not list exactly the tiles holding a unit.
 const EUnitIndexMismatch: u64 = 10;
+/// Attempt to stand on an `Obstacle` tile: to place a unit on one or to end a
+/// path on one. A unit may pass over an obstacle, never stand on it.
+const ETileIsObstacle: u64 = 11;
+/// The path steps from an `Obstacle` onto another: a unit passing over an
+/// obstacle lands on the next tile, and it must be one to stand on.
+const EObstaclesInARow: u64 = 12;
 
 #[allow(unused_const)]
 /// Constant for no cover in the `TileType::Cover`.
 const NO_COVER: u8 = 0;
-#[allow(unused_const)]
 /// Constant for low cover in the `TileType::Cover`.
 const LOW_COVER: u8 = 1;
 /// Constant for high cover in the `TileType::Cover`.
@@ -84,6 +89,14 @@ public enum TileType has copy, drop, store {
     /// A solid tile: cannot be walked on, cannot be targeted and blocks line
     /// of sight. A dead zone for both movement and aiming.
     Wall,
+    /// An obstacle: something that can be hovered over, like a crate or a
+    /// barrier. Acts as a low cover on each side and cannot be walked onto: no
+    /// unit stands on it, but a path may pass over it, and the step onto it
+    /// counts as a tile like any other. The next step lands on a tile to stand
+    /// on, so two obstacles in a row cannot be passed. Does not block line of
+    /// sight, can be targeted by area weapons and is destroyed by explosives
+    /// and heavy weapons.
+    Obstacle,
 }
 
 /// Defines the game Map - a grid of tiles where the game takes place.
@@ -154,6 +167,7 @@ public(package) fun place_unit(map: &mut Map, unit: Unit, x: u16, y: u16): Recor
     assert!(target_tile.unit.is_none(), EUnitAlreadyOnTile);
     assert!(target_tile.tile_type != TileType::Unwalkable, ETileIsUnwalkable);
     assert!(target_tile.tile_type != TileType::Wall, ETileIsWall);
+    assert!(target_tile.tile_type != TileType::Obstacle, ETileIsObstacle);
 
     map.grid[x, y].unit.fill(unit);
     map.add_to_index(x, y);
@@ -249,7 +263,9 @@ public fun perform_reload(map: &mut Map, x: u16, y: u16): Record {
     history::new_reload(x, y)
 }
 
-/// Move a unit along the path. The first cell is the current position of the unit.
+/// Move a unit along the path. The first cell is the current position of the
+/// unit, every byte after it a step. The distance of the move is the number of
+/// steps, those onto and off an `Obstacle` included (see `trace_path`).
 public fun move_unit(map: &mut Map, path: vector<u8>): Record {
     assert!(path.length() > 2, EPathTooShort);
 
@@ -258,7 +274,7 @@ public fun move_unit(map: &mut Map, path: vector<u8>): Record {
     let (rows, cols) = (map.grid.rows(), map.grid.cols());
 
     assert!(x0 < rows && y0 < cols, ETileOutOfBounds);
-    let search = map.check_path(path).destroy_or!(abort EPathUnwalkable);
+    let search = map.trace_path(path, true).destroy_some();
     let (x1, y1) = (search[0], search[1]);
     assert!(x1 < rows && y1 < cols, ETileOutOfBounds);
 
@@ -375,7 +391,8 @@ public fun bury(map: &mut Map): vector<ID> {
 /// - LOW_COVER - 25
 /// - HIGH_COVER - 50
 ///
-/// A `Wall` tile next to the target counts as high cover on that side.
+/// A `Wall` tile next to the target counts as high cover on that side, an
+/// `Obstacle` as low cover.
 public(package) fun cover_bonus(map: &Map, x0: u16, y0: u16, x1: u16, y1: u16): u8 {
     use grid::direction::{direction, none, up, down, left, right};
 
@@ -454,6 +471,7 @@ macro fun tile_cover($map: &Map, $x: u16, $y: u16): (u8, u8, u8, u8) {
     match (map.grid[$x, $y].tile_type) {
         TileType::Cover { left, right, top, bottom } => (top, bottom, left, right),
         TileType::Wall => (HIGH_COVER, HIGH_COVER, HIGH_COVER, HIGH_COVER),
+        TileType::Obstacle => (LOW_COVER, LOW_COVER, LOW_COVER, LOW_COVER),
         _ => (0, 0, 0, 0),
     }
 }
@@ -546,8 +564,9 @@ fun spread_effect(map: &mut Map, x: u16, y: u16, effect: Effect): vector<Record>
 
 /// Apply area damage centered at `(x, y)`: every unit in the von Neumann
 /// neighborhood of `radius` (center included) takes `damage`, reduced by its
-/// armor and dodged only if `can_dodge`. With `env_damage`, covers in the area
-/// are destroyed (`Cover` -> `Empty`). Shared by grenades and area weapons.
+/// armor and dodged only if `can_dodge`. With `env_damage`, covers and
+/// obstacles in the area are destroyed (`Cover`, `Obstacle` -> `Empty`).
+/// Shared by grenades and area weapons.
 ///
 /// Records: `Explosion`, then `Dodged`, or `Damage`, `[UnitKIA]`, per unit in
 /// the area. Tiles are visited in the order of `Grid.von_neumann_neighbors`
@@ -589,7 +608,7 @@ fun explode(
 
         if (env_damage) {
             match (tile.tile_type) {
-                TileType::Cover { .. } => tile.tile_type = TileType::Empty,
+                TileType::Cover { .. } | TileType::Obstacle => tile.tile_type = TileType::Empty,
                 _ => (),
             }
         };
@@ -630,8 +649,18 @@ public fun is_tile_unwalkable(map: &Map, x: u16, y: u16): bool {
 /// Check if the given tile is a wall.
 public fun is_tile_wall(map: &Map, x: u16, y: u16): bool { is_wall!(&map.grid[x, y]) }
 
-/// Check if the given tile can be walked on: neither `Unwalkable` nor `Wall`.
+/// Check if the given tile is an obstacle.
+public fun is_tile_obstacle(map: &Map, x: u16, y: u16): bool { is_obstacle!(&map.grid[x, y]) }
+
+/// Check if the given tile can be walked on or over: neither `Unwalkable` nor
+/// `Wall`. An `Obstacle` is walked over, not onto: see `is_tile_standable`.
 public fun is_tile_walkable(map: &Map, x: u16, y: u16): bool { is_walkable!(&map.grid[x, y]) }
+
+/// Check if a unit can stand on the given tile, a unit there or not: `Empty`
+/// or `Cover`.
+public fun is_tile_standable(map: &Map, x: u16, y: u16): bool {
+    is_standable!(&map.grid[x, y])
+}
 
 /// Whether `$tile` is a `Wall`.
 macro fun is_wall($tile: &Tile): bool {
@@ -642,7 +671,16 @@ macro fun is_wall($tile: &Tile): bool {
     }
 }
 
-/// Whether `$tile` can be walked on: neither `Unwalkable` nor `Wall`.
+/// Whether `$tile` is an `Obstacle`.
+macro fun is_obstacle($tile: &Tile): bool {
+    let tile = $tile;
+    match (tile.tile_type) {
+        TileType::Obstacle => true,
+        _ => false,
+    }
+}
+
+/// Whether `$tile` can be walked on or over: neither `Unwalkable` nor `Wall`.
 macro fun is_walkable($tile: &Tile): bool {
     let tile = $tile;
     match (tile.tile_type) {
@@ -651,8 +689,18 @@ macro fun is_walkable($tile: &Tile): bool {
     }
 }
 
+/// Whether a unit can stand on `$tile`: `Empty` or `Cover`.
+macro fun is_standable($tile: &Tile): bool {
+    let tile = $tile;
+    match (tile.tile_type) {
+        TileType::Empty | TileType::Cover { .. } => true,
+        _ => false,
+    }
+}
+
 /// Cover value of the side of `$tile` facing `$direction`. A `Wall` has no
-/// cover here: it is handled as a wall before cover is looked at.
+/// cover here: it is handled as a wall before cover is looked at. Nor has an
+/// `Obstacle`: it is low all round, and only a high side blocks an edge.
 macro fun side_cover($tile: &Tile, $direction: u8): u8 {
     use grid::direction::{up, down, left};
 
@@ -669,7 +717,7 @@ macro fun side_cover($tile: &Tile, $direction: u8): u8 {
 }
 
 /// Whether the edge between `$from` and its neighbor `$to` in `$direction`
-/// has high cover on either side. Shared by `check_path` and `trace_line`.
+/// has high cover on either side. Shared by `trace_path` and `trace_line`.
 macro fun is_edge_high_cover($from: &Tile, $to: &Tile, $direction: u8): bool {
     use grid::direction::inverse;
 
@@ -696,15 +744,31 @@ public fun tile_to_string(tile: &Tile): String {
         },
         TileType::Unwalkable => b" XXX ".to_string(),
         TileType::Wall => b" ### ".to_string(),
+        TileType::Obstacle => b" ooo ".to_string(),
     }
 }
 
 /// Check if the given path is walkable. Can be an optimization for pathfinding,
-/// if the path is traced on the frontend.
+/// if the path is traced on the frontend. The rules are those of `move_unit`
+/// (see `trace_path`).
 ///
 /// Returns `None` if the path is not walkable, otherwise returns the end cell
 /// of the path.
-public fun check_path(map: &Map, mut path: vector<u8>): Option<vector<u16>> {
+public fun check_path(map: &Map, path: vector<u8>): Option<vector<u16>> {
+    map.trace_path(path, false)
+}
+
+/// Walk the path and return its end cell. The path starts on a tile a unit can
+/// stand on; every step goes to one of the four neighbors, onto a tile with no
+/// unit, neither `Unwalkable` nor `Wall`, across an edge with no high cover
+/// (`EPathUnwalkable`). A step may go onto an `Obstacle`, the unit passing over
+/// it, if the next step lands on a tile to stand on (`EObstaclesInARow`), and
+/// the path does not end on it (`ETileIsObstacle`). Every step counts as one
+/// tile of distance.
+///
+/// A path that is not walkable aborts with the reason if `strict`, otherwise
+/// returns `None`.
+fun trace_path(map: &Map, mut path: vector<u8>, strict: bool): Option<vector<u16>> {
     use grid::direction::{up, down, left, right};
 
     path.reverse();
@@ -712,11 +776,12 @@ public fun check_path(map: &Map, mut path: vector<u8>): Option<vector<u16>> {
     // first two values are X and Y coordinates, the rest are directions
     let (x0, y0) = (path.pop_back() as u16, path.pop_back() as u16);
     let mut cursor = cursor::new(x0, y0);
-    let none = option::none();
 
-    // the tile the path starts on; every later source is the previous target
+    // the tile the path starts on; every later source is the previous target,
+    // and `over` says whether it is an obstacle being passed over
     let mut source = &map.grid[x0, y0];
-    if (!path.is_empty() && !is_walkable!(source)) return none;
+    let mut over = false;
+    if (!path.is_empty() && !is_standable!(source)) return refuse(strict, EPathUnwalkable);
 
     'path: {
         path.destroy!(|direction| {
@@ -724,21 +789,35 @@ public fun check_path(map: &Map, mut path: vector<u8>): Option<vector<u16>> {
             let is_step =
                 direction == up!() || direction == down!() ||
                 direction == left!() || direction == right!();
-            if (!is_step) return 'path none;
+            if (!is_step) return 'path refuse(strict, EPathUnwalkable);
 
             cursor.move_to(direction);
             let (x1, y1) = cursor.to_values();
             let target = &map.grid[x1, y1];
 
             // units, walls, unwalkable tiles and high covers block the path
-            if (target.unit.is_some()) return 'path none;
-            if (!is_walkable!(target)) return 'path none;
-            if (is_edge_high_cover!(source, target, direction)) return 'path none;
-            source = target;
+            if (target.unit.is_some()) return 'path refuse(strict, EPathUnwalkable);
+            if (!is_walkable!(target)) return 'path refuse(strict, EPathUnwalkable);
+            if (is_edge_high_cover!(source, target, direction)) {
+                return 'path refuse(strict, EPathUnwalkable)
+            };
+
+            // a unit passing over an obstacle lands on the next tile
+            let obstacle = is_obstacle!(target);
+            if (over && obstacle) return 'path refuse(strict, EObstaclesInARow);
+            (source, over) = (target, obstacle);
         });
 
+        if (over) return 'path refuse(strict, ETileIsObstacle);
         option::some(cursor.to_vector())
     }
+}
+
+/// The answer to a path that is not walkable for the `code` reason: an abort if
+/// `strict`, `None` otherwise.
+fun refuse(strict: bool, code: u64): Option<vector<u16>> {
+    assert!(!strict, code);
+    option::none()
 }
 
 // === Line of Sight ===
@@ -844,7 +923,7 @@ fun step_blocks(from: &Tile, to: &Tile, direction: u8, inner: bool, high_cover_b
 /// The Kōra district of the first demo, three recruits a side.
 public fun black_rain(id: ID): Map {
     // prettier-ignore
-    let mut map = from_bytes(x"00000000000000000000000000000000000000000000000000000000000000000e1203000300030003000300000000000000000000000000000000000300030003000300030012030003000300030003000000000000000000000000000000000003000300030003000300120300030003000300030000000000000000000000000000000101010101000300030003000300030012030003000300030003000000000000000000010101010100000000000000030003000300030003001200000000000000000000010101010100000000000000000000000000000000000000000000000000120000000000000000000000000000000000000000000000000000000000000000000000001200000000000000000000000000000000000000000000000000000101010101000101010101000000000000001200000000000000000000000000000000000000000000000000000000000000000000000012000000000000000000000000000000000000000000000000000000000000000000000000120300030003000000000000000101010101000101010101000000000000000101010101000101010101000000000000000000000012030003000300000000000000000000000000000000000000000000000000000000000000120300030003000101010101000000000000000000000000000000000000000300030003000300000012030003000300000000000000000000000000000000000000000003000300030003000000120000000000000000000000000000000000000000000000000000030003000300030000000e00120000");
+    let mut map = from_bytes(x"00000000000000000000000000000000000000000000000000000000000000000e12030003000300030003000000000000000000000000000000000003000300030003000300120300030003000300030000000000000000000000000000000000030003000300030003001203000300030003000300000000000000000000000000000004000300030003000300030012030003000300030003000000000000000000040000000000000003000300030003000300120000000000000000000004000000000000000000000000000000000000000000000000001200000000000000000000000000000000000000000000000000000000000000000000000012000000000000000000000000000000000000000000000000000004000400000000000000120000000000000000000000000000000000000000000000000000000000000000000000001200000000000000000000000000000000000000000000000000000000000000000000000012030003000300000000000000040004000000000000000400040000000000000000000000120300030003000000000000000000000000000000000000000000000000000000000000001203000300030004000000000000000000000000000000000000000300030003000300000012030003000300000000000000000000000000000000000000000003000300030003000000120000000000000000000000000000000000000000000000000000030003000300030000000e00120000");
     map.id = id;
     map
 }
@@ -910,6 +989,7 @@ fun peel_without_units(bcs: &mut BCS): Map {
             },
             2 => TileType::Unwalkable,
             3 => TileType::Wall,
+            4 => TileType::Obstacle,
             _ => abort,
         };
         let unit = bcs.peel_option!(|bcs| unit::from_bcs(bcs));

@@ -1283,7 +1283,7 @@ public fun new_level(
     assert!(positions.length() % 2 == 0, EBadLevel);
     positions.do_ref!(|p| {
         let (x, y) = (p[0] as u16, p[1] as u16);
-        assert!(map.is_tile_walkable(x, y) && !map.tile_has_unit(x, y), EBadLevel);
+        assert!(map.is_tile_standable(x, y) && !map.tile_has_unit(x, y), EBadLevel);
     });
     transfer::freeze_object(Preset { id, map, name, positions });
 }

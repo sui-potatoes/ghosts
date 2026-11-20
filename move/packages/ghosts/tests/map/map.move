@@ -1308,11 +1308,314 @@ public fun apply_effect_for_testing(map: &mut Map, x: u16, y: u16, effect: Effec
     history::new_effect_start(x, y, effect)
 }
 
+// === Obstacles ===
+
+/// A 5x5 map with an `Obstacle` at each of `obstacles`, `(x, y)` each.
+fun with_obstacles(obstacles: vector<vector<u16>>): Map {
+    let mut map = new(@0.to_id(), 5);
+    obstacles.do!(|p| *&mut map.grid[p[0], p[1]].tile_type = TileType::Obstacle);
+    map
+}
+
+#[test]
+/// A unit at (2, 0) passes over the obstacle at (2, 2) to stand at (2, 3):
+/// three steps, the one onto the obstacle and the one off it counted, which a
+/// mobility of 3 makes. The obstacle is walked over, not stood on.
+fun obstacle_is_passed_over() {
+    use grid::direction::right;
+    use std::unit_test::{assert_eq, destroy};
+
+    let ctx = &mut tx_context::dummy();
+    let mut map = with_obstacles(vector[vector[2, 2]]);
+    assert!(map.is_tile_obstacle(2, 2) && map.is_tile_walkable(2, 2));
+    assert!(!map.is_tile_standable(2, 2) && !map.is_tile_cover(2, 2));
+
+    let recruit = slow_of(ALICE, 3, ctx);
+    map.place_recruit(&recruit, 2, 0);
+    let path = vector[2, 0, right!(), right!(), right!()];
+    assert_eq!(map.check_path(path), option::some(vector[2, 3]));
+    assert_eq!(map.move_unit(path), history::new_move(path));
+    assert!(map.tile_has_unit(2, 3) && !map.tile_has_unit(2, 2));
+    assert_eq!(map.unit_tiles(), vector[13]);
+
+    destroy(recruit);
+    map.destroy();
+}
+
+#[test, expected_failure(abort_code = ghosts::unit::ERangeExceeded)]
+/// The same three steps with a mobility of 2: the obstacle is a step too.
+fun obstacle_vault_out_of_range_fail() {
+    use grid::direction::right;
+
+    let ctx = &mut tx_context::dummy();
+    let mut map = with_obstacles(vector[vector[2, 2]]);
+    let recruit = slow_of(ALICE, 2, ctx);
+    map.place_recruit(&recruit, 2, 0);
+    map.move_unit(vector[2, 0, right!(), right!(), right!()]);
+    abort
+}
+
+#[test, expected_failure(abort_code = ETileIsObstacle)]
+/// A path may pass over an obstacle, not end on it.
+fun path_ending_on_obstacle_fail() {
+    use grid::direction::right;
+
+    let ctx = &mut tx_context::dummy();
+    let mut map = with_obstacles(vector[vector[2, 2]]);
+    let recruit = recruit_of(ALICE, ctx);
+    map.place_recruit(&recruit, 2, 0);
+    assert!(map.check_path(vector[2, 0, right!(), right!()]).is_none());
+    map.move_unit(vector[2, 0, right!(), right!()]);
+    abort
+}
+
+#[test, expected_failure(abort_code = ETileIsObstacle)]
+/// No unit is placed on an obstacle.
+fun place_recruit_on_obstacle_fail() {
+    let ctx = &mut tx_context::dummy();
+    let mut map = with_obstacles(vector[vector[1, 1]]);
+    let recruit = recruit_of(ALICE, ctx);
+    map.place_recruit(&recruit, 1, 1);
+    abort
+}
+
+#[test, expected_failure(abort_code = EObstaclesInARow)]
+/// Two obstacles side by side are not passed over: the step off the first
+/// lands on the second.
+fun obstacles_in_a_row_fail() {
+    use grid::direction::right;
+
+    let ctx = &mut tx_context::dummy();
+    let mut map = with_obstacles(vector[vector[2, 2], vector[2, 3]]);
+    let recruit = recruit_of(ALICE, ctx);
+    map.place_recruit(&recruit, 2, 1);
+    assert!(map.check_path(vector[2, 1, right!(), right!(), right!()]).is_none());
+    map.move_unit(vector[2, 1, right!(), right!(), right!()]);
+    abort
+}
+
+#[test, expected_failure(abort_code = EPathUnwalkable)]
+/// A unit passing over an obstacle lands on the next tile, which another unit
+/// may not hold: as on any step.
+fun obstacle_vault_onto_a_unit_fail() {
+    use grid::direction::right;
+
+    let ctx = &mut tx_context::dummy();
+    let mut map = with_obstacles(vector[vector[2, 1]]);
+    let (a, b) = (recruit_of(ALICE, ctx), recruit_of(BOB, ctx));
+    map.place_recruit(&a, 2, 0);
+    map.place_recruit(&b, 2, 2);
+    map.move_unit(vector[2, 0, right!(), right!(), right!()]);
+    abort
+}
+
+#[test]
+/// Obstacles apart are passed over in one move, each step a tile: (2, 0) to
+/// (2, 4) over (2, 1) and (2, 3) is four steps. The step off an obstacle
+/// follows the rules of any step: a high side on the edge blocks it, and so
+/// does a unit.
+fun obstacles_apart_are_passed_over() {
+    use grid::direction::{right, down};
+    use std::unit_test::{assert_eq, destroy};
+
+    let ctx = &mut tx_context::dummy();
+    let mut map = with_obstacles(vector[vector[2, 1], vector[2, 3]]);
+    let path = vector[2, 0, right!(), right!(), right!(), right!()];
+    assert_eq!(map.check_path(path), option::some(vector[2, 4]));
+    // around the second: off the first, down, across and up
+    let around = vector[2, 0, right!(), right!(), down!(), right!(), right!()];
+    assert_eq!(map.check_path(around), option::some(vector[3, 4]));
+
+    // a high side facing the obstacle closes the edge off it
+    *&mut map.grid[2, 2].tile_type = cover(HIGH_COVER, NO_COVER, NO_COVER, NO_COVER);
+    assert!(map.check_path(path).is_none());
+    *&mut map.grid[2, 2].tile_type = cover(LOW_COVER, NO_COVER, NO_COVER, NO_COVER);
+    assert_eq!(map.check_path(path), option::some(vector[2, 4]));
+    *&mut map.grid[2, 2].tile_type = TileType::Empty;
+
+    let recruit = recruit_of(ALICE, ctx);
+    map.place_recruit(&recruit, 2, 0);
+    map.move_unit(path);
+    assert!(map.tile_has_unit(2, 4));
+    assert_eq!(map.unit(2, 4).borrow().ap(), 1);
+
+    destroy(recruit);
+    map.destroy();
+}
+
+#[test]
+/// A unit next to an obstacle has low cover from a shot across it, and only
+/// from one: a shot along the obstacle or from the open side meets none, and a
+/// unit diagonal to it has none. This is what a `Cover` tile low on all four
+/// sides gives its neighbors.
+fun obstacle_gives_low_cover() {
+    use std::unit_test::assert_eq;
+
+    let mut map = with_obstacles(vector[vector[2, 2]]);
+    let low = cover(LOW_COVER, LOW_COVER, LOW_COVER, LOW_COVER);
+
+    // the unit at (2, 1), west of the obstacle
+    assert_eq!(map.cover_bonus(2, 4, 2, 1), DEFENSE_BONUS); // across it, east
+    assert_eq!(map.cover_bonus(4, 4, 2, 1), DEFENSE_BONUS); // south-east, east dominant
+    assert_eq!(map.cover_bonus(0, 3, 2, 1), DEFENSE_BONUS); // north-east diagonal
+    assert_eq!(map.cover_bonus(2, 0, 2, 1), 0); // the open side, west
+    assert_eq!(map.cover_bonus(0, 1, 2, 1), 0); // north
+    assert_eq!(map.cover_bonus(4, 1, 2, 1), 0); // south
+    // the unit at (1, 1), diagonal to it
+    assert_eq!(map.cover_bonus(3, 3, 1, 1), 0);
+    assert_eq!(map.cover_bonus(1, 4, 1, 1), 0);
+    assert_eq!(map.cover_bonus(4, 1, 1, 1), 0);
+    // each of its four sides
+    assert_eq!(map.cover_bonus(4, 2, 1, 2), DEFENSE_BONUS);
+    assert_eq!(map.cover_bonus(0, 2, 3, 2), DEFENSE_BONUS);
+    assert_eq!(map.cover_bonus(2, 0, 2, 3), DEFENSE_BONUS);
+
+    // the same as a four-sided low cover tile in its place
+    let before = vector[
+        map.cover_bonus(2, 4, 2, 1),
+        map.cover_bonus(2, 0, 2, 1),
+        map.cover_bonus(3, 3, 1, 1),
+    ];
+    *&mut map.grid[2, 2].tile_type = low;
+    assert_eq!(
+        before,
+        vector[
+            map.cover_bonus(2, 4, 2, 1),
+            map.cover_bonus(2, 0, 2, 1),
+            map.cover_bonus(3, 3, 1, 1),
+        ],
+    );
+    map.destroy();
+}
+
+#[test]
+/// The odds of a shot across an obstacle are those across a four-sided low
+/// cover tile, 25 lower than in the open: of the same 20 seeded shots fewer
+/// hit, the same ones both ways. The obstacle does not block the shot.
+fun obstacle_lowers_the_hit_chance() {
+    use std::unit_test::assert_eq;
+
+    let open = hits!(MINUS + 35, |_| ());
+    let obstacle = hits!(MINUS + 35, |map| {
+        *&mut map.grid[0, 1].tile_type = TileType::Obstacle;
+    });
+    let low = hits!(MINUS + 35, |map| {
+        *&mut map.grid[0, 1].tile_type = cover(LOW_COVER, LOW_COVER, LOW_COVER, LOW_COVER);
+    });
+    assert!(obstacle < open);
+    assert_eq!(obstacle, low);
+    // aim 127: always hits, cover or not
+    assert_eq!(hits!(62, |map| *&mut map.grid[0, 1].tile_type = TileType::Obstacle), 20);
+}
+
+#[test]
+/// An obstacle blocks neither a line of sight nor a line of throw, between
+/// its neighbors or past it, and a grenade may be thrown onto it.
+fun obstacle_does_not_block_lines() {
+    let mut map = with_obstacles(vector[vector[0, 2], vector[2, 2]]);
+    assert!(map.line_of_sight(0, 0, 0, 4) && map.line_of_sight(0, 4, 0, 0));
+    assert!(map.line_of_throw(0, 0, 0, 4) && map.line_of_throw(0, 4, 0, 0));
+    assert!(map.line_of_sight(2, 1, 2, 3) && map.line_of_sight(0, 1, 4, 3));
+    assert!(map.line_of_sight(0, 0, 0, 2) && map.line_of_throw(0, 0, 0, 2));
+
+    let ctx = &mut tx_context::dummy();
+    let mut rng = sui::random::new_generator_from_seed_for_testing(vector[1]);
+    let mut recruit = recruit_of(ALICE, ctx);
+    recruit.add_utility(ghosts::items::frag_grenade(ctx));
+    map.place_recruit(&recruit, 0, 0);
+    map.perform_grenade(&mut rng, 0, 0, 0, 2);
+    assert!(!map.is_tile_obstacle(0, 2) && map.is_tile_obstacle(2, 2) == false);
+
+    recruit.kill(ctx).throw_away();
+    map.destroy();
+}
+
+#[test]
+/// A frag turns the obstacles in its blast into ground, and only those: the
+/// unit beside one loses its cover, and the tile is stood on like any other.
+/// So does an area weapon that damages the ground.
+fun frag_clears_obstacles() {
+    use grid::direction::{right, down};
+    use std::unit_test::{assert_eq, destroy};
+
+    let ctx = &mut tx_context::dummy();
+    let mut rng = sui::random::new_generator_from_seed_for_testing(vector[1]);
+    let mut map = new(@0.to_id(), 6);
+    vector[vector[1, 3], vector[3, 3], vector[5, 5]].do!(|p| {
+        *&mut map.grid[p[0], p[1]].tile_type = TileType::Obstacle;
+    });
+    let mut thrower = recruit_of(ALICE, ctx);
+    thrower.add_utility(ghosts::items::frag_grenade(ctx));
+    map.place_recruit(&thrower, 1, 2);
+    assert_eq!(map.cover_bonus(1, 5, 1, 2), DEFENSE_BONUS);
+
+    map.perform_grenade(&mut rng, 1, 2, 2, 3);
+    assert_eq!(map.grid[1, 3].tile_type, TileType::Empty);
+    assert_eq!(map.grid[3, 3].tile_type, TileType::Empty);
+    assert!(map.is_tile_obstacle(5, 5)); // 5 tiles from the blast
+    assert_eq!(map.cover_bonus(1, 5, 1, 2), 0);
+    assert!(map.is_tile_standable(1, 3));
+    map.move_unit(vector[1, 2, right!(), down!(), down!()]);
+    assert!(map.tile_has_unit(3, 3));
+
+    thrower.kill(ctx).throw_away();
+    destroy(map.destroy());
+
+    // an area weapon with `env_damage` clears them as well
+    let mut map = with_obstacles(vector[vector[0, 2]]);
+    let launcher = ghosts::stats_builder::new()
+        .aim(62)
+        .damage(1)
+        .area_size(1)
+        .env_damage(1)
+        .build_weapon();
+    let mut shooter = recruit_of(ALICE, ctx);
+    shooter.add_weapon(ghosts::weapon::new(b"Launcher".to_string(), launcher, ctx));
+    map.place_recruit(&shooter, 0, 0);
+    map.perform_attack(&mut rng, 0, 0, 0, 2);
+    assert_eq!(map.grid[0, 2].tile_type, TileType::Empty);
+
+    destroy(shooter);
+    map.destroy();
+}
+
+#[test]
+/// An `Obstacle` is the BCS tag 4 with no fields, four bytes less than a
+/// `Cover`; a map with obstacles reads back the same, units and all.
+fun obstacle_bcs_round_trip() {
+    use std::unit_test::{assert_eq, destroy};
+
+    let tile = Tile { tile_type: TileType::Obstacle, unit: option::none() };
+    assert_eq!(bcs::to_bytes(&tile), vector[4, 0]);
+    let low = cover(LOW_COVER, LOW_COVER, LOW_COVER, LOW_COVER);
+    let cover = Tile { tile_type: low, unit: option::none() };
+    assert_eq!(bcs::to_bytes(&cover), vector[1, 1, 1, 1, 1, 0]);
+    let Tile { unit, .. } = tile;
+    unit.destroy_none();
+    let Tile { unit, .. } = cover;
+    unit.destroy_none();
+
+    let ctx = &mut tx_context::dummy();
+    let mut map = with_obstacles(vector[vector[0, 1], vector[2, 2], vector[4, 4]]);
+    let recruit = recruit_of(ALICE, ctx);
+    map.place_recruit(&recruit, 2, 1);
+    let bytes = bcs::to_bytes(&map);
+    let restored = from_bytes(bytes);
+    assert_eq!(bcs::to_bytes(&restored), bytes);
+    assert!(restored.is_tile_obstacle(0, 1) && restored.is_tile_obstacle(4, 4));
+    assert_eq!(restored.unit_tiles(), vector[11]);
+    assert_eq!(map.to_string(), restored.to_string());
+
+    destroy(recruit);
+    restored.destroy();
+    map.destroy();
+}
+
 // === Black Rain ===
 
-/// The low covers of Black Rain, `(x, y)` each: the scene's cover props, the
+/// The obstacles of Black Rain, `(x, y)` each: the scene's cover props, the
 /// scene cell `[cx, cz]` at `(cz + 7, cx + 9)`.
-const BLACK_RAIN_COVERS: vector<vector<u16>> = vector[
+const BLACK_RAIN_OBSTACLES: vector<vector<u16>> = vector[
     vector[2, 12],
     vector[3, 9],
     vector[4, 5],
@@ -1325,38 +1628,50 @@ const BLACK_RAIN_COVERS: vector<vector<u16>> = vector[
     vector[11, 3],
 ];
 
+/// Black Rain as it was baked before obstacles: each of its obstacles a
+/// `Cover` low on all four sides, which a unit could stand on.
+public fun black_rain_as_covers(id: ID): Map {
+    let mut map = black_rain(id);
+    let low = cover(LOW_COVER, LOW_COVER, LOW_COVER, LOW_COVER);
+    BLACK_RAIN_OBSTACLES.do!(|p| *&mut map.grid[p[0], p[1]].tile_type = low);
+    map
+}
+
+/// Turn the tile `(x, y)` into ground, as a blast would.
+public fun clear_tile_for_testing(map: &mut Map, x: u16, y: u16) {
+    *&mut map.grid[x, y].tile_type = TileType::Empty;
+}
+
 #[test]
 /// Black Rain as the scene has it: 14 rows (the scene's z) by 18 columns (its
-/// x); the four shops are walls, every cover is low on all four sides, the rest
-/// is street. Every spawn is empty ground, and no unit stands within a rifle's
-/// reach of the other side as it deploys: the closest are 8 tiles apart.
+/// x); the four shops are walls, every cover prop is an obstacle, the rest is
+/// street. Every spawn is empty ground with street to step onto, and no unit
+/// stands within a rifle's reach of the other side as it deploys: the closest
+/// are 8 tiles apart.
 fun black_rain_tiles() {
     use std::unit_test::assert_eq;
 
     let map = black_rain(@1.to_id());
     let (rows, cols) = map.size();
     assert_eq!(vector[rows, cols], vector[14, 18]);
-    let low = cover(LOW_COVER, LOW_COVER, LOW_COVER, LOW_COVER);
-    let (mut walls, mut covers) = (0u64, vector[]);
+    let (mut walls, mut obstacles) = (0u64, vector[]);
     14u16.do!(
         |x| 18u16.do!(
             |y| match (map.grid[x, y].tile_type) {
                 TileType::Wall => walls = walls + 1,
-                TileType::Cover { .. } => {
-                    assert_eq!(map.grid[x, y].tile_type, low);
-                    covers.push_back(vector[x, y]);
-                },
+                TileType::Obstacle => obstacles.push_back(vector[x, y]),
                 TileType::Empty => (),
-                TileType::Unwalkable => abort,
+                TileType::Cover { .. } | TileType::Unwalkable => abort,
             },
         ),
     );
-    assert_eq!(covers, BLACK_RAIN_COVERS);
+    assert_eq!(obstacles, BLACK_RAIN_OBSTACLES);
     assert_eq!(walls, 64);
 
     // a shop's corner, a cover prop, the crossing in the middle of the street
     assert!(map.is_tile_wall(0, 0) && map.is_tile_wall(11, 13) && map.is_tile_wall(12, 2));
-    assert!(map.is_tile_cover(9, 6) && map.is_tile_cover(3, 9));
+    assert!(map.is_tile_obstacle(9, 6) && map.is_tile_obstacle(3, 9));
+    assert!(!map.is_tile_standable(9, 6) && map.is_tile_walkable(9, 6));
     assert_eq!(map.grid[7, 9].tile_type, TileType::Empty);
 
     let positions = black_rain_positions();
@@ -1372,8 +1687,11 @@ fun black_rain_tiles() {
         ],
     );
     positions.do_ref!(|p| {
-        assert_eq!(map.grid[p[0] as u16, p[1] as u16].tile_type, TileType::Empty);
-        assert!(map.grid[p[0] as u16, p[1] as u16].unit.is_none());
+        let (x, y) = (p[0] as u16, p[1] as u16);
+        assert_eq!(map.grid[x, y].tile_type, TileType::Empty);
+        assert!(map.grid[x, y].unit.is_none());
+        let around = vector[vector[x - 1, y], vector[x + 1, y], vector[x, y - 1], vector[x, y + 1]];
+        assert!(around.any!(|n| map.is_tile_standable(n[0], n[1])));
     });
     let mut closest = 0xFFFFu16;
     3u64.do!(|i| 3u64.do!(|j| {
@@ -1386,9 +1704,9 @@ fun black_rain_tiles() {
 }
 
 #[test]
-/// A frag on Black Rain turns every cover in its blast into street, and only
-/// those: the unit behind one loses its 25, and the tile walks like any other.
-/// Walls stay.
+/// A frag on Black Rain turns every obstacle in its blast into street, and only
+/// those: the unit behind one loses its 25, and the tile is stood on like any
+/// other. Walls stay.
 fun black_rain_frag_clears_cover() {
     use grid::direction::{down, right};
     use std::unit_test::{assert_eq, destroy};
@@ -1402,20 +1720,337 @@ fun black_rain_frag_clears_cover() {
     map.place_recruit(&thrower, 8, 3);
     map.place_recruit(&target, 8, 6);
 
-    // behind the cover at (9, 6) from a shot up the column
+    // behind the obstacle at (9, 6) from a shot up the column; (9, 7) cannot
+    // be stood on
     assert_eq!(map.cover_bonus(12, 6, 8, 6), DEFENSE_BONUS);
+    assert!(map.check_path(vector[8, 6, down!(), right!()]).is_none());
     map.perform_grenade(&mut rng, 8, 3, 9, 7);
 
-    BLACK_RAIN_COVERS.do!(|p| {
+    BLACK_RAIN_OBSTACLES.do!(|p| {
         let reached = grid::manhattan_distance!(p[0], p[1], 9, 7) <= GRENADE_RADIUS;
-        assert_eq!(map.is_tile_cover(p[0], p[1]), !reached);
+        assert_eq!(map.is_tile_obstacle(p[0], p[1]), !reached);
     });
     assert_eq!(map.grid[9, 6].tile_type, TileType::Empty);
     assert_eq!(map.grid[9, 7].tile_type, TileType::Empty);
     assert_eq!(map.cover_bonus(12, 6, 8, 6), 0);
     assert!(map.is_tile_wall(9, 2));
     assert!(map.check_path(vector[8, 6, down!(), right!()]).is_some());
+    map.move_unit(vector[8, 6, down!(), right!()]);
+    assert!(map.tile_has_unit(9, 7));
 
     destroy(vector[thrower, target]);
+    map.destroy();
+}
+
+#[test, expected_failure(abort_code = EObstaclesInARow)]
+/// The obstacles (9, 6) and (9, 7) stand side by side: a path along the row
+/// would land a vault on the second.
+fun black_rain_two_obstacles_in_a_row_fail() {
+    use grid::direction::right;
+
+    let ctx = &mut tx_context::dummy();
+    let mut map = black_rain(@1.to_id());
+    let recruit = recruit_of(ALICE, ctx);
+    map.place_recruit(&recruit, 9, 5);
+    map.move_unit(vector[9, 5, right!(), right!(), right!()]);
+    abort
+}
+
+#[test]
+/// Each pair of obstacles side by side on Black Rain, (9, 6) and (9, 7),
+/// (9, 11) and (9, 12), (6, 13) and (6, 14), cannot be crossed along its row,
+/// from either end; either one of a pair is crossed down its column.
+fun black_rain_obstacle_pairs() {
+    use grid::direction::{up, down, left, right};
+
+    let map = black_rain(@1.to_id());
+    vector[vector[9u8, 6], vector[9, 11], vector[6, 13]].do!(|p| {
+        let (x, y) = (p[0], p[1]);
+        assert!(map.is_tile_obstacle(x as u16, y as u16));
+        assert!(map.is_tile_obstacle(x as u16, (y as u16) + 1));
+        assert!(map.check_path(vector[x, y - 1, right!(), right!(), right!()]).is_none());
+        assert!(map.check_path(vector[x, y + 2, left!(), left!(), left!()]).is_none());
+        2u8.do!(|i| {
+            assert!(map.check_path(vector[x + 1, y + i, up!(), up!()]).is_some());
+            assert!(map.check_path(vector[x - 1, y + i, down!(), down!()]).is_some());
+        });
+    });
+    map.destroy();
+}
+
+#[test]
+/// From Alice's spawn at (11, 6) a unit vaults the obstacle at (9, 6) to stand
+/// at (8, 6): three steps, the obstacle counted. A mobility of 3 makes it.
+fun black_rain_vault_costs_its_steps() {
+    use grid::direction::up;
+    use std::unit_test::{assert_eq, destroy};
+
+    let ctx = &mut tx_context::dummy();
+    let mut map = black_rain(@1.to_id());
+    let recruit = slow_of(ALICE, 3, ctx);
+    map.place_recruit(&recruit, 11, 6);
+    let path = vector[11, 6, up!(), up!(), up!()];
+    assert_eq!(map.check_path(path), option::some(vector[8, 6]));
+    map.move_unit(path);
+    assert!(map.tile_has_unit(8, 6) && !map.tile_has_unit(11, 6));
+    assert_eq!(map.unit(8, 6).borrow().ap(), 1);
+
+    destroy(recruit);
+    map.destroy();
+}
+
+#[test, expected_failure(abort_code = ghosts::unit::ERangeExceeded)]
+/// The same vault with a mobility of 2 falls a step short.
+fun black_rain_vault_out_of_range_fail() {
+    use grid::direction::up;
+
+    let ctx = &mut tx_context::dummy();
+    let mut map = black_rain(@1.to_id());
+    let recruit = slow_of(ALICE, 2, ctx);
+    map.place_recruit(&recruit, 11, 6);
+    map.move_unit(vector[11, 6, up!(), up!(), up!()]);
+    abort
+}
+
+/// A recruit of `owner` with a `mobility` of at most 7.
+fun slow_of(owner: address, mobility: u8, ctx: &mut TxContext): ghosts::recruit::Recruit {
+    let mut recruit = recruit_of(owner, ctx);
+    let armor = ghosts::stats::new(0x80 + (7 - mobility), 0, 0, 0, 0);
+    recruit.add_armor(ghosts::armor::new(b"Slow".to_string(), armor, ctx));
+    recruit
+}
+
+// === Reach ===
+//
+// The tiles a unit reaches in one move, as the contract accepts paths: every
+// tile it can stand on, with no unit, that a path of at most `mobility` steps
+// ends on, with the fewest steps such a path takes. Clients showing the move
+// range copy these tables.
+
+/// `[x, y, steps]` for each tile reached by the unit at (11, 6) on Black Rain,
+/// alone on the map, with a mobility of 3. Sorted by `x`, then `y`.
+const BLACK_RAIN_REACH_3: vector<vector<u16>> = vector[
+    vector[8, 6, 3],
+    vector[9, 5, 3],
+    vector[10, 4, 3],
+    vector[10, 5, 2],
+    vector[10, 6, 1],
+    vector[10, 7, 2],
+    vector[10, 8, 3],
+    vector[11, 4, 2],
+    vector[11, 5, 1],
+    vector[11, 7, 1],
+    vector[11, 8, 2],
+    vector[11, 9, 3],
+    vector[12, 4, 3],
+    vector[12, 5, 2],
+    vector[12, 6, 1],
+    vector[12, 7, 2],
+    vector[12, 8, 3],
+    vector[13, 5, 3],
+    vector[13, 6, 2],
+    vector[13, 7, 3],
+];
+
+/// As `BLACK_RAIN_REACH_3`, with a mobility of 7.
+const BLACK_RAIN_REACH_7: vector<vector<u16>> = vector[
+    vector[4, 6, 7],
+    vector[5, 5, 7],
+    vector[5, 6, 6],
+    vector[5, 7, 7],
+    vector[6, 4, 7],
+    vector[6, 5, 6],
+    vector[6, 6, 5],
+    vector[6, 7, 6],
+    vector[6, 8, 7],
+    vector[7, 3, 7],
+    vector[7, 4, 6],
+    vector[7, 5, 5],
+    vector[7, 6, 4],
+    vector[7, 7, 5],
+    vector[7, 8, 6],
+    vector[7, 9, 7],
+    vector[8, 2, 7],
+    vector[8, 3, 6],
+    vector[8, 4, 5],
+    vector[8, 5, 4],
+    vector[8, 6, 3],
+    vector[8, 7, 4],
+    vector[8, 8, 5],
+    vector[8, 9, 6],
+    vector[8, 10, 7],
+    vector[9, 3, 5],
+    vector[9, 4, 4],
+    vector[9, 5, 3],
+    vector[9, 8, 4],
+    vector[9, 9, 5],
+    vector[9, 10, 6],
+    vector[10, 3, 4],
+    vector[10, 4, 3],
+    vector[10, 5, 2],
+    vector[10, 6, 1],
+    vector[10, 7, 2],
+    vector[10, 8, 3],
+    vector[10, 9, 4],
+    vector[10, 10, 5],
+    vector[10, 11, 6],
+    vector[10, 12, 7],
+    vector[11, 4, 2],
+    vector[11, 5, 1],
+    vector[11, 7, 1],
+    vector[11, 8, 2],
+    vector[11, 9, 3],
+    vector[11, 10, 4],
+    vector[11, 11, 5],
+    vector[11, 12, 6],
+    vector[12, 3, 4],
+    vector[12, 4, 3],
+    vector[12, 5, 2],
+    vector[12, 6, 1],
+    vector[12, 7, 2],
+    vector[12, 8, 3],
+    vector[12, 9, 4],
+    vector[12, 10, 5],
+    vector[12, 11, 6],
+    vector[12, 12, 7],
+    vector[13, 1, 7],
+    vector[13, 2, 6],
+    vector[13, 3, 5],
+    vector[13, 4, 4],
+    vector[13, 5, 3],
+    vector[13, 6, 2],
+    vector[13, 7, 3],
+    vector[13, 8, 4],
+    vector[13, 9, 5],
+    vector[13, 10, 6],
+    vector[13, 11, 7],
+];
+
+/// The tiles the unit at `(x, y)` reaches with `mobility`, as `[x, y, steps]`
+/// sorted by `x` then `y`, and a path of the fewest steps to each: a breadth-
+/// first search by the rules of `trace_path`, a step at a time.
+fun reach(map: &Map, x: u16, y: u16, mobility: u16): (vector<vector<u16>>, vector<vector<u8>>) {
+    use grid::direction::{up, down, left, right};
+
+    let (rows, cols) = map.size();
+    let mut paths = vector::tabulate!((rows * cols) as u64, |_| vector<u8>[]);
+    let mut seen = vector::tabulate!((rows * cols) as u64, |_| false);
+    let start = x * cols + y;
+    *&mut seen[start as u64] = true;
+    *&mut paths[start as u64] = vector[x as u8, y as u8];
+
+    let mut queue = vector[start];
+    let mut head = 0;
+    while (head < queue.length()) {
+        let tile = queue[head];
+        head = head + 1;
+        let (x0, y0) = (tile / cols, tile % cols);
+        let source = &map.grid[x0, y0];
+        if (paths[tile as u64].length() - 2 == (mobility as u64)) continue;
+
+        vector[up!(), down!(), left!(), right!()].do!(|d| {
+            if (d == up!() && x0 == 0 || d == left!() && y0 == 0) return;
+            if (d == down!() && x0 + 1 == rows || d == right!() && y0 + 1 == cols) return;
+            let (x1, y1) = if (d == up!()) (x0 - 1, y0) else if (d == down!()) (x0 + 1, y0)
+            else if (d == left!()) (x0, y0 - 1) else (x0, y0 + 1);
+            let next = x1 * cols + y1;
+            let target = &map.grid[x1, y1];
+            if (seen[next as u64] || target.unit.is_some() || !is_walkable!(target)) return;
+            if (is_edge_high_cover!(source, target, d)) return;
+            if (is_obstacle!(source) && is_obstacle!(target)) return;
+            *&mut seen[next as u64] = true;
+            let mut path = paths[tile as u64];
+            path.push_back(d);
+            *&mut paths[next as u64] = path;
+            queue.push_back(next);
+        });
+    };
+
+    let (mut tiles, mut found) = (vector[], vector[]);
+    (rows * cols).do!(|tile| {
+        let (x1, y1) = (tile / cols, tile % cols);
+        let path = paths[tile as u64];
+        if (tile == start || path.is_empty() || !map.is_tile_standable(x1, y1)) return;
+        tiles.push_back(vector[x1, y1, (path.length() - 2) as u16]);
+        found.push_back(path);
+    });
+    (tiles, found)
+}
+
+/// The tiles every path of at most `mobility` steps from `(x, y)` that stays on
+/// the map and `check_path` accepts ends on, as `reach` gives them: the fewest
+/// steps to each.
+fun reach_by_paths(map: &Map, x: u16, y: u16, mobility: u16): vector<vector<u16>> {
+    use grid::direction::{up, down, left, right};
+
+    let (rows, cols) = map.size();
+    let mut steps = vector::tabulate!((rows * cols) as u64, |_| 0xFFFFu16);
+    let mut paths = vector[vector[x as u8, y as u8]];
+    mobility.do!(|_| {
+        let mut longer = vector[];
+        paths.do!(|path| vector[up!(), down!(), left!(), right!()].do!(|d| {
+            let mut path = path;
+            let (mut px, mut py) = (x, y);
+            path.push_back(d);
+            let mut inside = true;
+            (path.length() - 2).do!(|i| {
+                let s = path[i + 2];
+                if (s == up!() && px == 0 || s == left!() && py == 0) inside = false;
+                if (s == down!() && px + 1 == rows || s == right!() && py + 1 == cols) {
+                    inside = false
+                };
+                if (!inside) return;
+                if (s == up!()) px = px - 1
+                else if (s == down!()) px = px + 1
+                else if (s == left!()) py = py - 1
+                else py = py + 1;
+            });
+            if (!inside) return;
+            longer.push_back(path);
+            map.check_path(path).do!(|end| {
+                let tile = end[0] * cols + end[1];
+                let n = (path.length() - 2) as u16;
+                if (n < steps[tile as u64]) *&mut steps[tile as u64] = n;
+            });
+        }));
+        paths = longer;
+    });
+
+    let mut tiles = vector[];
+    (rows * cols).do!(|tile| {
+        let n = steps[tile as u64];
+        if (n != 0xFFFF) tiles.push_back(vector[tile / cols, tile % cols, n]);
+    });
+    tiles
+}
+
+#[test]
+/// The move range of the unit at Alice's spawn (11, 6) on Black Rain, alone on
+/// the map, for a mobility of 3 and of 7: every path to a tile in the tables is
+/// one `check_path` accepts, of the steps given; with a mobility of 3 every
+/// path on the map is tried, and none ends anywhere else.
+fun black_rain_reach() {
+    use std::unit_test::{assert_eq, destroy};
+
+    let ctx = &mut tx_context::dummy();
+    let mut map = black_rain(@1.to_id());
+    let recruit = recruit_of(ALICE, ctx);
+    map.place_recruit(&recruit, 11, 6);
+
+    let (three, paths_3) = map.reach(11, 6, 3);
+    let (seven, paths_7) = map.reach(11, 6, 7);
+    assert_eq!(map.reach_by_paths(11, 6, 3), three);
+    paths_3.zip_do!(three, |path, tile| {
+        assert_eq!(map.check_path(path), option::some(vector[tile[0], tile[1]]));
+        assert_eq!((path.length() - 2) as u16, tile[2]);
+    });
+    paths_7.zip_do!(seven, |path, tile| {
+        assert_eq!(map.check_path(path), option::some(vector[tile[0], tile[1]]));
+        assert_eq!((path.length() - 2) as u16, tile[2]);
+    });
+    assert_eq!(three, BLACK_RAIN_REACH_3);
+    assert_eq!(seven, BLACK_RAIN_REACH_7);
+
+    destroy(recruit);
     map.destroy();
 }
