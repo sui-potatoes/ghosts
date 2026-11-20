@@ -36,6 +36,12 @@ type Client = ReturnType<typeof useCurrentClient>;
 
 /** How often a host re-reads its lobby for a guest arriving or leaving. */
 const LOBBY_POLL_MS = 2_000;
+/**
+ * Reads of an order that found no lobby before it is believed to be the queue: the
+ * node can answer for the `Account` a write just changed before it serves the lobby
+ * field the same write filed.
+ */
+const QUEUE_CHECKS = 5;
 /** How often the open list is re-read while it is on screen. */
 const LIST_POLL_MS = 5_000;
 
@@ -93,7 +99,13 @@ export function useLobbyPlace(accountId?: string | null, account?: ChainAccount)
     const query = useQuery({
         queryKey: ["ghosts", "lobby-place", accountId, order],
         enabled: lobbiesEnabled && !!accountId && !!order,
-        refetchInterval: (q) => (q.state.data?.kind === "host-open" ? LOBBY_POLL_MS : false),
+        refetchInterval: (q) => {
+            const kind = q.state.data?.kind;
+            if (kind === "host-open") return LOBBY_POLL_MS;
+            return kind === "queue" && q.state.dataUpdateCount < QUEUE_CHECKS
+                ? LOBBY_POLL_MS
+                : false;
+        },
         refetchIntervalInBackground: true,
         queryFn: () => fetchPlace(client, accountId!, order!),
     });

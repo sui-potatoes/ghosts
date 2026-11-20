@@ -331,7 +331,14 @@ export class GhostsAgent {
             };
         }
         if (role?.kind === "guest") {
-            const lobby: LobbySituation = { role: role.kind, host: role.host, expiresInMs };
+            // The lifetime runs from the host's opening, not from this guest's joining.
+            const host = await this.backend.accountById(role.host);
+            const hostSince = host?.search.kind === "searching" ? host.search.sinceMs : sinceMs;
+            const lobby: LobbySituation = {
+                role: role.kind,
+                host: role.host,
+                expiresInMs: Math.max(0, lobbyExpiresAtMs(hostSince) - this.now()),
+            };
             return {
                 phase: "lobby_guest",
                 actionable: false,
