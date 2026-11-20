@@ -1,0 +1,26 @@
+/* Crash screen: self-contained, no app providers. Focus is plain DOM focus,
+   drawn as the menus' white fill with dark text, no transition. */
+.fault-actions .btn {
+    transition: none;
+}
+
+.fault-actions .btn:focus,
+.fault-actions .btn:focus-visible {
+    background: var(--text-color);
+    color: var(--background-color);
+    border-color: var(--text-color);
+    outline: none;
+}
+
+.fault-summary:focus,
+.fault-summary:focus-visible {
+    background: var(--text-color);
+    color: var(--background-color);
+    outline: none;
+}
+
+.fault-log:focus,
+.fault-log:focus-visible {
+    outline: 1px solid var(--text-color);
+    outline-offset: -1px;
+}

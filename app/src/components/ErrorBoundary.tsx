@@ -1,9 +1,18 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
-import { Component, type ErrorInfo, type ReactNode } from "react";
+import {
+    Component,
+    type ErrorInfo,
+    type ReactNode,
+    type RefObject,
+    useEffect,
+    useRef,
+} from "react";
 
 import { issueUrl } from "../reportIssue";
+import { crashKeyAction, padStep, stepFocus } from "./crashKeys";
+import "./error-boundary.css";
 
 type Props = {
     children: ReactNode;
@@ -57,6 +66,102 @@ function report(scope: string, error: Error, componentStack: string): string {
     ].join("\n");
 }
 
+const goBack = () => location.assign("/");
+
+/**
+ * Keyboard and pad for the crash screen, on plain DOM focus: the app's focus
+ * system and input bus may be what broke. Every handler swallows its own errors.
+ */
+function useCrashNav(root: RefObject<HTMLElement | null>) {
+    useEffect(() => {
+        const items = (): HTMLElement[] => {
+            try {
+                return Array.from(
+                    root.current?.querySelectorAll<HTMLElement>("[data-fault-item]") ?? [],
+                );
+            } catch {
+                return [];
+            }
+        };
+        const move = (delta: 1 | -1) => {
+            const list = items();
+            const at = list.indexOf(document.activeElement as HTMLElement);
+            list[stepFocus(at, list.length, delta)]?.focus();
+        };
+        const first = items().find((el) => el.dataset.faultItem === "first");
+        try {
+            first?.focus();
+        } catch {
+            /* nothing to do */
+        }
+
+        const onKey = (e: KeyboardEvent) => {
+            try {
+                const target = e.target as HTMLElement | null;
+                const action = crashKeyAction(e);
+                if (action === "none") return;
+                // The open log scrolls with the arrows; left and right still move.
+                if (
+                    target?.dataset.faultScroll !== undefined &&
+                    (e.key === "ArrowUp" || e.key === "ArrowDown")
+                ) {
+                    return;
+                }
+                e.preventDefault();
+                if (e.repeat && (action === "back" || action === "reload")) return;
+                if (action === "prev") move(-1);
+                else if (action === "next") move(1);
+                else if (action === "back") goBack();
+                else if (action === "reload") location.reload();
+            } catch {
+                /* a second fault here would leave no screen at all */
+            }
+        };
+        window.addEventListener("keydown", onKey);
+
+        let raf = 0;
+        let nextMove = 0;
+        let held = false;
+        let wasA = false;
+        let wasB = false;
+        const poll = (now: number) => {
+            raf = requestAnimationFrame(poll);
+            try {
+                const pads = navigator.getGamepads?.();
+                const pad = pads && Array.from(pads).find((g) => g?.connected);
+                if (!pad) return;
+                const step = padStep(
+                    pad.buttons.map((b) => b.pressed),
+                    pad.axes,
+                );
+                if (step === 0) held = false;
+                else if (now >= nextMove) {
+                    move(step);
+                    nextMove = now + (held ? 140 : 400);
+                    held = true;
+                }
+                const a = !!pad.buttons[0]?.pressed;
+                const b = !!pad.buttons[1]?.pressed;
+                if (a && !wasA) (document.activeElement as HTMLElement | null)?.click();
+                if (b && !wasB) goBack();
+                wasA = a;
+                wasB = b;
+            } catch {
+                /* ignore */
+            }
+        };
+        try {
+            raf = requestAnimationFrame(poll);
+        } catch {
+            /* no rAF, no pad */
+        }
+        return () => {
+            window.removeEventListener("keydown", onKey);
+            cancelAnimationFrame(raf);
+        };
+    }, [root]);
+}
+
 function CrashScreen(props: {
     scope: string;
     fullScreen: boolean;
@@ -65,6 +170,8 @@ function CrashScreen(props: {
 }) {
     const { scope, fullScreen, error, componentStack } = props;
     const text = report(scope, error, componentStack);
+    const root = useRef<HTMLElement>(null);
+    useCrashNav(root);
 
     const issue = issueUrl({
         error,
@@ -88,6 +195,7 @@ function CrashScreen(props: {
 
     return (
         <main
+            ref={root}
             role="alert"
             className={`flex items-center justify-center bg-background p-6 text-foreground ${
                 fullScreen ? "fixed inset-0 z-[500]" : "absolute inset-0 z-[500]"
@@ -100,28 +208,47 @@ function CrashScreen(props: {
                     {error.message || String(error)}
                 </p>
                 <details className="border border-line bg-raised">
-                    <summary className="label cursor-pointer px-3 py-2 text-secondary hover:text-accent">
+                    <summary
+                        data-fault-item
+                        className="fault-summary label cursor-pointer px-3 py-2 text-secondary hover:text-accent"
+                    >
                         Details
                     </summary>
-                    <pre className="max-h-64 overflow-auto px-3 pb-3 font-mono text-[11px] whitespace-pre-wrap text-secondary">
+                    <pre
+                        tabIndex={0}
+                        data-fault-scroll
+                        className="fault-log max-h-64 overflow-auto px-3 pb-3 font-mono text-[11px] whitespace-pre-wrap text-secondary"
+                    >
                         {`${error.stack ?? ""}\n\nComponent stack:${componentStack || " (none)"}`}
                     </pre>
                 </details>
-                <div className="flex flex-wrap gap-3">
-                    <button type="button" className="btn" onClick={() => location.reload()}>
+                <div className="fault-actions flex flex-wrap gap-3">
+                    <button
+                        type="button"
+                        data-fault-item="first"
+                        className="btn"
+                        onClick={() => location.reload()}
+                    >
                         Reload
                     </button>
                     <button
                         type="button"
+                        data-fault-item
                         className="btn"
                         onClick={(e) => void copy(e.currentTarget)}
                     >
                         Copy details
                     </button>
-                    <button type="button" className="btn" onClick={() => location.assign("/")}>
+                    <button type="button" data-fault-item className="btn" onClick={goBack}>
                         Back to menu
                     </button>
-                    <a className="btn" href={issue} target="_blank" rel="noopener noreferrer">
+                    <a
+                        data-fault-item
+                        className="btn"
+                        href={issue}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                    >
                         Report on GitHub
                     </a>
                 </div>
