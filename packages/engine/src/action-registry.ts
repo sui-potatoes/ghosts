@@ -64,6 +64,8 @@ export type Refusal =
   | "no-ammo"
   /** `EFullAmmo`. */
   | "full-ammo"
+  /** `ERangeExceeded` / `ENoLineOfSight` for every hostile: nobody to aim at (`Encounter.inRange`). */
+  | "no-target"
   /** `ENoUsesLeft` / `action::ENoUsesLeft`. */
   | "no-uses"
   /** The demo's Extract: not on the objective. */
@@ -81,6 +83,7 @@ export const REFUSAL_TEXT: Record<Refusal, string> = {
   "no-ap": "No action points left",
   "no-ammo": "Magazine empty. Reload",
   "full-ammo": "Magazine is full",
+  "no-target": "No target in range",
   "no-uses": "None left this match",
   "not-on-site": "Stand on the objective",
   secured: "Objective already secured",
@@ -95,6 +98,7 @@ export const REFUSAL_SHORT: Record<Refusal, string> = {
   "no-ap": "NO AP",
   "no-ammo": "NO AMMO",
   "full-ammo": "MAG FULL",
+  "no-target": "NO TARGET",
   "no-uses": "NONE LEFT",
   "not-on-site": "NOT ON SITE",
   secured: "SECURED",
@@ -155,13 +159,13 @@ function spec(id: string, rest: Omit<ActionSpec, "id" | "tag" | "status" | "name
 export const ACTIONS: readonly ActionSpec[] = [
   // `Unit.perform_move`: AP (range is the path's, checked when a tile is picked).
   spec("Move", { order: "move", key: "move", icon: "move", targeting: { mode: "tile" } }),
-  // `Unit.perform_attack`: AP, then ammo; range and sight when a target is picked.
+  // `Unit.perform_attack`: AP, then ammo, then range and sight: some hostile must be in range to aim at.
   spec("Attack", {
     order: "fire",
     key: "fire",
     icon: "cross",
     targeting: { mode: "unit" },
-    check: (_, u) => (u.ammo > 0 ? null : "no-ammo"),
+    check: (game, u) => (u.ammo <= 0 ? "no-ammo" : game.targetsInRange(u).length ? null : "no-target"),
   }),
   // `Unit.perform_reload`: AP, then a magazine that isn't full.
   spec("Reload", {

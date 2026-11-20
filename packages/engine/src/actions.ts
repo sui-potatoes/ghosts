@@ -30,6 +30,7 @@ function syncScene() {
   const { game, battlefield } = s;
   battlefield.invalidate();
   s.settleSelection();
+  settleAim();
   const u = s.selectedUnit(),
     t = s.targetUnit();
   battlefield.sync();
@@ -51,6 +52,21 @@ function syncScene() {
     if (!s.busy) void battlefield.leaveAim();
     if (s.grenadeTarget) battlefield.showPath([u.pos, s.grenadeTarget], true);
   }
+}
+
+/**
+ * Aiming stays on a hostile in range: should the target fall (or otherwise
+ * leave range), the aim moves to the best one left in range, or ends.
+ */
+function settleAim() {
+  const s = session;
+  if (s.observer || s.mode !== "fire") return;
+  const u = s.selectedUnit(),
+    t = s.targetUnit();
+  if (!u || (t && s.game.inRange(u, t))) return;
+  const next = bestShotTarget(s.game, u);
+  if (next) s.target = next.id;
+  else s.mode = "move";
 }
 
 /** Redraw scene and UI, and open the debrief once the encounter has ended. */
@@ -149,10 +165,18 @@ export function select(id: string) {
       void pick(u.pos, u.id);
       return;
     }
-    s.target = id;
     // With nobody selected there is no shooter: the hostile is only marked.
     const shooter = s.selectedUnit();
-    if (shooter && allows(shooter, "fire")) s.mode = "fire";
+    if (shooter && allows(shooter, "fire")) {
+      // Only a hostile in range is aimed at; aiming, if on, stays on its target.
+      if (!s.game.inRange(shooter, u)) {
+        audio.tone("click");
+        notify("OUT OF RANGE", "miss");
+        return;
+      }
+      s.mode = "fire";
+    }
+    s.target = id;
   } else {
     if (s.selected !== id) audio.speak("select", u);
     s.selected = id;

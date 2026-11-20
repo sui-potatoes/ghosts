@@ -611,15 +611,29 @@ export class Encounter {
       ) - Math.min(100, this.cover(b, a) + unitCombat(b).defense),
     );
   }
-  /** Whether `a` has a line and the range to shoot `b` at all, AP aside. */
-  private canShoot(a: Unit, b: Unit) {
+  /**
+   * Whether `b` is a target `a` may aim at, from `from` (where `a` stands by
+   * default): alive, hostile, within the weapon's effective range plus
+   * `MAX_RANGE_OFFSET` (Manhattan, `Unit.perform_attack`'s `ERangeExceeded`),
+   * and in line of sight (`ENoLineOfSight`). The one rule the aiming, the
+   * odds, the AI and the shot itself go by, chain authority or local rules.
+   * AP and ammo are the action's own refusals (`refusalOf`).
+   */
+  inRange(a: Unit, b: Unit, from: Cell = a.pos) {
     return (
-      a.ammo > 0 &&
       b.hp > 0 &&
       a.enemy !== b.enemy &&
-      distance(a.pos, b.pos) <= a.range + MAX_RANGE_OFFSET &&
-      !this.shotBlocked(a.pos, b.pos)
+      distance(from, b.pos) <= a.range + MAX_RANGE_OFFSET &&
+      !this.shotBlocked(from, b.pos)
     );
+  }
+  /** Every unit `a` may aim at from `from`, in the encounter's unit order. */
+  targetsInRange(a: Unit, from: Cell = a.pos): Unit[] {
+    return a.hp > 0 ? this.units.filter((b) => this.inRange(a, b, from)) : [];
+  }
+  /** Whether `a` has a round, a line and the range to shoot `b` at all, AP aside. */
+  private canShoot(a: Unit, b: Unit) {
+    return a.ammo > 0 && this.inRange(a, b);
   }
   attack(a: Unit, b: Unit) {
     if (!this.canAct(a) || !allows(a, "fire") || !this.canShoot(a, b)) return null;

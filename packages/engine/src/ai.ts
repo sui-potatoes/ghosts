@@ -36,11 +36,15 @@ export function overwatchReactors(game: Encounter, enemy: Unit): Unit[] {
 
 export type HostileAction = { kind: "reload" } | { kind: "fire"; target: Unit };
 
-/** After moving: reload an empty weapon, otherwise shoot the nearest ally. */
+/**
+ * After moving: reload an empty weapon, otherwise shoot the nearest ally in
+ * range (`Encounter.inRange`, the rule the player's aiming goes by); null with
+ * nobody in range.
+ */
 export function hostileAction(game: Encounter, enemy: Unit): HostileAction | null {
   if (enemy.hp <= 0) return null;
   if (enemy.ammo === 0) return { kind: "reload" };
-  const target = nearestAlly(game, enemy.pos);
+  const [target] = game.targetsInRange(enemy).sort((a, b) => distance(a.pos, enemy.pos) - distance(b.pos, enemy.pos));
   return target ? { kind: "fire", target } : null;
 }
 

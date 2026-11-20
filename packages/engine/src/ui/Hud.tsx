@@ -41,7 +41,7 @@ import type { Weather } from "../scene/precipitation";
 import { session } from "../session";
 import { engineSettings } from "../settings";
 import { effectDetail, effectLines, effectName, unitCombat } from "../status-effects";
-import { burstUnits, damagePreview, grenadeBlockReason, shotBlockReason } from "../targeting";
+import { aimTargets, burstUnits, damagePreview, grenadeBlockReason, shotBlockReason, stepAimTarget } from "../targeting";
 import { Icon, type IconName } from "./icons";
 import { TargetIntel } from "./intel/IntelLayer";
 import { INSPECT_COMMAND, useInspect } from "./intel/store";
@@ -795,14 +795,14 @@ export function CommandBar() {
                   label="Prev"
                   icon="chevron"
                   pad="dpad"
-                  disabled={busy || game.enemies.length < 2}
+                  disabled={busy || aimTargets(game, u!).length < 2}
                   onClick={() => stepTarget(-1)}
                 />
                 <BarCommand
                   label="Next"
                   icon="chevron"
                   pad="dpad"
-                  disabled={busy || game.enemies.length < 2}
+                  disabled={busy || aimTargets(game, u!).length < 2}
                   onClick={() => stepTarget(1)}
                 />
               </>
@@ -869,8 +869,7 @@ export function CommandBar() {
 
 /** Walk the aim to the next or previous hostile, as the pad's d-pad does. */
 function stepTarget(dir: 1 | -1) {
-  const list = session.game.enemies;
-  if (!list.length) return;
-  const i = list.findIndex((e) => e.id === session.target);
-  select(list[(i + dir + list.length) % list.length].id);
+  const u = session.selectedUnit();
+  const next = u && stepAimTarget(session.game, u, session.target, dir);
+  if (next) select(next.id);
 }

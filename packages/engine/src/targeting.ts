@@ -35,28 +35,43 @@ export function shotBlockReason(
   if (refusal) return REFUSAL_TEXT[refusal].toUpperCase();
   if (!target || target.hp <= 0 || target.enemy === unit.enemy)
     return "NO TARGET";
+  if (game.inRange(unit, target)) return null;
+  // Why `Encounter.inRange` refuses it: the distance, else the line.
   if (distance(unit.pos, target.pos) > unit.range + MAX_RANGE_OFFSET)
     return "OUT OF RANGE";
-  if (game.shotBlocked(unit.pos, target.pos)) return "WALL BLOCKS SHOT";
-  return null;
+  return "WALL BLOCKS SHOT";
 }
+
+/**
+ * The hostile aiming starts on: the best odds among those in range
+ * (`Encounter.inRange`), the nearest on a tie; none when nobody is in range.
+ */
 export function bestShotTarget(game: Encounter, unit: Unit): Unit | undefined {
-  return [...game.enemies].sort((a, b) => {
-    const ar = distance(unit.pos, a.pos) <= unit.range + MAX_RANGE_OFFSET && !game.shotBlocked(unit.pos, a.pos),
-      br = distance(unit.pos, b.pos) <= unit.range + MAX_RANGE_OFFSET && !game.shotBlocked(unit.pos, b.pos);
-    return (
-      Number(br) - Number(ar) ||
-      game.chance(unit, b) - game.chance(unit, a) ||
-      distance(unit.pos, a.pos) - distance(unit.pos, b.pos)
-    );
-  })[0];
+  return [...game.targetsInRange(unit)].sort(
+    (a, b) => game.chance(unit, b) - game.chance(unit, a) || distance(unit.pos, a.pos) - distance(unit.pos, b.pos),
+  )[0];
+}
+
+/**
+ * The hostiles aiming may step through, in the encounter's order: those in
+ * range (`Encounter.inRange`). One out of range is never offered.
+ */
+export function aimTargets(game: Encounter, unit: Unit): Unit[] {
+  return game.result ? [] : game.targetsInRange(unit);
+}
+
+/** The next (or previous) hostile in range after `current`, wrapping round; undefined with none in range. */
+export function stepAimTarget(game: Encounter, unit: Unit, current: string, dir: 1 | -1): Unit | undefined {
+  const list = aimTargets(game, unit);
+  if (!list.length) return undefined;
+  const i = list.findIndex((e) => e.id === current);
+  return list[i < 0 ? (dir > 0 ? 0 : list.length - 1) : (i + dir + list.length) % list.length];
 }
 
 /** Hostiles in weapon range and line of sight; range information remains useful without AP or ammunition. */
 export function shootingTargets(game: Encounter, unit: Unit, from: Cell = unit.pos): Unit[] {
   if (unit.hp <= 0 || game.result) return [];
-  return game.units.filter((target) => target.hp > 0 && target.enemy !== unit.enemy &&
-    distance(from, target.pos) <= unit.range + MAX_RANGE_OFFSET && !game.shotBlocked(from, target.pos));
+  return game.targetsInRange(unit, from);
 }
 /**
  * Why a throw of `order` (any grenade: they share range, radius and the

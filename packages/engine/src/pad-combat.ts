@@ -9,6 +9,7 @@ import { allows, type Cell, type UnitOrder } from "./game";
 import type { IconName } from "./ui/icons";
 import { cancelDialog, onPad, padActive, type PadDir, type PadInput } from "./gamepad";
 import { PAD_COMBAT_ACTIONS, type PadBindable, type PadCombatAction, type PadCombatBindings } from "./keys";
+import { stepAimTarget } from "./targeting";
 import { session } from "./session";
 import { engineSettings } from "./settings";
 import { padCameraFree } from "./camera-input";
@@ -121,13 +122,12 @@ function wheelInput(pad: PadInput, close: PadBindable | "") {
   if (pad.pressed("a")) confirmWheel(s.wheelIndex);
 }
 
-/** Walk the hostile targets while aiming; `select` re-aims like a click would. */
+/** Walk the hostiles in range while aiming (`stepAimTarget`); `select` re-aims like a click would. */
 function cycleTarget(dir: 1 | -1) {
   const s = session;
-  const list = s.game.enemies;
-  if (!list.length) return;
-  const i = list.findIndex((e) => e.id === s.target);
-  select(list[(i + dir + list.length) % list.length].id);
+  const u = s.selectedUnit();
+  const next = u && stepAimTarget(s.game, u, s.target, dir);
+  if (next) select(next.id);
 }
 
 /** Radians per second of right stick, full deflection. */

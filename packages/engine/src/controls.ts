@@ -211,7 +211,18 @@ function bindField() {
   battlefield.onMiss = () => {
     if (battlefield.lastPointer === "touch") tapUnit(null);
   };
-  battlefield.onUnitHover = hoverUnit;
+  // While aiming, a hostile out of range says so under the pointer's watch: it is never the target.
+  let hovered: string | null = null;
+  battlefield.onUnitHover = (id) => {
+    hoverUnit(id);
+    if (id === hovered) return;
+    hovered = id;
+    const s = session;
+    const u = s.selectedUnit(),
+      t = id ? s.game.unit(id) : undefined;
+    if (!s.observer && s.mode === "fire" && u && t && t.enemy !== u.enemy && t.hp > 0 && !s.game.inRange(u, t))
+      s.notify("OUT OF RANGE", "miss");
+  };
   battlefield.onUnitHold = pinUnit;
   battlefield.onHover = (p) => {
     const s = session;
