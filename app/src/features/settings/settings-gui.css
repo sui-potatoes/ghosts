@@ -111,26 +111,33 @@
 }
 
 /* Choosers on this screen: a wide label, the control at the trailing edge. A chooser
-   is exactly a row tall with a row's inset, whatever it holds: the stepper's pips sit
-   in the control column's bottom edge instead of adding a line. */
+   is a row tall with a row's inset, whatever it holds: the stepper's value and pips
+   (24px arrows + gap + pips) fit inside that height, the pips centred under the value
+   between the arrows. */
 :is(.gset-c2, .gset-c3) .gui-chooser {
     grid-template-columns: minmax(0, 1fr) minmax(0, 220px);
-    grid-template-rows: minmax(0, 1fr);
-    height: var(--h-m);
+    grid-template-rows: auto auto;
+    align-content: center;
+    min-height: var(--h-m);
     padding: 0 calc(var(--u) * 3);
 }
 :is(.gset-c2, .gset-c3) .gui-chooser[data-kind="slider"] {
     grid-template-columns: minmax(0, 1fr) minmax(0, 220px) calc(var(--u) * 8);
 }
 :is(.gset-c2, .gset-c3) .gui-chooser-label {
-    grid-row: 1;
+    grid-row: 1 / span 2;
 }
 :is(.gset-c2, .gset-c3) .gui-chooser-pips {
-    position: absolute;
-    grid-column: 2;
-    grid-row: 1;
-    align-self: end;
-    margin-bottom: calc(var(--u) * 0.5);
+    grid-row: 2;
+    padding-top: calc(var(--u) * 1);
+}
+/* A finger's arrows keep their target but count as 24px tall in the layout (the
+   overhang is margin), so the arrows and pips still fit the row. */
+@media (hover: none), (pointer: coarse) {
+    :is(.gset-c2, .gset-c3) .gui-step {
+        height: calc(32px / var(--ui-scale));
+        margin-block: calc(-4px / var(--ui-scale));
+    }
 }
 
 /* The restore row sits with the list, not apart from it. */
