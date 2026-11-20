@@ -79,6 +79,8 @@ function checkHtml(file, text) {
   for (const tag of html.matchAll(
     /<(link|script|img|source|video|audio|track|iframe|embed|object|input|image|use)\b[^>]*>/gi,
   )) {
+    // A canonical link names the page's own address; the browser never fetches it.
+    if (/^<link\b[^>]*\srel\s*=\s*["']?canonical["']?[\s>]/i.test(tag[0])) continue;
     for (const attr of tag[0].matchAll(
       /\s(href|src|srcset|poster|data|xlink:href)\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi,
     )) {
