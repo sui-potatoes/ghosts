@@ -68,7 +68,10 @@ test("an agent walks the phases, and refusals explain themselves", async () => {
     assert.equal(view.turn, 1);
     assert.equal(view.you, "null-pointer", "names are normalized the way SuiNS would");
     assert.equal(view.opponent, "sparring-partner");
-    assert.equal(view.units.filter((u) => u.mine).length, 3, "the map sets the squad size");
+    // only the opponent has moved, so a kill so far is one of mine
+    const killed = view.recent.filter((r) => r.kind === "kia").length;
+    const mine = view.units.filter((u) => u.mine).length;
+    assert.equal(mine + killed, 3, "the map sets the squad size");
     assert.equal(view.map.length, 14);
     assert.ok(view.map.join("").includes("A"), "own units are on the map");
     assert.ok(

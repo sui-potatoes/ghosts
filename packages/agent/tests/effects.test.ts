@@ -801,7 +801,11 @@ test("the reference bot shoots when its shot is strong and the threat modest", (
     const guard = place(state, 0, 5, 3, ["move"]);
     guard.stats = { ...BASE, defense: 30 };
     place(state, 1, 5, 5);
-    assert.equal(choose(state).kind, "attack");
+    const first = choose(state);
+    assert.notEqual(first.kind, "flashbang");
+    // in the open it may step closer before it fires: the shot is the next order
+    const after = first.kind === "move" ? applyDeterministic(state, first) : state;
+    assert.equal((first.kind === "move" ? choose(after) : first).kind, "attack");
 });
 
 test("the reference bot never flashbangs where one of its own units is in the burst", () => {
