@@ -1,0 +1,196 @@
+/* The leaderboard: the tiers beside the table. Tokens only; scoped by the
+ * `lb-` prefix. Colours flip with the cursor's fill in the same frame: no
+ * colour transitions on any target. */
+
+.lb-hub {
+    display: grid;
+    grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+    gap: calc(var(--u) * 3);
+    min-height: 0;
+    height: 100%;
+}
+
+.lb-side .gui-panel-body,
+.lb-main .gui-panel-body {
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--u) * 2);
+    min-height: 0;
+}
+
+.lb-tiers {
+    display: flex;
+    flex-direction: column;
+}
+
+.lb-totals {
+    padding-top: calc(var(--u) * 2);
+    border-top: 1px solid var(--line);
+}
+
+/* --- The table --- */
+
+.lb-head,
+.lb-row {
+    display: grid;
+    grid-template-columns:
+        calc(var(--u) * 10) minmax(0, 1fr) calc(var(--u) * 24) calc(var(--u) * 14)
+        calc(var(--u) * 52) calc(var(--u) * 16);
+    align-items: center;
+    gap: calc(var(--u) * 3);
+    padding: 0 calc(var(--u) * 3);
+}
+
+.lb-head {
+    flex: none;
+    min-height: calc(var(--u) * 6);
+    font: 400 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--disabled-color);
+}
+
+.lb-row {
+    text-align: left;
+}
+
+/* The record stands clear of the rating's right-aligned figures. */
+.lb-record {
+    padding-left: calc(var(--u) * 4);
+}
+
+.lb-rating,
+.lb-games {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.lb-row .lb-rank {
+    font: 500 var(--t-label) / 1 var(--font-mono);
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+
+.lb-row .lb-name {
+    display: flex;
+    align-items: center;
+    gap: calc(var(--u) * 2);
+    min-width: 0;
+}
+
+.lb-you {
+    flex: none;
+    font: 500 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--accent-color);
+}
+
+.lb-row .lb-tier {
+    font: 500 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+
+.lb-row .lb-rating {
+    font: 500 var(--t-body) / 1 var(--font-mono);
+    color: var(--text-color);
+}
+
+.lb-row .lb-record,
+.lb-row .lb-games {
+    font: 400 var(--t-label) / 1.2 var(--font-mono);
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.lb-detail {
+    display: contents;
+}
+
+.lb-games-unit {
+    display: none;
+}
+
+.lb-row[data-focused] .lb-rank,
+.lb-row[data-focused] .lb-tier,
+.lb-row[data-focused] .lb-rating,
+.lb-row[data-focused] .lb-you {
+    color: var(--on-band);
+}
+.lb-row[data-focused] .lb-record,
+.lb-row[data-focused] .lb-games {
+    color: var(--on-band-soft);
+}
+
+.lb-row > .gui-inline {
+    grid-column: 1 / -1;
+    justify-self: end;
+}
+
+/* --- Narrower desktops: the record takes less room --- */
+
+@media (max-width: 1100px) {
+    .lb-head,
+    .lb-row {
+        grid-template-columns:
+            calc(var(--u) * 9) minmax(0, 1fr) calc(var(--u) * 22) calc(var(--u) * 12)
+            calc(var(--u) * 44) calc(var(--u) * 12);
+    }
+}
+
+/* --- Phone width: the tiers above, the record on a second line --- */
+
+@media (max-width: 760px) {
+    .lb-hub {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto minmax(0, 1fr);
+    }
+    /* The phone's gutter: 16px a side. */
+    .gui-body:has(> .lb-hub) {
+        padding-left: calc(var(--u) * 4);
+        padding-right: calc(var(--u) * 4);
+    }
+    .lb-totals {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        column-gap: calc(var(--u) * 3);
+    }
+    .lb-head,
+    .lb-row {
+        grid-template-columns: calc(var(--u) * 7) minmax(0, 1fr) auto calc(var(--u) * 11);
+        column-gap: calc(var(--u) * 2);
+        row-gap: calc(var(--u) * 1);
+        padding: 0 calc(var(--u) * 2);
+    }
+    .lb-row {
+        padding-top: calc(var(--u) * 1.5);
+        padding-bottom: calc(var(--u) * 1.5);
+    }
+    .lb-head .lb-record,
+    .lb-head .lb-games {
+        display: none;
+    }
+    .lb-row .lb-detail {
+        grid-column: 2 / -1;
+        grid-row: 2;
+        display: flex;
+        gap: calc(var(--u) * 3);
+        min-width: 0;
+    }
+    .lb-row .lb-record {
+        flex: none;
+        padding-left: 0;
+    }
+    .lb-row .lb-games {
+        flex: 0 1 auto;
+        min-width: 0;
+        text-align: left;
+    }
+    .lb-games-unit {
+        display: inline;
+    }
+}

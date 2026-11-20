@@ -99,7 +99,7 @@ function Title() {
                 case "settings":
                     return navigate("/settings");
                 case "leaderboard":
-                    return;
+                    return navigate("/leaderboard");
             }
         },
         cancelSearch: match.cancel,

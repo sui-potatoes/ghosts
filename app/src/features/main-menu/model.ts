@@ -166,11 +166,9 @@ export function menuRows(state: MenuState): MenuRow[] {
         {
             id: "leaderboard",
             label: "Leaderboard",
-            tag: "Soon",
-            tagTone: "dim",
+            hint: "Ranked players and tiers",
             verb: "Open",
-            locked: "Not open yet",
-            instant: false,
+            instant: true,
         },
     );
     if (state.install === "prompt")

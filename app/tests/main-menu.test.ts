@@ -79,10 +79,15 @@ test("the Play row leads back to a search, a lobby or a match in progress", () =
         assert.equal(playRow(state({}, m)).id, "play");
 });
 
-test("disabled rows stay in place with their reason", () => {
+test("the leaderboard row is open: no tag, no refusal, one click", () => {
     const leaderboard = menuRows(state()).find((r) => r.id === "leaderboard")!;
-    assert.equal(leaderboard.locked, "Not open yet");
-    assert.equal(leaderboard.tag, "Soon");
+    assert.equal(leaderboard.locked, undefined);
+    assert.equal(leaderboard.tag, undefined);
+    assert.equal(leaderboard.instant, true);
+    assert.equal(leaderboard.verb, "Open");
+});
+
+test("disabled rows stay in place with their reason", () => {
     const ios = menuRows(state({ install: "ios" })).find((r) => r.id === "install")!;
     assert.match(ios.locked!, /Add to Home Screen/);
     const prompt = menuRows(state({ install: "prompt" })).find((r) => r.id === "install")!;

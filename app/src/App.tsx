@@ -63,6 +63,8 @@ const RankedQa = import.meta.env.VITE_RANKED_QA
 // `/watch/<game>` a match on chain, live or as a replay.
 const WatchList = lazy(() => import("./features/watch/WatchList"));
 const ChainWatch = lazy(() => import("./features/watch/ChainWatch"));
+// The ranked players and the tiers they spread over.
+const Leaderboard = lazy(() => import("./screens/Leaderboard"));
 import { FundsOnSignIn, SquadPreload, TransactionSender } from "./chain";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { LoadingSpinner } from "./components/LoadingSpinner";
@@ -87,6 +89,7 @@ function MenuMusic() {
         pathname === "/menu-classic" ||
         pathname === "/play" ||
         pathname === "/watch" ||
+        pathname === "/leaderboard" ||
         pathname.startsWith("/play/") ||
         pathname.startsWith("/settings") ||
         pathname.startsWith("/headquarters");
@@ -312,6 +315,14 @@ export function App() {
                     element={
                         <Suspense fallback={<LoadingSpinner />}>
                             <ChainWatch />
+                        </Suspense>
+                    }
+                />
+                <Route
+                    path="/leaderboard"
+                    element={
+                        <Suspense fallback={<LoadingSpinner />}>
+                            <Leaderboard />
                         </Suspense>
                     }
                 />
