@@ -14,7 +14,7 @@ import { useState, type ReactNode } from "react";
 import { uiTick } from "../../audio";
 import { FocusRoot, Prompt, useGlyphSet } from "../../ui";
 import { useAccountBits, type AccountBits } from "./account";
-import { stepTab, type TabId } from "./model";
+import { FIRST_TAB, stepTab, tabsFor, type TabId } from "./model";
 import {
     AccountPanel,
     AudioPanel,
@@ -39,7 +39,7 @@ const PANELS: Record<TabId, () => ReactNode> = {
 };
 
 export function SettingsView({
-    tab,
+    tab: requested,
     onTab,
     location,
     backLabel,
@@ -59,6 +59,9 @@ export function SettingsView({
     inMatch?: boolean;
 }) {
     const glyphs = useGlyphSet();
+    // A finger has no key rebinding: a link to Controls opens the first category.
+    const tabs = tabsFor(glyphs === "none");
+    const tab = tabs.some((t) => t.id === requested) ? requested : FIRST_TAB;
     const live = useAccountBits();
     const account = fixture ?? live;
     const rpc = useRpcDraft();
@@ -124,7 +127,7 @@ export function SettingsView({
     return (
         <FocusRoot
             back={{ action: "back", label: backLabel, run: leave }}
-            onTab={(step) => select(stepTab(tab, step))}
+            onTab={(step) => select(stepTab(tab, step, tabs))}
         >
             <SettingsProvider value={ctx}>
                 <Panel />

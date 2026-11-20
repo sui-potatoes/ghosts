@@ -1553,6 +1553,106 @@
   }
 }
 
+/*
+ * Phone width: the header keeps the turn and whose it is, the view tools and
+ * the menu. The briefing's name, the objectives and the scene menu give way
+ * so the menu button stays on the glass; the tools are 36px wide, 40 tall.
+ */
+@media (max-width: 560px) {
+  .encounter:not([data-observer]) .hud-header {
+    gap: calc(var(--u) * 2);
+    padding: 0 calc(var(--u) * 3);
+  }
+  .encounter:not([data-observer]) .hud-where small,
+  .encounter:not([data-observer]) .hud-objectives,
+  .encounter:not([data-observer]) .hud-scene {
+    display: none;
+  }
+  .encounter:not([data-observer]) .hud-where strong {
+    letter-spacing: 0.06em;
+  }
+  .encounter:not([data-observer]) .hud-right {
+    gap: 0;
+    margin-left: auto;
+  }
+  .encounter:not([data-observer]) .hud-tools {
+    gap: 0;
+  }
+  .encounter:not([data-observer]) .hud-tool {
+    min-width: 36px;
+    padding: 0 calc(var(--u) * 1);
+  }
+  .encounter:not([data-observer]) .hud-menu {
+    margin-left: var(--u);
+  }
+}
+
+/*
+ * Phone width: the bar takes two rows (what is said beside End turn, then the
+ * orders), the orders slide sideways inside their own row instead of pushing End
+ * turn off the glass, and the unit panel spans the width above the bar.
+ */
+@media (max-width: 560px) {
+  .encounter {
+    --bar-h: 136px;
+  }
+  .encounter .hud-bar {
+    height: var(--bar-h);
+    flex-wrap: wrap;
+    align-content: center;
+    gap: calc(var(--u) * 2);
+    padding: calc(var(--u) * 2) calc(var(--u) * 3) calc(var(--u) * 2 + env(safe-area-inset-bottom, 0px));
+  }
+  .encounter .hud-bar-context {
+    order: 1;
+    flex: 1 1 0;
+  }
+  .encounter .hud-bar-commands {
+    order: 3;
+    flex: 1 0 100%;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+    overscroll-behavior-x: contain;
+  }
+  .encounter .hud-bar-commands::-webkit-scrollbar {
+    display: none;
+  }
+  .encounter .hud-bar-commands > * {
+    flex: none;
+  }
+  .encounter .hud-end {
+    order: 2;
+    flex: none;
+    height: auto;
+    padding-left: 0;
+    border-left: 0;
+  }
+  .encounter .hud-end-turn {
+    min-width: 0;
+    padding: 0 calc(var(--u) * 3);
+  }
+  /* Aiming: Cancel and Fire are the orders, and the odds take the whole top row. */
+  .encounter .hud-bar:has(.hud-aim) .hud-end {
+    display: none;
+  }
+  .encounter .hud-bar-cmd[data-tone="primary"] {
+    min-width: 0;
+    padding: 0 calc(var(--u) * 5);
+  }
+  .encounter .hud-aim-target {
+    flex-wrap: wrap;
+    gap: 2px calc(var(--u) * 3);
+    white-space: normal;
+  }
+  .encounter .hud-unit {
+    left: calc(var(--u) * 3);
+    right: calc(var(--u) * 3);
+    width: auto;
+    bottom: calc(var(--bar-h) + var(--u) * 3);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .encounter *,
   .encounter *::before,

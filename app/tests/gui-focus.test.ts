@@ -5,6 +5,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
+import { tabsFor } from "../src/features/settings/model.ts";
+import { barModel } from "../src/ui/bar-model.ts";
+import { glyphView } from "../src/ui/glyph-model.ts";
 import {
     clickCommand,
     FocusStore,
@@ -797,4 +800,51 @@ test("an inline confirm in a grid row overlays the edge instead of adding a line
         (r) => r.selector === ".lb-row > .gui-inline",
     );
     assert.ok(rule && /position:\s*absolute/.test(rule.body));
+});
+
+// === Touch: hints follow the input in use ===================================
+
+const navHint: Command = { action: "nav", label: "Move", glyph: "lr" };
+const confirm: Command = { action: "confirm", label: "Open", tone: "primary" };
+const reset: Command = { action: "reset", label: "Refresh" };
+const menu: Command = { action: "back", label: "Menu" };
+
+const label = (key: string) => key.toUpperCase();
+
+test("a glyph draws no key cap or pad button in touch mode", () => {
+    for (const action of ["confirm", "back", "prev-tab", "next-section", "reset"] as const) {
+        assert.equal(glyphView(action, "none", ["Enter"], label), null);
+    }
+    assert.equal(glyphView("nav", "none", [], label), null);
+});
+
+test("a glyph still draws for keys and for a pad", () => {
+    assert.deepEqual(glyphView("confirm", "keys", ["Enter"], label), {
+        shape: "key",
+        text: "ENTER",
+    });
+    assert.deepEqual(glyphView("nav", "keys", [], label), { shape: "key", text: "← →" });
+    const pad = glyphView("confirm", "xbox", ["Enter"], label);
+    assert.equal(pad?.shape, "face");
+    assert.equal(pad?.text, "A");
+    assert.equal(glyphView("prev-tab", "ps", [], label)?.text, "L1");
+});
+
+test("the bar keeps the arrows' hint for keys and drops it on touch", () => {
+    const all = [navHint, confirm, reset];
+    assert.deepEqual(barModel(all, menu, "keys").nav, [navHint]);
+    assert.deepEqual(barModel(all, menu, "xbox").nav, [navHint]);
+    assert.deepEqual(barModel(all, menu, "none").nav, []);
+});
+
+test("on touch every other command stays, in the same slots", () => {
+    const touch = barModel([navHint, confirm, reset], menu, "none");
+    assert.deepEqual(touch.slots, [reset, confirm]);
+    assert.equal(touch.back, menu);
+    assert.deepEqual(barModel([navHint, confirm, reset], menu, "keys").slots, touch.slots);
+});
+
+test("a finger has no key rebinding: the Controls tab is left out on touch", () => {
+    assert.ok(tabsFor(false).some((t) => t.id === "controls"));
+    assert.ok(!tabsFor(true).some((t) => t.id === "controls"));
 });

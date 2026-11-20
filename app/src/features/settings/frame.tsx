@@ -20,7 +20,7 @@ import {
     type GlyphSet,
 } from "../../ui";
 import type { AccountBits } from "./account";
-import { TABS, type TabId } from "./model";
+import { tabsFor, type TabId } from "./model";
 import type { RpcDraft } from "./rpc";
 
 /** What every panel needs from the view: the frame's shared bits. */
@@ -82,7 +82,7 @@ export function SettingsFrame({
             onLocation={ctx.onLocation}
             tabs={
                 <Tabs
-                    tabs={TABS.map((t) => ({ id: t.id, label: t.label }))}
+                    tabs={tabsFor(ctx.glyphs === "none").map((t) => ({ id: t.id, label: t.label }))}
                     active={ctx.tab}
                     onSelect={(id) => ctx.select(id as TabId)}
                     glyphs={ctx.glyphs}

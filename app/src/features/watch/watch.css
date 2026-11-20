@@ -370,3 +370,25 @@
 :root[data-reduce-motion="on"] .watch-button[data-tone="following"] .watch-live-dot {
     animation: none;
 }
+
+/* --- Touch: the turn strip is a row of finger-sized targets --- */
+
+html[data-input="touch"] .watch-pip {
+    width: 34px;
+    height: 40px;
+}
+html[data-input="touch"] .watch-scrubber {
+    gap: 4px;
+}
+html[data-input="touch"] .watch-scrubber .watch-button {
+    height: 40px;
+    min-width: 40px;
+}
+@media (max-width: 760px) {
+    html[data-input="touch"] .watch-scrubber {
+        height: 44px;
+    }
+    html[data-input="touch"] .watch-screen .encounter {
+        --observer-foot: 184px;
+    }
+}

@@ -4,10 +4,8 @@
 import type { MouseEvent } from "react";
 
 import { useFocusState, type Command, type CommandAction, type FocusStore } from "./focus";
+import { barModel } from "./bar-model";
 import { Glyph, type GlyphSet } from "./glyphs";
-
-/** Fixed slot order, left to right; Back always closes the row. */
-const ORDER: CommandAction[] = ["reset", "confirm"];
 
 type CommandBarProps = {
     /** What the cursor is on, named on the left. */
@@ -43,10 +41,7 @@ export function CommandBar({
     pressed,
     onRun,
 }: CommandBarProps) {
-    const slots = ORDER.map((action) => commands.find((c) => c.action === action)).filter(
-        (c): c is Command => !!c,
-    );
-    const nav = commands.filter((c) => c.action === "nav");
+    const { nav, slots } = barModel(commands, back, glyphs);
     return (
         <footer className="gui-bar">
             {/* Both lines always render (empty when there is nothing to say): the bar keeps its shape. */}

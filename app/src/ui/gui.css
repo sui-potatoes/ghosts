@@ -2446,3 +2446,70 @@ span.gui-cmd {
     *:not(.gui-stat-bar *, .gui-meter-bar *, .gui-list-rail *) {
     transition: none;
 }
+
+/* === Touch ===========================================================
+ * `html[data-input="touch"]` (the input in use, `@ghosts/engine/input-mode`):
+ * no key or pad glyph is drawn, so every command is a labelled tap target,
+ * at least 40px on the glass (/--ui-scale undoes phone landscape's zoom) with
+ * room between neighbours. Nothing here changes a colour or a height on
+ * hover or on the cursor. */
+html[data-input="touch"] .gui {
+    --h-m: calc(40px / var(--ui-scale));
+}
+
+html[data-input="touch"] .gui-bar-commands {
+    gap: calc(var(--u) * 2);
+}
+
+html[data-input="touch"] .gui-cmd {
+    min-height: calc(40px / var(--ui-scale));
+    padding: 0 calc(var(--u) * 3);
+}
+
+html[data-input="touch"] .gui-chip-cmd {
+    height: var(--h-m);
+    padding: 0 calc(var(--u) * 3);
+}
+
+html[data-input="touch"] .gui-menu-item {
+    height: calc(44px / var(--ui-scale));
+}
+
+/* The breadcrumb's steps (up, sibling sections) are buttons too. */
+html[data-input="touch"] .gui-crumb-up,
+html[data-input="touch"] .gui-sibling {
+    align-items: center;
+    min-height: var(--h-m);
+    padding: 0 calc(var(--u) * 1);
+}
+
+html[data-input="touch"] .gui-tab {
+    padding: 0 calc(var(--u) * 5);
+}
+
+/* === Phone width: the header ==========================================
+ * The breadcrumb keeps its last step, the sections slide sideways inside
+ * their own cell (the active one is kept in view by `Tabs`), the status
+ * chips take what is left. */
+@media (max-width: 560px) {
+    .gui-header {
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        column-gap: calc(var(--u) * 3);
+        padding: 0 calc(var(--u) * 3);
+    }
+    .gui-crumb-up > .gui-crumb:not([data-here]) {
+        display: none;
+    }
+    .gui-sections {
+        min-width: 0;
+        overflow-x: auto;
+        scrollbar-width: none;
+        overscroll-behavior-x: contain;
+    }
+    .gui-sections::-webkit-scrollbar {
+        display: none;
+    }
+    .gui-tabs {
+        flex: none;
+    }
+}

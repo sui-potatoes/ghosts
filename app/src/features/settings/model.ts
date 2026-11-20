@@ -38,10 +38,22 @@ export function tabParams(tab: TabId): Record<string, string> {
     return tab === FIRST_TAB ? {} : { tab };
 }
 
-/** The category `step` away, wrapping (bumpers / Q·E). */
-export function stepTab(tab: TabId, step: 1 | -1): TabId {
-    const i = TABS.findIndex((t) => t.id === tab);
-    return TABS[(i + step + TABS.length) % TABS.length].id;
+/**
+ * The categories a player can use: key rebinding is for a keyboard, so a
+ * finger (touch) never sees the Controls tab.
+ */
+export function tabsFor(touch: boolean): readonly (typeof TABS)[number][] {
+    return touch ? TABS.filter((t) => t.id !== "controls") : TABS;
+}
+
+/** The category `step` away, wrapping (bumpers / Q·E), among `tabs`. */
+export function stepTab(
+    tab: TabId,
+    step: 1 | -1,
+    tabs: readonly (typeof TABS)[number][] = TABS,
+): TabId {
+    const i = tabs.findIndex((t) => t.id === tab);
+    return tabs[(i + step + tabs.length) % tabs.length].id;
 }
 
 // === Rows from the schema ===================================================

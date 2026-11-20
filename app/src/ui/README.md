@@ -15,6 +15,13 @@ import { FocusRoot, ScreenFrame, FocusCommandBar, Panel, List, ListRow, useGlyph
 - **One cursor.** Exactly one thing is focused at any time; keys, pad, mouse
   and touch all move the same cursor. Nothing else highlights, not even
   under the pointer.
+- **Hints follow the input in use.** `inputMode()` (`@ghosts/engine/input-mode`,
+  also `html[data-input]`) is `keyboard`, `gamepad`, `mouse` or `touch`: it
+  starts from the device and follows the last real input. Keys and mouse show
+  the player's key glyphs, a pad its buttons, and touch no glyph at all
+  (`useGlyphSet()` is `none`): commands are labelled tap targets of 40px or
+  more, and a hint that only names keys (the arrows' "Move") is dropped
+  (`bar-model.ts`). The encounter HUD reads the same mode.
 - **Commands live in the bar.** What you can do with the focused thing is in
   the command bar at the bottom edge, with the player's own key or pad glyph.
   No buttons over content, no per-row button clusters. The mouse gets the same

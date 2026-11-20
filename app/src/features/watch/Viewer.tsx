@@ -226,6 +226,7 @@ export function Viewer({
 
 /** A transport glyph: the keyboard's fixed key, or the pad's menu button for the same command. */
 function Shortcut({ keyName, pad, glyphs }: { keyName: WatchKey; pad?: Action; glyphs: GlyphSet }) {
+    if (glyphs === "none") return null;
     if (glyphs !== "keys") return pad ? <Glyph action={pad} set={glyphs} /> : null;
     return (
         <kbd className="gui-glyph" data-shape="key">

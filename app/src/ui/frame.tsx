@@ -1,7 +1,7 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
-import { useRef, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 
 import { uiTick } from "../audio";
 import { FocusCursor, headerClick, useFocusStore } from "./focus";
@@ -179,8 +179,18 @@ type TabsProps = {
  */
 export function Tabs({ tabs, active, onSelect, glyphs }: TabsProps) {
     const store = useFocusStore();
+    const nav = useRef<HTMLElement>(null);
+    // On a narrow screen the strip slides sideways: keep the active tab in view.
+    useEffect(() => {
+        const strip = nav.current?.parentElement;
+        const tab = nav.current?.querySelector<HTMLElement>("[data-active]");
+        if (!strip || !tab || strip.scrollWidth <= strip.clientWidth) return;
+        const t = tab.getBoundingClientRect();
+        const s = strip.getBoundingClientRect();
+        strip.scrollLeft += t.left - s.left - (s.width - t.width) / 2;
+    }, [active]);
     return (
-        <nav className="gui-tabs" aria-label="Sections">
+        <nav ref={nav} className="gui-tabs" aria-label="Sections">
             <Glyph action="prev-tab" set={glyphs} />
             {tabs.map((tab) => (
                 <button

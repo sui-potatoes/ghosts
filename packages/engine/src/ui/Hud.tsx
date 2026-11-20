@@ -32,6 +32,7 @@ import { action, cancelTargeting, deselect, endTurn, fire, pick, select, throwGr
 import { runCombatAction } from "../controls";
 import { distance, weaponName, type Unit, type UnitOrder } from "../game";
 import { padActive, padGlyph, padKind, subscribePad, type PadButton } from "../gamepad";
+import { inputMode, subscribeInputMode, type InputMode } from "../input-mode";
 import { pad2 } from "../html";
 import type { CombatAction, PadBindable } from "../keys";
 import { rosters, standing } from "../observer";
@@ -59,9 +60,16 @@ const OfficePreview = DEV_TOOLS
 
 // === Glyphs ===
 
+/** The input in use, the one rule every hint follows (`../input-mode`). */
+export function useInputMode(): InputMode {
+  return useSyncExternalStore(subscribeInputMode, inputMode);
+}
+
 /** "" with no controller in use; otherwise the pad family, so glyphs re-render on a change. */
 export function usePad(): string {
-  return useSyncExternalStore(subscribePad, () => (padActive() ? padKind() : ""));
+  const mode = useInputMode();
+  const kind = useSyncExternalStore(subscribePad, () => (padActive() ? padKind() : ""));
+  return mode === "touch" ? "" : kind;
 }
 
 type PadKey = PadButton | PadBindable | "dpad" | "";
@@ -71,10 +79,12 @@ const SHOULDER = new Set(["lb", "rb", "lt", "rt"]);
 
 /**
  * The player's own binding for a command: the key cap from their combat keys,
- * or the pad button while a pad is in use. Nothing when it has none.
+ * or the pad button while a pad is in use. Nothing when it has none, and
+ * nothing for a finger: touch shows the label alone.
  */
 export function Glyph({ action, pad }: { action?: CombatAction; pad?: PadKey }) {
   const kind = usePad();
+  if (useInputMode() === "touch") return null;
   if (kind) {
     if (!pad) return null;
     const shape = FACE.has(pad) ? "face" : SHOULDER.has(pad) ? "bumper" : "key";
@@ -375,6 +385,7 @@ function ObserverHeader() {
 export function SquadRail() {
   const s = useSession();
   const pad = usePad();
+  const touch = useInputMode() === "touch";
   if (s.observer) {
     const sides = rosters(s.game.units);
     return (
@@ -432,7 +443,7 @@ export function SquadRail() {
               </span>
             </span>
             <Pips filled={a.ap} max={2} />
-            {!pad && i < 9 && <kbd className="hud-glyph hud-member-key">{i + 1}</kbd>}
+            {!pad && !touch && i < 9 && <kbd className="hud-glyph hud-member-key">{i + 1}</kbd>}
           </button>
         ))}
     </nav>
@@ -732,6 +743,7 @@ const NUDGES: [label: string, icon: string, x: number, z: number][] = [
 export function CommandBar() {
   const s = useSession();
   const pad = usePad();
+  const touch = useInputMode() === "touch";
   const [hovered, setHovered] = useState<string | null>(null);
   const { game, busy } = s;
   const u = s.selectedUnit();
@@ -767,7 +779,7 @@ export function CommandBar() {
           : busy
             ? "Executing"
             : !u
-              ? pad
+              ? pad || touch
                 ? "Pick an operator"
                 : "Pick an operator: click one, or press their number"
               : u.ap <= 0

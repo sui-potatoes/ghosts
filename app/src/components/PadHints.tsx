@@ -11,6 +11,7 @@ import {
     subscribePad,
     type PadButton,
 } from "@ghosts/engine/gamepad";
+import { inputMode, subscribeInputMode, type InputMode } from "@ghosts/engine/input-mode";
 
 export type PadHint = [button: PadButton | "dpad" | "ls" | "rs", label: string];
 
@@ -19,14 +20,21 @@ export function usePad(): string {
     return useSyncExternalStore(subscribePad, () => (padConnected() ? padKind() : ""));
 }
 
+/** The input in use (`keyboard`, `gamepad`, `mouse`, `touch`): the one rule hints follow. */
+export function useInputMode(): InputMode {
+    return useSyncExternalStore(subscribeInputMode, inputMode);
+}
+
 /**
  * "" unless the pad is the input device in use (touched since the last
- * trusted mouse or key input); the pad family while it is. Hints follow
- * this, the way console ports swap prompts; device state (the Controller
- * panel, the layout) stays on the stable connection.
+ * trusted mouse or key input, and since any touch); the pad family while it
+ * is. Hints follow this, the way console ports swap prompts; device state
+ * (the Controller panel, the layout) stays on the stable connection.
  */
 export function usePadActive(): string {
-    return useSyncExternalStore(subscribePad, () => (padActive() ? padKind() : ""));
+    const mode = useInputMode();
+    const kind = useSyncExternalStore(subscribePad, () => (padActive() ? padKind() : ""));
+    return mode === "touch" ? "" : kind;
 }
 
 /** The controller hints line for a screen; renders nothing while the pad is idle. */
