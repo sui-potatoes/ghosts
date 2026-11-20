@@ -401,7 +401,7 @@ export function UnitPanel() {
                 <Icon name={e.icon ?? "unknown"} />
                 <span>
                   {e.name}
-                  {e.detail ? `: ${e.detail},` : ","}
+                  {e.detail ? `: ${e.detail}` : ""}
                 </span>
                 <b>
                   {e.turns} turn{e.turns === 1 ? "" : "s"} left
