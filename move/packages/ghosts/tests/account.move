@@ -541,3 +541,143 @@ fun test_unequip_missing_utility_fail() {
     let _utility = unequip_utility(&mut recruit, object::id_from_address(@0x1));
     abort
 }
+
+// === Rating ===
+
+/// Give the player a `rating`, as if they had won `games` ranked games to get it.
+public fun set_record_for_testing(acc: &mut Account, rating: u64, games: u64) {
+    acc.rating = glicko::new_for_testing(rating, 350, games, 0);
+    acc.score = Score { wins: games, losses: 0, draws: 0 };
+}
+
+/// The `Rules` the reset reads its cooldown from, and a clock.
+fun reset_setup(ts: &mut ts::Scenario): (Registry, Account, Random, ghosts::rules::Rules, Clock) {
+    let (registry, acc, rng) = open_account(ts);
+    let (rules, cap) = ghosts::rules::new(vector[], ts.ctx());
+    std::unit_test::destroy(cap);
+    let clock = sui::clock::create_for_testing(ts.ctx());
+    (registry, acc, rng, rules, clock)
+}
+
+fun reset_teardown(
+    ts: ts::Scenario,
+    registry: Registry,
+    acc: Account,
+    rng: Random,
+    rules: ghosts::rules::Rules,
+    clock: Clock,
+) {
+    std::unit_test::destroy(rules);
+    clock.destroy_for_testing();
+    close_account(ts, registry, acc, rng);
+}
+
+/// From above the default, a reset is exactly the default, deviation and all:
+/// the score stays, and the count of resets and its time are kept. Another one
+/// waits for the cooldown, to the millisecond.
+#[test]
+fun test_reset_rating() {
+    use std::unit_test::assert_eq;
+
+    let mut ts = ts::begin(@0);
+    let (registry, mut acc, rng, rules, mut clock) = reset_setup(&mut ts);
+    acc.set_record_for_testing(1720, 9);
+
+    clock.set_for_testing(1_000);
+    acc.reset_rating(&rules, &clock, ts.ctx());
+    assert_eq!(acc.rating(), glicko::default());
+    assert_eq!(acc.rating().rating(), 1500);
+    assert_eq!(acc.rating().deviation(), 350);
+    assert_eq!(acc.resets(), 1);
+    assert_eq!(acc.last_reset_ms(), 1_000);
+    assert_eq!(acc.games_played(), 9);
+
+    // back up, and down again once the cooldown is over
+    acc.set_record_for_testing(1600, 12);
+    clock.set_for_testing(1_000 + rules.reset_cooldown_ms());
+    acc.reset_rating(&rules, &clock, ts.ctx());
+    assert_eq!(acc.rating(), glicko::default());
+    assert_eq!(acc.resets(), 2);
+    assert_eq!(acc.last_reset_ms(), 1_000 + rules.reset_cooldown_ms());
+
+    reset_teardown(ts, registry, acc, rng, rules, clock);
+}
+
+/// Never a way up: not from the default...
+#[test, expected_failure(abort_code = ENotAboveDefault)]
+fun test_reset_at_default_fail() {
+    let mut ts = ts::begin(@0);
+    let (_registry, mut acc, _rng, rules, clock) = reset_setup(&mut ts);
+    acc.reset_rating(&rules, &clock, ts.ctx());
+    abort
+}
+
+/// ...nor from below it.
+#[test, expected_failure(abort_code = ENotAboveDefault)]
+fun test_reset_below_default_fail() {
+    let mut ts = ts::begin(@0);
+    let (_registry, mut acc, _rng, rules, clock) = reset_setup(&mut ts);
+    acc.set_record_for_testing(1340, 3);
+    acc.reset_rating(&rules, &clock, ts.ctx());
+    abort
+}
+
+#[test, expected_failure(abort_code = ENotIdle)]
+fun test_reset_while_searching_fail() {
+    let mut ts = ts::begin(@0);
+    let (_registry, mut acc, _rng, rules, clock) = reset_setup(&mut ts);
+    acc.set_record_for_testing(1720, 9);
+    acc.start_search(@1.to_id(), 0, @2.to_id(), option::none());
+    acc.reset_rating(&rules, &clock, ts.ctx());
+    abort
+}
+
+#[test, expected_failure(abort_code = ENotIdle)]
+fun test_reset_while_playing_fail() {
+    let mut ts = ts::begin(@0);
+    let (_registry, mut acc, _rng, rules, clock) = reset_setup(&mut ts);
+    acc.set_record_for_testing(1720, 9);
+    acc.set_playing(@1.to_id());
+    acc.reset_rating(&rules, &clock, ts.ctx());
+    abort
+}
+
+/// A millisecond short of the cooldown.
+#[test, expected_failure(abort_code = EResetCooldown)]
+fun test_reset_within_cooldown_fail() {
+    let mut ts = ts::begin(@0);
+    let (_registry, mut acc, _rng, rules, mut clock) = reset_setup(&mut ts);
+    acc.set_record_for_testing(1720, 9);
+    acc.reset_rating(&rules, &clock, ts.ctx());
+    acc.set_record_for_testing(1720, 10);
+    clock.set_for_testing(rules.reset_cooldown_ms() - 1);
+    acc.reset_rating(&rules, &clock, ts.ctx());
+    abort
+}
+
+#[test, expected_failure(abort_code = ENotOwner)]
+fun test_reset_foreign_account_fail() {
+    let mut ts = ts::begin(@0);
+    let (_registry, mut acc, _rng, rules, clock) = reset_setup(&mut ts);
+    acc.set_record_for_testing(1720, 9);
+    ts.next_tx(@2);
+    acc.reset_rating(&rules, &clock, ts.ctx());
+    abort
+}
+
+/// A suspension is a field of its own: playing, searching and going idle again
+/// leave it as it is.
+#[test]
+fun test_suspension_outlives_the_state() {
+    use std::unit_test::assert_eq;
+
+    let mut ts = ts::begin(@0);
+    let (registry, mut acc, rng) = open_account(&mut ts);
+    acc.suspend(60_000);
+    acc.start_search(@1.to_id(), 0, @2.to_id(), option::none());
+    acc.set_playing(@3.to_id());
+    acc.clear_search();
+    assert!(acc.is_idle());
+    assert_eq!(acc.suspended_until(), 60_000);
+    close_account(ts, registry, acc, rng);
+}

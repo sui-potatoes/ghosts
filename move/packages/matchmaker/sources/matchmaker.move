@@ -12,6 +12,11 @@
 /// ID of the waiting player's order. The game takes a ticket out with
 /// `remove_ticket`.
 ///
+/// A ticket leaves the queue in one of three ways: its player's `remove_ticket`,
+/// a match, or a drop: it expired, or its bucket was full. Every `find_game`
+/// returns the players it dropped, so that the game can tell each of them their
+/// search is over: no player is ever waiting on a ticket that is gone.
+///
 /// The opponent is drawn at random among the compatible tickets of the nearest
 /// buckets, so a player cannot steer who they are paired with by timing their
 /// call. The game creates the `RandomGenerator` from `sui::random::Random` in a
@@ -158,7 +163,11 @@ public fun default_config(): Config {
 /// random: one of the closest within bucket granularity, but not one the
 /// caller can pick.
 ///
-/// Aborts if the player already has a live ticket; an expired one is replaced.
+/// Also returns the players whose tickets the call dropped, expired in the
+/// buckets it visited or evicted from a full one, in the order it dropped them.
+/// The caller's own expired ticket is replaced, not dropped.
+///
+/// Aborts if the player already has a live ticket.
 #[allow(lint(public_random))]
 public fun find_game<T>(
     _: internal::Permit<T>,
@@ -169,7 +178,7 @@ public fun find_game<T>(
     rating: u64,
     window: u64,
     ctx: &mut TxContext,
-): (ID, Option<Match>) {
+): (ID, Option<Match>, vector<ID>) {
     let now = clock.timestamp_ms();
 
     if (mm.players.contains(player)) {
@@ -192,21 +201,21 @@ public fun find_game<T>(
     let mut pending = mm.occupied & (all << (low as u8)) & (all >> ((MAX_BUCKET - high) as u8));
 
     // indices of the compatible tickets in the bucket below and the one above
-    let (mut below, mut above) = (vector[], vector[]);
+    let (mut below, mut above, mut dropped) = (vector[], vector[], vector[]);
     let mut d = 0;
     while (pending != 0 && below.is_empty() && above.is_empty()) {
         if (d <= center) {
             let bit = 1u256 << ((center - d) as u8);
             if (pending & bit != 0) {
                 pending = pending ^ bit;
-                below = mm.scan_bucket((center - d) as u8, rating, window, now);
+                below = mm.scan_bucket((center - d) as u8, rating, window, now, &mut dropped);
             };
         };
         if (d > 0 && center + d <= MAX_BUCKET) {
             let bit = 1u256 << ((center + d) as u8);
             if (pending & bit != 0) {
                 pending = pending ^ bit;
-                above = mm.scan_bucket((center + d) as u8, rating, window, now);
+                above = mm.scan_bucket((center + d) as u8, rating, window, now, &mut dropped);
             };
         };
         d = d + 1;
@@ -214,8 +223,8 @@ public fun find_game<T>(
 
     let count = below.length() + above.length();
     if (count == 0) {
-        mm.insert(ticket);
-        return (id, option::none())
+        mm.insert(ticket).do!(|evicted| dropped.push_back(evicted));
+        return (id, option::none(), dropped)
     };
 
     // the walk stopped one ring past the candidates
@@ -227,7 +236,8 @@ public fun find_game<T>(
         mm.take_at((center + ring) as u8, above[pick - below.length()])
     };
 
-    (id, option::some(Match { id: opponent.id, players: vector[opponent.player, player] }))
+    let found = Match { id: opponent.id, players: vector[opponent.player, player] };
+    (id, option::some(found), dropped)
 }
 
 /// Take a player's ticket out of the queue. The `Permit` leaves who may to the
@@ -289,15 +299,16 @@ fun is_occupied<T>(mm: &Matchmaker<T>, bucket: u64): bool {
     mm.occupied & (1u256 << (bucket as u8)) != 0
 }
 
-/// Drop the expired tickets of an occupied bucket and return the indices of
-/// the rest compatible with the caller, in a single pass. Removes the bucket
-/// if it ends up empty.
+/// Drop the expired tickets of an occupied bucket, their players onto `dropped`,
+/// and return the indices of the rest compatible with the caller, in a single
+/// pass. Removes the bucket if it ends up empty.
 fun scan_bucket<T>(
     mm: &mut Matchmaker<T>,
     bucket: u8,
     rating: u64,
     window: u64,
     now: u64,
+    dropped: &mut vector<ID>,
 ): vector<u64> {
     let Config { window_step, window_step_ms, max_window, ticket_ttl_ms, .. } = mm.config;
     let tickets: &mut vector<Ticket> = df::borrow_mut(&mut mm.id, Bucket(bucket));
@@ -311,6 +322,7 @@ fun scan_bucket<T>(
             let Ticket { player, .. } = tickets.remove(i);
             mm.players.remove(player);
             mm.size = mm.size - 1;
+            dropped.push_back(player);
             len = len - 1;
         } else {
             let grown = t.window + waited / window_step_ms * window_step;
@@ -327,7 +339,8 @@ fun scan_bucket<T>(
 }
 
 /// Store a ticket in its bucket, evicting the oldest one if the bucket is full.
-fun insert<T>(mm: &mut Matchmaker<T>, ticket: Ticket) {
+/// Returns the player evicted, if any.
+fun insert<T>(mm: &mut Matchmaker<T>, ticket: Ticket): Option<ID> {
     let bucket = mm.config.bucket_of(ticket.rating);
     let capacity = mm.config.bucket_capacity;
     mm.players.add(ticket.player, bucket);
@@ -336,16 +349,19 @@ fun insert<T>(mm: &mut Matchmaker<T>, ticket: Ticket) {
     if (!mm.is_occupied(bucket as u64)) {
         df::add(&mut mm.id, Bucket(bucket), vector[ticket]);
         mm.occupied = mm.occupied | (1u256 << bucket);
-        return
+        return option::none()
     };
 
     let tickets: &mut vector<Ticket> = df::borrow_mut(&mut mm.id, Bucket(bucket));
+    let mut evicted = option::none();
     if (tickets.length() >= capacity) {
         let Ticket { player, .. } = tickets.remove(0);
         mm.players.remove(player);
         mm.size = mm.size - 1;
+        evicted.fill(player);
     };
     tickets.push_back(ticket);
+    evicted
 }
 
 /// Remove a player's ticket from a bucket. Removes the bucket if it ends up

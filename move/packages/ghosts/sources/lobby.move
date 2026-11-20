@@ -59,6 +59,7 @@ const MIN_SIZE: u8 = 3;
 const MAX_SIZE: u8 = 4;
 
 /// The lobbies, shared, one per package. Every lobby is a dynamic field on it.
+/// An `Account` in a lobby is `Searching` with it as its queue.
 public struct Lobbies has key {
     id: UID,
 }
@@ -111,7 +112,7 @@ public(package) fun open(
         key.0
     };
 
-    host.start_search(order, now);
+    host.start_search(order, now, object::id(self), option::none());
 }
 
 /// Join the invite-only lobby the `code` opens, which the `host` holds: the lobby
@@ -144,7 +145,7 @@ public(package) fun join_open(self: &mut Lobbies, host: &Account, guest: &mut Ac
     assert!(!lobby.kicked.contains(&id), EKicked);
 
     lobby.guest.fill(id);
-    guest.start_search(key.0, now);
+    guest.start_search(key.0, now, object::id(self), option::none());
 }
 
 /// The `guest` leaves the open lobby it waits in, whose host is its search order.

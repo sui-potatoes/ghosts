@@ -299,3 +299,38 @@ fun bench_unit_size() {
     recruit.kill(ctx).throw_away();
     unit.destroy();
 }
+
+/// A unit built from a loadout is the one `from_recruit` makes of a rookie
+/// carrying the same items, byte for byte, for every loadout ranked allows: each
+/// rifle, each armor, each utility and none. The virtual and the owned paths
+/// cannot drift apart.
+#[test]
+fun virtual_unit_equals_owned_for_every_loadout() {
+    use sui::bcs;
+
+    let ctx = &mut tx_context::dummy();
+    let owner = @0xA11CE;
+    let utilities = vector[0u8, 1, 2, 0xFF];
+    let mut count = 0u64;
+    1u8.range_do_eq!(3, |weapon| 1u8.range_do_eq!(3, |armor| utilities.do_ref!(|utility| {
+        let mut recruit = ghosts::recruit::new("Jane Doe", ctx);
+        recruit.set_leader(owner);
+        recruit.add_weapon(items::rifle(weapon, ctx));
+        recruit.add_armor(items::armor(armor, ctx));
+        if (items::is_utility(*utility)) recruit.add_utility(items::utility(*utility, ctx));
+
+        let owned = from_recruit(&recruit);
+        let id = object::id(&recruit);
+        let virtual = from_loadout(id, owner.to_id(), weapon, armor, *utility);
+        assert_eq!(bcs::to_bytes(&virtual), bcs::to_bytes(&owned));
+
+        virtual.destroy();
+        owned.destroy();
+        let (weapon, armor, utilities) = recruit.dismiss();
+        weapon.destroy!(|w| w.destroy());
+        armor.destroy!(|a| a.destroy());
+        utilities.destroy!(|u| u.destroy());
+        count = count + 1;
+    })));
+    assert_eq!(count, 36);
+}

@@ -38,7 +38,7 @@ fun find(
     let ctx = &mut tx_context::new_from_hint(player(n), n, 0, 0, 0);
     let permit = internal::permit<BENCH>();
     let player = player(n).to_id();
-    let (_, found) = matchmaker::find_game(permit, mm, player, rng, clock, rating, window, ctx);
+    let (_, found, _) = matchmaker::find_game(permit, mm, player, rng, clock, rating, window, ctx);
     found.is_some()
 }
 

@@ -24,6 +24,7 @@ use ghosts::{
     armor::Armor,
     items,
     recruit::{Self, DogTag, Recruit},
+    rules::Rules,
     utility::Utility,
     visuals,
     weapon::Weapon,
@@ -31,7 +32,7 @@ use ghosts::{
 };
 use glicko::glicko::{Self, Rating};
 use name_gen::name_gen;
-use sui::{random::Random, table::{Self, Table}, transfer::Receiving};
+use sui::{clock::Clock, random::Random, table::{Self, Table}, transfer::Receiving};
 
 /// Trying to create an `Account` when the sender already has one.
 const EAccountExists: u64 = 0;
@@ -49,6 +50,12 @@ const EWrongRecruit: u64 = 7;
 // Code 8 is retired: it was the rank requirement on gear, which is gone.
 /// Requisitioning a kind of utility there is none of.
 const EUnknownUtility: u64 = 9;
+/// Resetting a rating that is not above the default.
+const ENotAboveDefault: u64 = 10;
+/// Resetting the rating while searching or in a game.
+const ENotIdle: u64 = 11;
+/// Resetting the rating again before the cooldown of the last reset is over.
+const EResetCooldown: u64 = 12;
 
 /// The squad an `Account` holds: four recruits, hired for free, so that nobody is
 /// ever out of the game for having lost one. It is also the most it can hold.
@@ -84,16 +91,23 @@ public struct Account has key {
     id: UID,
     /// The address which created - and controls - the `Account`.
     owner: address,
-    /// Where the player stands: free, searching, in a game or suspended. Anything
-    /// but `Idle`, or a `Suspended` past its time, blocks another search.
+    /// Where the player stands: free, searching or in a game. Anything but `Idle`
+    /// blocks another search.
     state: State,
     /// How many `Recruit`s are at home: hired or back from a game, and neither
     /// dismissed nor out in one.
     recruits: u64,
-    /// Glicko rating the player is matched by in `ghosts::find_game`.
+    /// Glicko rating the player is matched by, which ranked games move.
     rating: Rating,
-    /// How the player's games ended.
+    /// How the player's ranked games ended.
     score: Score,
+    /// Until when the player cannot start a game, for misbehaving in one: past
+    /// it, or at 0, they can. Kept apart from `state`, so that no game clears it.
+    suspended_until: u64,
+    /// How many times the player reset their rating, see `reset_rating`.
+    resets: u16,
+    /// When the player last reset their rating.
+    last_reset_ms: u64,
 }
 
 /// A `Recruit` taken out of their `Account` by `borrow_recruit`. Only
@@ -111,18 +125,18 @@ public struct Score has copy, drop, store {
 }
 
 /// Where an `Account` stands; this is all there is to poll. A search a match found
-/// stays `Searching` until the `ghosts::Seat` sent to the `Account` is accepted,
-/// which makes it `Playing`.
+/// stays `Searching` until the `ghosts::Seat` sent to the `Account` is taken,
+/// which makes it `Playing`; a search the queue dropped stays `Searching` until
+/// the `Seat` that says so is dismissed, which makes it `Idle`.
 public enum State has copy, drop, store {
     /// Free to search for a game.
     Idle,
-    /// An order went into the queue at `since_ms`.
-    Searching { order: ID, since_ms: u64 },
+    /// An order went into `queue` at `since_ms`: a `Matchmaker`, or the
+    /// `ghosts::lobby::Lobbies` for a lobby, whose key the order is. A ranked
+    /// search holds the `commitment` to its squad, revealed once a match is found.
+    Searching { order: ID, since_ms: u64, queue: ID, commitment: Option<address> },
     /// In the game with this ID.
     Playing(ID),
-    /// Kept from searching until `until_ms` for misbehaving in a game; free to
-    /// search again past it.
-    Suspended { until_ms: u64 },
 }
 
 // === Account Creation ===
@@ -140,6 +154,9 @@ public fun new_account(registry: &mut Registry, ctx: &mut TxContext) {
         recruits: 0,
         rating: glicko::default(),
         score: Score { wins: 0, losses: 0, draws: 0 },
+        suspended_until: 0,
+        resets: 0,
+        last_reset_ms: 0,
     };
 
     registry.accounts.add(owner, account.id.to_inner());
@@ -395,11 +412,40 @@ public fun take_dog_tag(
     transfer::public_receive(&mut acc.id, dog_tag)
 }
 
+// === Rating ===
+
+/// Reset the rating to the default, the deviation too: a fresh start for a
+/// player above the default, never a way up from below it. The `Account` must be
+/// idle, and the cooldown of the `Rules` past since the last reset; the count of
+/// resets goes up by one.
+public fun reset_rating(acc: &mut Account, rules: &Rules, clock: &Clock, ctx: &mut TxContext) {
+    acc.authorize(ctx);
+    let default = glicko::default();
+    assert!(acc.rating.rating() > default.rating(), ENotAboveDefault);
+    assert!(acc.is_idle(), ENotIdle);
+    let now = clock.timestamp_ms();
+    assert!(
+        acc.resets == 0 || now - acc.last_reset_ms >= rules.reset_cooldown_ms(),
+        EResetCooldown,
+    );
+
+    acc.rating = default;
+    acc.resets = acc.resets + 1;
+    acc.last_reset_ms = now;
+}
+
 // === Matchmaking ===
 
-/// Record an order left in the queue at `since_ms`.
-public(package) fun start_search(acc: &mut Account, order: ID, since_ms: u64) {
-    acc.state = State::Searching { order, since_ms };
+/// Record an order left in `queue` at `since_ms`, with the `commitment` to a
+/// ranked squad.
+public(package) fun start_search(
+    acc: &mut Account,
+    order: ID,
+    since_ms: u64,
+    queue: ID,
+    commitment: Option<address>,
+) {
+    acc.state = State::Searching { order, since_ms, queue, commitment };
 }
 
 /// Put the player into `game`.
@@ -447,9 +493,9 @@ public(package) fun rate_game(
     second.rating = rating_second;
 }
 
-/// Keep the player from searching for a game until `until_ms`.
+/// Keep the player from starting a game until `until_ms`.
 public(package) fun suspend(acc: &mut Account, until_ms: u64) {
-    acc.state = State::Suspended { until_ms };
+    acc.suspended_until = until_ms;
 }
 
 // === Authorization ===
@@ -470,18 +516,30 @@ public fun rating(acc: &Account): Rating { acc.rating }
 /// Get where the player stands.
 public fun state(acc: &Account): State { acc.state }
 
-/// Whether the player is neither searching nor in a game: `Idle`, or `Suspended`.
-public fun is_idle(acc: &Account): bool {
-    match (&acc.state) {
-        State::Idle | State::Suspended { .. } => true,
-        _ => false,
-    }
-}
+/// Whether the player is neither searching nor in a game.
+public fun is_idle(acc: &Account): bool { acc.state == State::Idle }
 
 /// Get the matchmaking order ID, if the player is searching for a game.
 public fun search_order(acc: &Account): Option<ID> {
     match (&acc.state) {
         State::Searching { order, .. } => option::some(*order),
+        _ => option::none(),
+    }
+}
+
+/// Get the queue the player is searching in, if any: a `Matchmaker`, or the
+/// `Lobbies`.
+public fun search_queue(acc: &Account): Option<ID> {
+    match (&acc.state) {
+        State::Searching { queue, .. } => option::some(*queue),
+        _ => option::none(),
+    }
+}
+
+/// Get the commitment to the squad of a ranked search, if the player is on one.
+public fun commitment(acc: &Account): Option<address> {
+    match (&acc.state) {
+        State::Searching { commitment, .. } => *commitment,
         _ => option::none(),
     }
 }
@@ -494,14 +552,15 @@ public fun playing(acc: &Account): Option<ID> {
     }
 }
 
-/// Get the time until which the player cannot search for a game; none past a
-/// suspension, or without one.
-public fun suspended_until(acc: &Account): u64 {
-    match (&acc.state) {
-        State::Suspended { until_ms } => *until_ms,
-        _ => 0,
-    }
-}
+/// Get the time until which the player cannot start a game: 0 if they were never
+/// suspended.
+public fun suspended_until(acc: &Account): u64 { acc.suspended_until }
+
+/// Get how many times the player reset their rating.
+public fun resets(acc: &Account): u16 { acc.resets }
+
+/// Get when the player last reset their rating: 0 if they never did.
+public fun last_reset_ms(acc: &Account): u64 { acc.last_reset_ms }
 
 /// Whether the player has been searching for longer than `timeout_ms`.
 public fun search_timed_out(acc: &Account, now_ms: u64, timeout_ms: u64): bool {
@@ -524,12 +583,12 @@ public fun account_of(registry: &Registry, addr: address): ID {
 /// Number of `Recruit`s at home in the `Account`.
 public fun num_recruits(acc: &Account): u64 { acc.recruits }
 
-/// How the player's games ended, as `(wins, losses, draws)`.
+/// How the player's ranked games ended, as `(wins, losses, draws)`.
 public fun score(acc: &Account): (u64, u64, u64) {
     (acc.score.wins, acc.score.losses, acc.score.draws)
 }
 
-/// Number of games the player has finished.
+/// Number of ranked games the player has finished.
 public fun games_played(acc: &Account): u64 {
     acc.score.wins + acc.score.losses + acc.score.draws
 }

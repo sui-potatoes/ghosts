@@ -1,42 +1,51 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
-/// The frontend module for the game: the map preset, matchmaking and the `Game`.
+/// The frontend module for the game: the map presets, matchmaking, lobbies and
+/// the `Game`.
 ///
-/// Players find each other in the queue, and whoever finds a match starts the
+/// A game is played for what its `Mode` says. Ranked: matched in a queue of the
+/// size, `Matchmaker<Ranked>`, within the tier of the rating, with squads built
+/// for the game from a loadout priced by the `Rules`, no recruit in it; it moves
+/// both ratings and goes on both scores. For stakes: matched in the queue of
+/// `Matchmaker<Ghosts>`, with the players' own recruits, who earn experience
+/// coming home and are gone for good falling; unrated. Friendly: from a lobby,
+/// see `ghosts::lobby`, with the players' own recruits, for nothing at all.
+///
+/// Players find each other in a queue, and whoever finds a match starts the
 /// `Game` in the same call and is in it right away. The `Account` of the player
 /// who waited can't be in that call, as nobody knows it beforehand, so they are
 /// sent a `Seat` in the game instead, to their `Account`, which is on its search
-/// until `accept_seat` puts it into the game: before anything else, by anyone. A
-/// player is their `Account` ID throughout; every call takes the `Account`, and
-/// all but accepting a seat check the sender controls it. Turns last
+/// until the seat is taken: before anything else. A seat for stakes anyone can
+/// take with `accept_seat`. A ranked seat comes with a squad to reveal: the one
+/// the waiting player committed to when they queued, so that nobody could build
+/// against it, which the owner reveals with `reveal_squad`; whoever finds them
+/// shows theirs in the clear and is on the map at once. A search the queue drops,
+/// after `TICKET_TTL_MS` or from a full bucket, is sent a `Seat` in no game: a
+/// notice, which `dismiss_seat` clears. No search is ever left on a ticket that
+/// is gone. Who moves first, and so from which side, is drawn for every game.
+///
+/// A player is their `Account` ID throughout; every call takes the `Account`, and
+/// all but taking a seat for someone check the sender controls it. Turns last
 /// `TURN_LIMIT_MS`, the first one `FIRST_TURN_MS` as the scene is still loading,
-/// and first both get `DEPLOY_LIMIT_MS` to pick their squads, then
-/// they take turns. A player who runs out of time cannot act anymore, and any
-/// player can move the game on.
+/// and first both get `DEPLOY_LIMIT_MS` to pick their squads, or the ranked
+/// waiter the reveal limit of the `Rules` to reveal theirs, then they take turns.
+/// A player who runs out of time cannot act anymore, and any player can move the
+/// game on.
 ///
 /// The goal is to eliminate the other side. The proof is the `Game` itself: a
-/// recruit only leaves a squad by falling, which the `Map` decides, and their
-/// `DogTag` is sent to their `Account` there and then. A side with nobody on the
-/// map after deployment has lost.
-/// `complete_game` then sends everyone home and deletes the `Game`, and is anyone's
-/// to call.
+/// unit only leaves a squad by falling, which the `Map` decides, and a fallen
+/// recruit's `DogTag` is sent to their `Account` there and then. A side with
+/// nobody on the map after deployment has lost. `complete_game` then sends
+/// everyone home and deletes the `Game`, and is anyone's to call.
 ///
-/// Every state has a way out, and whoever made it necessary pays for it with
-/// `SUSPENSION_MS` without searching: not deploying, abandoning the game, or
-/// missing `MAX_MISSED_TURNS` turns in a row. A game that
-/// goes nowhere ends in a draw at `MAX_TURNS`, without blame.
+/// Every state has a way out, and in a game from a queue whoever made it
+/// necessary pays for it with `SUSPENSION_MS` without playing: not deploying or
+/// revealing, abandoning the game, or missing `MAX_MISSED_TURNS` turns in a row.
+/// A game that goes nowhere ends in a draw at `MAX_TURNS`, without blame.
 ///
-/// A game is what the rest of the game runs on. It moves both ratings, and gives the
-/// recruits who come home experience by how it ended. The fallen are gone for good,
-/// with their gear.
-///
-/// Friends play in a lobby instead (see `ghosts::lobby`): the host opens it, listed
-/// or behind an invite code, and is `Searching` in it, as in the queue. A guest
-/// joins with the code, which starts the game there and then, or takes the slot of
-/// a listed one and waits for the host to start it, or kick them. Either way the
-/// host goes first, and the game is friendly: played for nothing, with no rating,
-/// score, experience or suspension out of it, and nobody who falls in it dies.
+/// Two events are emitted, for whoever follows games without a player in them:
+/// `GameStarted` as a game is created, and `GameEnded` as it is wrapped up.
 module ghosts::ghosts;
 
 use ghosts::{
@@ -44,11 +53,21 @@ use ghosts::{
     history::{Self, History, Record},
     lobby::{Self, Lobbies},
     map::{Self, Map},
-    recruit::Recruit
+    recruit::Recruit,
+    rules::{Self, Rules, RulesCap},
+    unit
 };
 use matchmaker::matchmaker::{Self, Matchmaker};
 use std::string::String;
-use sui::{clock::Clock, random::Random, table::{Self, Table}, transfer::Receiving};
+use sui::{
+    address,
+    clock::Clock,
+    event,
+    hash,
+    random::{Random, RandomGenerator},
+    table::{Self, Table},
+    transfer::Receiving
+};
 
 const ENotPlayer: u64 = 1;
 const ENoPositions: u64 = 4;
@@ -77,18 +96,42 @@ const EAlreadyDeployed: u64 = 21;
 const EGameNotOver: u64 = 17;
 /// The `Account` has no recruits to play with.
 const ENoSquad: u64 = 22;
-/// The search is not in the queue: a match found it, and its `Seat` waits on the
-/// `Account`, to accept first; or it is in a lobby, to leave or close instead.
+/// The search is not in this queue: a match found it, and its `Seat` waits on the
+/// `Account`, to take first; or the queue dropped it, and its notice waits, to
+/// dismiss; or it is in another queue, or in a lobby, to leave or close instead.
 const ESeatWaiting: u64 = 25;
 /// The `Account` has yet to accept its `Seat` in the game.
 const ESeatNotAccepted: u64 = 27;
 /// More recruits than the size of the friendly game.
 const ESquadTooLarge: u64 = 28;
+/// The `Seat` is not for this: a notice, which has no game, or a seat in
+/// another game, or a seat in a game where a notice was expected.
+const EWrongSeat: u64 = 29;
+/// The call is not for a game of this mode.
+const EWrongMode: u64 = 30;
+/// The squad and salt revealed are not what the search committed to.
+const ERevealMismatch: u64 = 31;
+/// A ranked search found nobody, so its squad would wait in the clear: queue
+/// with the commitment alone, and show the squad only to a waiting player.
+const ESquadShown: u64 = 32;
+/// The seat is in a ranked game: it is taken with `reveal_squad`, or, without a
+/// squad, with `take_seat`.
+const ERevealFirst: u64 = 33;
+/// The preset is not the level of the size.
+const EWrongLevel: u64 = 34;
+/// The level has no room for the size, or a spawn position no unit can stand on.
+const EBadLevel: u64 = 35;
 
-/// How long a search waits before anyone can cancel it; the queue keeps it until then.
+/// How long a search waits before anyone can cancel it.
 const SEARCH_TIMEOUT_MS: u64 = 120_000;
-/// No bucket capacity and no ticket lifetime: the queue never drops a search itself.
+/// How long a ticket stays in the queue: an older one is dropped, and its player
+/// sent a notice, when its bucket is next visited.
+const TICKET_TTL_MS: u64 = 300_000;
+/// No bucket capacity: the queue never evicts a search for room.
 const NO_LIMIT: u64 = 18_446_744_073_709_551_615;
+/// What a ranked ticket's rating is raised by for each tier: more than twice the
+/// largest window, so that tickets of different tiers are never compatible.
+const TIER_GAP: u64 = 5_000;
 /// How long the players have to pick their squads once matched.
 const DEPLOY_LIMIT_MS: u64 = 120_000;
 /// How long a player has for their turn.
@@ -113,11 +156,16 @@ const WIN_XP: u16 = 1;
 /// A game left before this many turns earns nobody anything.
 const MIN_TURNS_TO_EARN: u16 = 2;
 
-/// Identifies this game's matchmaking queue, `Matchmaker<Ghosts>`.
+/// Identifies the queue of games for stakes, `Matchmaker<Ghosts>`.
 public struct Ghosts()
 
-/// The map games are played on, created once on publish. Frozen, so that games
-/// starting at the same time never wait on each other.
+/// Identifies the ranked queues, one `Matchmaker<Ranked>` for each size of the
+/// `Rules`.
+public struct Ranked()
+
+/// A map games are played on: Black Rain, created on publish, and those the
+/// holder of the `RulesCap` adds. Frozen, so that games starting at the same time
+/// never wait on each other.
 public struct Preset has key {
     id: UID,
     /// The map copied when a game starts from this preset.
@@ -131,12 +179,13 @@ public struct Preset has key {
 }
 
 /// A place in a game, sent to the `Account` of the player a match found waiting.
-/// It exists from the match until `accept_seat`, which puts the `Account` into the
-/// game: the first thing either player does about the match.
+/// It exists from the match until it is taken, which puts the `Account` into the
+/// game: the first thing either player does about the match. A seat in no game is
+/// a notice that the queue dropped the search, until `dismiss_seat`.
 public struct Seat has key {
     id: UID,
-    /// The game the seat is in.
-    game: ID,
+    /// The game the seat is in; none for a notice.
+    game: Option<ID>,
 }
 
 /// A game between `Account`s, shared between them.
@@ -161,21 +210,42 @@ public struct Game has key {
     mode: Mode,
 }
 
-/// What a game is played for. Only deploying and completing it differ by mode: the
-/// turns are the same.
+/// What a game is played for. Only how the squads get on the map and what
+/// completing the game settles differ by mode: the turns are the same.
 public enum Mode has copy, drop, store {
-    /// Matched in the queue: it moves both ratings and goes on both scores, the
-    /// recruits who come home earn experience, and the fallen are gone for good.
-    Rated,
+    /// Matched in the queue for stakes, with the players' own recruits: those who
+    /// come home earn experience, and the fallen are gone for good. Unrated.
+    Stakes,
     /// Started from a lobby, for nothing: no rating, score, experience or
     /// suspension comes out of it, and the fallen get up and go home with the
     /// survivors. Each side deploys up to `size` recruits.
     Friendly { size: u8 },
+    /// Matched in the ranked queue of `size`, between players of `tier`, each
+    /// with a squad of `size` units built from a loadout (see `rules`), none of
+    /// them a recruit: it moves both ratings and goes on both scores.
+    Ranked { size: u8, tier: u8 },
+}
+
+/// A game was created: emitted once, by the call that creates it. Listed unless
+/// it is played from an invite-only lobby.
+public struct GameStarted has copy, drop {
+    game: ID,
+    players: vector<ID>,
+    mode: Mode,
+    listed: bool,
+}
+
+/// A game was wrapped up and deleted, and how it ended: the only place the
+/// ending is kept once the `Game` is gone.
+public struct GameEnded has copy, drop {
+    game: ID,
+    ending: Ending,
 }
 
 /// Where a game stands. It only moves forward: `Deploying`, `Playing`, `Over`.
 public enum State has copy, drop, store {
-    /// The players pick their squads, until `until_ms`.
+    /// The players pick their squads, or in a ranked game the waiter reveals
+    /// theirs, until `until_ms`.
     Deploying { until_ms: u64 },
     /// The sides take turns. The current one started at `started_ms`; `missed` is
     /// how many turns in a row each side let run out.
@@ -196,20 +266,22 @@ public enum Ending has copy, drop, store {
     Abandoned(ID),
     /// The player let `MAX_MISSED_TURNS` turns in a row run out.
     Forfeited(ID),
-    /// The deployment ended with the player having picked nobody.
+    /// The deployment ended with the player having picked nobody, or, in a
+    /// ranked game, revealed nothing.
     NoShow(ID),
     /// The deployment ended with neither player having picked anyone.
     NobodyShowed,
 }
 
-// === Matchmaking ===
+// === Stakes ===
 
-/// Search for an opponent with the rating stored in the `Account`, accepting
-/// those within its current deviation. When a compatible player is waiting, the
-/// game starts on the preset right away: the `Account` is `Playing` it, and the
-/// player who waited is sent a `Seat` in it. They go first. Otherwise the
-/// `Account` is `Searching` until a match answers it or `cancel_search` clears
-/// it. A suspended `Account` cannot search.
+/// Search for an opponent for stakes with the rating stored in the `Account`,
+/// accepting those within its current deviation. When a compatible player is
+/// waiting, the game starts on the preset right away: the `Account` is `Playing`
+/// it, and the player who waited is sent a `Seat` in it. Who goes first is drawn.
+/// Otherwise the `Account` is `Searching` until a match answers it, the queue
+/// drops it, or `cancel_search` clears it. A suspended `Account` cannot search,
+/// nor one without recruits.
 entry fun find_game(
     mm: &mut Matchmaker<Ghosts>,
     acc: &mut Account,
@@ -219,54 +291,258 @@ entry fun find_game(
     ctx: &mut TxContext,
 ) {
     let now = clock.timestamp_ms();
-    check_free(acc, now, ctx);
+    check_free_with_recruits(acc, now, ctx);
 
     let rating = acc.rating();
     let window = rating.current_deviation(now);
     let mut rng = rng.new_generator(ctx);
     let permit = internal::permit<Ghosts>();
-    let (order, found) = matchmaker::find_game(
+    let found = search(
         permit,
         mm,
-        object::id(acc),
-        &mut rng,
-        clock,
+        acc,
         rating.rating(),
         window,
+        option::none(),
+        &mut rng,
+        clock,
         ctx,
     );
+    if (found.is_none()) return;
 
-    if (found.is_none()) return acc.start_search(order, now);
-
-    // the player who waited is sent their seat: their `Account` isn't in this call
-    let m = found.destroy_some();
-    let waiting = m.players()[0];
-    let game = new_game(preset, waiting, object::id(acc), Mode::Rated, now, ctx);
-    let seat = Seat { id: object::new(ctx), game: object::id(&game) };
-    acc.set_playing(object::id(&game));
-    transfer::transfer(seat, waiting.to_address());
-    transfer::share_object(game);
+    let waiting = found.destroy_some();
+    let players = in_order(rng.generate_bool(), object::id(acc), waiting);
+    let game = new_game(preset, players, Mode::Stakes, now + DEPLOY_LIMIT_MS, true, ctx);
+    game.send_seat(waiting, acc, ctx);
 }
 
 /// Accept the `Seat` a match sent to an `Account`: it is `Playing` the game from
 /// now on, and can act in it, or leave it with `abandon_game`. Anyone can do this:
 /// the player, as soon as they see the seat, or the other player when they don't,
-/// who then gets back the storage the seat took and can wrap up the game.
+/// who then gets back the storage the seat took and can wrap up the game. Not a
+/// ranked seat: see `reveal_squad` and `take_seat`.
 public fun accept_seat(acc: &mut Account, seat: Receiving<Seat>) {
-    let Seat { id, game } = transfer::receive(acc.uid_mut(), seat);
-    id.delete();
-
+    let game = receive_seat(acc, seat).destroy_or!(abort EWrongSeat);
     assert!(acc.search_order().is_some(), ENotSearching);
+    assert!(acc.commitment().is_none(), ERevealFirst);
     acc.set_playing(game);
 }
 
-/// Leave the queue. The owner can do this at any time, anyone else once the search
-/// has run past `SEARCH_TIMEOUT_MS`. The queue never lets go of a search on its
-/// own, so one no longer in it was found by a match: its `Seat` comes first, and
-/// the game ends through `abandon_game` or `complete_game` instead. A search in a
-/// lobby is not in the queue either: `leave_lobby` or `close_lobby` ends it.
+/// Leave the queue for stakes. The owner can do this at any time, anyone else once
+/// the search has run past `SEARCH_TIMEOUT_MS`. A search no longer in the queue
+/// was found by a match, whose `Seat` comes first, or dropped by it, whose notice
+/// `dismiss_seat` clears. A search in a lobby is not in the queue either:
+/// `leave_lobby` or `close_lobby` ends it.
 public fun cancel_search(
     mm: &mut Matchmaker<Ghosts>,
+    acc: &mut Account,
+    clock: &Clock,
+    ctx: &mut TxContext,
+) {
+    cancel(internal::permit<Ghosts>(), mm, acc, clock, ctx)
+}
+
+// === Ranked ===
+
+/// Search for a ranked game in the queue of a size, which the `Rules` name, on the
+/// level of the size: with the rating stored in the `Account`, accepting those
+/// within its current deviation, and only players of the same tier (see
+/// `rules::tier_of`), who build to the same budget.
+///
+/// The search waits with the `commitment` to its squad alone: the blake2b256
+/// hash of the squad's bytes followed by a salt, which the client keeps for
+/// `reveal_squad`. A search that finds a waiting player starts the game right
+/// away: its `squad`, in the clear, is held to the `Rules` and put on the map,
+/// the `Account` is `Playing` the game, and the waiting player is sent a `Seat`
+/// in it, to reveal theirs within the reveal limit. Who goes first, and so from
+/// which side, is drawn. The squad is shown only to a waiting player: a search
+/// that finds nobody with one aborts, and one that finds somebody without one
+/// aborts with `rules::ESquadSize`, to send again with it.
+///
+/// Aborts, in order: the checks of `find_game` but the recruits;
+/// `rules::EWrongQueue`, `rules::ENoLevel`, `EWrongLevel`; on a match, the checks
+/// of `rules::check_squad`; on none, `ESquadShown`.
+entry fun find_ranked(
+    mm: &mut Matchmaker<Ranked>,
+    acc: &mut Account,
+    rules: &Rules,
+    preset: &Preset,
+    rng: &Random,
+    clock: &Clock,
+    squad: vector<u8>,
+    commitment: address,
+    ctx: &mut TxContext,
+) {
+    let now = clock.timestamp_ms();
+    check_free(acc, now, ctx);
+    let size = rules.size_of(object::id(mm));
+    assert!(rules.level_of(size) == object::id(preset), EWrongLevel);
+
+    // the tier raises the rating far enough that no other tier is in reach
+    let rating = acc.rating();
+    let tier = rules.tier_of(rating.rating(), acc.games_played());
+    let queued = rating.rating() + (tier as u64) * TIER_GAP;
+    let window = rating.current_deviation(now);
+    let mut rng = rng.new_generator(ctx);
+    let permit = internal::permit<Ranked>();
+    let found = search(
+        permit,
+        mm,
+        acc,
+        queued,
+        window,
+        option::some(commitment),
+        &mut rng,
+        clock,
+        ctx,
+    );
+    if (found.is_none()) {
+        assert!(squad.is_empty(), ESquadShown);
+        return
+    };
+
+    rules.check_squad(size, tier, &squad);
+    let until_ms = now + rules.reveal_limit_ms();
+    let mode = Mode::Ranked { size, tier };
+    start_ranked(
+        preset,
+        found.destroy_some(),
+        acc,
+        mode,
+        squad,
+        rng.generate_bool(),
+        until_ms,
+        ctx,
+    );
+}
+
+/// Reveal the squad a ranked search committed to and take the `Seat` the match
+/// sent: the squad and the salt are what the commitment hashes, the squad holds
+/// to the `Rules` at the tier of the game, and it goes on the map. The `Account`
+/// is `Playing` the game, which begins. Only the owner can, before the reveal
+/// limit; past it, or with no squad to reveal, the seat is taken with `take_seat`,
+/// and the game is a no-show.
+///
+/// Aborts, in order: `account::ENotOwner`, `EWrongSeat`, `ENotSearching`,
+/// `EWrongMode`, `EDeploymentOver` or `EGameOver`, `ERevealMismatch`, and the
+/// checks of `rules::check_squad`.
+public fun reveal_squad(
+    game: &mut Game,
+    acc: &mut Account,
+    rules: &Rules,
+    seat: Receiving<Seat>,
+    clock: &Clock,
+    squad: vector<u8>,
+    salt: vector<u8>,
+    ctx: &mut TxContext,
+) {
+    acc.authorize(ctx);
+    let id = object::id(game);
+    assert!(receive_seat(acc, seat) == option::some(id), EWrongSeat);
+    let commitment = acc.commitment().destroy_or!(abort ENotSearching);
+    let (size, tier) = match (game.mode) {
+        Mode::Ranked { size, tier } => (size, tier),
+        _ => abort EWrongMode,
+    };
+    let now = clock.timestamp_ms();
+    game.check_deploying(now);
+
+    let mut preimage = squad;
+    preimage.append(salt);
+    assert!(address::from_bytes(hash::blake2b256(&preimage)) == commitment, ERevealMismatch);
+    rules.check_squad(size, tier, &squad);
+
+    let (_, side) = game.players.index_of(&object::id(acc));
+    acc.set_playing(id);
+    game.place_squad(side, &squad, ctx);
+    game.begin_match(now, true, true);
+}
+
+/// Take the `Seat` of a ranked game without revealing a squad: the `Account` is
+/// `Playing` the game, with nobody on the map. The owner can do this at any time,
+/// giving up on the reveal; anyone else once the game no longer waits for it, to
+/// wrap the game up.
+public fun take_seat(
+    game: &Game,
+    acc: &mut Account,
+    seat: Receiving<Seat>,
+    clock: &Clock,
+    ctx: &mut TxContext,
+) {
+    let id = object::id(game);
+    assert!(receive_seat(acc, seat) == option::some(id), EWrongSeat);
+    assert!(acc.search_order().is_some(), ENotSearching);
+    if (ctx.sender() != acc.owner()) {
+        let waiting = match (&game.state) {
+            State::Deploying { until_ms } => clock.timestamp_ms() <= *until_ms,
+            _ => false,
+        };
+        assert!(!waiting, EStillDeploying);
+    };
+    acc.set_playing(id);
+}
+
+/// Leave the ranked queue, as `cancel_search` leaves the queue for stakes.
+public fun cancel_ranked(
+    mm: &mut Matchmaker<Ranked>,
+    acc: &mut Account,
+    clock: &Clock,
+    ctx: &mut TxContext,
+) {
+    cancel(internal::permit<Ranked>(), mm, acc, clock, ctx)
+}
+
+// === Queues ===
+
+/// Clear the search of an `Account` the queue dropped, with the notice it sent:
+/// the `Account` is idle again. Anyone can do this.
+public fun dismiss_seat(acc: &mut Account, seat: Receiving<Seat>) {
+    assert!(receive_seat(acc, seat).is_none(), EWrongSeat);
+    assert!(acc.search_order().is_some(), ENotSearching);
+    acc.clear_search();
+}
+
+/// Search the queue `mm` for the `Account`, at `rating` within `window`. Returns
+/// the player found waiting, if any; otherwise the `Account` is `Searching` the
+/// queue, holding `commitment`. Either way every player the queue dropped is sent
+/// a notice.
+fun search<T>(
+    permit: internal::Permit<T>,
+    mm: &mut Matchmaker<T>,
+    acc: &mut Account,
+    rating: u64,
+    window: u64,
+    commitment: Option<address>,
+    rng: &mut RandomGenerator,
+    clock: &Clock,
+    ctx: &mut TxContext,
+): Option<ID> {
+    let player = object::id(acc);
+    let (order, found, dropped) = matchmaker::find_game(
+        permit,
+        mm,
+        player,
+        rng,
+        clock,
+        rating,
+        window,
+        ctx,
+    );
+    dropped.do!(|player| {
+        let notice = Seat { id: object::new(ctx), game: option::none() };
+        transfer::transfer(notice, player.to_address());
+    });
+
+    if (found.is_some()) return found.map!(|m| m.players()[0]);
+    acc.start_search(order, clock.timestamp_ms(), object::id(mm), commitment);
+    option::none()
+}
+
+/// Take the `Account`'s ticket out of the queue `mm`: by the owner at any time,
+/// by anyone once the search has run past `SEARCH_TIMEOUT_MS`.
+fun cancel<T>(
+    permit: internal::Permit<T>,
+    mm: &mut Matchmaker<T>,
     acc: &mut Account,
     clock: &Clock,
     ctx: &mut TxContext,
@@ -280,18 +556,60 @@ public fun cancel_search(
     };
     assert!(mm.is_queued(id), ESeatWaiting);
 
-    matchmaker::remove_ticket(internal::permit<Ghosts>(), mm, id);
+    matchmaker::remove_ticket(permit, mm, id);
     acc.clear_search();
 }
 
-/// A game on the preset between the player who `waiting` was, going first, and
-/// the one who found them, still deploying, played for what `mode` says.
-fun new_game(
+/// Take the `Seat` sent to the `Account` and delete it. Returns its game.
+fun receive_seat(acc: &mut Account, seat: Receiving<Seat>): Option<ID> {
+    let Seat { id, game } = transfer::receive(acc.uid_mut(), seat);
+    id.delete();
+    game
+}
+
+/// The players `a` and `b` in the order they take turns, as drawn: `a` first if
+/// `a_first`. Both orders are the same bytes, so that the gas of a call with
+/// `Random` does not tell moving first from moving second.
+fun in_order(a_first: bool, a: ID, b: ID): vector<ID> {
+    if (a_first) vector[a, b] else vector[b, a]
+}
+
+/// A ranked game on the preset between the player who `waiting` was and the
+/// `finder`, whose `squad` is on the map from the start; the first to move as
+/// `finder_first` says. The waiter reveals until `until_ms`.
+fun start_ranked(
     preset: &Preset,
     waiting: ID,
-    finder: ID,
+    finder: &mut Account,
     mode: Mode,
-    now: u64,
+    squad: vector<u8>,
+    finder_first: bool,
+    until_ms: u64,
+    ctx: &mut TxContext,
+) {
+    let players = in_order(finder_first, object::id(finder), waiting);
+    let mut game = new_game(preset, players, mode, until_ms, true, ctx);
+    game.place_squad(if (finder_first) 0 else 1, &squad, ctx);
+    game.send_seat(waiting, finder, ctx);
+}
+
+/// Seat the players of a game from the queue and share it: the `finder` is
+/// `Playing` it, and the player who was `waiting` is sent a `Seat` in it.
+fun send_seat(game: Game, waiting: ID, finder: &mut Account, ctx: &mut TxContext) {
+    let id = object::id(&game);
+    transfer::transfer(Seat { id: object::new(ctx), game: option::some(id) }, waiting.to_address());
+    finder.set_playing(id);
+    transfer::share_object(game);
+}
+
+/// A game on the preset between the `players`, in turn order, still deploying
+/// until `until_ms`, played for what `mode` says. It is announced, `listed` or not.
+fun new_game(
+    preset: &Preset,
+    players: vector<ID>,
+    mode: Mode,
+    until_ms: u64,
+    listed: bool,
     ctx: &mut TxContext,
 ): Game {
     let half = preset.positions.length() / 2;
@@ -301,25 +619,32 @@ fun new_game(
         .length()
         .do!(|i| positions[if (i < half) 0 else 1].push_back(preset.positions[i]));
 
-    Game {
+    let game = Game {
         id: object::new(ctx),
         map: preset.map.clone(),
-        players: vector[waiting, finder],
-        state: State::Deploying { until_ms: now + DEPLOY_LIMIT_MS },
+        players,
+        state: State::Deploying { until_ms },
         turn: 0,
         positions,
         history: history::empty(),
         recruits: table::new(ctx),
         mode,
-    }
+    };
+    event::emit(GameStarted { game: object::id(&game), players, mode, listed });
+    game
 }
 
 /// Check the sender controls the `Account`, free to play: neither searching nor in
-/// a game, past any suspension, and with recruits to deploy.
+/// a game, and past any suspension.
 fun check_free(acc: &Account, now: u64, ctx: &mut TxContext) {
     acc.authorize(ctx);
     assert!(acc.is_idle(), EAlreadySearching);
     assert!(now >= acc.suspended_until(), ESuspended);
+}
+
+/// `check_free`, and with recruits to deploy.
+fun check_free_with_recruits(acc: &Account, now: u64, ctx: &mut TxContext) {
+    check_free(acc, now, ctx);
     assert!(acc.num_recruits() > 0, ENoSquad);
 }
 
@@ -339,26 +664,27 @@ public fun open_lobby(
     ctx: &mut TxContext,
 ) {
     let now = clock.timestamp_ms();
-    check_free(acc, now, ctx);
+    check_free_with_recruits(acc, now, ctx);
     lobbies.open(acc, size, code_hash, now);
 }
 
 /// Join the invite-only lobby of `host` with its invite `code`: the friendly game
-/// starts on the preset there and then, `host` going first, and both `Account`s
-/// are `Playing` it. The joining `Account` must be free to play.
-public fun join_lobby(
+/// starts on the preset there and then, unlisted, who goes first drawn, and both
+/// `Account`s are `Playing` it. The joining `Account` must be free to play.
+entry fun join_lobby(
     lobbies: &mut Lobbies,
     preset: &Preset,
     host: &mut Account,
     acc: &mut Account,
+    rng: &Random,
     clock: &Clock,
     code: vector<u8>,
     ctx: &mut TxContext,
 ) {
     let now = clock.timestamp_ms();
-    check_free(acc, now, ctx);
+    check_free_with_recruits(acc, now, ctx);
     let size = lobbies.join_protected(host, code, now);
-    start_friendly_game(preset, host, acc, size, now, ctx);
+    start_friendly_game(preset, host, acc, size, rng, false, now, ctx);
 }
 
 /// Take the guest slot of the listed lobby of `host`: the `Account` is `Searching`
@@ -372,7 +698,7 @@ public fun join_open(
     ctx: &mut TxContext,
 ) {
     let now = clock.timestamp_ms();
-    check_free(acc, now, ctx);
+    check_free_with_recruits(acc, now, ctx);
     lobbies.join_open(host, acc, now);
 }
 
@@ -396,19 +722,21 @@ public fun kick_guest(
 }
 
 /// Start the friendly game of a listed lobby with the guest in it, on the preset:
-/// the host goes first, and both `Account`s are `Playing` it. Only the host can.
-public fun start_friendly(
+/// who goes first is drawn, and both `Account`s are `Playing` it. Only the host
+/// can.
+entry fun start_friendly(
     lobbies: &mut Lobbies,
     preset: &Preset,
     host: &mut Account,
     guest: &mut Account,
+    rng: &Random,
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
     host.authorize(ctx);
     let now = clock.timestamp_ms();
     let size = lobbies.start(host, guest, now);
-    start_friendly_game(preset, host, guest, size, now, ctx);
+    start_friendly_game(preset, host, guest, size, rng, true, now, ctx);
 }
 
 /// Close the lobby the `Account` hosts, of either kind, with nobody in its guest
@@ -424,18 +752,22 @@ public fun close_lobby(
     lobbies.close(host, clock.timestamp_ms(), ctx);
 }
 
-/// A friendly game of `size` on the preset between the `host`, going first, and
-/// the `guest`, still deploying; both are `Playing` it.
+/// A friendly game of `size` on the preset between the `host` and the `guest`,
+/// still deploying, who goes first drawn; both are `Playing` it.
 fun start_friendly_game(
     preset: &Preset,
     host: &mut Account,
     guest: &mut Account,
     size: u8,
+    rng: &Random,
+    listed: bool,
     now: u64,
     ctx: &mut TxContext,
 ) {
+    let mut rng = rng.new_generator(ctx);
+    let players = in_order(rng.generate_bool(), object::id(host), object::id(guest));
     let mode = Mode::Friendly { size };
-    let game = new_game(preset, object::id(host), object::id(guest), mode, now, ctx);
+    let game = new_game(preset, players, mode, now + DEPLOY_LIMIT_MS, listed, ctx);
     host.set_playing(object::id(&game));
     guest.set_playing(object::id(&game));
     transfer::share_object(game);
@@ -444,8 +776,8 @@ fun start_friendly_game(
 // === Ending the Game ===
 
 /// Give up a running game: it is over for both players and the other one wins.
-/// `complete_game` then sends everyone home, as after any other ending, and
-/// suspends the `Account` for `SUSPENSION_MS`.
+/// `complete_game` then sends everyone home, as after any other ending, and in a
+/// game from a queue suspends the `Account` for `SUSPENSION_MS`.
 public fun abandon_game(game: &mut Game, acc: &Account, ctx: &mut TxContext) {
     game.side(acc, ctx);
     assert!(!game.is_over(), EGameOver);
@@ -454,12 +786,13 @@ public fun abandon_game(game: &mut Game, acc: &Account, ctx: &mut TxContext) {
 }
 
 /// Wrap up a game that is over and delete it. Anyone can call this, so neither
-/// player can keep the other in: the survivors go back to their `Account`s, the
-/// result onto their scores, the `Account`s playing
-/// it are `Idle` again, and whoever abandoned the game or never deployed is
-/// suspended for `SUSPENSION_MS`. Both `Account`s must be in the game: a `Seat` not
-/// yet accepted is accepted first, by whoever wraps up. A friendly game only sends
-/// everyone home, the fallen too, and frees the `Account`s.
+/// player can keep the other in: the `Account`s playing it are `Idle` again, and
+/// in a game from a queue whoever abandoned the game, or never deployed or
+/// revealed, is suspended for `SUSPENSION_MS`. A ranked game goes on both scores
+/// and moves both ratings; a game for stakes sends the survivors home with the
+/// experience they earned; a friendly one sends everyone home, the fallen too.
+/// Both `Account`s must be in the game: a `Seat` not yet taken is taken first, by
+/// whoever wraps up.
 public fun complete_game(
     mut game: Game,
     first: &mut Account,
@@ -467,36 +800,49 @@ public fun complete_game(
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    assert!(game.is_over(), EGameNotOver);
+    let ending = match (game.state) {
+        State::Over(ending) => ending,
+        _ => abort EGameNotOver,
+    };
     assert!(
         object::id(first) == game.players[0] && object::id(second) == game.players[1],
         ENotPlayer,
     );
-    let id = option::some(object::id(&game));
-    assert!(first.playing() == id && second.playing() == id, ESeatNotAccepted);
+    let id = object::id(&game);
+    assert!(
+        first.playing() == option::some(id) && second.playing() == option::some(id),
+        ESeatNotAccepted,
+    );
 
     let now = clock.timestamp_ms();
-    let rated = game.mode == Mode::Rated;
-
-    // nobody showing up isn't a game: it goes on no score and moves no rating,
-    // and neither does a friendly one
     let winner = game.winner();
-    if (rated && !game.nobody_showed()) {
+    let (ranked, friendly) = match (game.mode) {
+        Mode::Ranked { .. } => (true, false),
+        Mode::Friendly { .. } => (false, true),
+        Mode::Stakes => (false, false),
+    };
+
+    // nobody showing up isn't a game: it goes on no score and moves no rating
+    if (ranked && !game.nobody_showed()) {
         first.add_result(winner);
         second.add_result(winner);
         first.rate_game(second, winner, now);
     };
 
-    if (rated) game.bury_fallen(ctx) else game.raise_fallen(first, second);
-    let (xp_first, xp_second) = (game.experience(0, winner), game.experience(1, winner));
-    let (squad_first, squad_second) = game.squads();
-    game.send_home(first, squad_first, xp_first);
-    game.send_home(second, squad_second, xp_second);
+    // a ranked squad has no recruits to send home: its units go with the map
+    if (friendly) game.raise_fallen(first, second) else game.bury_fallen(ctx);
+    if (!ranked) {
+        let (xp_first, xp_second) = (game.experience(0, winner), game.experience(1, winner));
+        let (squad_first, squad_second) = game.squads();
+        game.send_home(first, squad_first, xp_first);
+        game.send_home(second, squad_second, xp_second);
+    };
     game.release(first);
     game.release(second);
-    if (rated && game.misbehaved(0)) first.suspend(now + SUSPENSION_MS);
-    if (rated && game.misbehaved(1)) second.suspend(now + SUSPENSION_MS);
+    if (!friendly && game.misbehaved(0)) first.suspend(now + SUSPENSION_MS);
+    if (!friendly && game.misbehaved(1)) second.suspend(now + SUSPENSION_MS);
 
+    event::emit(GameEnded { game: id, ending });
     let Game { id, map, recruits, .. } = game;
     map.destroy();
     recruits.destroy_empty();
@@ -505,10 +851,12 @@ public fun complete_game(
 
 // === Game Actions ===
 
-/// Pick the squad: recruits received from the `Account`, placed on the side's
-/// spawn positions, as many as the map has for a side, and in a friendly game no
-/// more than its size. Once per side, in any order, within `DEPLOY_LIMIT_MS` of
-/// the match. The first turn starts as soon as both sides have deployed.
+/// Pick the squad of a game for stakes or a friendly one: recruits received from
+/// the `Account`, placed on the side's spawn positions, as many as the map has
+/// for a side, and in a friendly game no more than its size. Once per side, in
+/// any order, within `DEPLOY_LIMIT_MS` of the match. The first turn starts as
+/// soon as both sides have deployed. A ranked squad is revealed instead, see
+/// `reveal_squad`.
 public fun deploy_squad(
     game: &mut Game,
     acc: &mut Account,
@@ -519,17 +867,14 @@ public fun deploy_squad(
     let side = game.side(acc, ctx);
     let now = clock.timestamp_ms();
 
-    match (&game.state) {
-        State::Deploying { until_ms } => assert!(now <= *until_ms, EDeploymentOver),
-        State::Playing { .. } => abort EDeploymentOver,
-        State::Over(_) => abort EGameOver,
-    };
+    game.check_deploying(now);
     assert!(game.squad(side).is_empty(), EAlreadyDeployed);
     assert!(!recruits.is_empty(), ENoPositions);
     assert!(recruits.length() <= game.positions[side].length(), ENoPositions);
     match (game.mode) {
         Mode::Friendly { size } => assert!(recruits.length() <= size as u64, ESquadTooLarge),
-        Mode::Rated => (),
+        Mode::Stakes => (),
+        Mode::Ranked { .. } => abort EWrongMode,
     };
 
     recruits.do!(|recruit| {
@@ -725,18 +1070,35 @@ fun side(game: &Game, acc: &Account, ctx: &mut TxContext): u64 {
     side
 }
 
-/// The recruits a side has in the game: its units on the map, the fallen aside.
-fun squad(game: &Game, side: u64): vector<ID> {
-    game.map.units_of(game.players[side]).filter!(|id| game.recruits.contains(*id))
+/// The units a side has in the game, by their recruit IDs: its units on the map,
+/// the fallen aside.
+fun squad(game: &Game, side: u64): vector<ID> { game.map.units_of(game.players[side]) }
+
+/// The `squad` of each side, in a single walk of `Map.units`.
+fun squads(game: &Game): (vector<ID>, vector<ID>) {
+    game.map.units_of_both(game.players[0], game.players[1])
 }
 
-/// The `squad` of each side, in a single walk of the map.
-fun squads(game: &Game): (vector<ID>, vector<ID>) {
-    let (first, second) = game.map.units_of_both(game.players[0], game.players[1]);
-    (
-        first.filter!(|id| game.recruits.contains(*id)),
-        second.filter!(|id| game.recruits.contains(*id)),
-    )
+/// Put a ranked `squad`, a loadout per unit, on the side's spawn positions: units
+/// with no recruit behind them, each with an ID of its own.
+fun place_squad(game: &mut Game, side: u64, squad: &vector<u8>, ctx: &mut TxContext) {
+    let owner = game.players[side];
+    (squad.length() / 3).do!(|i| {
+        let id = ctx.fresh_object_address().to_id();
+        let unit = unit::from_loadout(id, owner, squad[3 * i], squad[3 * i + 1], squad[3 * i + 2]);
+        let position = game.positions[side].pop_back();
+        let record = game.map.place_unit(unit, position[0] as u16, position[1] as u16);
+        game.history.add(record);
+    });
+}
+
+/// Check the game takes squads at `now`: deploying, within its time.
+fun check_deploying(game: &Game, now: u64) {
+    match (&game.state) {
+        State::Deploying { until_ms } => assert!(now <= *until_ms, EDeploymentOver),
+        State::Playing { .. } => abort EDeploymentOver,
+        State::Over(_) => abort EGameOver,
+    };
 }
 
 /// The player who isn't `player`.
@@ -768,7 +1130,8 @@ fun is_over(game: &Game): bool {
 }
 
 /// Whether a side is to blame for how the game ended: it abandoned the game,
-/// forfeited it, or had nobody to show when the deployment ended.
+/// forfeited it, or had nobody to show when the deployment ended, revealing
+/// included.
 fun misbehaved(game: &Game, side: u64): bool {
     let player = game.players[side];
     match (&game.state) {
@@ -801,9 +1164,9 @@ fun nobody_showed(game: &Game): bool {
 /// The experience each of a side's recruits coming home earns from how the game
 /// ended. None for a side that left or never showed, for one whose opponent never
 /// showed, or for one left behind before the game got anywhere; none at all in a
-/// friendly game.
+/// game not for stakes.
 fun experience(game: &Game, side: u64, winner: Option<ID>): u16 {
-    if (game.mode != Mode::Rated) return 0;
+    if (game.mode != Mode::Stakes) return 0;
     let other = game.players[1 - side];
     let walkover = match (&game.state) {
         State::Over(Ending::Abandoned(by)) | State::Over(Ending::Forfeited(by)) => *by == other,
@@ -870,9 +1233,13 @@ fun count_losses(game: &mut Game, records: &vector<Record>) {
 /// Take the recruits killed since the last call out of the game, their gear going
 /// down with them and their dog tags sent to their `Account`s. Never called where
 /// `Random` is used: see `Map.fallen`. Nobody dies in a friendly game: its fallen
-/// stay in `Map.fallen` until `raise_fallen`.
+/// stay in `Map.fallen` until `raise_fallen`. A ranked unit has no recruit behind
+/// it: it is taken out, and that is all.
 fun bury_fallen(game: &mut Game, ctx: &mut TxContext) {
-    if (game.mode != Mode::Rated) return;
+    match (game.mode) {
+        Mode::Friendly { .. } => return,
+        _ => (),
+    };
     game.map.bury().do!(|id| {
         // a unit the preset placed has no recruit behind it
         if (id.to_address() == @0 || !game.recruits.contains(id)) return;
@@ -896,24 +1263,70 @@ fun raise_fallen(game: &mut Game, first: &mut Account, second: &mut Account) {
     });
 }
 
+// === Admin ===
+
+/// Freeze a new level, a `Preset`, for the holder of the `RulesCap`: the `map`, as
+/// `map::from_bytes` decodes it, and the spawn positions, `[x, y]` each, the first
+/// half for the side that moves first. Every position must be a tile a unit can
+/// stand on, and free.
+public fun new_level(
+    _: &RulesCap,
+    name: String,
+    map: vector<u8>,
+    positions: vector<vector<u8>>,
+    ctx: &mut TxContext,
+) {
+    let id = object::new(ctx);
+    let map = map::from_bytes_as(map, id.to_inner());
+    assert!(positions.length() % 2 == 0, EBadLevel);
+    positions.do_ref!(|p| {
+        let (x, y) = (p[0] as u16, p[1] as u16);
+        assert!(map.is_tile_walkable(x, y) && !map.tile_has_unit(x, y), EBadLevel);
+    });
+    transfer::freeze_object(Preset { id, map, name, positions });
+}
+
+/// Play ranked squads of `size` on the level `preset`, which must have room for
+/// them on each side.
+public fun set_level(rules: &mut Rules, cap: &RulesCap, preset: &Preset, size: u8) {
+    assert!(preset.positions.length() >= 2 * (size as u64), EBadLevel);
+    rules.set_level_id(cap, size, object::id(preset));
+}
+
 // === Init ===
 
-/// On publish, share the matchmaking queue and the lobbies, and freeze the map preset, which is
-/// generated from a scene: see `pnpm --dir app build:map-preset`.
+/// On publish, freeze the map preset, Black Rain, generated from a scene (see
+/// `pnpm --dir app build:map-preset`); share the queue for stakes, a ranked queue
+/// for each size, the `Rules` and the lobbies; and give the `RulesCap` to the
+/// publisher. Ranked squads of three play on Black Rain, which has room for no
+/// more: four have no level until one is set.
 fun init(ctx: &mut TxContext) {
     let id = object::new(ctx);
+    let level = id.to_inner();
     transfer::freeze_object(Preset {
-        map: map::black_rain(id.to_inner()),
+        map: map::black_rain(level),
         name: "Black Rain",
         positions: map::black_rain_positions(),
         id,
     });
 
-    // the default buckets and windows, with no ticket ever let go of by the queue:
-    // a search leaves it only by its player's cancel or by a match, which sends
-    // a `Seat`, so the `Account` always knows where it stands
-    let config = matchmaker::new_config(100, NO_LIMIT, 50, 30_000, 1_000, NO_LIMIT);
+    // the default buckets and windows; a ticket is let go of by the queue only
+    // past `TICKET_TTL_MS`, with a notice, so the `Account` always knows where
+    // it stands
+    let config = matchmaker::new_config(100, NO_LIMIT, 50, 30_000, 1_000, TICKET_TTL_MS);
     matchmaker::new(internal::permit<Ghosts>(), config, ctx).share();
+    let three = matchmaker::new(internal::permit<Ranked>(), config, ctx);
+    let four = matchmaker::new(internal::permit<Ranked>(), config, ctx);
+    let sizes = vector[
+        rules::new_size(3, object::id(&three), option::some(level)),
+        rules::new_size(4, object::id(&four), option::none()),
+    ];
+    three.share();
+    four.share();
+
+    let (rules, cap) = rules::new(sizes, ctx);
+    rules.share();
+    transfer::public_transfer(cap, ctx.sender());
     lobby::new(ctx).share();
 }
 

@@ -5,8 +5,8 @@
 extend module ghosts::ghosts;
 
 use ghosts::{account::{Self, Registry}, action, items, recruit as recruit_module};
-use glicko::glicko::Rating;
-use sui::{address, clock, hash, random, test_scenario::{Self as ts, Scenario}};
+use glicko::glicko::{Self, Rating};
+use sui::{clock, random, test_scenario::{Self as ts, Scenario}};
 
 /// The recruits fall, the way they do to an attack: off the map, the game over if
 /// that was a side's last, and still in the game until `bury_fallen`.
@@ -55,6 +55,10 @@ public struct Fixture {
     registry: Registry,
     mm: Matchmaker<Ghosts>,
     lobbies: Lobbies,
+    rules: Rules,
+    /// The ranked queues of three and four.
+    three: Matchmaker<Ranked>,
+    four: Matchmaker<Ranked>,
     rng: Random,
     clock: Clock,
     preset: Preset,
@@ -131,11 +135,20 @@ macro fun setup_on(
     let rng = ts.take_shared<Random>();
     let clock = clock::create_for_testing(ts.ctx());
 
+    // ranked squads of three play on the preset
+    let mut rules = ts.take_shared<Rules>();
+    let three = ts.take_shared_by_id(rules.size_for_testing(3).queue_for_testing());
+    let four = ts.take_shared_by_id(rules.size_for_testing(4).queue_for_testing());
+    rules.set_level_for_testing(3, object::id(&preset));
+
     Fixture {
         ts,
         registry,
         mm,
         lobbies,
+        rules,
+        three,
+        four,
         rng,
         clock,
         preset,
@@ -147,10 +160,27 @@ macro fun setup_on(
 }
 
 fun finish(f: Fixture) {
-    let Fixture { ts, registry, mm, lobbies, rng, clock, preset, alice, bob, .. } = f;
+    let Fixture {
+        ts,
+        registry,
+        mm,
+        lobbies,
+        rules,
+        three,
+        four,
+        rng,
+        clock,
+        preset,
+        alice,
+        bob,
+        ..,
+    } = f;
     ts::return_shared(registry);
     ts::return_shared(mm);
     ts::return_shared(lobbies);
+    ts::return_shared(rules);
+    ts::return_shared(three);
+    ts::return_shared(four);
     ts::return_shared(rng);
     ts::return_shared(alice);
     ts::return_shared(bob);
@@ -173,11 +203,27 @@ fun start(f: &mut Fixture): Game {
 }
 
 /// Alice queues and Bob finds her: the game is on, and Alice's seat on its way.
+/// Alice goes first, whatever the draw: see `put_first`.
 fun match_up(f: &mut Fixture) {
     f.ts.next_tx(ALICE);
     find_game(&mut f.mm, &mut f.alice, &f.preset, &f.rng, &f.clock, f.ts.ctx());
     f.ts.next_tx(BOB);
     find_game(&mut f.mm, &mut f.bob, &f.preset, &f.rng, &f.clock, f.ts.ctx());
+    f.alice_first();
+}
+
+/// The game just started, with Alice going first, whatever the draw.
+fun alice_first(f: &mut Fixture) {
+    f.ts.next_tx(ALICE);
+    let mut game = f.ts.take_shared<Game>();
+    game.put_first(object::id(&f.alice));
+    ts::return_shared(game);
+}
+
+/// Make `player` the one who goes first, before anyone deployed: the draw undone,
+/// so that a test knows who acts. The spawn positions stay with the sides.
+fun put_first(game: &mut Game, player: ID) {
+    if (game.players[0] != player) game.players.swap(0, 1);
 }
 
 /// The seat last sent to Alice's `Account`.
@@ -271,11 +317,12 @@ fun test_search_and_start() {
     let id = object::id(&game);
     assert_eq!(f.bob.playing(), option::some(id));
 
-    // the seat Bob's call sent puts Alice into the game, going first
+    // the seat Bob's call sent puts Alice into the game; who goes first is drawn
     let seat = f.seat();
     accept_seat(&mut f.alice, seat);
     assert_eq!(f.alice.playing(), option::some(id));
-    assert_eq!(game.players, vector[object::id(&f.alice), object::id(&f.bob)]);
+    let (alice, bob) = (object::id(&f.alice), object::id(&f.bob));
+    assert!(game.players == vector[alice, bob] || game.players == vector[bob, alice]);
     assert_eq!(game.active_side(), 0);
     assert_eq!(game.positions, vector[vector[vector[0, 3]], vector[vector[6, 5]]]);
     assert!(game.is_deploying());
@@ -445,22 +492,95 @@ fun test_walk_away_after_accepting() {
     fixture.finish();
 }
 
-/// The queue keeps a search as long as it takes: Bob finds Alice however long after.
+/// The queue keeps a search up to `TICKET_TTL_MS`: Bob finds Alice right at it.
 #[test]
-fun test_searches_never_expire_in_the_queue() {
+fun test_search_lasts_the_ticket_lifetime() {
     use std::unit_test::assert_eq;
 
     let mut fixture = setup();
     let f = &mut fixture;
     f.ts.next_tx(ALICE);
     find_game(&mut f.mm, &mut f.alice, &f.preset, &f.rng, &f.clock, f.ts.ctx());
-    f.clock.set_for_testing(1000 * SEARCH_TIMEOUT_MS);
+    f.clock.set_for_testing(TICKET_TTL_MS);
     f.ts.next_tx(BOB);
     find_game(&mut f.mm, &mut f.bob, &f.preset, &f.rng, &f.clock, f.ts.ctx());
     assert_eq!(f.mm.queue_length(), 0);
     assert!(f.bob.playing().is_some());
 
     fixture.finish();
+}
+
+/// Past `TICKET_TTL_MS` the queue drops Alice's search when Bob's walks by it: no
+/// match, Bob waits instead, and Alice's `Account` is sent a notice, which anyone
+/// dismisses, Alice idle again. Nobody is left on a ticket that is gone.
+#[test]
+fun test_expired_search_is_told() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup();
+    let f = &mut fixture;
+    f.ts.next_tx(ALICE);
+    find_game(&mut f.mm, &mut f.alice, &f.preset, &f.rng, &f.clock, f.ts.ctx());
+    f.clock.set_for_testing(TICKET_TTL_MS + 1);
+    f.ts.next_tx(BOB);
+    find_game(&mut f.mm, &mut f.bob, &f.preset, &f.rng, &f.clock, f.ts.ctx());
+    assert!(!f.mm.is_queued(object::id(&f.alice)));
+    assert!(f.mm.is_queued(object::id(&f.bob)));
+
+    // Alice is still searching, the ticket gone: a cancel has nothing to take
+    assert!(f.alice.search_order().is_some());
+    f.ts.next_tx(CAROL);
+    let notice = f.seat();
+    dismiss_seat(&mut f.alice, notice);
+    assert!(f.alice.is_idle());
+
+    // and she can search again
+    f.ts.next_tx(ALICE);
+    find_game(&mut f.mm, &mut f.alice, &f.preset, &f.rng, &f.clock, f.ts.ctx());
+    assert!(f.alice.playing().is_some());
+    assert_eq!(f.mm.queue_length(), 0);
+
+    fixture.finish();
+}
+
+/// A notice is not a seat in a game, nor the other way round.
+#[test, expected_failure(abort_code = EWrongSeat)]
+fun test_accept_a_notice_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    find_game(&mut f.mm, &mut f.alice, &f.preset, &f.rng, &f.clock, f.ts.ctx());
+    f.clock.set_for_testing(TICKET_TTL_MS + 1);
+    f.ts.next_tx(BOB);
+    find_game(&mut f.mm, &mut f.bob, &f.preset, &f.rng, &f.clock, f.ts.ctx());
+    f.ts.next_tx(ALICE);
+    let notice = f.seat();
+    accept_seat(&mut f.alice, notice);
+    abort
+}
+
+#[test, expected_failure(abort_code = EWrongSeat)]
+fun test_dismiss_a_seat_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    f.match_up();
+    f.ts.next_tx(ALICE);
+    let seat = f.seat();
+    dismiss_seat(&mut f.alice, seat);
+    abort
+}
+
+/// The ticket of a dropped search is gone: cancelling it finds nothing.
+#[test, expected_failure(abort_code = ESeatWaiting)]
+fun test_cancel_dropped_search_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    find_game(&mut f.mm, &mut f.alice, &f.preset, &f.rng, &f.clock, f.ts.ctx());
+    f.clock.set_for_testing(TICKET_TTL_MS + 1);
+    f.ts.next_tx(BOB);
+    find_game(&mut f.mm, &mut f.bob, &f.preset, &f.rng, &f.clock, f.ts.ctx());
+    f.ts.next_tx(ALICE);
+    cancel_search(&mut f.mm, &mut f.alice, &f.clock, f.ts.ctx());
+    abort
 }
 
 #[test, expected_failure(abort_code = EAlreadySearching)]
@@ -581,10 +701,10 @@ fun test_full_game() {
     assert_eq!(f.dog_tags(alice), if (alice_won) 0 else 1);
     assert_eq!(f.dog_tags(bob), if (alice_won) 1 else 0);
 
-    // the score has it too
-    let (alice_wins, alice_losses, _) = f.alice.score();
-    assert_eq!(alice_wins, if (alice_won) 1 else 0);
-    assert_eq!(alice_losses, if (alice_won) 0 else 1);
+    // played for stakes, not for rating: no score, and no rating moved
+    assert_eq!(f.alice.games_played() + f.bob.games_played(), 0);
+    assert_eq!(f.alice.rating(), glicko::default());
+    assert_eq!(f.bob.rating(), glicko::default());
 
     // and the game is gone
     f.ts.next_tx(CAROL);
@@ -1334,34 +1454,31 @@ fun test_draw() {
     fixture.finish();
 }
 
-/// Every finished game goes on both scores, whatever ended it.
+/// A game for stakes goes on no score and moves no rating, whatever ended it:
+/// only ranked games do.
 #[test]
-fun test_scores() {
+fun test_stakes_are_unrated() {
     use std::unit_test::assert_eq;
 
     let mut fixture = setup();
     let f = &mut fixture;
 
-    // Alice abandons: a win for Bob
+    // Alice abandons: a win for Bob, and nothing on either score
     let mut game = f.start();
     abandon_game(&mut game, &f.alice, f.ts.ctx());
     complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
-    assert_eq!(f.alice.games_played(), 1);
-    let (wins, losses, draws) = f.alice.score();
-    assert_eq!(vector[wins, losses, draws], vector[0, 1, 0]);
-    let (wins, losses, draws) = f.bob.score();
-    assert_eq!(vector[wins, losses, draws], vector[1, 0, 0]);
+    assert_eq!(f.alice.games_played() + f.bob.games_played(), 0);
+    assert_eq!(f.alice.rating(), glicko::default());
+    assert_eq!(f.bob.rating(), glicko::default());
 
-    // nobody shows: that isn't a game, past Alice's suspension
-    let rating = f.alice.rating().rating();
+    // nobody shows, past Alice's suspension
     f.clock.set_for_testing(SUSPENSION_MS);
     let mut game = f.start();
     f.clock.set_for_testing(SUSPENSION_MS + DEPLOY_LIMIT_MS + 1);
     next_turn(&mut game, &f.alice, &f.clock, f.ts.ctx());
     complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
-    assert_eq!(f.alice.games_played(), 1);
-    assert_eq!(f.bob.games_played(), 1);
-    assert_eq!(f.alice.rating().rating(), rating);
+    assert_eq!(f.alice.games_played() + f.bob.games_played(), 0);
+    assert_eq!(f.alice.rating(), glicko::default());
 
     fixture.finish();
 }
@@ -1371,8 +1488,8 @@ fun alice_kills_bob(f: &mut Fixture, game: &mut Game) {
     game.kill(vector[f.bob_recruit]);
 }
 
-/// A fight to the end: the survivor comes home with a winner's experience, and the
-/// ratings move.
+/// A fight to the end: the survivor comes home with a winner's experience; the
+/// ratings stay, as stakes are not ranked.
 #[test]
 fun test_a_finished_fight_earns() {
     use std::unit_test::assert_eq;
@@ -1381,7 +1498,6 @@ fun test_a_finished_fight_earns() {
     let f = &mut fixture;
     let mut game = f.start();
     f.deploy(&mut game);
-    let (rating_alice, rating_bob) = (f.alice.rating().rating(), f.bob.rating().rating());
 
     f.alice_kills_bob(&mut game);
     complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
@@ -1389,12 +1505,12 @@ fun test_a_finished_fight_earns() {
     let id = f.alice_recruit;
     assert_eq!(f.look_at!(id, |r| r.xp()), SURVIVAL_XP + WIN_XP);
 
-    assert!(f.alice.rating().rating() > rating_alice);
-    assert!(f.bob.rating().rating() < rating_bob);
+    assert_eq!(f.alice.rating(), glicko::default());
+    assert_eq!(f.bob.rating(), glicko::default());
     fixture.finish();
 }
 
-/// Both sides gone at once: a draw on both scores, and nobody left to earn anything.
+/// Both sides gone at once: a draw, and nobody left to earn anything.
 #[test]
 fun test_a_draw() {
     use std::unit_test::assert_eq;
@@ -1406,25 +1522,23 @@ fun test_a_draw() {
 
     f.alice_kills_bob(&mut game);
     game.kill(vector[f.alice_recruit]);
+    assert_eq!(game.state, State::Over(Ending::Draw));
     complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
 
-    let (_, _, draws) = f.alice.score();
-    assert_eq!(draws, 1);
     assert_eq!(f.alice.num_recruits(), 0);
     fixture.finish();
 }
 
-/// Walking out costs rating and earns nothing. The survivors still go home. The one
-/// left behind earns a little, once the game has got somewhere.
+/// Walking out earns nothing. The survivors still go home. The one left behind
+/// earns a little, once the game has got somewhere.
 #[test]
-fun test_a_walkout_costs_rating_and_earns_little() {
+fun test_a_walkout_earns_little() {
     use std::unit_test::assert_eq;
 
     let mut fixture = setup();
     let f = &mut fixture;
     let mut game = f.start();
     f.deploy(&mut game);
-    let rating = f.alice.rating().rating();
 
     next_turn(&mut game, &f.alice, &f.clock, f.ts.ctx());
     f.ts.next_tx(BOB);
@@ -1433,7 +1547,7 @@ fun test_a_walkout_costs_rating_and_earns_little() {
     abandon_game(&mut game, &f.alice, f.ts.ctx());
     complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
 
-    assert!(f.alice.rating().rating() < rating);
+    assert_eq!(f.alice.rating(), glicko::default());
     let (alice, bob) = (f.alice_recruit, f.bob_recruit);
     assert_eq!(f.look_at!(alice, |r| r.xp()), 0);
     assert_eq!(f.look_at!(bob, |r| r.xp()), SURVIVAL_XP);
@@ -1458,8 +1572,8 @@ fun test_an_early_walkout_earns_nobody() {
     fixture.finish();
 }
 
-/// Not deploying earns nobody anything either, and costs the one who didn't their
-/// rating.
+/// Not deploying earns nobody anything either, and costs the one who didn't a
+/// suspension.
 #[test]
 fun test_a_no_show_earns_nobody() {
     use std::unit_test::assert_eq;
@@ -1468,13 +1582,13 @@ fun test_a_no_show_earns_nobody() {
     let f = &mut fixture;
     let mut game = f.start();
     deploy_squad(&mut game, &mut f.alice, &f.clock, tickets(vector[f.alice_recruit]), f.ts.ctx());
-    let rating = f.bob.rating().rating();
 
     f.clock.set_for_testing(DEPLOY_LIMIT_MS + 1);
     next_turn(&mut game, &f.alice, &f.clock, f.ts.ctx());
     complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
 
-    assert!(f.bob.rating().rating() < rating);
+    assert_eq!(f.bob.rating(), glicko::default());
+    assert_eq!(f.bob.suspended_until(), DEPLOY_LIMIT_MS + 1 + SUSPENSION_MS);
     let id = f.alice_recruit;
     assert_eq!(f.look_at!(id, |r| r.xp()), 0);
     fixture.finish();
@@ -1737,7 +1851,7 @@ fun check_index(game: &Game) {
 
 /// A side's `squad` as a walk of the whole grid finds it.
 fun squad_by_walk(game: &Game, side: u64): vector<ID> {
-    game.map.units_of_by_walk(game.players[side]).filter!(|id| game.recruits.contains(*id))
+    game.map.units_of_by_walk(game.players[side])
 }
 
 #[test]
@@ -2205,9 +2319,20 @@ fun open(f: &mut Fixture, size: u8, invite: bool) {
 /// Bob joins Alice's invite-only lobby with `CODE`, which starts the game.
 fun join_invite(f: &mut Fixture): Game {
     f.ts.next_tx(BOB);
-    join_lobby(&mut f.lobbies, &f.preset, &mut f.alice, &mut f.bob, &f.clock, CODE, f.ts.ctx());
+    join_lobby(
+        &mut f.lobbies,
+        &f.preset,
+        &mut f.alice,
+        &mut f.bob,
+        &f.rng,
+        &f.clock,
+        CODE,
+        f.ts.ctx(),
+    );
     f.ts.next_tx(ALICE);
-    f.ts.take_shared<Game>()
+    let mut game = f.ts.take_shared<Game>();
+    game.put_first(object::id(&f.alice));
+    game
 }
 
 /// Bob takes the guest slot of Alice's listed lobby.
@@ -2219,9 +2344,19 @@ fun join_listed(f: &mut Fixture) {
 /// Alice starts the game of her listed lobby with Bob in it.
 fun start_listed(f: &mut Fixture): Game {
     f.ts.next_tx(ALICE);
-    start_friendly(&mut f.lobbies, &f.preset, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    start_friendly(
+        &mut f.lobbies,
+        &f.preset,
+        &mut f.alice,
+        &mut f.bob,
+        &f.rng,
+        &f.clock,
+        f.ts.ctx(),
+    );
     f.ts.next_tx(ALICE);
-    f.ts.take_shared<Game>()
+    let mut game = f.ts.take_shared<Game>();
+    game.put_first(object::id(&f.alice));
+    game
 }
 
 /// Carol, with an `Account` and a recruit: free to play.
@@ -2656,7 +2791,16 @@ fun test_join_wrong_code_fail() {
     f.open(3, true);
     f.ts.next_tx(BOB);
     let code = x"0102030405060709";
-    join_lobby(&mut f.lobbies, &f.preset, &mut f.alice, &mut f.bob, &f.clock, code, f.ts.ctx());
+    join_lobby(
+        &mut f.lobbies,
+        &f.preset,
+        &mut f.alice,
+        &mut f.bob,
+        &f.rng,
+        &f.clock,
+        code,
+        f.ts.ctx(),
+    );
     abort
 }
 
@@ -2668,7 +2812,16 @@ fun test_join_wrong_host_fail() {
     let mut carol = f.carol();
     f.open(3, true);
     f.ts.next_tx(BOB);
-    join_lobby(&mut f.lobbies, &f.preset, &mut carol, &mut f.bob, &f.clock, CODE, f.ts.ctx());
+    join_lobby(
+        &mut f.lobbies,
+        &f.preset,
+        &mut carol,
+        &mut f.bob,
+        &f.rng,
+        &f.clock,
+        CODE,
+        f.ts.ctx(),
+    );
     abort
 }
 
@@ -2680,7 +2833,16 @@ fun test_join_with_the_hash_fail() {
     f.open(3, true);
     f.ts.next_tx(BOB);
     let code = code_hash().to_bytes();
-    join_lobby(&mut f.lobbies, &f.preset, &mut f.alice, &mut f.bob, &f.clock, code, f.ts.ctx());
+    join_lobby(
+        &mut f.lobbies,
+        &f.preset,
+        &mut f.alice,
+        &mut f.bob,
+        &f.rng,
+        &f.clock,
+        code,
+        f.ts.ctx(),
+    );
     abort
 }
 
@@ -2774,7 +2936,15 @@ fun test_guest_starts_fail() {
     f.open(3, false);
     f.join_listed();
     f.ts.next_tx(BOB);
-    start_friendly(&mut f.lobbies, &f.preset, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    start_friendly(
+        &mut f.lobbies,
+        &f.preset,
+        &mut f.alice,
+        &mut f.bob,
+        &f.rng,
+        &f.clock,
+        f.ts.ctx(),
+    );
     abort
 }
 
@@ -2787,7 +2957,15 @@ fun test_stranger_starts_expired_fail() {
     f.join_listed();
     f.clock.set_for_testing(lobby::lifetime_ms() + 1);
     f.ts.next_tx(CAROL);
-    start_friendly(&mut f.lobbies, &f.preset, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    start_friendly(
+        &mut f.lobbies,
+        &f.preset,
+        &mut f.alice,
+        &mut f.bob,
+        &f.rng,
+        &f.clock,
+        f.ts.ctx(),
+    );
     abort
 }
 
@@ -2808,7 +2986,15 @@ fun test_start_with_wrong_guest_fail() {
     f.open(3, false);
     f.join_listed();
     f.ts.next_tx(ALICE);
-    start_friendly(&mut f.lobbies, &f.preset, &mut f.alice, &mut carol, &f.clock, f.ts.ctx());
+    start_friendly(
+        &mut f.lobbies,
+        &f.preset,
+        &mut f.alice,
+        &mut carol,
+        &f.rng,
+        &f.clock,
+        f.ts.ctx(),
+    );
     abort
 }
 
@@ -2917,7 +3103,16 @@ fun test_join_while_suspended_fail() {
     f.ts.next_tx(BOB);
     open_lobby(&mut f.lobbies, &mut f.bob, &f.clock, 3, option::some(code_hash()), f.ts.ctx());
     f.ts.next_tx(ALICE);
-    join_lobby(&mut f.lobbies, &f.preset, &mut f.bob, &mut f.alice, &f.clock, CODE, f.ts.ctx());
+    join_lobby(
+        &mut f.lobbies,
+        &f.preset,
+        &mut f.bob,
+        &mut f.alice,
+        &f.rng,
+        &f.clock,
+        CODE,
+        f.ts.ctx(),
+    );
     abort
 }
 
@@ -3016,7 +3211,16 @@ fun test_queued_joins_fail() {
     f.open(3, true);
     f.ts.next_tx(BOB);
     find_game(&mut f.mm, &mut f.bob, &f.preset, &f.rng, &f.clock, f.ts.ctx());
-    join_lobby(&mut f.lobbies, &f.preset, &mut f.alice, &mut f.bob, &f.clock, CODE, f.ts.ctx());
+    join_lobby(
+        &mut f.lobbies,
+        &f.preset,
+        &mut f.alice,
+        &mut f.bob,
+        &f.rng,
+        &f.clock,
+        CODE,
+        f.ts.ctx(),
+    );
     abort
 }
 
@@ -3165,11 +3369,10 @@ fun test_queue_after_friendly() {
     complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
 
     let mut game = f.start();
-    assert_eq!(game.mode(), Mode::Rated);
+    assert_eq!(game.mode(), Mode::Stakes);
     f.deploy(&mut game);
     f.alice_kills_bob(&mut game);
     complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
-    assert_eq!(f.alice.games_played(), 1);
     let bob = object::id_address(&f.bob);
     assert_eq!(f.dog_tags(bob), 1);
 
@@ -3255,5 +3458,1223 @@ fun bench_lobby_i_start() {
     fixture.join_listed();
     let game = fixture.start_listed();
     ts::return_shared(game);
+    fixture.finish();
+}
+
+// === Ranked ===
+
+/// The salt both ranked squads here are committed with: 32 bytes, as a client
+/// draws them.
+const SALT: vector<u8> = x"5a17000000000000000000000000000000000000000000000000000000005a17";
+
+/// No utility, in a unit's bytes.
+const NONE: u8 = 0xFF;
+
+/// Alice's squad, a Contractor's: Assault with a frag grenade (55), Sniper (50),
+/// Runner with a flashbang (40). 145 credits of 150.
+fun alice_squad(): vector<u8> { vector[1, 2, FRAG, 2, 1, NONE, 1, 1, FLASHBANG] }
+
+/// Bob's squad, a Contractor's: Assault with smoke (55), Assault with a frag
+/// grenade (55), Runner with a frag grenade (40). 150 credits of 150.
+fun bob_squad(): vector<u8> { vector[1, 2, SMOKE, 1, 2, FRAG, 1, 1, FRAG] }
+
+/// The commitment to a squad with `SALT`: what a client sends to queue.
+fun commitment(squad: vector<u8>): address {
+    let mut bytes = squad;
+    bytes.append(SALT);
+    address::from_bytes(hash::blake2b256(&bytes))
+}
+
+/// Alice queues for ranked games of three, committed to `squad`.
+fun queue_ranked(f: &mut Fixture, squad: vector<u8>) {
+    f.ts.next_tx(ALICE);
+    let commitment = commitment(squad);
+    find_ranked(
+        &mut f.three,
+        &mut f.alice,
+        &f.rules,
+        &f.preset,
+        &f.rng,
+        &f.clock,
+        vector[],
+        commitment,
+        f.ts.ctx(),
+    );
+}
+
+/// Bob searches for a ranked game of three with `squad` in the clear: he finds
+/// Alice if she is waiting.
+fun find_ranked_with(f: &mut Fixture, squad: vector<u8>) {
+    f.ts.next_tx(BOB);
+    find_ranked(
+        &mut f.three,
+        &mut f.bob,
+        &f.rules,
+        &f.preset,
+        &f.rng,
+        &f.clock,
+        squad,
+        @0,
+        f.ts.ctx(),
+    );
+}
+
+/// Alice reveals `squad` with `SALT`, taking her seat.
+fun reveal_with(f: &mut Fixture, game: &mut Game, squad: vector<u8>) {
+    f.ts.next_tx(ALICE);
+    let seat = f.seat();
+    reveal_squad(game, &mut f.alice, &f.rules, seat, &f.clock, squad, SALT, f.ts.ctx());
+}
+
+/// Alice queues, Bob finds her: the game they are in.
+fun match_ranked(f: &mut Fixture): Game {
+    f.queue_ranked(alice_squad());
+    f.find_ranked_with(bob_squad());
+    f.ts.next_tx(ALICE);
+    f.ts.take_shared<Game>()
+}
+
+/// A ranked game under way: Alice queued, Bob found her, she revealed.
+fun start_ranked_game(f: &mut Fixture): Game {
+    let mut game = f.match_ranked();
+    f.reveal_with(&mut game, alice_squad());
+    game
+}
+
+/// How the player's ranked games ended, as `[wins, losses, draws]`.
+fun score_of(acc: &Account): vector<u64> {
+    let (wins, losses, draws) = acc.score();
+    vector[wins, losses, draws]
+}
+
+/// Wrap up a game, whoever went first.
+fun complete(f: &mut Fixture, game: Game) {
+    if (game.players[0] == object::id(&f.alice)) {
+        complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx())
+    } else complete_game(game, &mut f.bob, &mut f.alice, &f.clock, f.ts.ctx())
+}
+
+/// The side of the player in the game.
+fun side_of(game: &Game, player: ID): u64 {
+    let (_, side) = game.players.index_of(&player);
+    side
+}
+
+/// Whose turn it is: the sender and the `Account` that acts, in a transaction of
+/// theirs.
+macro fun on_turn($f: &mut Fixture, $game: &Game): &Account {
+    let f = $f;
+    let game = $game;
+    let alice = game.players[game.active_side()] == object::id(&f.alice);
+    f.ts.next_tx(if (alice) ALICE else BOB);
+    if (alice) &f.alice else &f.bob
+}
+
+/// Every unit of the side falls.
+fun wipe_out(game: &mut Game, side: u64) {
+    let squad = game.squad(side);
+    game.kill(squad);
+}
+
+/// Check the side's units are the ranked `squad`, as `from_loadout` builds it,
+/// one unit on each of the side's spawns on Black Rain, and nobody else's.
+fun check_squad_on_map(game: &Game, side: u64, squad: vector<u8>) {
+    use sui::bcs;
+
+    let owner = game.players[side];
+    let (_, cols) = game.map.size();
+    let mut tiles = game.map.unit_tiles().filter!(|t| {
+        game.map.unit(*t / cols, *t % cols).borrow().owner() == owner
+    });
+    // the squad's first unit went to the side's last spawn: see `place_squad`
+    let spawns = spawns(side);
+    (squad.length() / 3).do!(|i| {
+        let p = spawns[spawns.length() - 1 - i];
+        let (x, y) = (p[0] as u16, p[1] as u16);
+        let unit = game.map.unit(x, y).borrow();
+        let built = unit::from_loadout(
+            unit.recruit_id(),
+            owner,
+            squad[3 * i],
+            squad[3 * i + 1],
+            squad[3 * i + 2],
+        );
+        assert!(bcs::to_bytes(unit) == bcs::to_bytes(&built));
+        built.destroy();
+        let (_, at) = tiles.index_of(&(x * cols + y));
+        tiles.remove(at);
+    });
+    assert!(tiles.is_empty());
+}
+
+/// The spawn positions of a side on Black Rain.
+fun spawns(side: u64): vector<vector<u8>> {
+    let all = map::black_rain_positions();
+    vector::tabulate!(3, |i| all[3 * side + i])
+}
+
+/// Nobody waiting: Alice's search holds the commitment to her squad, in the queue
+/// of three, and her squad is nowhere.
+#[test]
+fun test_ranked_queue_alone() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    f.queue_ranked(alice_squad());
+    assert_eq!(event::events_by_type<GameStarted>().length(), 0);
+    assert!(f.three.is_queued(object::id(&f.alice)));
+    assert!(f.alice.search_order().is_some());
+    assert_eq!(f.alice.search_queue(), option::some(object::id(&f.three)));
+    assert_eq!(f.alice.commitment(), option::some(commitment(alice_squad())));
+
+    f.ts.next_tx(ALICE);
+    assert!(!ts::has_most_recent_shared<Game>());
+    fixture.finish();
+}
+
+/// Bob finds Alice: the game starts between Contractors, Bob's squad is on the
+/// map and he is in, who moves first is drawn, and Alice is sent her seat. She
+/// reveals: her squad lands, she is in, and the first turn begins. No recruit is
+/// in it, and both squads are what their loadouts make.
+#[test]
+fun test_ranked_match_and_reveal() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    let (alice, bob) = (object::id(&f.alice), object::id(&f.bob));
+    let alice_recruits = f.alice.num_recruits();
+    f.queue_ranked(alice_squad());
+    f.clock.set_for_testing(1_000);
+    f.find_ranked_with(bob_squad());
+    let started = event::events_by_type<GameStarted>();
+    assert_eq!(started.length(), 1);
+
+    f.ts.next_tx(ALICE);
+    let mut game = f.ts.take_shared<Game>();
+    let id = object::id(&game);
+    let mode = Mode::Ranked { size: 3, tier: 1 };
+    assert_eq!(started[0], GameStarted { game: id, players: game.players, mode, listed: true });
+    assert!(game.players == vector[alice, bob] || game.players == vector[bob, alice]);
+    assert_eq!(game.mode(), mode);
+    assert_eq!(game.deploy_until_ms(), 1_000 + f.rules.reveal_limit_ms());
+    assert_eq!(f.bob.playing(), option::some(id));
+    assert_eq!(f.alice.commitment(), option::some(commitment(alice_squad())));
+    assert_eq!(f.three.queue_length(), 0);
+
+    // Bob's squad is on the map, on his side's spawns; Alice's side is empty
+    let (alice_side, bob_side) = (side_of(&game, alice), side_of(&game, bob));
+    assert_eq!(game.squad(bob_side).length(), 3);
+    assert_eq!(game.squad(alice_side).length(), 0);
+    game.check_squad_on_map(bob_side, bob_squad());
+    assert_eq!(game.history.length(), 3);
+    assert_eq!(game.recruits.length(), 0);
+
+    // Alice reveals at her limit, to the millisecond
+    f.clock.set_for_testing(1_000 + f.rules.reveal_limit_ms());
+    f.reveal_with(&mut game, alice_squad());
+    assert_eq!(event::events_by_type<GameStarted>().length(), 0);
+    assert_eq!(f.alice.playing(), option::some(id));
+    assert_eq!(game.turn_started_ms(), 1_000 + f.rules.reveal_limit_ms());
+    assert_eq!(game.missed(0), 0);
+    game.check_squad_on_map(alice_side, alice_squad());
+    assert_eq!(game.recruits.length(), 0);
+    assert_eq!(f.alice.num_recruits(), alice_recruits);
+    check_index(&game);
+
+    // the drawn first mover acts
+    let acc = f.on_turn!(&game);
+    next_turn(&mut game, acc, &f.clock, f.ts.ctx());
+    assert_eq!(game.turn(), 1);
+
+    ts::return_shared(game);
+    fixture.finish();
+}
+
+/// Who moves first is drawn, game by game: both come up.
+#[test]
+fun test_ranked_first_mover_is_drawn() {
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    let (mut finder_first, mut waiter_first) = (false, false);
+    let mut now = 0;
+    8u64.do!(|_| {
+        let mut game = f.start_ranked_game();
+        if (game.players[0] == object::id(&f.bob)) finder_first = true else waiter_first = true;
+
+        f.ts.next_tx(ALICE);
+        abandon_game(&mut game, &f.alice, f.ts.ctx());
+        f.complete(game);
+        now = now + SUSPENSION_MS;
+        f.clock.set_for_testing(now);
+        f.alice.set_record_for_testing(1500, 0);
+        f.bob.set_record_for_testing(1500, 0);
+    });
+    assert!(finder_first && waiter_first);
+    fixture.finish();
+}
+
+/// The draw changes only the order of the players and the side the finder's
+/// squad stands on: the `Game`, the seat and the event are the same bytes either
+/// way, so that a finder cannot set a gas budget only one order fits in.
+#[test]
+fun test_first_mover_draw_costs_the_same() {
+    use std::unit_test::assert_eq;
+    use sui::bcs;
+
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    let (alice, bob) = (object::id(&f.alice), object::id(&f.bob));
+    let mode = Mode::Ranked { size: 3, tier: 1 };
+    let mut sizes = vector[];
+    vector[true, false].do!(|finder_first| {
+        f.ts.next_tx(BOB);
+        start_ranked(&f.preset, alice, &mut f.bob, mode, bob_squad(), finder_first, 1, f.ts.ctx());
+        let event = bcs::to_bytes(&event::events_by_type<GameStarted>()[0]);
+        f.bob.clear_search();
+
+        f.ts.next_tx(BOB);
+        let game = f.ts.take_shared<Game>();
+        let seat = f.ts.take_from_address<Seat>(alice.to_address());
+        let bob_side = if (finder_first) 0 else 1;
+        assert_eq!(game.players[bob_side], bob);
+        assert_eq!(game.squad(bob_side).length(), 3);
+        assert_eq!(game.squad(1 - bob_side).length(), 0);
+        sizes.push_back(vector[
+            bcs::to_bytes(&game).length(),
+            bcs::to_bytes(&seat).length(),
+            event.length(),
+        ]);
+        ts::return_to_address(alice.to_address(), seat);
+        ts::return_shared(game);
+    });
+    assert_eq!(sizes[0], sizes[1]);
+    fixture.finish();
+}
+
+#[test, expected_failure(abort_code = ERevealMismatch)]
+fun test_reveal_with_wrong_salt_fail() {
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    let mut game = f.match_ranked();
+    f.ts.next_tx(ALICE);
+    let seat = f.seat();
+    let salt = x"5a17000000000000000000000000000000000000000000000000000000005a18";
+    reveal_squad(
+        &mut game,
+        &mut f.alice,
+        &f.rules,
+        seat,
+        &f.clock,
+        alice_squad(),
+        salt,
+        f.ts.ctx(),
+    );
+    abort
+}
+
+/// Another squad than the one committed to, however legal.
+#[test, expected_failure(abort_code = ERevealMismatch)]
+fun test_reveal_another_squad_fail() {
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    let mut game = f.match_ranked();
+    f.reveal_with(&mut game, bob_squad());
+    abort
+}
+
+/// A squad committed to, but over the budget: it never lands.
+#[test, expected_failure(abort_code = rules::EOverBudget)]
+fun test_reveal_over_budget_fail() {
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    let squad = vector[2, 2, FRAG, 2, 2, FRAG, 1, 1, NONE];
+    f.queue_ranked(squad);
+    f.find_ranked_with(bob_squad());
+    f.ts.next_tx(ALICE);
+    let mut game = f.ts.take_shared<Game>();
+    f.reveal_with(&mut game, squad);
+    abort
+}
+
+#[test, expected_failure(abort_code = EDeploymentOver)]
+fun test_reveal_late_fail() {
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    let mut game = f.match_ranked();
+    f.clock.set_for_testing(f.rules.reveal_limit_ms() + 1);
+    f.reveal_with(&mut game, alice_squad());
+    abort
+}
+
+/// Only the owner reveals: the squad is theirs to show.
+#[test, expected_failure(abort_code = account::ENotOwner)]
+fun test_reveal_for_someone_fail() {
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    let mut game = f.match_ranked();
+    f.ts.next_tx(CAROL);
+    let seat = f.seat();
+    reveal_squad(
+        &mut game,
+        &mut f.alice,
+        &f.rules,
+        seat,
+        &f.clock,
+        alice_squad(),
+        SALT,
+        f.ts.ctx(),
+    );
+    abort
+}
+
+/// A ranked seat is not accepted without its squad: whoever took it would strip
+/// the commitment.
+#[test, expected_failure(abort_code = ERevealFirst)]
+fun test_accept_ranked_seat_fail() {
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    let _game = f.match_ranked();
+    f.ts.next_tx(BOB);
+    let seat = f.seat();
+    accept_seat(&mut f.alice, seat);
+    abort
+}
+
+/// Nobody but the owner takes a ranked seat while the reveal is open.
+#[test, expected_failure(abort_code = EStillDeploying)]
+fun test_take_seat_early_fail() {
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    let game = f.match_ranked();
+    f.clock.set_for_testing(f.rules.reveal_limit_ms());
+    f.ts.next_tx(BOB);
+    let seat = f.seat();
+    take_seat(&game, &mut f.alice, seat, &f.clock, f.ts.ctx());
+    abort
+}
+
+/// A ranked squad is revealed, never deployed from recruits.
+#[test, expected_failure(abort_code = EWrongMode)]
+fun test_deploy_into_ranked_fail() {
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    let mut game = f.match_ranked();
+    let seat = f.seat();
+    take_seat(&game, &mut f.alice, seat, &f.clock, f.ts.ctx());
+    let squad = ts::ids_for_address<Recruit>(object::id_address(&f.alice));
+    deploy_squad(&mut game, &mut f.alice, &f.clock, tickets(squad), f.ts.ctx());
+    abort
+}
+
+/// Alice never reveals: past the limit Bob moves the game on, a no-show, and wraps
+/// it up once a stranger takes her seat for her. She loses rating and a game, and
+/// is suspended; he wins both.
+#[test]
+fun test_ranked_no_show() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    let mut game = f.match_ranked();
+    let limit = f.rules.reveal_limit_ms();
+
+    f.clock.set_for_testing(limit + 1);
+    f.ts.next_tx(BOB);
+    next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());
+    assert_eq!(game.state, State::Over(Ending::NoShow(object::id(&f.alice))));
+
+    f.ts.next_tx(CAROL);
+    let seat = f.seat();
+    take_seat(&game, &mut f.alice, seat, &f.clock, f.ts.ctx());
+    f.complete(game);
+    let ended = event::events_by_type<GameEnded>();
+    assert_eq!(ended.length(), 1);
+    assert_eq!(ended[0].ending, Ending::NoShow(object::id(&f.alice)));
+
+    assert!(f.alice.is_idle() && f.bob.is_idle());
+    assert_eq!(f.alice.suspended_until(), limit + 1 + SUSPENSION_MS);
+    assert_eq!(f.bob.suspended_until(), 0);
+    assert_eq!(score_of(&f.alice), vector[0, 1, 0]);
+    assert_eq!(score_of(&f.bob), vector[1, 0, 0]);
+    assert!(f.alice.rating().rating() < 1500 && f.bob.rating().rating() > 1500);
+
+    fixture.finish();
+}
+
+/// The owner can give up on the reveal: the seat taken, nobody on the map, a
+/// no-show at the limit.
+#[test]
+fun test_owner_takes_seat_without_squad() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    let mut game = f.match_ranked();
+    let seat = f.seat();
+    take_seat(&game, &mut f.alice, seat, &f.clock, f.ts.ctx());
+    assert_eq!(f.alice.playing(), option::some(object::id(&game)));
+
+    f.clock.set_for_testing(f.rules.reveal_limit_ms() + 1);
+    next_turn(&mut game, &f.alice, &f.clock, f.ts.ctx());
+    assert_eq!(game.state, State::Over(Ending::NoShow(object::id(&f.alice))));
+    f.complete(game);
+    fixture.finish();
+}
+
+/// A search shows its squad only to a waiting player: with nobody waiting, a
+/// squad in the clear is refused.
+#[test, expected_failure(abort_code = ESquadShown)]
+fun test_ranked_squad_shown_fail() {
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    f.find_ranked_with(bob_squad());
+    abort
+}
+
+/// And with somebody waiting, a search without one is refused, to send again.
+#[test, expected_failure(abort_code = rules::ESquadSize)]
+fun test_ranked_find_without_squad_fail() {
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    f.queue_ranked(alice_squad());
+    f.find_ranked_with(vector[]);
+    abort
+}
+
+#[test, expected_failure(abort_code = rules::EItemLocked)]
+fun test_ranked_find_with_locked_item_fail() {
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    f.queue_ranked(alice_squad());
+    f.find_ranked_with(vector[3, 1, NONE, 1, 1, NONE, 1, 1, NONE]);
+    abort
+}
+
+/// Four a side have no level: nobody queues for it.
+#[test, expected_failure(abort_code = rules::ENoLevel)]
+fun test_ranked_four_has_no_level_fail() {
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    let commitment = commitment(alice_squad());
+    find_ranked(
+        &mut f.four,
+        &mut f.alice,
+        &f.rules,
+        &f.preset,
+        &f.rng,
+        &f.clock,
+        vector[],
+        commitment,
+        f.ts.ctx(),
+    );
+    abort
+}
+
+/// The level is the one the rules name for the size, not the caller's.
+#[test, expected_failure(abort_code = EWrongLevel)]
+fun test_ranked_wrong_level_fail() {
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    f.rules.set_level_for_testing(3, @0xB1.to_id());
+    f.queue_ranked(alice_squad());
+    abort
+}
+
+/// A ranked queue the rules do not know.
+#[test, expected_failure(abort_code = rules::EWrongQueue)]
+fun test_ranked_unknown_queue_fail() {
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    let config = f.three.config();
+    let mut mm = matchmaker::new(internal::permit<Ranked>(), config, f.ts.ctx());
+    find_ranked(
+        &mut mm,
+        &mut f.alice,
+        &f.rules,
+        &f.preset,
+        &f.rng,
+        &f.clock,
+        vector[],
+        @0,
+        f.ts.ctx(),
+    );
+    abort
+}
+
+/// Players meet only within their tier: a Rookie at 1399 and a Contractor at 1400
+/// never, however long they wait; a Contractor at 1649 meets the one at 1400.
+#[test]
+fun test_ranked_rookie_never_meets_contractor() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    let mut carol = f.carol();
+
+    // both placed, both waiting, up to the ticket lifetime
+    f.alice.set_record_for_testing(1399, 5);
+    f.bob.set_record_for_testing(1400, 5);
+    f.queue_ranked(alice_squad());
+    f.clock.set_for_testing(TICKET_TTL_MS);
+    f.find_ranked_with(vector[]);
+    assert_eq!(f.three.queue_length(), 2);
+
+    // a Contractor at the top of the tier finds the one at its bottom, not the Rookie
+    carol.set_record_for_testing(1649, 5);
+    f.ts.next_tx(CAROL);
+    find_ranked(
+        &mut f.three,
+        &mut carol,
+        &f.rules,
+        &f.preset,
+        &f.rng,
+        &f.clock,
+        bob_squad(),
+        @0,
+        f.ts.ctx(),
+    );
+    assert!(carol.playing().is_some());
+    assert_eq!(f.three.queue_length(), 1);
+    assert!(f.three.is_queued(object::id(&f.alice)));
+
+    ts::return_shared(carol);
+    fixture.finish();
+}
+
+/// Nor a Contractor at 1649 and an Operative at 1650.
+#[test]
+fun test_ranked_contractor_never_meets_operative() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    f.alice.set_record_for_testing(1649, 5);
+    f.bob.set_record_for_testing(1650, 5);
+    f.queue_ranked(alice_squad());
+    f.clock.set_for_testing(TICKET_TTL_MS);
+    f.find_ranked_with(vector[]);
+    assert_eq!(f.three.queue_length(), 2);
+    assert!(f.bob.playing().is_none());
+    fixture.finish();
+}
+
+/// The placement floor: a new player who lost down to 1340 is still a Contractor
+/// for their first games, and meets one at 1500, at a Contractor's budget.
+#[test]
+fun test_ranked_placement_floor_pairs() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    f.alice.set_record_for_testing(1340, 0);
+    f.bob.set_record_for_testing(1500, 4);
+    let game = f.match_ranked();
+    assert_eq!(game.mode(), Mode::Ranked { size: 3, tier: 1 });
+    ts::return_shared(game);
+    fixture.finish();
+}
+
+/// Alice leaves the queue: idle, her commitment gone with the search.
+#[test]
+fun test_cancel_ranked() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    f.queue_ranked(alice_squad());
+    cancel_ranked(&mut f.three, &mut f.alice, &f.clock, f.ts.ctx());
+    assert!(f.alice.is_idle());
+    assert!(f.alice.commitment().is_none());
+    assert_eq!(f.three.queue_length(), 0);
+
+    // anyone, once the search timed out
+    f.queue_ranked(alice_squad());
+    f.clock.set_for_testing(SEARCH_TIMEOUT_MS + 1);
+    f.ts.next_tx(CAROL);
+    cancel_ranked(&mut f.three, &mut f.alice, &f.clock, f.ts.ctx());
+    assert!(f.alice.is_idle());
+    fixture.finish();
+}
+
+/// The search is in the queue of three, not four.
+#[test, expected_failure(abort_code = ESeatWaiting)]
+fun test_cancel_ranked_other_queue_fail() {
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    f.queue_ranked(alice_squad());
+    cancel_ranked(&mut f.four, &mut f.alice, &f.clock, f.ts.ctx());
+    abort
+}
+
+/// Nor in the queue for stakes.
+#[test, expected_failure(abort_code = ESeatWaiting)]
+fun test_cancel_ranked_as_stakes_fail() {
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    f.queue_ranked(alice_squad());
+    cancel_search(&mut f.mm, &mut f.alice, &f.clock, f.ts.ctx());
+    abort
+}
+
+/// A ranked search past the ticket lifetime is dropped by the next search that
+/// walks by: Alice is sent a notice, which clears her search, commitment and all.
+/// Nobody is left searching on a ticket that is gone.
+#[test]
+fun test_ranked_ticket_expiry() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    f.queue_ranked(alice_squad());
+    f.clock.set_for_testing(TICKET_TTL_MS + 1);
+    f.find_ranked_with(vector[]);
+    assert!(!f.three.is_queued(object::id(&f.alice)));
+    assert!(f.three.is_queued(object::id(&f.bob)));
+    assert!(f.alice.commitment().is_some());
+
+    f.ts.next_tx(CAROL);
+    let notice = f.seat();
+    dismiss_seat(&mut f.alice, notice);
+    assert!(f.alice.is_idle());
+    assert!(f.alice.commitment().is_none());
+
+    // and she is free to find Bob
+    f.ts.next_tx(ALICE);
+    let squad = alice_squad();
+    find_ranked(
+        &mut f.three,
+        &mut f.alice,
+        &f.rules,
+        &f.preset,
+        &f.rng,
+        &f.clock,
+        squad,
+        @0,
+        f.ts.ctx(),
+    );
+    assert!(f.alice.playing().is_some());
+    assert_eq!(f.three.queue_length(), 0);
+    fixture.finish();
+}
+
+/// A whole ranked game on Black Rain: the first mover walks up and fires, the
+/// other side falls, and the game is wrapped up. Ratings and scores move, and
+/// nothing else does: no recruit went in, none comes out, no dog tag, no
+/// suspension.
+#[test]
+fun test_full_ranked_game() {
+    use std::unit_test::assert_eq;
+    use grid::direction::up;
+
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    let (alice_home, bob_home) = (object::id_address(&f.alice), object::id_address(&f.bob));
+    let (alice_squad, bob_squad) = (f.at_home(alice_home), f.at_home(bob_home));
+    let (alice_records, bob_records) = (f.records(alice_squad), f.records(bob_squad));
+
+    let mut game = f.start_ranked_game();
+    let first = game.players[0];
+    let acc = f.on_turn!(&game);
+    move_unit(
+        &mut game,
+        acc,
+        &f.clock,
+        vector[11, 10, up!(), up!(), up!(), up!(), up!()],
+        f.ts.ctx(),
+    );
+    perform_attack(&mut game, acc, &f.rng, &f.clock, 6, 10, 4, 11, f.ts.ctx());
+    next_turn(&mut game, acc, &f.clock, f.ts.ctx());
+    let acc = f.on_turn!(&game);
+    next_turn(&mut game, acc, &f.clock, f.ts.ctx());
+    game.wipe_out(1);
+    assert_eq!(game.winner(), option::some(first));
+
+    f.ts.next_tx(CAROL);
+    f.complete(game);
+    let ended = event::events_by_type<GameEnded>();
+    assert_eq!(ended.length(), 1);
+    assert_eq!(ended[0].ending, Ending::Won(first));
+
+    let (winner, loser) = if (first == object::id(&f.alice)) (&f.alice, &f.bob) else (
+        &f.bob,
+        &f.alice,
+    );
+    assert_eq!(score_of(winner), vector[1, 0, 0]);
+    assert_eq!(score_of(loser), vector[0, 1, 0]);
+    assert!(winner.rating().rating() > 1500 && loser.rating().rating() < 1500);
+    assert!(f.alice.is_idle() && f.bob.is_idle());
+    assert_eq!(f.alice.suspended_until() + f.bob.suspended_until(), 0);
+
+    assert_eq!(f.at_home(alice_home), alice_squad);
+    assert_eq!(f.at_home(bob_home), bob_squad);
+    assert_eq!(f.records(alice_squad), alice_records);
+    assert_eq!(f.records(bob_squad), bob_records);
+    assert_eq!(f.dog_tags(alice_home) + f.dog_tags(bob_home), 0);
+
+    f.ts.next_tx(CAROL);
+    assert!(!ts::has_most_recent_shared<Game>());
+    fixture.finish();
+}
+
+/// Walking out of a ranked game: the other side wins, the ratings move, and the
+/// one who left is suspended, then refused a new search until it is over.
+#[test]
+fun test_ranked_abandon() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    let mut game = f.start_ranked_game();
+    f.clock.set_for_testing(1_000);
+    f.ts.next_tx(BOB);
+    abandon_game(&mut game, &f.bob, f.ts.ctx());
+    f.complete(game);
+
+    assert_eq!(f.bob.suspended_until(), 1_000 + SUSPENSION_MS);
+    assert_eq!(f.alice.suspended_until(), 0);
+    assert_eq!(score_of(&f.alice), vector[1, 0, 0]);
+    assert!(f.bob.rating().rating() < 1500);
+
+    // past the suspension, Bob searches again; both back at 1500, so as to meet
+    f.clock.set_for_testing(1_000 + SUSPENSION_MS);
+    f.alice.set_record_for_testing(1500, 0);
+    f.bob.set_record_for_testing(1500, 0);
+    f.queue_ranked(alice_squad());
+    f.find_ranked_with(bob_squad());
+    assert!(f.bob.playing().is_some());
+    fixture.finish();
+}
+
+#[test, expected_failure(abort_code = ESuspended)]
+fun test_ranked_while_suspended_fail() {
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    let mut game = f.start_ranked_game();
+    f.clock.set_for_testing(1_000);
+    abandon_game(&mut game, &f.alice, f.ts.ctx());
+    f.complete(game);
+    f.clock.set_for_testing(1_000 + SUSPENSION_MS - 1);
+    f.queue_ranked(alice_squad());
+    abort
+}
+
+/// Missing turns in a row loses a ranked game, and suspends.
+#[test]
+fun test_ranked_missed_turns() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    let mut game = f.start_ranked_game();
+    let (quiet, other) = (game.players[0], game.players[1]);
+    let (sender, alice) = if (other == object::id(&f.alice)) (ALICE, true) else (BOB, false);
+
+    let mut now = 0u64;
+    MAX_MISSED_TURNS.do!(|_| {
+        now = now + FIRST_TURN_MS + 1;
+        f.clock.set_for_testing(now);
+        f.ts.next_tx(sender);
+        let acc = if (alice) &f.alice else &f.bob;
+        next_turn(&mut game, acc, &f.clock, f.ts.ctx());
+        if (!game.is_over()) next_turn(&mut game, acc, &f.clock, f.ts.ctx());
+    });
+    assert_eq!(game.state, State::Over(Ending::Forfeited(quiet)));
+
+    f.complete(game);
+    let (quiet, other) = if (alice) (&f.bob, &f.alice) else (&f.alice, &f.bob);
+    assert_eq!(quiet.suspended_until(), now + SUSPENSION_MS);
+    assert_eq!(other.suspended_until(), 0);
+    assert_eq!(score_of(other), vector[1, 0, 0]);
+    fixture.finish();
+}
+
+/// A suspension from a ranked game is the `Account`'s own field: it keeps games
+/// of every mode out until it is over, and no game after it clears it.
+#[test]
+fun test_suspension_outlives_other_games() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    let mut game = f.start_ranked_game();
+    abandon_game(&mut game, &f.alice, f.ts.ctx());
+    f.complete(game);
+    assert_eq!(f.alice.suspended_until(), SUSPENSION_MS);
+
+    // a friendly game past it, and one for stakes, leave it as it was
+    f.clock.set_for_testing(SUSPENSION_MS);
+    f.open(3, true);
+    let mut game = f.join_invite();
+    f.deploy_black_rain(&mut game);
+    abandon_game(&mut game, &f.alice, f.ts.ctx());
+    f.complete(game);
+    assert_eq!(f.alice.suspended_until(), SUSPENSION_MS);
+
+    let mut game = f.start();
+    f.deploy_black_rain(&mut game);
+    f.ts.next_tx(BOB);
+    abandon_game(&mut game, &f.bob, f.ts.ctx());
+    f.complete(game);
+    assert_eq!(f.alice.suspended_until(), SUSPENSION_MS);
+    assert_eq!(f.bob.suspended_until(), SUSPENSION_MS + SUSPENSION_MS);
+    fixture.finish();
+}
+
+/// All three grenades on units with no recruit behind them: Alice's squad
+/// carries a frag grenade, a flashbang and a smoke grenade, and each unit throws
+/// its own at its feet. The frag hurts the thrower, the flashbang dazes and the
+/// smoke hides, and the effects run out as on any unit; the history replays them.
+#[test]
+fun test_grenades_on_virtual_units() {
+    use std::unit_test::assert_eq;
+    use ghosts::effect;
+
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    let squad = vector[1, 1, FRAG, 1, 1, FLASHBANG, 1, 1, SMOKE];
+    f.queue_ranked(squad);
+    f.find_ranked_with(bob_squad());
+    f.ts.next_tx(ALICE);
+    let mut game = f.ts.take_shared<Game>();
+    f.reveal_with(&mut game, squad);
+    if (game.players[0] != object::id(&f.alice)) {
+        let acc = f.on_turn!(&game);
+        next_turn(&mut game, acc, &f.clock, f.ts.ctx());
+    };
+
+    // the squad's units stand on Alice's spawns, last to first
+    let spawns = spawns(side_of(&game, object::id(&f.alice)));
+    let (frag, flash, smoke) = (spawns[2], spawns[1], spawns[0]);
+    f.ts.next_tx(ALICE);
+    let (x, y) = (frag[0] as u16, frag[1] as u16);
+    perform_grenade(&mut game, &f.alice, &f.rng, &f.clock, x, y, x, y, f.ts.ctx());
+    assert_eq!(game.map.unit(x, y).borrow().hp(), 10 - (4 - 1));
+    let (x, y) = (flash[0] as u16, flash[1] as u16);
+    perform_flashbang(&mut game, &f.alice, &f.clock, x, y, x, y, f.ts.ctx());
+    assert_eq!(game.map.effects_at(x, y), vector[effect::daze()]);
+    let (x, y) = (smoke[0] as u16, smoke[1] as u16);
+    perform_smoke_grenade(&mut game, &f.alice, &f.clock, x, y, x, y, f.ts.ctx());
+    assert_eq!(game.map.effects_at(x, y), vector[effect::smoke()]);
+    check_replay(&game);
+
+    // a turn each, and the effects are gone
+    next_turn(&mut game, &f.alice, &f.clock, f.ts.ctx());
+    check_replay(&game);
+    let acc = f.on_turn!(&game);
+    next_turn(&mut game, acc, &f.clock, f.ts.ctx());
+    check_replay(&game);
+    assert_eq!(game.map.effects_at(flash[0] as u16, flash[1] as u16), vector[]);
+    assert_eq!(game.map.effects_at(smoke[0] as u16, smoke[1] as u16), vector[]);
+
+    ts::return_shared(game);
+    fixture.finish();
+}
+
+// === Levels ===
+
+/// An empty 8x8 map, as `map::from_bytes` reads it, and four spawns a side.
+fun open_ground(): (vector<u8>, vector<vector<u8>>) {
+    let map = map::new(@0.to_id(), 8);
+    let bytes = sui::bcs::to_bytes(&map);
+    map.destroy();
+    let mut spawns = vector[];
+    4u8.do!(|i| spawns.push_back(vector[0, 2 * i]));
+    4u8.do!(|i| spawns.push_back(vector[7, 2 * i]));
+    (bytes, spawns)
+}
+
+/// The holder of the `RulesCap` adds a level with room for four a side and plays
+/// ranked squads of four on it: the queue of four opens.
+#[test]
+fun test_new_level_for_four() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    f.ts.next_tx(@0);
+    let cap = f.ts.take_from_sender<RulesCap>();
+    let (map, spawns) = open_ground();
+    new_level(&cap, "Open Ground", map, spawns, f.ts.ctx());
+    f.ts.next_tx(@0);
+    let level = f.ts.take_immutable<Preset>();
+    assert_eq!(level.map.id(), object::id(&level));
+    let version = f.rules.version();
+    set_level(&mut f.rules, &cap, &level, 4);
+    assert_eq!(f.rules.level_of(4), object::id(&level));
+    assert_eq!(f.rules.version(), version + 1);
+
+    // four a side, ranked, on it
+    f.ts.next_tx(ALICE);
+    let squad = vector[1, 1, NONE, 1, 1, NONE, 1, 1, NONE, 1, 1, NONE];
+    let commitment = commitment(squad);
+    find_ranked(
+        &mut f.four,
+        &mut f.alice,
+        &f.rules,
+        &level,
+        &f.rng,
+        &f.clock,
+        vector[],
+        commitment,
+        f.ts.ctx(),
+    );
+    f.ts.next_tx(BOB);
+    find_ranked(
+        &mut f.four,
+        &mut f.bob,
+        &f.rules,
+        &level,
+        &f.rng,
+        &f.clock,
+        squad,
+        @0,
+        f.ts.ctx(),
+    );
+    f.ts.next_tx(ALICE);
+    let mut game = f.ts.take_shared<Game>();
+    assert_eq!(game.mode(), Mode::Ranked { size: 4, tier: 1 });
+    let seat = f.seat();
+    reveal_squad(&mut game, &mut f.alice, &f.rules, seat, &f.clock, squad, SALT, f.ts.ctx());
+    assert_eq!(game.map.unit_tiles().length(), 8);
+
+    ts::return_shared(game);
+    ts::return_immutable(level);
+    ts::return_to_address(@0, cap);
+    fixture.finish();
+}
+
+/// Black Rain has room for three a side, not four.
+#[test, expected_failure(abort_code = EBadLevel)]
+fun test_set_level_without_room_fail() {
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    f.ts.next_tx(@0);
+    let cap = f.ts.take_from_sender<RulesCap>();
+    set_level(&mut f.rules, &cap, &f.preset, 4);
+    abort
+}
+
+/// A spawn on a wall is no spawn.
+#[test, expected_failure(abort_code = EBadLevel)]
+fun test_new_level_spawn_on_wall_fail() {
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    f.ts.next_tx(@0);
+    let cap = f.ts.take_from_sender<RulesCap>();
+    let map = sui::bcs::to_bytes(&f.preset.map);
+    // (0, 0) is a wall on Black Rain
+    assert!(f.preset.map.is_tile_wall(0, 0));
+    new_level(&cap, "Walled", map, vector[vector[0, 0], vector[11, 6]], f.ts.ctx());
+    abort
+}
+
+// === Events ===
+
+/// Every game is announced once, as it is created, whatever its mode: listed but
+/// for one from an invite-only lobby. Every one is told once as it ends.
+#[test]
+fun test_game_events() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    let (alice, bob) = (object::id(&f.alice), object::id(&f.bob));
+
+    // for stakes: nothing on the search that waits, one on the match
+    find_game(&mut f.mm, &mut f.alice, &f.preset, &f.rng, &f.clock, f.ts.ctx());
+    assert_eq!(event::events_by_type<GameStarted>().length(), 0);
+    f.ts.next_tx(BOB);
+    find_game(&mut f.mm, &mut f.bob, &f.preset, &f.rng, &f.clock, f.ts.ctx());
+    let started = event::events_by_type<GameStarted>();
+    f.ts.next_tx(ALICE);
+    let mut game = f.ts.take_shared<Game>();
+    assert_eq!(started, vector[game.started(Mode::Stakes, true)]);
+    let seat = f.seat();
+    accept_seat(&mut f.alice, seat);
+    abandon_game(&mut game, &f.alice, f.ts.ctx());
+    f.ts.next_tx(CAROL);
+    f.complete_announced(game, Ending::Abandoned(alice));
+
+    // friendly by invite: unlisted
+    f.clock.set_for_testing(SUSPENSION_MS);
+    f.open(3, true);
+    assert_eq!(event::events_by_type<GameStarted>().length(), 0);
+    f.ts.next_tx(BOB);
+    join_lobby(
+        &mut f.lobbies,
+        &f.preset,
+        &mut f.alice,
+        &mut f.bob,
+        &f.rng,
+        &f.clock,
+        CODE,
+        f.ts.ctx(),
+    );
+    let started = event::events_by_type<GameStarted>();
+    f.ts.next_tx(BOB);
+    let mut game = f.ts.take_shared<Game>();
+    assert_eq!(started, vector[game.started(Mode::Friendly { size: 3 }, false)]);
+    abandon_game(&mut game, &f.bob, f.ts.ctx());
+    f.complete_announced(game, Ending::Abandoned(bob));
+
+    // friendly, listed
+    f.open(4, false);
+    f.join_listed();
+    f.ts.next_tx(ALICE);
+    start_friendly(
+        &mut f.lobbies,
+        &f.preset,
+        &mut f.alice,
+        &mut f.bob,
+        &f.rng,
+        &f.clock,
+        f.ts.ctx(),
+    );
+    let started = event::events_by_type<GameStarted>();
+    f.ts.next_tx(ALICE);
+    let mut game = f.ts.take_shared<Game>();
+    assert_eq!(started, vector[game.started(Mode::Friendly { size: 4 }, true)]);
+    abandon_game(&mut game, &f.alice, f.ts.ctx());
+    f.complete_announced(game, Ending::Abandoned(alice));
+
+    // ranked: nothing on the search that waits, nor on the reveal
+    f.queue_ranked(alice_squad());
+    assert_eq!(event::events_by_type<GameStarted>().length(), 0);
+    f.find_ranked_with(bob_squad());
+    let started = event::events_by_type<GameStarted>();
+    f.ts.next_tx(ALICE);
+    let mut game = f.ts.take_shared<Game>();
+    assert_eq!(started, vector[game.started(Mode::Ranked { size: 3, tier: 1 }, true)]);
+    f.reveal_with(&mut game, alice_squad());
+    assert_eq!(event::events_by_type<GameStarted>().length(), 0);
+    let side = side_of(&game, bob);
+    game.wipe_out(side);
+    f.complete_announced(game, Ending::Won(alice));
+
+    fixture.finish();
+}
+
+/// The `GameStarted` of a game.
+fun started(game: &Game, mode: Mode, listed: bool): GameStarted {
+    GameStarted { game: object::id(game), players: game.players, mode, listed }
+}
+
+/// Wrap the game up, and check it was told once, ending as `ending`.
+fun complete_announced(f: &mut Fixture, game: Game, ending: Ending) {
+    use std::unit_test::assert_eq;
+
+    let id = object::id(&game);
+    f.complete(game);
+    assert_eq!(event::events_by_type<GameEnded>(), vector[GameEnded { game: id, ending }]);
+    assert_eq!(event::events_by_type<GameStarted>().length(), 0);
+}
+
+// === First mover ===
+
+/// Friendly games and games for stakes draw who goes first too: both come up.
+#[test]
+fun test_first_mover_drawn_in_every_mode() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let alice = object::id(&f.alice);
+    let (mut host_first, mut guest_first) = (false, false);
+    8u64.do!(|_| {
+        f.open(3, true);
+        f.ts.next_tx(BOB);
+        join_lobby(
+            &mut f.lobbies,
+            &f.preset,
+            &mut f.alice,
+            &mut f.bob,
+            &f.rng,
+            &f.clock,
+            CODE,
+            f.ts.ctx(),
+        );
+        f.ts.next_tx(BOB);
+        let mut game = f.ts.take_shared<Game>();
+        if (game.players[0] == alice) host_first = true else guest_first = true;
+        abandon_game(&mut game, &f.bob, f.ts.ctx());
+        f.complete(game);
+    });
+    assert!(host_first && guest_first);
+
+    let (mut waiter_first, mut finder_first) = (false, false);
+    let mut now = 0;
+    8u64.do!(|_| {
+        f.ts.next_tx(ALICE);
+        find_game(&mut f.mm, &mut f.alice, &f.preset, &f.rng, &f.clock, f.ts.ctx());
+        f.ts.next_tx(BOB);
+        find_game(&mut f.mm, &mut f.bob, &f.preset, &f.rng, &f.clock, f.ts.ctx());
+        f.ts.next_tx(BOB);
+        let mut game = f.ts.take_shared<Game>();
+        if (game.players[0] == alice) waiter_first = true else finder_first = true;
+        abandon_game(&mut game, &f.bob, f.ts.ctx());
+        let seat = f.seat();
+        accept_seat(&mut f.alice, seat);
+        f.complete(game);
+        now = now + SUSPENSION_MS;
+        f.clock.set_for_testing(now);
+    });
+    assert!(waiter_first && finder_first);
+    fixture.finish();
+}
+
+// Read with `sui move test bench_ranked -s`: on Black Rain, each step of a ranked
+// game from the setup, so the difference between two is what the step costs:
+// `b` a search that waits, `c` one that finds (`c - b`), `d` the reveal, `e` a
+// whole game, wrapped up.
+
+#[test]
+fun bench_ranked_a_setup() {
+    let fixture = setup_black_rain();
+    fixture.finish();
+}
+
+#[test]
+fun bench_ranked_b_queue() {
+    let mut fixture = setup_black_rain();
+    fixture.queue_ranked(alice_squad());
+    fixture.finish();
+}
+
+#[test]
+fun bench_ranked_c_match() {
+    let mut fixture = setup_black_rain();
+    let game = fixture.match_ranked();
+    ts::return_shared(game);
+    fixture.finish();
+}
+
+#[test]
+fun bench_ranked_d_reveal() {
+    let mut fixture = setup_black_rain();
+    let game = fixture.start_ranked_game();
+    ts::return_shared(game);
+    fixture.finish();
+}
+
+#[test]
+fun bench_ranked_e_full() {
+    use grid::direction::up;
+
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    let mut game = f.start_ranked_game();
+    let acc = f.on_turn!(&game);
+    move_unit(
+        &mut game,
+        acc,
+        &f.clock,
+        vector[11, 10, up!(), up!(), up!(), up!(), up!()],
+        f.ts.ctx(),
+    );
+    perform_attack(&mut game, acc, &f.rng, &f.clock, 6, 10, 4, 11, f.ts.ctx());
+    next_turn(&mut game, acc, &f.clock, f.ts.ctx());
+    game.wipe_out(1);
+    f.ts.next_tx(CAROL);
+    f.complete(game);
     fixture.finish();
 }

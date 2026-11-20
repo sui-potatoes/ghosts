@@ -28,7 +28,23 @@ fun ctx_for(sender: address): TxContext {
 }
 
 /// `find_game` for the player `sender` stands for, with the test permit and a
-/// fixed seed. The sender only makes the order IDs differ; the player is an ID.
+/// fixed seed, and the players it dropped. The sender only makes the order IDs
+/// differ; the player is an ID.
+fun find_dropping(
+    mm: &mut Matchmaker<TEST>,
+    clock: &Clock,
+    sender: address,
+    rating: u64,
+    window: u64,
+): (ID, Option<matchmaker::Match>, vector<ID>) {
+    let mut rng = random::new_generator_from_seed_for_testing(b"matchmaker");
+    let ctx = &mut ctx_for(sender);
+    let player = sender.to_id();
+    let permit = internal::permit<TEST>();
+    matchmaker::find_game(permit, mm, player, &mut rng, clock, rating, window, ctx)
+}
+
+/// `find_dropping` that drops nobody.
 fun find_game(
     mm: &mut Matchmaker<TEST>,
     clock: &Clock,
@@ -36,11 +52,9 @@ fun find_game(
     rating: u64,
     window: u64,
 ): (ID, Option<matchmaker::Match>) {
-    let mut rng = random::new_generator_from_seed_for_testing(b"matchmaker");
-    let ctx = &mut ctx_for(sender);
-    let player = sender.to_id();
-    let permit = internal::permit<TEST>();
-    matchmaker::find_game(permit, mm, player, &mut rng, clock, rating, window, ctx)
+    let (order, found, dropped) = find_dropping(mm, clock, sender, rating, window);
+    assert!(dropped.is_empty());
+    (order, found)
 }
 
 /// Take the ticket of the player `sender` stands for out of the queue.
@@ -239,7 +253,7 @@ fun opponent_is_drawn_at_random() {
         let ctx = &mut ctx_for(CAROL);
         let permit = internal::permit<TEST>();
         let carol = CAROL.to_id();
-        let (_, m) = matchmaker::find_game(
+        let (_, m, _) = matchmaker::find_game(
             permit,
             &mut mm,
             carol,
@@ -274,9 +288,12 @@ fun expired_tickets_are_pruned() {
 
     find(&mut mm, &clock, ALICE, 1500, 350).destroy_none();
 
-    // Bob arrives after Alice's ticket expired: no match, Alice is gone
+    // Bob arrives after Alice's ticket expired: no match, Alice is gone, and
+    // Bob's call says so
     clock.set_for_testing(2 * MINUTE);
-    find(&mut mm, &clock, BOB, 1500, 350).destroy_none();
+    let (_, found, dropped) = find_dropping(&mut mm, &clock, BOB, 1500, 350);
+    found.destroy_none();
+    assert_eq!(dropped, vector[ALICE.to_id()]);
     assert!(!mm.is_queued(ALICE.to_id()));
     assert!(mm.is_queued(BOB.to_id()));
     assert_eq!(mm.queue_length(), 1);
@@ -312,6 +329,42 @@ fun expired_own_ticket_is_replaced() {
 }
 
 #[test]
+/// Only the buckets a call visits are pruned, each expired ticket reported once;
+/// a match drops the expired tickets it walked past on the way.
+fun expired_tickets_are_reported_once() {
+    let (mut mm, mut clock) = setup();
+    matchmaker::set_config(
+        internal::permit<TEST>(),
+        &mut mm,
+        matchmaker::new_config(100, 32, 50, MINUTE, 1_000, MINUTE),
+    );
+
+    // Alice at 1500 and Bob at 1700, both with zero windows: apart
+    find(&mut mm, &clock, ALICE, 1500, 0).destroy_none();
+    clock.set_for_testing(MINUTE / 2);
+    find(&mut mm, &clock, BOB, 1700, 0).destroy_none();
+
+    // Alice has expired, Bob has not: Carol at 1700 finds Bob in ring 0 and
+    // never visits Alice's bucket, two rings out
+    clock.set_for_testing(MINUTE + 1);
+    let (_, found, dropped) = find_dropping(&mut mm, &clock, CAROL, 1700, 0);
+    assert_eq!(found.destroy_some().players(), vector[BOB.to_id(), CAROL.to_id()]);
+    assert!(dropped.is_empty());
+    assert!(mm.is_queued(ALICE.to_id()));
+
+    // Dan at 1500 visits Alice's bucket: she is dropped, and reported
+    let dan = @0xD;
+    let (_, found, dropped) = find_dropping(&mut mm, &clock, dan, 1500, 0);
+    found.destroy_none();
+    assert_eq!(dropped, vector[ALICE.to_id()]);
+    assert!(!mm.is_queued(ALICE.to_id()));
+    assert_eq!(mm.queue_length(), 1);
+
+    destroy(mm);
+    clock.destroy_for_testing();
+}
+
+#[test]
 fun full_bucket_evicts_oldest() {
     let (mut mm, clock) = setup();
     matchmaker::set_config(
@@ -325,7 +378,9 @@ fun full_bucket_evicts_oldest() {
     find(&mut mm, &clock, BOB, 1501, 0).destroy_none();
     assert_eq!(mm.queue_length(), 2);
 
-    find(&mut mm, &clock, CAROL, 1502, 0).destroy_none();
+    let (_, found, dropped) = find_dropping(&mut mm, &clock, CAROL, 1502, 0);
+    found.destroy_none();
+    assert_eq!(dropped, vector[ALICE.to_id()]);
     assert_eq!(mm.queue_length(), 2);
     assert!(!mm.is_queued(ALICE.to_id()));
     assert!(mm.is_queued(BOB.to_id()));

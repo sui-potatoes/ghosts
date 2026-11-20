@@ -143,13 +143,19 @@ public(package) fun clone(map: &Map): Map {
 
 /// Place a `Recruit` on the map at the given position.
 public fun place_recruit(map: &mut Map, recruit: &Recruit, x: u16, y: u16): Record {
+    map.place_unit(recruit.to_unit(), x, y)
+}
+
+/// Place a `Unit` on the map at the given position: a recruit's, or one with no
+/// recruit behind it (see `unit::from_loadout`).
+public(package) fun place_unit(map: &mut Map, unit: Unit, x: u16, y: u16): Record {
     let target_tile = &map.grid[x, y];
 
     assert!(target_tile.unit.is_none(), EUnitAlreadyOnTile);
     assert!(target_tile.tile_type != TileType::Unwalkable, ETileIsUnwalkable);
     assert!(target_tile.tile_type != TileType::Wall, ETileIsWall);
 
-    map.grid[x, y].unit.fill(recruit.to_unit());
+    map.grid[x, y].unit.fill(unit);
     map.add_to_index(x, y);
     history::new_recruit_placed(x, y)
 }
@@ -864,6 +870,13 @@ public fun from_bytes(bytes: vector<u8>): Map {
         map.check_units(&mut bcs);
         assert!(bcs.into_remainder_bytes().is_empty());
     };
+    map
+}
+
+/// The `Map` of `from_bytes`, with the ID `id`: the one of the level it is.
+public(package) fun from_bytes_as(bytes: vector<u8>, id: ID): Map {
+    let mut map = from_bytes(bytes);
+    map.id = id;
     map
 }
 

@@ -14,6 +14,7 @@ module ghosts::unit;
 use ghosts::{
     action::{Self, Action, ActionKind},
     effect::{Self, Effect},
+    items,
     param::{Self, Param},
     recruit::Recruit,
     stats::{Self, Stats},
@@ -277,16 +278,47 @@ public fun from_recruit(recruit: &Recruit): Unit {
 
     // `Move` is the base action; the weapon gives `Attack` and `Reload`, so an
     // unarmed recruit cannot shoot, and a utility gives what it gives.
+    let mut actions = base_actions(recruit.weapon().is_some());
+    recruit.utilities().do_ref!(|u| actions.append(*u.actions()));
+
+    new(object::id(recruit), recruit.leader().to_id(), stats, actions)
+}
+
+/// Creates a `Unit` with no `Recruit` behind it, for the `Account` `owner`: a
+/// rookie armed with the rifle of the `weapon` tier, in the armor of the `armor`
+/// tier, carrying the utility of the `utility` kind, or none for any byte that
+/// is not one (see `items::is_utility`). It is what `from_recruit` makes of a
+/// rookie carrying the same items, built the same way, with no object minted:
+/// `id` stands for the recruit, unique and with nothing behind it.
+public(package) fun from_loadout(id: ID, owner: ID, weapon: u8, armor: u8, utility: u8): Unit {
+    let mut stats = stats::default()
+        .add(&items::rifle_stats(weapon))
+        .add(&items::armor_stats(armor));
+    let mut actions = base_actions(true);
+    if (items::is_utility(utility)) {
+        let (modifier, granted) = items::utility_parts(utility);
+        stats = stats.add(&modifier);
+        actions.append(granted);
+    };
+
+    new(id, owner, stats, actions)
+}
+
+/// The actions every unit has: `Move`, and with a weapon `Attack` and `Reload`.
+fun base_actions(armed: bool): vector<Action> {
     let mut actions = vector[action::unlimited(action::new_move())];
-    if (recruit.weapon().is_some()) {
+    if (armed) {
         actions.push_back(action::unlimited(action::new_attack()));
         actions.push_back(action::unlimited(action::new_reload()));
     };
-    recruit.utilities().do_ref!(|u| actions.append(*u.actions()));
+    actions
+}
 
+/// A fresh `Unit` with the `stats` and `actions`: full AP, HP and ammo.
+fun new(recruit: ID, owner: ID, stats: Stats, actions: vector<Action>): Unit {
     Unit {
-        recruit: object::id(recruit),
-        owner: recruit.leader().to_id(),
+        recruit,
+        owner,
         ap: param::new(2),
         hp: param::new(stats.health() as u16),
         ammo: param::new(stats.ammo() as u16),
