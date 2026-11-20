@@ -2,16 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * The mouse's own reach to a target's commands, so nothing needs a trip to
- * the command bar across rows: the selected row carries its secondary
- * commands inline at its trailing edge (the primary is the click itself), and
- * a right-click lists them all at the pointer when there is a secondary. Both
- * run the same commands as the bar and the pad; the keyboard never sees them.
+ * The mouse's own reach to a target's commands: the armed target's confirm
+ * button on its row (the second click, named), and a right-click list of every
+ * command at the pointer. Both run the same commands as the bar and the pad;
+ * the keyboard never sees them. Hover alone never adds anything to a row.
  */
 
 import type { MouseEvent, RefObject } from "react";
 
-import { FocusScope, secondaryCommands, useFocusable, useFocusState, type Command } from "./focus";
+import { FocusScope, useFocusable, useFocusState, type Command } from "./focus";
 import { Glyph, useGlyphSet, type GlyphSet } from "./glyphs";
 
 const ORDER = ["confirm", "reset"] as const;
@@ -23,58 +22,40 @@ function reachable(commands: Command[]): Command[] {
     );
 }
 
-/** Small glyph + label chips at a selected row's trailing edge: its secondary commands. */
+/**
+ * The confirm button of a target waiting for its second click (or offered as a
+ * two-step action), at the row's trailing edge. Only the row's own primary:
+ * secondary and list-wide commands are never inline, so nothing appears on a
+ * row because the pointer is over it. The CSS keeps it from changing the
+ * row's height.
+ */
 export function InlineCommands({
-    commands,
     armed,
 }: {
-    commands: Command[];
     /** The primary of an armed target: a labelled button that runs it (the second click). */
     armed?: Command;
 }) {
     const store = useFocusState();
     const glyphs = useGlyphSet();
-    const list = secondaryCommands(commands);
-    if (!list.length && !armed) return null;
+    if (!armed) return null;
     return (
         <span className="gui-inline">
-            {armed && (
-                <button
-                    type="button"
-                    tabIndex={-1}
-                    className="gui-chip-cmd"
-                    data-tone={armed.tone === "danger" ? "danger" : "primary"}
-                    data-confirm=""
-                    onMouseDown={(e: MouseEvent) => e.preventDefault()}
-                    onClick={(e: MouseEvent) => {
-                        e.stopPropagation();
-                        if (store.armed !== null) store.confirmArmed();
-                        else store.run(armed);
-                    }}
-                >
-                    <Glyph action="confirm" set={glyphs} />
-                    {armed.label}
-                </button>
-            )}
-            {list.map((command) => (
-                <button
-                    key={command.action}
-                    type="button"
-                    tabIndex={-1}
-                    className="gui-chip-cmd"
-                    data-tone={command.tone}
-                    data-denied={command.deny ? "" : undefined}
-                    aria-disabled={command.deny ? true : undefined}
-                    onMouseDown={(e: MouseEvent) => e.preventDefault()}
-                    onClick={(e: MouseEvent) => {
-                        e.stopPropagation();
-                        store.run(command);
-                    }}
-                >
-                    <Glyph action={command.action} set={glyphs} />
-                    {command.short ?? command.label}
-                </button>
-            ))}
+            <button
+                type="button"
+                tabIndex={-1}
+                className="gui-chip-cmd"
+                data-tone={armed.tone === "danger" ? "danger" : "primary"}
+                data-confirm=""
+                onMouseDown={(e: MouseEvent) => e.preventDefault()}
+                onClick={(e: MouseEvent) => {
+                    e.stopPropagation();
+                    if (store.armed !== null) store.confirmArmed();
+                    else store.run(armed);
+                }}
+            >
+                <Glyph action="confirm" set={glyphs} />
+                {armed.label}
+            </button>
         </span>
     );
 }

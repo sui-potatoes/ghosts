@@ -17,6 +17,7 @@ import {
     keyCap,
     liveChip,
     matchCard,
+    matchRowCommands,
     pipHint,
     pipsOf,
     pipTitle,
@@ -31,6 +32,7 @@ import {
     turnReadout,
     WATCH_KEYS,
 } from "../src/features/watch/model.ts";
+import { inlineConfirm } from "../src/ui/focus-store.ts";
 import { EXPLORER, explorerUrl } from "../src/constants.ts";
 import { Playback, type PlaybackStage } from "../../packages/engine/src/replay/playback.ts";
 import { blackRain } from "../../packages/engine/src/scenario.ts";
@@ -652,4 +654,14 @@ test("a held replay applies no event before Play", async () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
     assert.ok(presented.length > 0, "Play starts the events");
     playback.dispose();
+});
+
+test("a Spectate match row has one primary and nothing secondary or list-wide to show inline", () => {
+    const commands = matchRowCommands("Watch", () => {});
+    assert.deepEqual(
+        commands.map((c) => c.action),
+        ["nav", "confirm"],
+    );
+    assert.equal(inlineConfirm(commands, { armed: false, offered: false }), undefined);
+    assert.equal(inlineConfirm(commands, { armed: true, offered: false })?.label, "Watch");
 });

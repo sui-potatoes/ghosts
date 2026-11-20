@@ -11,6 +11,7 @@
  */
 
 import type { LeaderAccount } from "../../chain/leaderboard.ts";
+import type { Command } from "../../ui/focus-store.ts";
 
 /** A tier as the live `Rules` have it, named the way the game names it. */
 export type TierBand = { name: string; min: number };
@@ -141,4 +142,17 @@ export function focusOrder(own: OwnLine, rows: readonly LeaderRow[]): string[] {
 
 export function startTarget(rows: readonly LeaderRow[]): string {
     return rows[0] ? rowId(rows[0]) : EMPTY_ID;
+}
+
+/**
+ * A table row's commands: move, its own primary (View on explorer), and
+ * Refresh for the command bar and the right-click list. Refresh is list-wide:
+ * the kit never puts it on the row as a button.
+ */
+export function rowCommands(open: () => void, refresh: Command): Command[] {
+    return [
+        { action: "nav", label: "Move", glyph: "ud" },
+        { action: "confirm", label: "View on explorer", tone: "primary", run: open },
+        refresh,
+    ];
 }

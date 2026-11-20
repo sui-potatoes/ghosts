@@ -108,7 +108,7 @@ export function ListRow({
     locked,
     ...focus
 }: ListRowProps) {
-    const { props, inline, commands, armedCommand } = useFocusable<HTMLButtonElement>(focus);
+    const { props, inline, armedCommand } = useFocusable<HTMLButtonElement>(focus);
     return (
         <button
             type="button"
@@ -125,7 +125,7 @@ export function ListRow({
                 {kind && <span className="gui-row-kind">{kind}</span>}
             </span>
             {inline ? (
-                <InlineCommands commands={commands} armed={armedCommand} />
+                <InlineCommands armed={armedCommand} />
             ) : (
                 tag && (
                     <span className="gui-row-tag" data-tone={tagTone}>
@@ -257,7 +257,7 @@ type SlotRowProps = Focus & {
 
 /** A slot: filled or empty, a cursor target whose commands change or clear it. */
 export function SlotRow({ slot, icon, image, item, ...focus }: SlotRowProps) {
-    const { props, inline, commands, armedCommand } = useFocusable<HTMLButtonElement>(focus);
+    const { props, inline, armedCommand } = useFocusable<HTMLButtonElement>(focus);
     return (
         <button
             type="button"
@@ -275,7 +275,7 @@ export function SlotRow({ slot, icon, image, item, ...focus }: SlotRowProps) {
                 <span className="gui-slot-name">{slot}</span>
                 <span className="gui-slot-item">{item ?? "Empty"}</span>
             </span>
-            {inline && <InlineCommands commands={commands} armed={armedCommand} />}
+            {inline && <InlineCommands armed={armedCommand} />}
         </button>
     );
 }
@@ -316,7 +316,7 @@ export function EmptyState({ headline, children, action, ...focus }: EmptyStateP
             <button type="button" tabIndex={-1} className="gui-empty-action" {...props}>
                 {action}
             </button>
-            {armedCommand && <InlineCommands commands={[]} armed={armedCommand} />}
+            {armedCommand && <InlineCommands armed={armedCommand} />}
         </div>
     );
 }
@@ -467,11 +467,11 @@ type ActionRowProps = Focus & {
 
 /** A row that is one action (Dismiss): a cursor target, Confirm runs it. */
 export function ActionRow({ label, tone = "default", ...focus }: ActionRowProps) {
-    const { props, inline, commands, armedCommand } = useFocusable<HTMLButtonElement>(focus);
+    const { props, inline, armedCommand } = useFocusable<HTMLButtonElement>(focus);
     return (
         <button type="button" tabIndex={-1} className="gui-action-row" data-tone={tone} {...props}>
             <span className="gui-action-label">{label}</span>
-            {inline && <InlineCommands commands={commands} armed={armedCommand} />}
+            {inline && <InlineCommands armed={armedCommand} />}
         </button>
     );
 }

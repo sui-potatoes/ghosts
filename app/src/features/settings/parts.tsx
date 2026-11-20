@@ -33,12 +33,12 @@ export function ValueRow({
     /** `warn` for a state that needs attention, `dim` for one that is unavailable. */
     tone?: "warn" | "dim" | "accent";
 }) {
-    const { props, inline, commands, armedCommand } = useFocusable<HTMLButtonElement>(focus);
+    const { props, inline, armedCommand } = useFocusable<HTMLButtonElement>(focus);
     return (
         <button type="button" tabIndex={-1} className="gui-row gset-row" {...props}>
             <span className="gset-row-label">{label}</span>
             {inline ? (
-                <InlineCommands commands={commands} armed={armedCommand} />
+                <InlineCommands armed={armedCommand} />
             ) : (
                 <span className="gset-row-value" data-tone={tone}>
                     {value}

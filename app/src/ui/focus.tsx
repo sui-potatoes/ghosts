@@ -36,12 +36,19 @@ import { claimScreenBack } from "./back";
 import {
     FocusStore,
     inactiveReason,
+    inlineConfirm,
     secondaryCommands,
     type Command,
     type Dir,
 } from "./focus-store";
 
-export { clickCommand, FocusStore, inactiveReason, secondaryCommands } from "./focus-store";
+export {
+    clickCommand,
+    FocusStore,
+    inactiveReason,
+    inlineConfirm,
+    secondaryCommands,
+} from "./focus-store";
 export type { Command, CommandAction, Dir, Pulse } from "./focus-store";
 
 const SOUNDS = {
@@ -294,17 +301,14 @@ export function useFocusable<T extends HTMLElement>({
     const armed = !focused && store.armed === id;
     // The row commands act on while the pointer's cursor rests elsewhere.
     const subject = !focused && store.subject === id;
-    // Chips and the command list carry the secondaries only; the primary is the click.
+    // The right-click list carries the secondaries; the primary is the click.
     const secondary = secondaryCommands(commands);
     const listable = secondary.length > 0;
     // The primary cannot run now: the target dims and nothing arms it.
     const inactive = inactiveReason(commands);
     // Armed by a click: the confirm waits for a second click, and the mouse is
     // offered it as a button on the row (never for a refused primary).
-    const armedCommand =
-        (store.armed === id || offered) && inactive === undefined
-            ? commands.find((c) => c.action === "confirm")
-            : undefined;
+    const armedCommand = inlineConfirm(commands, { armed: store.armed === id, offered });
 
     const openList = (x: number, y: number) => {
         store.pointerInput();
@@ -320,10 +324,10 @@ export function useFocusable<T extends HTMLElement>({
     return {
         focused,
         /**
-         * Show the secondary commands inline at the trailing edge: focused, the
-         * mouse or touch in use, and something besides the primary to offer.
+         * Show the inline confirm: only the target's own armed (or offered)
+         * primary. Hover and the cursor never add a button to a row.
          */
-        inline: (focused && store.pointer && listable) || armedCommand !== undefined,
+        inline: armedCommand !== undefined,
         /** The primary, while the target is armed: shown as a button on the row. */
         armedCommand,
         commands,

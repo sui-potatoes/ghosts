@@ -297,7 +297,7 @@ function TitleRow({
             <span className="gui-title-row-index">{String(index + 1).padStart(2, "0")}</span>
             <span className="gui-title-row-name">{row.label}</span>
             {armedCommand ? (
-                <InlineCommands commands={[]} armed={armedCommand} />
+                <InlineCommands armed={armedCommand} />
             ) : (
                 row.tag && (
                     <span className="gui-title-row-tag" data-tone={row.tagTone ?? "default"}>

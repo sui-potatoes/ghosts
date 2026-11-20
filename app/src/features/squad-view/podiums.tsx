@@ -11,7 +11,7 @@
 import type { Recruit } from "@ghosts/squad/types";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import { InlineCommands, useFocusable, type Command } from "../../ui";
+import { useFocusable, type Command } from "../../ui";
 import type { Anchor, PodiumScene } from "./podium-scene";
 import "./squad-view.css";
 
@@ -186,7 +186,7 @@ export function Podium({
     dim,
     children,
 }: PodiumProps) {
-    const { props, inline } = useFocusable<HTMLDivElement>({
+    const { props } = useFocusable<HTMLDivElement>({
         id: `podium-${index}`,
         group: "podiums",
         title,
@@ -199,10 +199,7 @@ export function Podium({
     const style = podiumBox(anchor);
     return (
         <div className="sqv-podium" style={style} data-dim={dim || undefined} {...props}>
-            <div className="sqv-plate-mount">
-                {inline && <InlineCommands commands={commands} />}
-                {children}
-            </div>
+            <div className="sqv-plate-mount">{children}</div>
         </div>
     );
 }

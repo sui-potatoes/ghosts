@@ -17,6 +17,7 @@ import type {
     WatchSide,
 } from "@ghosts/engine";
 
+import type { Command } from "../../ui/focus-store.ts";
 import { agoText } from "./chain/list.ts";
 import { ELIMINATION, endingKindOf, MISS_LIMIT, noWinner, VERDICT } from "./chain/phrases.ts";
 
@@ -368,4 +369,16 @@ export function matchCard(opts: {
         title: `${sides[0].name} vs ${sides[1].name}`,
         facts: rows,
     };
+}
+
+/**
+ * A match row's commands: move and its one primary (Watch, Watch replay). A
+ * click opens it at once (`instant`); there is no secondary and nothing list-wide
+ * on a row. Refresh and More are rows or empty-state blocks of their own.
+ */
+export function matchRowCommands(label: string, run: () => void): Command[] {
+    return [
+        { action: "nav", label: "Move", glyph: "ud" },
+        { action: "confirm", label, tone: "primary", run },
+    ];
 }

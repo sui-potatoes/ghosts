@@ -698,6 +698,22 @@ export function secondaryCommands(commands: Command[]): Command[] {
 }
 
 /**
+ * The one command a row may carry as a button on itself: its own primary, and
+ * only while it waits for its second click (`armed`) or the target is `offered`
+ * as a two-step action, never when the primary is refused. Secondary commands
+ * (Refresh, More, Sort, Default...) and list-wide ones never get an inline
+ * button: they live in the command bar and the right-click list, so a row
+ * grows nothing because the pointer is over it.
+ */
+export function inlineConfirm(
+    commands: Command[],
+    { armed, offered }: { armed: boolean; offered: boolean },
+): Command | undefined {
+    if (!(armed || offered) || inactiveReason(commands) !== undefined) return undefined;
+    return commands.find((c) => c.action === "confirm");
+}
+
+/**
  * The command a click or tap on a target runs. `instant` targets (selecting,
  * opening a picker: cheap and undoable) run their primary on the first click;
  * the others run it on a click while already focused, unless `clickConfirm`

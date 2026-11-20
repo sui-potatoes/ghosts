@@ -126,9 +126,18 @@
     color: var(--on-band-soft);
 }
 
+/* The armed row's confirm overlays its right edge: the grid, the row's height and
+   the rows around it stay put. */
 .lb-row > .gui-inline {
-    grid-column: 1 / -1;
-    justify-self: end;
+    position: absolute;
+    top: 50%;
+    right: calc(var(--u) * 2);
+    transform: translateY(-50%);
+    padding-left: calc(var(--u) * 2);
+    background: var(--background-color);
+}
+.lb-row[data-focused] > .gui-inline {
+    background: var(--band);
 }
 
 /* --- Narrower desktops: the record takes less room --- */

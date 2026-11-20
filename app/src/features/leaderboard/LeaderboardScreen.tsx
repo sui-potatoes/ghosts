@@ -51,6 +51,7 @@ import {
     startTarget,
     type LeaderRow,
     type TierBand,
+    rowCommands,
 } from "./model";
 import { requestSignIn } from "../../signIn";
 import "./leaderboard.css";
@@ -291,21 +292,15 @@ function BoardRow({
     refresh: Command;
 }) {
     const tier = tiers[row.tier]?.name ?? "";
-    const { props, inline, commands, armedCommand } = useFocusable<HTMLButtonElement>({
+    const { props, inline, armedCommand } = useFocusable<HTMLButtonElement>({
         id: rowId(row),
         group: "table",
         title: row.own ? `${row.name} · You` : row.name,
         hint: rowHint(row, tiers),
-        commands: [
-            NAV,
-            {
-                action: "confirm",
-                label: "View on explorer",
-                tone: "primary",
-                run: () => window.open(explorerUrl(row.accountId), "_blank", "noopener,noreferrer"),
-            },
+        commands: rowCommands(
+            () => window.open(explorerUrl(row.accountId), "_blank", "noopener,noreferrer"),
             refresh,
-        ],
+        ),
     });
     return (
         <button
@@ -329,7 +324,7 @@ function BoardRow({
                     <span className="lb-games-unit">{row.games === 1 ? " match" : " matches"}</span>
                 </span>
             </span>
-            {inline && <InlineCommands commands={commands} armed={armedCommand} />}
+            {inline && <InlineCommands armed={armedCommand} />}
         </button>
     );
 }

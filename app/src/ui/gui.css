@@ -1702,6 +1702,7 @@ span.gui-cmd {
 }
 
 .gui-chip-cmd {
+    transition: none;
     display: flex;
     align-items: center;
     gap: calc(var(--u) * 1.5);
@@ -2215,33 +2216,15 @@ span.gui-cmd {
     border-color: color-mix(in srgb, var(--on-band) 40%, transparent);
 }
 
-/* With the mouse in use, the selected row opens a second line for its commands,
-   so the name keeps its room and the chips sit right under the pointer. */
-.gui-row:has(> .gui-inline) {
-    flex-wrap: wrap;
-    row-gap: calc(var(--u) * 1.5);
-    padding-top: calc(var(--u) * 2);
-    padding-bottom: calc(var(--u) * 2);
-}
-
-.gui-row > .gui-inline {
-    flex-basis: 100%;
-    justify-content: flex-end;
-}
-
-.gui-slot:has(> .gui-inline) {
-    grid-template-columns: auto minmax(0, 1fr);
-    row-gap: calc(var(--u) * 1.5);
-    padding-top: calc(var(--u) * 2);
-    padding-bottom: calc(var(--u) * 2);
-}
-
+/* The confirm button of an armed (or offered) target sits in the row's own line, in the
+   place its tag or value held: a row never changes height because of it, and nothing
+   around it moves. */
+.gui-row > .gui-inline,
 .gui-slot > .gui-inline {
-    grid-column: 1 / -1;
     justify-content: flex-end;
 }
 
-.gui-action-row:has(> .gui-inline) .gui-inline {
+.gui-action-row > .gui-inline {
     margin-left: auto;
 }
 
@@ -2412,9 +2395,16 @@ span.gui-cmd {
     max-width: 100%;
     white-space: nowrap;
 }
+.gui-empty {
+    position: relative;
+}
+/* Over the block's foot, not in its flow: the centred block holds still. */
 .gui-empty > .gui-inline {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: calc(var(--u) * 4);
     justify-content: center;
-    margin-top: calc(var(--u) * 2);
 }
 
 /* A row's colours never animate, in or out: lit, the fill is already white (a fade would

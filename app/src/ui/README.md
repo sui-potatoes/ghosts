@@ -17,9 +17,16 @@ import { FocusRoot, ScreenFrame, FocusCommandBar, Panel, List, ListRow, useGlyph
   under the pointer.
 - **Commands live in the bar.** What you can do with the focused thing is in
   the command bar at the bottom edge, with the player's own key or pad glyph.
-  No buttons over content, no per-row button clusters. (The mouse gets the
-  same commands inline on the selected row and in a right-click/long-press
-  list — generated from the same `commands`, never authored separately.)
+  No buttons over content, no per-row button clusters. The mouse gets the same
+  commands in a right-click/long-press list (generated from the same `commands`,
+  never authored separately) and by clicking the bar.
+- **Hover and the cursor only recolour.** A row never changes height, gains an
+  element or moves its neighbours because the pointer is over it or the cursor
+  is on it. The one button a row may show is its own two-step primary (the
+  confirm of a row that is armed by a click, or `offered`), in the row's own
+  line or over its edge; never a secondary command and never a list-wide one
+  (Refresh, More, Sort): those are bar commands, and where a visible target is
+  needed a fixed control in the panel header or foot, or an `instant` row.
 - **No page scroll.** A screen is composed to fit the viewport. Long lists
   scroll inside their panel (`<List>`), following the cursor.
 - **Text diet.** Keep a text element only if it answers a question the player

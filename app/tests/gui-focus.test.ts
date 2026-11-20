@@ -2,12 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import {
     clickCommand,
     FocusStore,
     inactiveReason,
+    inlineConfirm,
     nearest,
     secondaryCommands,
     type Command,
@@ -727,4 +729,72 @@ test("without `previews`, the preview is the subject as before", () => {
     s.pushScope("picker", back, false, "a");
     arrive(s, "b");
     assert.equal(s.preview, "a");
+});
+
+const openCmd: Command = { action: "confirm", label: "Open", tone: "primary" };
+const refreshCmd: Command = { action: "reset", label: "Refresh" };
+const moreCmd: Command = { action: "reset", label: "More" };
+
+test("inline slot: hover and the cursor alone offer no button", () => {
+    assert.equal(inlineConfirm([openCmd, refreshCmd], { armed: false, offered: false }), undefined);
+});
+
+test("inline slot: an armed row shows its own openCmd, never a secondary or list-wide command", () => {
+    const shown = inlineConfirm([openCmd, refreshCmd, moreCmd], { armed: true, offered: false });
+    assert.equal(shown, openCmd);
+    // A row whose only commands are secondary has nothing to show, armed or not.
+    assert.equal(inlineConfirm([refreshCmd, moreCmd], { armed: true, offered: true }), undefined);
+});
+
+test("inline slot: an offered openCmd shows without being armed; a refused one never does", () => {
+    assert.equal(inlineConfirm([openCmd], { armed: false, offered: true }), openCmd);
+    const refused = { ...openCmd, deny: "No room" };
+    assert.equal(inlineConfirm([refused], { armed: true, offered: true }), undefined);
+});
+
+test("secondaries stay in the bar and the right-click list, not on the row", () => {
+    assert.deepEqual(secondaryCommands([openCmd, refreshCmd]), [refreshCmd]);
+});
+
+const css = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
+
+/** Every rule block of a sheet: selector text and body. */
+function rules(sheet: string): { selector: string; body: string }[] {
+    const out: { selector: string; body: string }[] = [];
+    for (const m of sheet.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{([^{}]*)\}/g))
+        out.push({ selector: m[1]!.trim(), body: m[2]! });
+    return out;
+}
+
+const GROWS = /^\s*(padding|height|min-height|margin|flex-wrap|row-gap|border-width|line-height)/m;
+
+test("no row rule sizes a row by hover, focus, armed or an inline child", () => {
+    for (const file of [
+        "../src/ui/gui.css",
+        "../src/features/leaderboard/leaderboard.css",
+        "../src/features/watch/watch.css",
+    ]) {
+        for (const { selector, body } of rules(css(file))) {
+            const row = /\.(gui-row|gui-slot|gui-action-row|lb-row|watch-[a-z-]*row)\b/.test(
+                selector,
+            );
+            const state =
+                /:hover|\[data-(focused|armed|subject|current)\]|:has\(> \.gui-inline/.test(
+                    selector,
+                );
+            if (row && state)
+                assert.doesNotMatch(
+                    body,
+                    GROWS,
+                    `${file}: ${selector} must not change the row's size`,
+                );
+        }
+    }
+});
+
+test("an inline confirm in a grid row overlays the edge instead of adding a line", () => {
+    const rule = rules(css("../src/features/leaderboard/leaderboard.css")).find(
+        (r) => r.selector === ".lb-row > .gui-inline",
+    );
+    assert.ok(rule && /position:\s*absolute/.test(rule.body));
 });

@@ -11,6 +11,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { inlineConfirm } from "../src/ui/focus-store.ts";
+
 import {
     parseAccount,
     parseRegistryEntry,
@@ -32,6 +34,7 @@ import {
     OWN_ID,
     ownLine,
     rankRows,
+    rowCommands,
     recordText,
     REFRESH_ID,
     rowHint,
@@ -403,4 +406,13 @@ test("the cursor's order: own line, rows, Refresh; it starts on the first row", 
     assert.equal(startTarget(rows), rowId(rows[0]));
     assert.equal(startTarget([]), EMPTY_ID);
     assert.equal(new Set(rows.map(rowId)).size, rows.length);
+});
+
+test("a table row carries only its own primary inline; Refresh stays a bar command", () => {
+    const refresh = { action: "reset" as const, label: "Refresh" };
+    const commands = rowCommands(() => {}, refresh);
+    assert.ok(commands.includes(refresh), "the bar still lists Refresh");
+    assert.equal(inlineConfirm(commands, { armed: false, offered: false }), undefined);
+    const armed = inlineConfirm(commands, { armed: true, offered: false });
+    assert.equal(armed?.label, "View on explorer");
 });

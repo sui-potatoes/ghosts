@@ -37,6 +37,7 @@ import { useLiveGames, useRecentFinished, useYourGames, type RecentRows } from "
 import { RECENT_CAP, RECENT_FIRST } from "./chain/recent";
 import { offlineLine, useReportError } from "./failure";
 import { forgetDeviceRecordings } from "./forget";
+import { matchRowCommands } from "./model";
 import { recentQaRows, recentQaState } from "./qa";
 import "./watch.css";
 
@@ -121,15 +122,7 @@ function LivePanel({ live }: { live: ReturnType<typeof useLiveGames> }) {
                             title={row.name}
                             hint={row.hint}
                             instant
-                            commands={[
-                                NAV,
-                                {
-                                    action: "confirm",
-                                    label: "Watch",
-                                    tone: "primary",
-                                    run: () => navigate(`/watch/${row.id}`),
-                                },
-                            ]}
+                            commands={matchRowCommands("Watch", () => navigate(`/watch/${row.id}`))}
                         />
                     ))}
                 </List>
@@ -188,15 +181,9 @@ function MyMatches() {
                             title={row.name}
                             hint={`${row.tag} · ${row.kind}`}
                             instant
-                            commands={[
-                                NAV,
-                                {
-                                    action: "confirm",
-                                    label: "Watch replay",
-                                    tone: "primary",
-                                    run: () => navigate(`/watch/${row.gameId}`),
-                                },
-                            ]}
+                            commands={matchRowCommands("Watch replay", () =>
+                                navigate(`/watch/${row.gameId}`),
+                            )}
                         />
                     ))}
                 </List>
@@ -306,15 +293,9 @@ function RecentPanel() {
                             title={row.name}
                             hint={row.hint}
                             instant
-                            commands={[
-                                NAV,
-                                {
-                                    action: "confirm",
-                                    label: "Watch replay",
-                                    tone: "primary",
-                                    run: () => navigate(`/watch/${row.id}`),
-                                },
-                            ]}
+                            commands={matchRowCommands("Watch replay", () =>
+                                navigate(`/watch/${row.id}`),
+                            )}
                         />
                     ))}
                     {canMore && (
@@ -324,6 +305,7 @@ function RecentPanel() {
                             label={loadingMore ? "Reading more matches" : "More"}
                             title="More matches"
                             hint={`Up to ${RECENT_CAP} finished matches`}
+                            instant
                             commands={[
                                 NAV,
                                 {
