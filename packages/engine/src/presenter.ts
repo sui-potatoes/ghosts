@@ -9,6 +9,7 @@ import type { GameEvent } from "./events";
 import type { Cell, Unit } from "./game";
 import { turnLine } from "./observer";
 import { session } from "./session";
+import { leadIn } from "./throw-lead";
 
 /**
  * A shot whose outcome is still on its way: the operator fires now, the target
@@ -38,8 +39,8 @@ const THROW_LINE: Record<ThrowOrder, string> = {
 
 /** The pin, the throw and the burst of any grenade, voiced and announced. */
 async function playThrow(u: Unit, at: Cell, kind: ThrowOrder, go: () => Promise<void>) {
-  const { battlefield } = session;
-  await battlefield.aimAt(u, at, "grenade");
+  const { battlefield, observer } = session;
+  await leadIn(battlefield, !!observer, u, at);
   audio.speak(kind === "grenade" ? "grenade" : "utility", u);
   audio.tone("pin");
   await go();

@@ -27,6 +27,10 @@ export interface Kit {
  * Rifle in light armor, the marksman a Sharpshooter Rifle, the heavy a Standard
  * Rifle in medium armor. A unit's own `kit` replaces its role's.
  */
+/** Whether the scenario is won by extraction: only then is the relay marked, offered or asked for (a versus match is won by elimination). */
+export const hasExtraction = (scenario: Pick<Scenario, "versus" | "noObjective">) =>
+  !scenario.versus && !scenario.noObjective;
+
 export const roleKits: Record<Role, Kit> = {
   ASSAULT: { primary: "mx4", armor: "spectre" },
   RECON: { primary: "srs9", armor: "spectre" },

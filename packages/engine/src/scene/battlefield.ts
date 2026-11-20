@@ -27,6 +27,7 @@ import { Occlusion } from "./occlusion";
 import { Overlays } from "./overlays";
 import { RenderProfiler } from "./profiler";
 import { buildCovers, buildRelay } from "./props";
+import { hasExtraction } from "../scenario";
 import { Precipitation, RoofMap, type Weather } from "./precipitation";
 import { Space } from "./space";
 import type { AimReadout } from "./markers";
@@ -197,7 +198,7 @@ export class Battlefield {
     const kit = { props: this.destruction.assets };
     this.occlusion.occluders.push(...mapView(game.map.plan.id).build(this.scene, kit));
     if (!mapView(game.map.plan.id).furnishedCover) buildCovers(this.scene, this.space, kit.props);
-    if (!game.scenario.noObjective) buildRelay(this.scene, this.space, game.relay);
+    if (hasExtraction(game.scenario)) buildRelay(this.scene, this.space, game.relay);
     for (const { group } of this.occlusion.occluders) group.removeFromParent();
     this.scene.traverse(o => { if (o.userData.supportProp) this.supportedScenery.push(o); });
     for (const o of this.supportedScenery) o.removeFromParent();
@@ -731,6 +732,25 @@ export class Battlefield {
       if (this.aimKey === signature) this.aimPoint = look;
     })();
     return this.aimReady;
+  }
+
+  /**
+   * A thrower's lead-in with the camera left alone (a viewer's): the same crouch
+   * and turn toward `point`, over the same time, as `aimAt` gives a throw.
+   */
+  async readyThrow(u: Unit, point: Cell): Promise<void> {
+    const rig = this.units.rig(u.id);
+    if (!rig) return;
+    const forward = this.space.vec(point, 0.8).sub(rig.root.position).setY(0).normalize();
+    if (!forward.lengthSq()) forward.set(0, 0, -1);
+    const heading = Math.atan2(-forward.x, -forward.z);
+    play(rig, "crouch_idle");
+    await this.tween(0.25, () => {});
+    const turnStart = rig.root.rotation.y,
+      turnDelta = shortestAngle(turnStart, heading);
+    await this.tween(0.65, (t) => {
+      rig.root.rotation.y = turnStart + turnDelta * t;
+    });
   }
 
   /** Back to the camera saved before aiming, the shooter back into cover. */
