@@ -1,11 +1,12 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
-import { Fragment, useEffect, useRef } from "react";
+import { Fragment, useCallback, useEffect, useRef } from "react";
 import { closeBriefing, closeDebrief, reset } from "../actions";
 import { encounterReport, type EncounterDebrief } from "../aftermath/report";
 import { revealEncounter } from "../aftermath/reveal";
 import { weaponName } from "../game";
+import type { Panel } from "../session";
 import { pad2 } from "../html";
 import { Glyph } from "./Hud";
 import { useSession } from "./useSession";
@@ -36,7 +37,81 @@ function useModal(onClose: () => void) {
 }
 
 /** The briefing: contract and rules of engagement; on deployment also the squad and Deploy. */
-export function Briefing({ deploy }: { deploy: boolean }) {
+export function Briefing({ panel }: { panel: Panel }) {
+  const s = useSession();
+  if (s.observer && (panel === "replay" || panel === "match")) return <ObserverBriefing replay={panel === "replay"} />;
+  return <FieldBriefing deploy={panel === "deploy"} />;
+}
+
+/** A viewer's card, in the briefing's frame: who played, what for, how it ended; Play and Exit before a replay, else Back. */
+function ObserverBriefing({ replay }: { replay: boolean }) {
+  const s = useSession();
+  const host = s.observer?.host;
+  const played = useRef(false);
+  const ref = useModal(
+    useCallback(() => {
+      // Play started the match; any other close of the first card is Exit.
+      closeBriefing();
+      if (replay && !played.current) host?.onExit?.();
+      host?.onCardClose?.();
+    }, [host, replay]),
+  );
+  const go = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (replay) go.current?.focus();
+  }, [replay]);
+  const card = host?.card?.();
+  if (!card) return null;
+  return (
+    <dialog
+      id="modal"
+      ref={ref}
+      className="hud-prompt briefing-modal"
+      aria-labelledby="briefing-title"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) ref.current?.close();
+      }}
+    >
+      <small className="hud-prompt-eyebrow">{card.eyebrow}</small>
+      <h2 className="hud-prompt-title" id="briefing-title">
+        {card.title}
+      </h2>
+      {card.line && <p className="hud-prompt-body">{card.line}</p>}
+      <dl className="hud-prompt-lines">
+        {card.facts.map(([label, value]) => (
+          <div key={label}>
+            <dt>{label}</dt>
+            <dd>{value}</dd>
+          </div>
+        ))}
+      </dl>
+      <div className="hud-prompt-commands">
+        <button type="button" className="hud-bar-cmd" onClick={() => ref.current?.close()}>
+          <Glyph action="cancel" pad="b" />
+          <span>{replay ? "Exit" : "Back"}</span>
+        </button>
+        {replay && (
+          <button
+            ref={go}
+            type="button"
+            className="hud-bar-cmd"
+            data-tone="primary"
+            onClick={() => {
+              played.current = true;
+              host?.onPlay?.();
+              ref.current?.close();
+            }}
+          >
+            <Glyph action="confirm" pad="a" />
+            <span>Play</span>
+          </button>
+        )}
+      </div>
+    </dialog>
+  );
+}
+
+function FieldBriefing({ deploy }: { deploy: boolean }) {
   const s = useSession();
   const ref = useModal(closeBriefing);
   const go = useRef<HTMLButtonElement>(null);

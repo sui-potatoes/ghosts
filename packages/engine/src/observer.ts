@@ -23,6 +23,24 @@ export interface ObserverView {
   turn: number;
   /** When the live game's turn runs out (epoch ms), while the viewer follows it; absent otherwise. */
   deadline?: number;
+  /** The host's card over the field (`ObserverOptions` in `ui/Encounter.tsx`). */
+  host?: ObserverHost;
+}
+
+/** What a viewer's card says: the briefing's eyebrow, title, a line and labelled facts. */
+export interface ObserverCard {
+  eyebrow: string;
+  title: string;
+  line?: string;
+  facts: [label: string, value: string][];
+}
+
+/** The host's side of the card: its words, and what Play, Exit and a close do. */
+export interface ObserverHost {
+  card?: () => ObserverCard;
+  onPlay?: () => void;
+  onExit?: () => void;
+  onCardClose?: () => void;
 }
 
 /**

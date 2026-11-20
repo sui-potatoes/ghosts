@@ -54,6 +54,11 @@ export class SceneClock {
     });
   }
 
+  /** A scene job of your own: called each frame with scene time until it returns true (a job that can be dropped early). */
+  run(job: Job) {
+    this.jobs.push(job);
+  }
+
   /** One frame: `elapsed` seconds of frame time. */
   step(elapsed: number) {
     const dt = this.scaled(elapsed);

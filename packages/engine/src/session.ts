@@ -10,8 +10,12 @@ import type { Battlefield } from "./scene/battlefield";
 
 /** What the field's clicks do: move, aim a shot, or aim one of the throws (the mode is the throw's order). */
 export type Mode = "move" | "fire" | ThrowOrder;
-/** The briefing dialog: read from the pause menu, or the deployment briefing with the squad. */
-export type Panel = "intel" | "deploy";
+/**
+ * The briefing dialog: read from the pause menu, or the deployment briefing with the squad.
+ * A viewer's own card: `replay` opens before a replay plays (Play and Exit), `match` is its
+ * details read mid-way (`ObserverOptions.card`).
+ */
+export type Panel = "intel" | "deploy" | "replay" | "match";
 export type Tone = "" | "hit" | "miss";
 
 /**

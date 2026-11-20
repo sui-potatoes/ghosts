@@ -17,8 +17,9 @@ import { aimHuman, holdHuman, play } from "../humans";
 import { createPortraitStudio } from "../portrait-studio";
 import { renderCadence, renderPixelRatio, type RenderMode } from "../render-policy";
 import { applyTimeOfDay, type TimeOfDay } from "../scene-weather";
+import { Callouts, type Anchor, type Projected, type ShotResult } from "./callouts";
 import { SceneClock } from "./clock";
-import { Effects } from "./effects";
+import { Effects, reducedMotion } from "./effects";
 import { Destruction } from "./destruction";
 import { mapView } from "./maps";
 import { Occlusion } from "./occlusion";
@@ -119,6 +120,9 @@ export class Battlefield {
   private readonly chestPoints: T.Vector3[] = [];
   /** Every tween runs on it; `timeScale` sets the pace of scene animation. */
   private readonly clock = new SceneClock();
+  /** Shot results popping up over their targets. */
+  private readonly callouts: Callouts;
+  private readonly calloutPoint = new T.Vector3();
   private raf = 0;
   private activeUntil = 0;
   private viewportWidth = 1;
@@ -215,6 +219,12 @@ export class Battlefield {
       hostile: tone("--red", "#c98177"),
       friendly: tone("--text-secondary", "#a4b5bc"),
     });
+    this.callouts = new Callouts(
+      { create: () => document.createElement("div"), append: (node) => labels.append(node as HTMLElement) },
+      this.clock,
+      reducedMotion,
+      () => this.invalidate(),
+    );
     this.units = new Units({
       scene: this.scene,
       labels,
@@ -848,11 +858,11 @@ export class Battlefield {
       case "move":
         return this.units.move(unit(event.unit), event.path);
       case "shot":
-        return this.shot(unit(event.unit), unit(event.target), event.hit, event.environment ?? []);
+        return this.shot(unit(event.unit), unit(event.target), event.hit, event.environment ?? [], event);
       case "reload":
         return this.units.reload(unit(event.unit));
       case "grenade":
-        return this.throwAt(unit(event.unit), event.at, event.environment ?? []);
+        return this.throwAt(unit(event.unit), event.at, event.environment ?? [], undefined, "grenade", event.casualties);
       case "flashbang":
       case "smoke-grenade":
         return this.throwAt(unit(event.unit), event.at, [], undefined, event.type);
@@ -864,17 +874,25 @@ export class Battlefield {
   }
 
   /** A shot fired ahead of its outcome: the target reacts once `hit` is known. */
-  fire(a: Unit, b: Unit, hit: Promise<boolean>) {
-    return this.shot(a, b, hit, []);
+  fire(a: Unit, b: Unit, hit: Promise<boolean>, result?: Promise<ShotResult | null>) {
+    return this.shot(a, b, hit, [], result);
   }
 
   /** A grenade of `kind` thrown and gone off; whoever it hurt reacts once `settled`. */
-  throwAt(u: Unit, at: Cell, environment: PropDamage[], settled?: Promise<unknown>, kind: ThrowOrder = "grenade") {
+  throwAt(
+    u: Unit,
+    at: Cell,
+    environment: PropDamage[],
+    settled?: Promise<unknown>,
+    kind: ThrowOrder = "grenade",
+    casualties: { unit: string; damage: number }[] = [],
+  ) {
     return this.units.grenade(
       u,
       at,
       () => {
         this.destruction.apply(environment, this.space.vec(at, 0.2));
+        for (const c of casualties) this.callout({ hit: true, damage: c.damage }, c.unit);
         this.invalidate();
       },
       settled,
@@ -883,12 +901,19 @@ export class Battlefield {
   }
 
   /** A shot, with a camera kick on each tracer when it is framed over the shooter's shoulder. */
-  private shot(a: Unit, b: Unit, hit: boolean | Promise<boolean>, environment: PropDamage[]) {
+  private shot(
+    a: Unit,
+    b: Unit,
+    hit: boolean | Promise<boolean>,
+    environment: PropDamage[],
+    result?: ShotResult | null | Promise<ShotResult | null>,
+  ) {
     const shoulder = this.aimUnit === a.id;
     const kick = a.weapon === "sniper" ? 0.11 : 0.035;
     // The shoulder camera is settled before the trigger is pulled; each kick returns to it.
     const origin = this.camera.position.clone();
     let impacted = false;
+    let called = false;
     return this.units.fire(a, b, hit, {
       aimed: shoulder,
       impact: environment[0]?.impact ? new T.Vector3(...environment[0].impact) :
@@ -900,6 +925,11 @@ export class Battlefield {
         this.camera.lookAt(this.controls.target);
       },
       afterTracer: () => {
+        if (result && !called) {
+          // The first tracer is the impact; a result still on its way shows when it arrives.
+          called = true;
+          void Promise.resolve(result).then((r) => r && this.callout(r, b.id));
+        }
         if (!impacted && environment.length) {
           this.destruction.apply(environment, this.space.vec(a.pos, 1));
           impacted = true;
@@ -909,12 +939,27 @@ export class Battlefield {
     });
   }
 
+  /** A shot result over `unit` (its rig's root is the anchor, so it follows the body). */
+  private callout(result: ShotResult, unit: string) {
+    const rig = this.units.rig(unit);
+    if (rig) this.callouts.show(result, unit, rig.root.position);
+  }
+
+  /** Where `anchor` (lifted `lift` metres) is on the field, in pixels. */
+  private readonly project = (anchor: Anchor, lift: number, out: Projected) => {
+    const p = this.calloutPoint.set(anchor.x, anchor.y + lift, anchor.z).project(this.camera);
+    out.visible = p.z <= 1 && Math.abs(p.x) <= 1.2 && Math.abs(p.y) <= 1.2;
+    out.x = (p.x * 0.5 + 0.5) * this.viewportWidth;
+    out.y = (-p.y * 0.5 + 0.5) * this.viewportHeight;
+  };
+
   /** Swap in a fresh encounter: every rig out of its pose and back on its start cell. */
   redeploy(game: Encounter) {
     this.game = game;
     this.space.map = game.map;
     this.destruction.reset(game.map);
     this.units.redeploy();
+    this.callouts.clear();
     this.invalidate();
   }
 
@@ -929,6 +974,7 @@ export class Battlefield {
     this.space.map = game.map;
     this.destruction.reset(game.map);
     this.units.snap(this.selected);
+    this.callouts.clear();
     this.host.dataset.smoke = this.effects.lingeringIds.join(",");
     this.reflectionsDirty = true;
     this.invalidate();
@@ -1158,6 +1204,7 @@ export class Battlefield {
 
   private updateUnits(dt: number, time: number) {
     this.units.update(dt, this.camera, this.viewportWidth, this.viewportHeight);
+    if (this.callouts.count) this.callouts.place(this.viewportWidth, this.viewportHeight, this.project);
     const selected = this.game.unit(this.selected);
     const rig = this.units.rig(this.selected);
     this.overlays.updateSelector(rig && selected && selected.hp > 0 ? rig.root.position : null, time);
@@ -1216,6 +1263,7 @@ export class Battlefield {
     this.resizeObserver.disconnect();
     this.pixelRatioQuery?.removeEventListener("change", this.onPixelRatio);
     this.controls.dispose();
+    this.callouts.clear();
     this.units.dispose();
     this.occlusion.dispose();
     this.reflections.dispose();

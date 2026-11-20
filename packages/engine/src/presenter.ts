@@ -23,7 +23,7 @@ export async function presentShot(
   await battlefield.aimReady;
   audio.speak("fire", a);
   audio.tone(a.weapon);
-  await battlefield.fire(a, b, outcome.then((shot) => !!shot?.hit));
+  await battlefield.fire(a, b, outcome.then((shot) => !!shot?.hit), outcome);
   const shot = await outcome;
   if (shot?.killed) audio.speak("kill", a);
   else if (shot?.hit) audio.speak("hit", b);

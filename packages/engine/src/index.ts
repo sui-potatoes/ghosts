@@ -14,7 +14,7 @@ import { session } from "./session";
 
 export { correctEncounter, followOpponent } from "./actions";
 
-export { Encounter, type EncounterProps, type ObserverOptions } from "./ui/Encounter";
+export { Encounter, type EncounterProps, type ObserverCard, type ObserverOptions } from "./ui/Encounter";
 export { Playback, SPEEDS, type PlaybackState, type Speed } from "./replay/playback";
 export {
   opensTurn,
@@ -60,6 +60,11 @@ export function closeEncounterDebrief() {
 /** Show the briefing over the field. */
 export function openBriefing() {
   showBriefing("intel");
+}
+
+/** A viewer: show the match card (`ObserverOptions.card`) over the field, without starting or stopping anything. */
+export function openMatchCard() {
+  showBriefing("match");
 }
 
 /**

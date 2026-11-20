@@ -3,13 +3,16 @@
 
 import { useEffect, useRef, useState } from "react";
 import { audio } from "../audio";
+import { showBriefing } from "../actions";
 import { boot } from "../boot";
 import type { Recruit } from "@ghosts/squad/types";
 import type { DriverFactory } from "../driver";
 import type { Scenario } from "../scenario";
 import { Playback } from "../replay/playback";
 import { sceneStage } from "../replay/stage";
+import type { ObserverCard } from "../observer";
 import type { RecordSource } from "../replay/timeline";
+export type { ObserverCard } from "../observer";
 import { newSession, type Session } from "../session";
 import { defaultSettings, type EngineSettings } from "../settings";
 import type { EncounterDebrief } from "../aftermath/report";
@@ -64,6 +67,17 @@ export interface ObserverOptions {
   start?: "start" | "live";
   /** The transport, once the field is ready; disposed with the encounter. */
   onPlayback?: (playback: Playback) => void;
+  /**
+   * A card over the field, in the briefing's place and look: read live each time it opens.
+   * With `hold`, the encounter opens on it, paused on the first position with no event
+   * applied, and Play (`onPlay`) is what starts the playback; Exit and Escape call `onExit`.
+   * Opened again later (`openMatchCard`) it only has Back. `onCardClose` hears every close.
+   */
+  card?: () => ObserverCard;
+  hold?: boolean;
+  onPlay?: () => void;
+  onExit?: () => void;
+  onCardClose?: () => void;
 }
 
 /** Start the viewer's playback on a session whose field is up. Returns the teardown. */
@@ -79,8 +93,9 @@ function startPlayback(session: Session, options: ObserverOptions): () => void {
     }
   };
   const unsubscribe = playback.subscribe(clock);
-  playback.start({ at: options.start });
+  playback.start({ at: options.start, paused: options.hold });
   options.onPlayback?.(playback);
+  if (options.hold && options.card) showBriefing("replay");
   return () => {
     unsubscribe();
     playback.dispose();
@@ -114,7 +129,7 @@ export function Encounter({
   // The session exists before the first render so the UI subscribes to the one boot fills in.
   const [session] = useState(() =>
     observer
-      ? newSession(observer.source.scenario, undefined, { sides: observer.source.sides, turn: 1 })
+      ? newSession(observer.source.scenario, undefined, { sides: observer.source.sides, turn: 1, host: observer })
       : newSession(scenario, driver),
   );
   const hooks = useRef({ onPause, onQuit, onDebrief });
@@ -202,7 +217,7 @@ function EncounterView({
         (s.debrief ? (
           <Debrief onQuit={hasQuit ? onQuit : undefined} onDebrief={onDebrief} />
         ) : (
-          s.panel && <Briefing deploy={s.panel === "deploy"} />
+          s.panel && <Briefing panel={s.panel} />
         ))}
     </div>
   );

@@ -9,7 +9,7 @@ import { applyDeploymentNames, applyLoadouts } from "./squad-bridge";
 // @ts-ignore Native editor adapter is shared JavaScript.
 import { deployment } from "./mpfb-characters.js";
 import { present, presentShot, presentThrow } from "./presenter";
-import { session, type Mode } from "./session";
+import { session, type Mode, type Panel } from "./session";
 import { bestShotTarget, damagePreview, defaultGrenadeTarget, grenadeBlockReason } from "./targeting";
 
 /**
@@ -65,7 +65,7 @@ export function refresh() {
 }
 
 /** Open the briefing; `deploy` adds the squad and the Deploy button. */
-export function showBriefing(panel: "intel" | "deploy") {
+export function showBriefing(panel: Panel) {
   session.panel = panel;
   session.changed();
 }

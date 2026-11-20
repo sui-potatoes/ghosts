@@ -1644,3 +1644,37 @@
     bottom: calc(var(--observer-foot) / var(--ui-scale, 1) + var(--u) * 2);
   }
 }
+
+/* Shot results over the target (MISS, CRIT, the damage), placed and animated by the scene on its clock. */
+.encounter .shot-callout {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: calc(var(--u) * 0.5) calc(var(--u) * 2);
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
+  font: 500 var(--t-label) / 1.2 var(--font-mono);
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--background-color) 78%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text-secondary) 40%, transparent);
+  text-shadow:
+    0 0 3px var(--background-color),
+    0 1px 2px var(--background-color);
+  will-change: transform, opacity;
+}
+.encounter .shot-callout.miss {
+  color: var(--dim);
+}
+.encounter .shot-callout.hit {
+  color: color-mix(in srgb, var(--hostile) 80%, var(--text-color));
+  border-color: color-mix(in srgb, var(--hostile) 55%, transparent);
+}
+.encounter .shot-callout.crit {
+  font-weight: 700;
+  color: var(--accent-color);
+  border-color: var(--accent-color);
+  background: color-mix(in srgb, var(--background-color) 88%, transparent);
+}
