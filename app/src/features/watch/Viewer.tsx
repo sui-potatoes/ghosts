@@ -424,12 +424,12 @@ function Controls({
                     <TransportButton
                         id="watch-play"
                         group="transport"
-                        title={state.playing ? "Pause" : "Play"}
+                        title={state.playing ? "Pause" : state.growing ? "Watch" : "Play"}
                         commands={[
                             restart,
                             {
                                 action: "confirm",
-                                label: state.playing ? "Pause" : "Play",
+                                label: state.playing ? "Pause" : state.growing ? "Watch" : "Play",
                                 tone: "primary",
                                 run: () => playback.toggle(),
                             },
