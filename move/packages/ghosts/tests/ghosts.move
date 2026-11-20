@@ -5,7 +5,8 @@
 extend module ghosts::ghosts;
 
 use ghosts::{account::{Self, Registry}, action, items, recruit as recruit_module};
-use sui::{clock, random, test_scenario::{Self as ts, Scenario}};
+use glicko::glicko::Rating;
+use sui::{address, clock, hash, random, test_scenario::{Self as ts, Scenario}};
 
 /// The recruits fall, the way they do to an attack: off the map, the game over if
 /// that was a side's last, and still in the game until `bury_fallen`.
@@ -53,6 +54,7 @@ public struct Fixture {
     ts: Scenario,
     registry: Registry,
     mm: Matchmaker<Ghosts>,
+    lobbies: Lobbies,
     rng: Random,
     clock: Clock,
     preset: Preset,
@@ -125,6 +127,7 @@ macro fun setup_on(
     let bob_recruit = $hire(&mut bob, ts.ctx());
     ts.next_tx(ALICE);
     let mm = ts.take_shared<Matchmaker<Ghosts>>();
+    let lobbies = ts.take_shared<Lobbies>();
     let rng = ts.take_shared<Random>();
     let clock = clock::create_for_testing(ts.ctx());
 
@@ -132,6 +135,7 @@ macro fun setup_on(
         ts,
         registry,
         mm,
+        lobbies,
         rng,
         clock,
         preset,
@@ -143,9 +147,10 @@ macro fun setup_on(
 }
 
 fun finish(f: Fixture) {
-    let Fixture { ts, registry, mm, rng, clock, preset, alice, bob, .. } = f;
+    let Fixture { ts, registry, mm, lobbies, rng, clock, preset, alice, bob, .. } = f;
     ts::return_shared(registry);
     ts::return_shared(mm);
+    ts::return_shared(lobbies);
     ts::return_shared(rng);
     ts::return_shared(alice);
     ts::return_shared(bob);
@@ -2178,3 +2183,1077 @@ fun bench_effects_d_next_turn() { bench_effects(true, 1) }
 
 #[test]
 fun bench_effects_e_next_turn_x2() { bench_effects(true, 2) }
+
+// === Friendly ===
+
+/// The invite code of the invite-only lobbies here, as the host's client makes it.
+const CODE: vector<u8> = x"0102030405060708";
+
+/// The hash of `CODE`, which the host's client sends to open the lobby.
+fun code_hash(): address {
+    let code = CODE;
+    address::from_bytes(hash::blake2b256(&code))
+}
+
+/// Alice opens a lobby of `size`: invite-only with `CODE`, or listed.
+fun open(f: &mut Fixture, size: u8, invite: bool) {
+    f.ts.next_tx(ALICE);
+    let code_hash = if (invite) option::some(code_hash()) else option::none();
+    open_lobby(&mut f.lobbies, &mut f.alice, &f.clock, size, code_hash, f.ts.ctx());
+}
+
+/// Bob joins Alice's invite-only lobby with `CODE`, which starts the game.
+fun join_invite(f: &mut Fixture): Game {
+    f.ts.next_tx(BOB);
+    join_lobby(&mut f.lobbies, &f.preset, &mut f.alice, &mut f.bob, &f.clock, CODE, f.ts.ctx());
+    f.ts.next_tx(ALICE);
+    f.ts.take_shared<Game>()
+}
+
+/// Bob takes the guest slot of Alice's listed lobby.
+fun join_listed(f: &mut Fixture) {
+    f.ts.next_tx(BOB);
+    join_open(&mut f.lobbies, &f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+}
+
+/// Alice starts the game of her listed lobby with Bob in it.
+fun start_listed(f: &mut Fixture): Game {
+    f.ts.next_tx(ALICE);
+    start_friendly(&mut f.lobbies, &f.preset, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    f.ts.next_tx(ALICE);
+    f.ts.take_shared<Game>()
+}
+
+/// Carol, with an `Account` and a recruit: free to play.
+fun carol(f: &mut Fixture): Account {
+    f.ts.next_tx(CAROL);
+    f.registry.new_account(f.ts.ctx());
+    f.ts.next_tx(CAROL);
+    let mut carol = f.ts.take_shared_by_id<Account>(f.registry.account_of(CAROL));
+    hire(&mut carol, f.ts.ctx());
+    carol
+}
+
+/// Whether there is a lobby of Alice's, of either kind.
+fun alice_hosts(f: &Fixture): bool { f.lobbies.is_open(object::id(&f.alice), CODE) }
+
+/// What a game can change on an `Account`, besides where it stands.
+public struct Standing has copy, drop {
+    rating: Rating,
+    score: vector<u64>,
+    suspended_until: u64,
+    recruits: u64,
+}
+
+fun standing(acc: &Account): Standing {
+    let (wins, losses, draws) = acc.score();
+    Standing {
+        rating: acc.rating(),
+        score: vector[wins, losses, draws],
+        suspended_until: acc.suspended_until(),
+        recruits: acc.num_recruits(),
+    }
+}
+
+/// The recruits at home in an `Account`, as of the last transaction.
+fun at_home(f: &mut Fixture, acc: address): vector<ID> {
+    let sender = f.ts.sender();
+    f.ts.next_tx(sender);
+    ts::ids_for_address<Recruit>(acc)
+}
+
+/// The experience and rank of each recruit, at home.
+fun records(f: &mut Fixture, ids: vector<ID>): vector<vector<u64>> {
+    ids.map!(|id| f.look_at!(id, |r| vector[r.xp() as u64, r.rank().ordinal() as u64]))
+}
+
+/// `setup` on an empty map with four spawn positions and four recruits a side.
+fun setup_four_a_side(): Fixture {
+    let mut positions = vector[];
+    4u8.do!(|i| positions.push_back(vector[0, i]));
+    4u8.do!(|i| positions.push_back(vector[7, i]));
+    setup_on!(|id| map::new(id, 8), positions, |acc, ctx| {
+        hire(acc, ctx);
+        hire(acc, ctx);
+        hire(acc, ctx);
+        hire(acc, ctx)
+    })
+}
+
+/// A whole friendly game by invite on Black Rain: the code starts it at once, the
+/// host first, both sides deploy, Bob loses everyone, and the game is wrapped up.
+/// Nothing on either `Account` moved, and Bob's fallen are home, alive.
+#[test]
+fun test_friendly_by_invite() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    let (alice, bob) = (object::id(&f.alice), object::id(&f.bob));
+    let (alice_home, bob_home) = (alice.to_address(), bob.to_address());
+    let (alice_before, bob_before) = (standing(&f.alice), standing(&f.bob));
+    let (alice_squad, bob_squad) = (f.at_home(alice_home), f.at_home(bob_home));
+    let (alice_records, bob_records) = (f.records(alice_squad), f.records(bob_squad));
+
+    // Alice opens: she searches on the key, the code hashed twice
+    f.open(3, true);
+    let key = lobby::protected_key(CODE).to_id();
+    assert_eq!(f.alice.search_order(), option::some(key));
+    assert!(f.alice_hosts());
+
+    // Bob brings the code: the game is on, the lobby gone, both playing
+    let mut game = f.join_invite();
+    let id = object::id(&game);
+    assert!(!f.alice_hosts());
+    assert_eq!(f.alice.playing(), option::some(id));
+    assert_eq!(f.bob.playing(), option::some(id));
+    assert_eq!(game.players, vector[alice, bob]);
+    assert_eq!(game.mode(), Mode::Friendly { size: 3 });
+    assert_eq!(game.active_side(), 0);
+    assert!(game.is_deploying());
+    assert_eq!(game.deploy_until_ms(), DEPLOY_LIMIT_MS);
+
+    // three a side; Bob loses two, who stay in the game past the turn, then the last
+    f.deploy_black_rain(&mut game);
+    let fallen = game.squad(1);
+    assert_eq!(fallen.length(), 3);
+    game.kill(vector[fallen[0], fallen[1]]);
+    next_turn(&mut game, &f.alice, &f.clock, f.ts.ctx());
+    assert!(game.recruits.contains(fallen[0]) && game.recruits.contains(fallen[1]));
+    game.kill(vector[fallen[2]]);
+    assert_eq!(game.winner(), option::some(alice));
+
+    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    assert!(f.alice.is_idle() && f.bob.is_idle());
+    assert_eq!(standing(&f.alice), alice_before);
+    assert_eq!(standing(&f.bob), bob_before);
+    assert_eq!(f.dog_tags(bob_home), 0);
+    let bob_after = f.at_home(bob_home);
+    assert_eq!(bob_after.length(), 3);
+    bob_squad.do!(|id| assert!(bob_after.contains(&id)));
+    assert_eq!(f.records(alice_squad), alice_records);
+    assert_eq!(f.records(bob_squad), bob_records);
+
+    fixture.finish();
+}
+
+/// A whole friendly game in a listed lobby: Bob takes the slot and waits, Alice
+/// starts, and walks out once it is under way. Nobody is suspended, and nothing
+/// on either `Account` moved.
+#[test]
+fun test_friendly_listed() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    let (alice, bob) = (object::id(&f.alice), object::id(&f.bob));
+    let (alice_before, bob_before) = (standing(&f.alice), standing(&f.bob));
+    let bob_squad = f.at_home(bob.to_address());
+    let bob_records = f.records(bob_squad);
+
+    // the key is Alice's `Account`, and Bob waits on it too
+    f.open(4, false);
+    assert_eq!(f.alice.search_order(), option::some(alice));
+    assert!(f.lobbies.guest(alice).is_none());
+    f.join_listed();
+    assert_eq!(f.bob.search_order(), option::some(alice));
+    assert_eq!(f.lobbies.guest(alice), option::some(bob));
+
+    let mut game = f.start_listed();
+    let id = object::id(&game);
+    assert!(!f.alice_hosts());
+    assert_eq!(f.alice.playing(), option::some(id));
+    assert_eq!(f.bob.playing(), option::some(id));
+    assert_eq!(game.players, vector[alice, bob]);
+    assert_eq!(game.mode(), Mode::Friendly { size: 4 });
+
+    // a casualty, a few turns, and Alice walks out
+    f.deploy_black_rain(&mut game);
+    let fallen = game.squad(1)[0];
+    game.kill(vector[fallen]);
+    next_turn(&mut game, &f.alice, &f.clock, f.ts.ctx());
+    f.ts.next_tx(BOB);
+    next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());
+    f.ts.next_tx(ALICE);
+    f.clock.set_for_testing(1000);
+    abandon_game(&mut game, &f.alice, f.ts.ctx());
+    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+
+    assert!(f.alice.is_idle() && f.bob.is_idle());
+    assert_eq!(standing(&f.alice), alice_before);
+    assert_eq!(standing(&f.bob), bob_before);
+    assert_eq!(f.records(bob_squad), bob_records);
+
+    // and she can play again right away
+    f.open(3, false);
+    fixture.finish();
+}
+
+/// Missing turns and not deploying cost nothing in a friendly game either.
+#[test]
+fun test_friendly_forfeit_and_no_show() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let (alice_before, bob_before) = (standing(&f.alice), standing(&f.bob));
+
+    // Alice goes quiet until she forfeits
+    f.open(3, true);
+    let mut game = f.join_invite();
+    f.deploy(&mut game);
+    let mut now = 0u64;
+    MAX_MISSED_TURNS.do!(|_| {
+        now = now + FIRST_TURN_MS + 1;
+        f.clock.set_for_testing(now);
+        f.ts.next_tx(BOB);
+        next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());
+        if (!game.is_over()) next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());
+    });
+    assert_eq!(game.state, State::Over(Ending::Forfeited(object::id(&f.alice))));
+    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    assert_eq!(standing(&f.alice), alice_before);
+    assert_eq!(standing(&f.bob), bob_before);
+
+    // neither deploys
+    f.open(3, false);
+    f.join_listed();
+    let mut game = f.start_listed();
+    f.clock.set_for_testing(now + DEPLOY_LIMIT_MS + 1);
+    next_turn(&mut game, &f.alice, &f.clock, f.ts.ctx());
+    assert_eq!(game.state, State::Over(Ending::NobodyShowed));
+    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    assert_eq!(standing(&f.alice), alice_before);
+    assert_eq!(standing(&f.bob), bob_before);
+    assert!(f.alice.is_idle() && f.bob.is_idle());
+
+    fixture.finish();
+}
+
+/// A friendly game of four: four a side deploy, and win, draw or lose, all eight
+/// come home.
+#[test]
+fun test_friendly_size() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup_four_a_side();
+    let f = &mut fixture;
+    f.open(4, true);
+    let mut game = f.join_invite();
+    let (alice_home, bob_home) = (object::id_address(&f.alice), object::id_address(&f.bob));
+    let squad = f.at_home(alice_home);
+    deploy_squad(&mut game, &mut f.alice, &f.clock, tickets(squad), f.ts.ctx());
+    f.ts.next_tx(BOB);
+    let squad = f.at_home(bob_home);
+    deploy_squad(&mut game, &mut f.bob, &f.clock, tickets(squad), f.ts.ctx());
+
+    let (mut everyone, second) = game.squads();
+    everyone.append(second);
+    game.kill(everyone);
+    assert_eq!(game.state, State::Over(Ending::Draw));
+    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    assert_eq!(f.alice.num_recruits(), 4);
+    assert_eq!(f.bob.num_recruits(), 4);
+    assert_eq!(f.at_home(alice_home).length(), 4);
+    assert_eq!(f.at_home(bob_home).length(), 4);
+
+    fixture.finish();
+}
+
+/// No more recruits than the size, even where the map has room.
+#[test, expected_failure(abort_code = ESquadTooLarge)]
+fun test_friendly_squad_too_large_fail() {
+    let mut fixture = setup_four_a_side();
+    let f = &mut fixture;
+    f.open(3, true);
+    let mut game = f.join_invite();
+    let home = object::id_address(&f.alice);
+    let squad = f.at_home(home);
+    deploy_squad(&mut game, &mut f.alice, &f.clock, tickets(squad), f.ts.ctx());
+
+    abort
+}
+
+/// The host kicks the guest, who is idle again and kept out; another takes the
+/// slot.
+#[test]
+fun test_kick_guest() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut carol = f.carol();
+    let (alice, bob) = (object::id(&f.alice), object::id(&f.bob));
+
+    f.open(3, false);
+    f.join_listed();
+    f.ts.next_tx(ALICE);
+    kick_guest(&mut f.lobbies, &f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    assert!(f.bob.is_idle());
+    assert!(f.lobbies.guest(alice).is_none());
+    assert_eq!(f.lobbies.kicked(alice), vector[bob]);
+
+    f.ts.next_tx(CAROL);
+    join_open(&mut f.lobbies, &f.alice, &mut carol, &f.clock, f.ts.ctx());
+    assert_eq!(f.lobbies.guest(alice), option::some(object::id(&carol)));
+
+    // Bob is free for anything else meanwhile
+    f.ts.next_tx(BOB);
+    find_game(&mut f.mm, &mut f.bob, &f.preset, &f.rng, &f.clock, f.ts.ctx());
+
+    ts::return_shared(carol);
+    fixture.finish();
+}
+
+/// The guest leaves on their own: idle, and free to come back.
+#[test]
+fun test_leave_lobby() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let alice = object::id(&f.alice);
+    f.open(3, false);
+    f.join_listed();
+    leave_lobby(&mut f.lobbies, &mut f.bob, f.ts.ctx());
+    assert!(f.bob.is_idle());
+    assert!(f.lobbies.guest(alice).is_none());
+    assert!(f.lobbies.kicked(alice).is_empty());
+
+    f.join_listed();
+    assert_eq!(f.lobbies.guest(alice), option::some(object::id(&f.bob)));
+    fixture.finish();
+}
+
+/// The host closes a lobby of either kind at any time, and is idle again.
+#[test]
+fun test_close_lobby() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+
+    f.open(3, true);
+    close_lobby(&mut f.lobbies, &mut f.alice, &f.clock, f.ts.ctx());
+    assert!(f.alice.is_idle());
+    assert!(!f.alice_hosts());
+
+    f.open(3, false);
+    f.join_listed();
+    f.ts.next_tx(ALICE);
+    kick_guest(&mut f.lobbies, &f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    close_lobby(&mut f.lobbies, &mut f.alice, &f.clock, f.ts.ctx());
+    assert!(f.alice.is_idle() && f.bob.is_idle());
+    assert!(!f.alice_hosts());
+
+    fixture.finish();
+}
+
+/// Past the lifetime, anyone cleans up a lobby with a guest in one transaction:
+/// the guest kicked, but not kept out, then the lobby closed. Nobody is left
+/// searching in a lobby that is gone.
+#[test]
+fun test_stranger_cleans_up() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let alice = object::id(&f.alice);
+
+    f.open(3, false);
+    f.join_listed();
+    f.clock.set_for_testing(lobby::lifetime_ms() + 1);
+    f.ts.next_tx(CAROL);
+    kick_guest(&mut f.lobbies, &f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    assert!(f.lobbies.kicked(alice).is_empty());
+    close_lobby(&mut f.lobbies, &mut f.alice, &f.clock, f.ts.ctx());
+    assert!(f.alice.is_idle() && f.bob.is_idle());
+    assert!(!f.alice_hosts());
+
+    // and an invite-only one
+    f.open(3, true);
+    f.clock.set_for_testing(2 * lobby::lifetime_ms() + 2);
+    f.ts.next_tx(CAROL);
+    close_lobby(&mut f.lobbies, &mut f.alice, &f.clock, f.ts.ctx());
+    assert!(f.alice.is_idle());
+    assert!(!f.alice_hosts());
+
+    fixture.finish();
+}
+
+/// The kicked list keeps the latest kicks: past the cap, the oldest is forgotten.
+#[test]
+fun test_kicked_cap() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let (alice, bob) = (object::id(&f.alice), object::id(&f.bob));
+    f.open(3, false);
+    f.lobbies.fill_kicked(alice, lobby::max_kicked(), f.ts.ctx());
+    let oldest = f.lobbies.kicked(alice)[0];
+    let second = f.lobbies.kicked(alice)[1];
+
+    f.join_listed();
+    f.ts.next_tx(ALICE);
+    kick_guest(&mut f.lobbies, &f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    let kicked = f.lobbies.kicked(alice);
+    assert_eq!(kicked.length(), lobby::max_kicked());
+    assert!(!kicked.contains(&oldest));
+    assert_eq!(kicked[0], second);
+    assert_eq!(kicked[kicked.length() - 1], bob);
+
+    fixture.finish();
+}
+
+// === Friendly: refusals ===
+
+#[test, expected_failure(abort_code = lobby::EKeyTaken)]
+fun test_open_taken_key_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    f.open(3, true);
+    f.ts.next_tx(BOB);
+    open_lobby(&mut f.lobbies, &mut f.bob, &f.clock, 3, option::some(code_hash()), f.ts.ctx());
+    abort
+}
+
+#[test, expected_failure(abort_code = lobby::EWrongSize)]
+fun test_open_too_small_fail() {
+    let mut fixture = setup();
+    fixture.open(2, true);
+    abort
+}
+
+#[test, expected_failure(abort_code = lobby::EWrongSize)]
+fun test_open_too_large_fail() {
+    let mut fixture = setup();
+    fixture.open(5, false);
+    abort
+}
+
+#[test, expected_failure(abort_code = account::ENotOwner)]
+fun test_open_foreign_account_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    f.ts.next_tx(BOB);
+    open_lobby(&mut f.lobbies, &mut f.alice, &f.clock, 3, option::none(), f.ts.ctx());
+    abort
+}
+
+#[test, expected_failure(abort_code = ENoSquad)]
+fun test_open_without_recruits_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    f.ts.next_tx(CAROL);
+    f.registry.new_account(f.ts.ctx());
+    f.ts.next_tx(CAROL);
+    let mut carol = f.ts.take_shared_by_id<Account>(f.registry.account_of(CAROL));
+    open_lobby(&mut f.lobbies, &mut carol, &f.clock, 3, option::none(), f.ts.ctx());
+    abort
+}
+
+#[test, expected_failure(abort_code = lobby::ENoLobby)]
+fun test_join_wrong_code_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    f.open(3, true);
+    f.ts.next_tx(BOB);
+    let code = x"0102030405060709";
+    join_lobby(&mut f.lobbies, &f.preset, &mut f.alice, &mut f.bob, &f.clock, code, f.ts.ctx());
+    abort
+}
+
+/// The code is the permission, but only for its lobby: its host is the one passed.
+#[test, expected_failure(abort_code = lobby::EWrongHost)]
+fun test_join_wrong_host_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut carol = f.carol();
+    f.open(3, true);
+    f.ts.next_tx(BOB);
+    join_lobby(&mut f.lobbies, &f.preset, &mut carol, &mut f.bob, &f.clock, CODE, f.ts.ctx());
+    abort
+}
+
+/// The code hash is never a key: hashing it again is.
+#[test, expected_failure(abort_code = lobby::ENoLobby)]
+fun test_join_with_the_hash_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    f.open(3, true);
+    f.ts.next_tx(BOB);
+    let code = code_hash().to_bytes();
+    join_lobby(&mut f.lobbies, &f.preset, &mut f.alice, &mut f.bob, &f.clock, code, f.ts.ctx());
+    abort
+}
+
+#[test, expected_failure(abort_code = lobby::ELobbyExpired)]
+fun test_join_expired_invite_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    f.open(3, true);
+    f.clock.set_for_testing(lobby::lifetime_ms() + 1);
+    let _game = f.join_invite();
+    abort
+}
+
+/// Up to the lifetime, to the millisecond, the lobby is open.
+#[test]
+fun test_join_at_the_lifetime() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    f.open(3, true);
+    f.clock.set_for_testing(lobby::lifetime_ms());
+    let game = f.join_invite();
+    ts::return_shared(game);
+    fixture.finish();
+}
+
+#[test, expected_failure(abort_code = lobby::ELobbyExpired)]
+fun test_join_expired_listed_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    f.open(3, false);
+    f.clock.set_for_testing(lobby::lifetime_ms() + 1);
+    f.join_listed();
+    abort
+}
+
+#[test, expected_failure(abort_code = lobby::ELobbyExpired)]
+fun test_start_expired_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    f.open(3, false);
+    f.join_listed();
+    f.clock.set_for_testing(lobby::lifetime_ms() + 1);
+    let _game = f.start_listed();
+    abort
+}
+
+#[test, expected_failure(abort_code = lobby::ENoLobby)]
+fun test_join_listed_without_lobby_fail() {
+    let mut fixture = setup();
+    fixture.join_listed();
+    abort
+}
+
+#[test, expected_failure(abort_code = lobby::ENoLobby)]
+fun test_join_listed_invite_only_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    f.open(3, true);
+    f.join_listed();
+    abort
+}
+
+#[test, expected_failure(abort_code = lobby::ELobbyFull)]
+fun test_join_full_lobby_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut carol = f.carol();
+    f.open(3, false);
+    f.join_listed();
+    f.ts.next_tx(CAROL);
+    join_open(&mut f.lobbies, &f.alice, &mut carol, &f.clock, f.ts.ctx());
+    abort
+}
+
+#[test, expected_failure(abort_code = lobby::EKicked)]
+fun test_kicked_rejoins_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    f.open(3, false);
+    f.join_listed();
+    f.ts.next_tx(ALICE);
+    kick_guest(&mut f.lobbies, &f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    f.join_listed();
+    abort
+}
+
+#[test, expected_failure(abort_code = account::ENotOwner)]
+fun test_guest_starts_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    f.open(3, false);
+    f.join_listed();
+    f.ts.next_tx(BOB);
+    start_friendly(&mut f.lobbies, &f.preset, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    abort
+}
+
+/// Not even past the lifetime: a stranger can only clean up.
+#[test, expected_failure(abort_code = account::ENotOwner)]
+fun test_stranger_starts_expired_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    f.open(3, false);
+    f.join_listed();
+    f.clock.set_for_testing(lobby::lifetime_ms() + 1);
+    f.ts.next_tx(CAROL);
+    start_friendly(&mut f.lobbies, &f.preset, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    abort
+}
+
+#[test, expected_failure(abort_code = lobby::ENoGuest)]
+fun test_start_without_guest_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    f.open(3, false);
+    let _game = f.start_listed();
+    abort
+}
+
+#[test, expected_failure(abort_code = lobby::EWrongGuest)]
+fun test_start_with_wrong_guest_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut carol = f.carol();
+    f.open(3, false);
+    f.join_listed();
+    f.ts.next_tx(ALICE);
+    start_friendly(&mut f.lobbies, &f.preset, &mut f.alice, &mut carol, &f.clock, f.ts.ctx());
+    abort
+}
+
+#[test, expected_failure(abort_code = lobby::ELobbyNotExpired)]
+fun test_stranger_kicks_before_lifetime_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    f.open(3, false);
+    f.join_listed();
+    f.clock.set_for_testing(lobby::lifetime_ms());
+    f.ts.next_tx(CAROL);
+    kick_guest(&mut f.lobbies, &f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    abort
+}
+
+#[test, expected_failure(abort_code = lobby::ELobbyNotExpired)]
+fun test_stranger_closes_before_lifetime_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    f.open(3, true);
+    f.clock.set_for_testing(lobby::lifetime_ms());
+    f.ts.next_tx(CAROL);
+    close_lobby(&mut f.lobbies, &mut f.alice, &f.clock, f.ts.ctx());
+    abort
+}
+
+/// The guest cannot close the lobby, nor kick themself out with a record: they leave.
+#[test, expected_failure(abort_code = lobby::ELobbyNotExpired)]
+fun test_guest_kicks_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    f.open(3, false);
+    f.join_listed();
+    kick_guest(&mut f.lobbies, &f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    abort
+}
+
+#[test, expected_failure(abort_code = lobby::ELobbyHasGuest)]
+fun test_close_with_guest_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    f.open(3, false);
+    f.join_listed();
+    f.ts.next_tx(ALICE);
+    close_lobby(&mut f.lobbies, &mut f.alice, &f.clock, f.ts.ctx());
+    abort
+}
+
+#[test, expected_failure(abort_code = lobby::ELobbyHasGuest)]
+fun test_stranger_closes_with_guest_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    f.open(3, false);
+    f.join_listed();
+    f.clock.set_for_testing(lobby::lifetime_ms() + 1);
+    f.ts.next_tx(CAROL);
+    close_lobby(&mut f.lobbies, &mut f.alice, &f.clock, f.ts.ctx());
+    abort
+}
+
+#[test, expected_failure(abort_code = lobby::ENoGuest)]
+fun test_kick_without_guest_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    f.open(3, false);
+    kick_guest(&mut f.lobbies, &f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    abort
+}
+
+/// Only the guest of the host's lobby can be kicked out of it, not the guest of
+/// Carol's.
+#[test, expected_failure(abort_code = lobby::ENoGuest)]
+fun test_kick_another_lobbys_guest_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut carol = f.carol();
+    open_lobby(&mut f.lobbies, &mut carol, &f.clock, 3, option::none(), f.ts.ctx());
+    f.ts.next_tx(BOB);
+    join_open(&mut f.lobbies, &carol, &mut f.bob, &f.clock, f.ts.ctx());
+    f.open(3, false);
+    kick_guest(&mut f.lobbies, &f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    abort
+}
+
+#[test, expected_failure(abort_code = ESuspended)]
+fun test_open_while_suspended_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut game = f.start();
+    abandon_game(&mut game, &f.alice, f.ts.ctx());
+    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    f.clock.set_for_testing(SUSPENSION_MS - 1);
+    f.open(3, false);
+    abort
+}
+
+#[test, expected_failure(abort_code = ESuspended)]
+fun test_join_while_suspended_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut game = f.start();
+    abandon_game(&mut game, &f.alice, f.ts.ctx());
+    f.ts.next_tx(BOB);
+    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    f.clock.set_for_testing(SUSPENSION_MS - 1);
+    f.ts.next_tx(BOB);
+    open_lobby(&mut f.lobbies, &mut f.bob, &f.clock, 3, option::some(code_hash()), f.ts.ctx());
+    f.ts.next_tx(ALICE);
+    join_lobby(&mut f.lobbies, &f.preset, &mut f.bob, &mut f.alice, &f.clock, CODE, f.ts.ctx());
+    abort
+}
+
+/// Past the suspension, a lobby is open to the `Account` again.
+#[test]
+fun test_open_after_suspension() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut game = f.start();
+    abandon_game(&mut game, &f.alice, f.ts.ctx());
+    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    f.clock.set_for_testing(SUSPENSION_MS);
+    f.open(3, false);
+    fixture.finish();
+}
+
+// === Friendly: the `Account` state machine ===
+
+/// A host is searching: no second lobby, no queue, no other lobby to join.
+#[test, expected_failure(abort_code = EAlreadySearching)]
+fun test_host_opens_again_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    f.open(3, false);
+    f.open(3, true);
+    abort
+}
+
+#[test, expected_failure(abort_code = EAlreadySearching)]
+fun test_host_queues_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    f.open(3, true);
+    find_game(&mut f.mm, &mut f.alice, &f.preset, &f.rng, &f.clock, f.ts.ctx());
+    abort
+}
+
+#[test, expected_failure(abort_code = EAlreadySearching)]
+fun test_host_joins_another_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    f.ts.next_tx(BOB);
+    open_lobby(&mut f.lobbies, &mut f.bob, &f.clock, 3, option::none(), f.ts.ctx());
+    f.open(3, true);
+    join_open(&mut f.lobbies, &f.bob, &mut f.alice, &f.clock, f.ts.ctx());
+    abort
+}
+
+/// A guest is searching too: no queue, no other lobby, no lobby of its own.
+#[test, expected_failure(abort_code = EAlreadySearching)]
+fun test_guest_queues_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    f.open(3, false);
+    f.join_listed();
+    find_game(&mut f.mm, &mut f.bob, &f.preset, &f.rng, &f.clock, f.ts.ctx());
+    abort
+}
+
+#[test, expected_failure(abort_code = EAlreadySearching)]
+fun test_guest_opens_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    f.open(3, false);
+    f.join_listed();
+    open_lobby(&mut f.lobbies, &mut f.bob, &f.clock, 3, option::none(), f.ts.ctx());
+    abort
+}
+
+#[test, expected_failure(abort_code = EAlreadySearching)]
+fun test_guest_joins_another_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let mut carol = f.carol();
+    open_lobby(&mut f.lobbies, &mut carol, &f.clock, 3, option::none(), f.ts.ctx());
+    f.open(3, false);
+    f.join_listed();
+    join_open(&mut f.lobbies, &carol, &mut f.bob, &f.clock, f.ts.ctx());
+    abort
+}
+
+/// A queued `Account` cannot open or join a lobby.
+#[test, expected_failure(abort_code = EAlreadySearching)]
+fun test_queued_opens_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    find_game(&mut f.mm, &mut f.alice, &f.preset, &f.rng, &f.clock, f.ts.ctx());
+    f.open(3, false);
+    abort
+}
+
+#[test, expected_failure(abort_code = EAlreadySearching)]
+fun test_queued_joins_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    f.open(3, true);
+    f.ts.next_tx(BOB);
+    find_game(&mut f.mm, &mut f.bob, &f.preset, &f.rng, &f.clock, f.ts.ctx());
+    join_lobby(&mut f.lobbies, &f.preset, &mut f.alice, &mut f.bob, &f.clock, CODE, f.ts.ctx());
+    abort
+}
+
+/// Nor can one with a seat waiting.
+#[test, expected_failure(abort_code = EAlreadySearching)]
+fun test_seat_waiting_opens_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    f.match_up();
+    f.open(3, false);
+    abort
+}
+
+#[test, expected_failure(abort_code = EAlreadySearching)]
+fun test_playing_opens_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    let _game = f.start();
+    f.open(3, false);
+    abort
+}
+
+#[test, expected_failure(abort_code = EAlreadySearching)]
+fun test_playing_friendly_queues_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    f.open(3, true);
+    let _game = f.join_invite();
+    find_game(&mut f.mm, &mut f.alice, &f.preset, &f.rng, &f.clock, f.ts.ctx());
+    abort
+}
+
+/// A lobby's search is not in the queue: `cancel_search` refuses it, the host's...
+#[test, expected_failure(abort_code = ESeatWaiting)]
+fun test_cancel_search_of_host_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    f.open(3, true);
+    cancel_search(&mut f.mm, &mut f.alice, &f.clock, f.ts.ctx());
+    abort
+}
+
+/// ...and the guest's, even past every timeout.
+#[test, expected_failure(abort_code = ESeatWaiting)]
+fun test_cancel_search_of_guest_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    f.open(3, false);
+    f.join_listed();
+    f.clock.set_for_testing(100 * SEARCH_TIMEOUT_MS);
+    f.ts.next_tx(CAROL);
+    cancel_search(&mut f.mm, &mut f.bob, &f.clock, f.ts.ctx());
+    abort
+}
+
+/// The queue's search is no lobby's: closing it refuses...
+#[test, expected_failure(abort_code = lobby::ENoLobby)]
+fun test_close_queued_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    find_game(&mut f.mm, &mut f.alice, &f.preset, &f.rng, &f.clock, f.ts.ctx());
+    close_lobby(&mut f.lobbies, &mut f.alice, &f.clock, f.ts.ctx());
+    abort
+}
+
+/// ...even for a stranger long past the lifetime, and with a seat waiting...
+#[test, expected_failure(abort_code = lobby::ENoLobby)]
+fun test_stranger_closes_seat_waiting_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    f.match_up();
+    f.clock.set_for_testing(100 * lobby::lifetime_ms());
+    f.ts.next_tx(CAROL);
+    close_lobby(&mut f.lobbies, &mut f.alice, &f.clock, f.ts.ctx());
+    abort
+}
+
+/// ...and leaving refuses it.
+#[test, expected_failure(abort_code = lobby::ENoLobby)]
+fun test_leave_queued_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    find_game(&mut f.mm, &mut f.alice, &f.preset, &f.rng, &f.clock, f.ts.ctx());
+    leave_lobby(&mut f.lobbies, &mut f.alice, f.ts.ctx());
+    abort
+}
+
+#[test, expected_failure(abort_code = lobby::ENoLobby)]
+fun test_leave_idle_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    leave_lobby(&mut f.lobbies, &mut f.alice, f.ts.ctx());
+    abort
+}
+
+/// The host does not leave their own lobby: they close it.
+#[test, expected_failure(abort_code = lobby::ENoGuest)]
+fun test_host_leaves_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    f.open(3, false);
+    leave_lobby(&mut f.lobbies, &mut f.alice, f.ts.ctx());
+    abort
+}
+
+/// The guest does not close the lobby they wait in: they leave it.
+#[test, expected_failure(abort_code = lobby::ENoLobby)]
+fun test_guest_closes_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    f.open(3, false);
+    f.join_listed();
+    close_lobby(&mut f.lobbies, &mut f.bob, &f.clock, f.ts.ctx());
+    abort
+}
+
+#[test, expected_failure(abort_code = lobby::ENoLobby)]
+fun test_close_idle_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    close_lobby(&mut f.lobbies, &mut f.alice, &f.clock, f.ts.ctx());
+    abort
+}
+
+#[test, expected_failure(abort_code = account::ENotOwner)]
+fun test_leave_foreign_account_fail() {
+    let mut fixture = setup();
+    let f = &mut fixture;
+    f.open(3, false);
+    f.join_listed();
+    f.ts.next_tx(CAROL);
+    leave_lobby(&mut f.lobbies, &mut f.bob, f.ts.ctx());
+    abort
+}
+
+/// A rated game after a friendly one: the queue knows nothing of the lobby.
+#[test]
+fun test_queue_after_friendly() {
+    use std::unit_test::assert_eq;
+
+    let mut fixture = setup();
+    let f = &mut fixture;
+    f.open(3, true);
+    let mut game = f.join_invite();
+    abandon_game(&mut game, &f.alice, f.ts.ctx());
+    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+
+    let mut game = f.start();
+    assert_eq!(game.mode(), Mode::Rated);
+    f.deploy(&mut game);
+    f.alice_kills_bob(&mut game);
+    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    assert_eq!(f.alice.games_played(), 1);
+    let bob = object::id_address(&f.bob);
+    assert_eq!(f.dog_tags(bob), 1);
+
+    fixture.finish();
+}
+
+// Read with `sui move test bench_lobby -s`: on Black Rain, each step of a lobby's
+// life from the setup, so the difference between two is what the step costs.
+
+#[test]
+fun bench_lobby_a_setup() {
+    let fixture = setup_black_rain();
+    fixture.finish();
+}
+
+#[test]
+fun bench_lobby_b_open_invite() {
+    let mut fixture = setup_black_rain();
+    fixture.open(3, true);
+    fixture.finish();
+}
+
+#[test]
+fun bench_lobby_c_join_invite() {
+    let mut fixture = setup_black_rain();
+    fixture.open(3, true);
+    let game = fixture.join_invite();
+    ts::return_shared(game);
+    fixture.finish();
+}
+
+#[test]
+fun bench_lobby_d_close_invite() {
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    f.open(3, true);
+    close_lobby(&mut f.lobbies, &mut f.alice, &f.clock, f.ts.ctx());
+    fixture.finish();
+}
+
+#[test]
+fun bench_lobby_e_open_listed() {
+    let mut fixture = setup_black_rain();
+    fixture.open(3, false);
+    fixture.finish();
+}
+
+#[test]
+fun bench_lobby_f_join_listed() {
+    let mut fixture = setup_black_rain();
+    fixture.open(3, false);
+    fixture.join_listed();
+    fixture.finish();
+}
+
+#[test]
+fun bench_lobby_g_kick() {
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    f.open(3, false);
+    f.join_listed();
+    f.ts.next_tx(ALICE);
+    kick_guest(&mut f.lobbies, &f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    fixture.finish();
+}
+
+#[test]
+fun bench_lobby_h_kick_and_close() {
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    f.open(3, false);
+    f.join_listed();
+    f.ts.next_tx(ALICE);
+    kick_guest(&mut f.lobbies, &f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    close_lobby(&mut f.lobbies, &mut f.alice, &f.clock, f.ts.ctx());
+    fixture.finish();
+}
+
+#[test]
+fun bench_lobby_i_start() {
+    let mut fixture = setup_black_rain();
+    fixture.open(3, false);
+    fixture.join_listed();
+    let game = fixture.start_listed();
+    ts::return_shared(game);
+    fixture.finish();
+}

@@ -30,11 +30,19 @@
 /// A game is what the rest of the game runs on. It moves both ratings, and gives the
 /// recruits who come home experience by how it ended. The fallen are gone for good,
 /// with their gear.
+///
+/// Friends play in a lobby instead (see `ghosts::lobby`): the host opens it, listed
+/// or behind an invite code, and is `Searching` in it, as in the queue. A guest
+/// joins with the code, which starts the game there and then, or takes the slot of
+/// a listed one and waits for the host to start it, or kick them. Either way the
+/// host goes first, and the game is friendly: played for nothing, with no rating,
+/// score, experience or suspension out of it, and nobody who falls in it dies.
 module ghosts::ghosts;
 
 use ghosts::{
     account::Account,
     history::{Self, History, Record},
+    lobby::{Self, Lobbies},
     map::{Self, Map},
     recruit::Recruit
 };
@@ -69,10 +77,13 @@ const EAlreadyDeployed: u64 = 21;
 const EGameNotOver: u64 = 17;
 /// The `Account` has no recruits to play with.
 const ENoSquad: u64 = 22;
-/// A match found the search: its `Seat` waits on the `Account`, to accept first.
+/// The search is not in the queue: a match found it, and its `Seat` waits on the
+/// `Account`, to accept first; or it is in a lobby, to leave or close instead.
 const ESeatWaiting: u64 = 25;
 /// The `Account` has yet to accept its `Seat` in the game.
 const ESeatNotAccepted: u64 = 27;
+/// More recruits than the size of the friendly game.
+const ESquadTooLarge: u64 = 28;
 
 /// How long a search waits before anyone can cancel it; the queue keeps it until then.
 const SEARCH_TIMEOUT_MS: u64 = 120_000;
@@ -143,8 +154,23 @@ public struct Game has key {
     /// History of the game.
     history: History,
     /// The recruits on the map, for the duration of the game; whose each one is,
-    /// its unit says. The fallen are taken out and killed by `bury_fallen`.
+    /// its unit says. The fallen are taken out and killed by `bury_fallen`, or in a
+    /// friendly game sent home by `raise_fallen`.
     recruits: Table<ID, Recruit>,
+    /// What the game is played for.
+    mode: Mode,
+}
+
+/// What a game is played for. Only deploying and completing it differ by mode: the
+/// turns are the same.
+public enum Mode has copy, drop, store {
+    /// Matched in the queue: it moves both ratings and goes on both scores, the
+    /// recruits who come home earn experience, and the fallen are gone for good.
+    Rated,
+    /// Started from a lobby, for nothing: no rating, score, experience or
+    /// suspension comes out of it, and the fallen get up and go home with the
+    /// survivors. Each side deploys up to `size` recruits.
+    Friendly { size: u8 },
 }
 
 /// Where a game stands. It only moves forward: `Deploying`, `Playing`, `Over`.
@@ -192,14 +218,10 @@ entry fun find_game(
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    acc.authorize(ctx);
-    assert!(acc.is_idle(), EAlreadySearching);
+    let now = clock.timestamp_ms();
+    check_free(acc, now, ctx);
 
     let rating = acc.rating();
-    let now = clock.timestamp_ms();
-    assert!(now >= acc.suspended_until(), ESuspended);
-    assert!(acc.num_recruits() > 0, ENoSquad);
-
     let window = rating.current_deviation(now);
     let mut rng = rng.new_generator(ctx);
     let permit = internal::permit<Ghosts>();
@@ -219,7 +241,7 @@ entry fun find_game(
     // the player who waited is sent their seat: their `Account` isn't in this call
     let m = found.destroy_some();
     let waiting = m.players()[0];
-    let game = new_game(preset, waiting, object::id(acc), now, ctx);
+    let game = new_game(preset, waiting, object::id(acc), Mode::Rated, now, ctx);
     let seat = Seat { id: object::new(ctx), game: object::id(&game) };
     acc.set_playing(object::id(&game));
     transfer::transfer(seat, waiting.to_address());
@@ -241,7 +263,8 @@ public fun accept_seat(acc: &mut Account, seat: Receiving<Seat>) {
 /// Leave the queue. The owner can do this at any time, anyone else once the search
 /// has run past `SEARCH_TIMEOUT_MS`. The queue never lets go of a search on its
 /// own, so one no longer in it was found by a match: its `Seat` comes first, and
-/// the game ends through `abandon_game` or `complete_game` instead.
+/// the game ends through `abandon_game` or `complete_game` instead. A search in a
+/// lobby is not in the queue either: `leave_lobby` or `close_lobby` ends it.
 public fun cancel_search(
     mm: &mut Matchmaker<Ghosts>,
     acc: &mut Account,
@@ -262,8 +285,15 @@ public fun cancel_search(
 }
 
 /// A game on the preset between the player who `waiting` was, going first, and
-/// the one who found them, still deploying.
-fun new_game(preset: &Preset, waiting: ID, finder: ID, now: u64, ctx: &mut TxContext): Game {
+/// the one who found them, still deploying, played for what `mode` says.
+fun new_game(
+    preset: &Preset,
+    waiting: ID,
+    finder: ID,
+    mode: Mode,
+    now: u64,
+    ctx: &mut TxContext,
+): Game {
     let half = preset.positions.length() / 2;
     let mut positions = vector[vector[], vector[]];
     preset
@@ -280,7 +310,135 @@ fun new_game(preset: &Preset, waiting: ID, finder: ID, now: u64, ctx: &mut TxCon
         positions,
         history: history::empty(),
         recruits: table::new(ctx),
+        mode,
     }
+}
+
+/// Check the sender controls the `Account`, free to play: neither searching nor in
+/// a game, past any suspension, and with recruits to deploy.
+fun check_free(acc: &Account, now: u64, ctx: &mut TxContext) {
+    acc.authorize(ctx);
+    assert!(acc.is_idle(), EAlreadySearching);
+    assert!(now >= acc.suspended_until(), ESuspended);
+    assert!(acc.num_recruits() > 0, ENoSquad);
+}
+
+// === Friendly ===
+
+/// Open a lobby for a friendly game of `size`, the most recruits each side
+/// deploys: listed, for anyone to join with `join_open`, or with a `code_hash`,
+/// the blake2b256 hash of the invite code, for whoever brings the code to
+/// `join_lobby`. The `Account` is `Searching` in the lobby until it starts or
+/// closes. It must be free to play, as for `find_game`.
+public fun open_lobby(
+    lobbies: &mut Lobbies,
+    acc: &mut Account,
+    clock: &Clock,
+    size: u8,
+    code_hash: Option<address>,
+    ctx: &mut TxContext,
+) {
+    let now = clock.timestamp_ms();
+    check_free(acc, now, ctx);
+    lobbies.open(acc, size, code_hash, now);
+}
+
+/// Join the invite-only lobby of `host` with its invite `code`: the friendly game
+/// starts on the preset there and then, `host` going first, and both `Account`s
+/// are `Playing` it. The joining `Account` must be free to play.
+public fun join_lobby(
+    lobbies: &mut Lobbies,
+    preset: &Preset,
+    host: &mut Account,
+    acc: &mut Account,
+    clock: &Clock,
+    code: vector<u8>,
+    ctx: &mut TxContext,
+) {
+    let now = clock.timestamp_ms();
+    check_free(acc, now, ctx);
+    let size = lobbies.join_protected(host, code, now);
+    start_friendly_game(preset, host, acc, size, now, ctx);
+}
+
+/// Take the guest slot of the listed lobby of `host`: the `Account` is `Searching`
+/// in it until the host starts the game, or kicks it, or it leaves. It must be
+/// free to play, and not kicked out of the lobby before.
+public fun join_open(
+    lobbies: &mut Lobbies,
+    host: &Account,
+    acc: &mut Account,
+    clock: &Clock,
+    ctx: &mut TxContext,
+) {
+    let now = clock.timestamp_ms();
+    check_free(acc, now, ctx);
+    lobbies.join_open(host, acc, now);
+}
+
+/// Leave the guest slot of a listed lobby: the `Account` is idle again.
+public fun leave_lobby(lobbies: &mut Lobbies, acc: &mut Account, ctx: &mut TxContext) {
+    acc.authorize(ctx);
+    lobbies.leave(acc);
+}
+
+/// Kick the guest out of the listed lobby of `host`, idle again: the host can do
+/// this at any time, and the guest cannot come back; anyone else once the lobby's
+/// lifetime is out, to close it, and the guest can.
+public fun kick_guest(
+    lobbies: &mut Lobbies,
+    host: &Account,
+    guest: &mut Account,
+    clock: &Clock,
+    ctx: &mut TxContext,
+) {
+    lobbies.kick(host, guest, clock.timestamp_ms(), ctx);
+}
+
+/// Start the friendly game of a listed lobby with the guest in it, on the preset:
+/// the host goes first, and both `Account`s are `Playing` it. Only the host can.
+public fun start_friendly(
+    lobbies: &mut Lobbies,
+    preset: &Preset,
+    host: &mut Account,
+    guest: &mut Account,
+    clock: &Clock,
+    ctx: &mut TxContext,
+) {
+    host.authorize(ctx);
+    let now = clock.timestamp_ms();
+    let size = lobbies.start(host, guest, now);
+    start_friendly_game(preset, host, guest, size, now, ctx);
+}
+
+/// Close the lobby the `Account` hosts, of either kind, with nobody in its guest
+/// slot: the `Account` is idle again. The host can do this at any time, anyone
+/// else once the lobby's lifetime is out; a guest waiting in it is kicked first,
+/// with `kick_guest`, in the same transaction.
+public fun close_lobby(
+    lobbies: &mut Lobbies,
+    host: &mut Account,
+    clock: &Clock,
+    ctx: &mut TxContext,
+) {
+    lobbies.close(host, clock.timestamp_ms(), ctx);
+}
+
+/// A friendly game of `size` on the preset between the `host`, going first, and
+/// the `guest`, still deploying; both are `Playing` it.
+fun start_friendly_game(
+    preset: &Preset,
+    host: &mut Account,
+    guest: &mut Account,
+    size: u8,
+    now: u64,
+    ctx: &mut TxContext,
+) {
+    let mode = Mode::Friendly { size };
+    let game = new_game(preset, object::id(host), object::id(guest), mode, now, ctx);
+    host.set_playing(object::id(&game));
+    guest.set_playing(object::id(&game));
+    transfer::share_object(game);
 }
 
 // === Ending the Game ===
@@ -300,7 +458,8 @@ public fun abandon_game(game: &mut Game, acc: &Account, ctx: &mut TxContext) {
 /// result onto their scores, the `Account`s playing
 /// it are `Idle` again, and whoever abandoned the game or never deployed is
 /// suspended for `SUSPENSION_MS`. Both `Account`s must be in the game: a `Seat` not
-/// yet accepted is accepted first, by whoever wraps up.
+/// yet accepted is accepted first, by whoever wraps up. A friendly game only sends
+/// everyone home, the fallen too, and frees the `Account`s.
 public fun complete_game(
     mut game: Game,
     first: &mut Account,
@@ -317,24 +476,26 @@ public fun complete_game(
     assert!(first.playing() == id && second.playing() == id, ESeatNotAccepted);
 
     let now = clock.timestamp_ms();
+    let rated = game.mode == Mode::Rated;
 
-    // nobody showing up isn't a game: it goes on no score and moves no rating
+    // nobody showing up isn't a game: it goes on no score and moves no rating,
+    // and neither does a friendly one
     let winner = game.winner();
-    if (!game.nobody_showed()) {
+    if (rated && !game.nobody_showed()) {
         first.add_result(winner);
         second.add_result(winner);
         first.rate_game(second, winner, now);
     };
 
-    game.bury_fallen(ctx);
+    if (rated) game.bury_fallen(ctx) else game.raise_fallen(first, second);
     let (xp_first, xp_second) = (game.experience(0, winner), game.experience(1, winner));
     let (squad_first, squad_second) = game.squads();
     game.send_home(first, squad_first, xp_first);
     game.send_home(second, squad_second, xp_second);
     game.release(first);
     game.release(second);
-    if (game.misbehaved(0)) first.suspend(now + SUSPENSION_MS);
-    if (game.misbehaved(1)) second.suspend(now + SUSPENSION_MS);
+    if (rated && game.misbehaved(0)) first.suspend(now + SUSPENSION_MS);
+    if (rated && game.misbehaved(1)) second.suspend(now + SUSPENSION_MS);
 
     let Game { id, map, recruits, .. } = game;
     map.destroy();
@@ -345,9 +506,9 @@ public fun complete_game(
 // === Game Actions ===
 
 /// Pick the squad: recruits received from the `Account`, placed on the side's
-/// spawn positions, as many as the map has for a side. Once per side, in any
-/// order, within `DEPLOY_LIMIT_MS` of the match. The first turn starts as soon as
-/// both sides have deployed.
+/// spawn positions, as many as the map has for a side, and in a friendly game no
+/// more than its size. Once per side, in any order, within `DEPLOY_LIMIT_MS` of
+/// the match. The first turn starts as soon as both sides have deployed.
 public fun deploy_squad(
     game: &mut Game,
     acc: &mut Account,
@@ -366,6 +527,10 @@ public fun deploy_squad(
     assert!(game.squad(side).is_empty(), EAlreadyDeployed);
     assert!(!recruits.is_empty(), ENoPositions);
     assert!(recruits.length() <= game.positions[side].length(), ENoPositions);
+    match (game.mode) {
+        Mode::Friendly { size } => assert!(recruits.length() <= size as u64, ESquadTooLarge),
+        Mode::Rated => (),
+    };
 
     recruits.do!(|recruit| {
         let recruit = acc.remove_recruit(recruit, ctx);
@@ -533,6 +698,9 @@ public fun turn(self: &Game): u16 { self.turn }
 /// Get where the game stands.
 public fun state(self: &Game): State { self.state }
 
+/// Get what the game is played for.
+public fun mode(self: &Game): Mode { self.mode }
+
 /// Get the `Account` that won a game that is over: the side with someone left, or
 /// whoever did not abandon, forfeit or miss the game. None for a draw, or while the
 /// game is on.
@@ -632,8 +800,10 @@ fun nobody_showed(game: &Game): bool {
 
 /// The experience each of a side's recruits coming home earns from how the game
 /// ended. None for a side that left or never showed, for one whose opponent never
-/// showed, or for one left behind before the game got anywhere.
+/// showed, or for one left behind before the game got anywhere; none at all in a
+/// friendly game.
 fun experience(game: &Game, side: u64, winner: Option<ID>): u16 {
+    if (game.mode != Mode::Rated) return 0;
     let other = game.players[1 - side];
     let walkover = match (&game.state) {
         State::Over(Ending::Abandoned(by)) | State::Over(Ending::Forfeited(by)) => *by == other,
@@ -699,8 +869,10 @@ fun count_losses(game: &mut Game, records: &vector<Record>) {
 
 /// Take the recruits killed since the last call out of the game, their gear going
 /// down with them and their dog tags sent to their `Account`s. Never called where
-/// `Random` is used: see `Map.fallen`.
+/// `Random` is used: see `Map.fallen`. Nobody dies in a friendly game: its fallen
+/// stay in `Map.fallen` until `raise_fallen`.
 fun bury_fallen(game: &mut Game, ctx: &mut TxContext) {
+    if (game.mode != Mode::Rated) return;
     game.map.bury().do!(|id| {
         // a unit the preset placed has no recruit behind it
         if (id.to_address() == @0 || !game.recruits.contains(id)) return;
@@ -711,9 +883,22 @@ fun bury_fallen(game: &mut Game, ctx: &mut TxContext) {
     });
 }
 
+/// Send everyone who fell in a friendly game home, alive, to the `Account` they
+/// came from: `first` or `second`.
+fun raise_fallen(game: &mut Game, first: &mut Account, second: &mut Account) {
+    game.map.bury().do!(|id| {
+        // a unit the preset placed has no recruit behind it
+        if (id.to_address() == @0 || !game.recruits.contains(id)) return;
+
+        let recruit = game.recruits.remove(id);
+        if (recruit.leader() == object::id(first).to_address()) first.add_recruit(recruit)
+        else second.add_recruit(recruit);
+    });
+}
+
 // === Init ===
 
-/// On publish, share the matchmaking queue and freeze the map preset, which is
+/// On publish, share the matchmaking queue and the lobbies, and freeze the map preset, which is
 /// generated from a scene: see `pnpm --dir app build:map-preset`.
 fun init(ctx: &mut TxContext) {
     let id = object::new(ctx);
@@ -729,6 +914,7 @@ fun init(ctx: &mut TxContext) {
     // a `Seat`, so the `Account` always knows where it stands
     let config = matchmaker::new_config(100, NO_LIMIT, 50, 30_000, 1_000, NO_LIMIT);
     matchmaker::new(internal::permit<Ghosts>(), config, ctx).share();
+    lobby::new(ctx).share();
 }
 
 /// `init` for the tests: a module's own extensions cannot call it.
