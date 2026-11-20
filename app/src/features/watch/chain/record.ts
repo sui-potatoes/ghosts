@@ -264,7 +264,7 @@ export class EventFeed {
     private readonly mirror: EncounterRules;
     private readonly bounds: Bounds;
     private seen: number;
-    /** The field as play started, and the cells since turned from cover to open ground. */
+    /** The field as play started, and the cells since turned from obstacles to open ground. */
     private readonly opening: ChainGame;
     private readonly cleared = new Set<string>();
     /** Which units' area weapons break the ground (`env_damage`). */
@@ -294,11 +294,11 @@ export class EventFeed {
             side: 0,
             unitAt: ([x, z]) =>
                 mirror.units.find((u) => u.hp > 0 && u.pos[0] === x && u.pos[1] === z)?.id,
-            // cover as it stood when the unit moved: the opening's, less what blasts took since
-            isCover: (cell) =>
-                terrainAt(this.opening, tile(cell)) === "cover" && !this.cleared.has(`${cell}`),
+            // obstacles as they stood when the unit moved: the opening's, less what blasts took since
+            isObstacle: (cell) =>
+                terrainAt(this.opening, tile(cell)) === "obstacle" && !this.cleared.has(`${cell}`),
             coverAt: (cell) => mirror.coverAt(cell),
-            // the chain's own ground: `Map.explode` takes every cover tile in reach
+            // the chain's own ground: `Map.explode` takes every obstacle and cover tile in reach
             blast: (cell, radius = GRENADE_RADIUS, weapon) => {
                 if (weapon !== undefined && !this.scorching.has(weapon)) return [];
                 for (let x = cell[0] - radius; x <= cell[0] + radius; x++)

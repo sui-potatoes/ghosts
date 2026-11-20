@@ -95,7 +95,7 @@ test("the effects, with their numbers labelled, match the contract", () => {
     assert.deepEqual([daze.id, daze.kind, daze.turns], ["Daze", 0, 2]);
     assert.deepEqual([smoke.id, smoke.kind, smoke.turns], ["Smoke", 1, 2]);
     assert.deepEqual(smoke.stats, { aim: -30, defense: 30 });
-    assert.deepEqual(daze.stats, { aim: "0" });
+    assert.deepEqual(daze.stats, { aim: "0", dodge: "0" });
     // the descriptions state the numbers and the duration, for the same range and radius
     assert.match(
         item("flashbang").description as string,

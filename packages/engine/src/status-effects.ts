@@ -34,6 +34,8 @@ export interface EffectStats {
   defense: number;
   mobility: number;
   armor: number;
+  /** The percent chance a hit is dodged; left out where the rules have none. */
+  dodge?: number;
 }
 
 /** One effect kind as the client knows it. */
@@ -74,8 +76,8 @@ function kind(id: string, tag: number, rest: Omit<EffectSpec, "id" | "tag" | "tu
 
 /** Every effect kind the client knows, by the contract's kind number. */
 export const EFFECTS: readonly EffectSpec[] = [
-  // `DAZE_MODIFIER`: aim −127, which takes any aim to 0 and no smoke gives back.
-  kind("Daze", 0, { name: "Dazed", icon: "flash", turns: 2, modifies: { aim: -STAT_CAP } }),
+  // `DAZE_MODIFIER`: aim −127 and dodge −127, which take both to 0 and no smoke gives back.
+  kind("Daze", 0, { name: "Dazed", icon: "flash", turns: 2, modifies: { aim: -STAT_CAP, dodge: -STAT_CAP } }),
   // `SMOKE_MODIFIER`: aim −30, defense +30.
   kind("Smoke", 1, { name: "In smoke", icon: "smoke", turns: 2, modifies: { aim: -SMOKE_AIM_PENALTY, defense: SMOKE_DEFENSE } }),
 ];
@@ -110,16 +112,18 @@ export function effectiveStats(
     const mod = effectSpec(e.kind, table)?.modifies;
     if (!mod || e.turns <= 0) continue;
     for (const key of Object.keys(mod) as (keyof EffectStats)[]) {
-      if (!mod[key]) continue;
-      out[key] = Math.min(STAT_CAP, Math.max(0, out[key] + mod[key]));
+      const value = out[key];
+      if (!mod[key] || value === undefined) continue;
+      out[key] = Math.min(STAT_CAP, Math.max(0, value + mod[key]));
     }
   }
   return out;
 }
 
-/** What a unit shoots with and is shot against, effects counted: `Unit.effective_stats` aim and defense. */
-export function unitCombat(u: { aim: number; defense: number; mobility: number; armor: number; effects?: readonly UnitEffect[] }) {
-  return effectiveStats({ aim: u.aim, defense: u.defense, mobility: u.mobility, armor: u.armor }, u.effects ?? []);
+/** What a unit shoots with and is shot against, effects counted: `Unit.effective_stats` aim, defense and dodge. */
+export function unitCombat(u: { aim: number; defense: number; mobility: number; armor: number; dodge?: number; effects?: readonly UnitEffect[] }) {
+  const base = { aim: u.aim, defense: u.defense, mobility: u.mobility, armor: u.armor, dodge: u.dodge ?? 0 };
+  return effectiveStats(base, u.effects ?? []) as Required<EffectStats>;
 }
 
 /** Whether a stun is on the unit: it gets no AP at its side's turn. */
@@ -171,7 +175,7 @@ export function endEffect(effects: UnitEffect[], kind: string): UnitEffect[] {
 /** "1 turn left", "2 turns left". */
 export const turnsLeft = (turns: number) => `${turns} turn${turns === 1 ? "" : "s"} left`;
 
-/** What an effect does, with labelled numbers: "aim 0", "+30 defense, −30 aim". */
+/** What an effect does, with labelled numbers: "aim 0, dodge 0", "+30 defense, −30 aim". */
 export function effectDetail(kind: string, table: readonly EffectSpec[] = EFFECTS): string {
   const mod = effectSpec(kind, table)?.modifies;
   if (!mod) return "";
@@ -179,6 +183,7 @@ export function effectDetail(kind: string, table: readonly EffectSpec[] = EFFECT
   const signed = (n: number) => (n > 0 ? `+${n}` : `−${-n}`);
   if (mod.defense) parts.push(`${signed(mod.defense)} defense`);
   if (mod.aim) parts.push(mod.aim <= -STAT_CAP ? "aim 0" : `${signed(mod.aim)} aim`);
+  if (mod.dodge) parts.push(mod.dodge <= -STAT_CAP ? "dodge 0" : `${signed(mod.dodge)} dodge`);
   if (mod.mobility) parts.push(`${signed(mod.mobility)} mobility`);
   if (mod.armor) parts.push(`${signed(mod.armor)} armor`);
   return parts.join(", ");

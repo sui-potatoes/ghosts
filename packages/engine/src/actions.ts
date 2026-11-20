@@ -10,6 +10,7 @@ import { applyDeploymentNames, applyLoadouts } from "./squad-bridge";
 import { deployment } from "./mpfb-characters.js";
 import { present, presentShot, presentThrow } from "./presenter";
 import { session, type Mode, type Panel } from "./session";
+import { gameLook } from "./scene-look";
 import { bestShotTarget, damagePreview, defaultGrenadeTarget, grenadeBlockReason } from "./targeting";
 
 /**
@@ -385,6 +386,11 @@ export function reset() {
   void s.battlefield.leaveAim();
   audio.stopVoice();
   s.game = new Encounter(s.game.scenario);
+  // A new game: an offline one draws a fresh look.
+  if (s.game.scenario.look === "drawn") {
+    s.look = gameLook(s.game.scenario);
+    if (s.look) s.battlefield.setLook(s.look);
+  }
   s.driver = s.makeDriver(s.game);
   applyDeploymentNames(s.game.units, deployment);
   applyLoadouts(s.game.units, s.loadouts);

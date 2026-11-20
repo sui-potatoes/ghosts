@@ -88,7 +88,7 @@ export function OfficePreview({ onClose }: { onClose(): void }) {
       cleanups.push(() => observer.disconnect()); resize();
       control.current.show("workstation", "sage", false);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "The office preview could not load.");
+      setError(reason instanceof Error ? reason.message : "The office preview could not load");
     }
     return () => {
       control.current = null; for (const cleanup of cleanups.reverse()) cleanup();
@@ -99,9 +99,9 @@ export function OfficePreview({ onClose }: { onClose(): void }) {
   const show = (selection: Selection, palette: OfficeFinish, doorOpen: boolean) => control.current?.show(selection, palette, doorOpen);
   return <dialog ref={dialog} className="destruction-preview office-preview" aria-labelledby="office-title"
     onCancel={e => { e.preventDefault(); onClose(); }} onKeyDown={e => e.stopPropagation()}>
-    <header><div><small>ASSET PACK 02 / OFFICE</small><h2 id="office-title">After hours.</h2></div>
+    <header><div><small>ASSET PACK 02 / OFFICE</small><h2 id="office-title">After hours</h2></div>
       <button onClick={onClose} aria-label="Close office preview">✕</button></header>
-    <p>{officeCatalog.length} modular assets · Three finishes · Explore the furnished floor in Demo 2.</p>
+    <p>{officeCatalog.length} modular assets · Three finishes · Explore the furnished floor in Training 2</p>
     <div className="destruction-stage" ref={viewport}>
       {error && <span className="destruction-loading" role="alert">{error}</span>}
       <span className="destruction-orbit">DRAG TO ORBIT · SCROLL TO ZOOM</span>
@@ -122,6 +122,6 @@ export function OfficePreview({ onClose }: { onClose(): void }) {
         setOpen(!open); show(kind, finish, !open);
       }}>{open ? "Close door" : "Open door"}</button>}
     </div>
-    <footer><p>Inspect furniture and fixtures here. Use Scene → Destruction preview to test breakage. PIN pads are display props.</p></footer>
+    <footer><p>Inspect furniture and fixtures here. Use Scene → Destruction preview to test breakage. PIN pads are display props</p></footer>
   </dialog>;
 }

@@ -29,6 +29,7 @@ export {
 export type { EncounterDebrief, EncounterReport, RecruitReport } from "./aftermath/report";
 export { blackRain, type Scenario, type UnitSpec } from "./scenario";
 export { scenarioById, scenarios } from "./scenarios";
+export { lookName, lookOfGame, type SceneLook } from "./scene-look";
 export { paperTrail } from "./office/scenario";
 export { OfficeAssets, officeCatalog, officeFinishes, type OfficeKind, type OfficeFinish } from "./office/assets";
 export { deployedIntel } from "./squad-bridge";

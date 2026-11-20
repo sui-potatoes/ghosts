@@ -139,7 +139,7 @@ export type OpenGame = {
 /** Why the host cannot start yet, null when Start can run. */
 export function startBlock(lobby: LobbyState, now: number, lifetimeMs: number): string | null {
     if (lobby.kind !== "host") return "Only the host starts the match";
-    if (now - lobby.sinceMs > lifetimeMs) return "This game has expired";
+    if (now - lobby.sinceMs > lifetimeMs) return "This match has expired";
     if (!lobby.listed) return "The match starts when your friend joins";
     if (!lobby.guest) return "Nobody has joined yet";
     return null;
@@ -152,8 +152,8 @@ export function joinBlock(
     presetSide: number | null,
 ): string | null {
     if (gate) return gate.reason;
-    if (game.removed) return "The host removed you from this game";
-    if (game.full) return "This game is full";
+    if (game.removed) return "The host removed you from this match";
+    if (game.full) return "This match is full";
     return sizeBlock(game.size, presetSide);
 }
 
@@ -166,12 +166,12 @@ export type Pending = {
 
 /** What the pressed row or button says while its write is on its way. */
 export const DOING: Record<Pending["what"], string> = {
-    host: "Opening game",
+    host: "Opening match",
     join: "Joining",
     leave: "Leaving",
     kick: "Removing guest",
     start: "Starting match",
-    close: "Closing game",
+    close: "Closing match",
 };
 
 /**

@@ -185,6 +185,7 @@ type Tile = readonly [row: number, col: number];
 
 /** `DEFENSE_BONUS` in `ghosts::map`: what each level of cover takes off the odds. */
 const DEFENSE_BONUS = 25;
+const LOW_COVER = 1;
 const HIGH_COVER = 2;
 /** `MAX_RANGE_OFFSET`, `DISTANCE_BONUS` and `DISTANCE_PENALTY` in `ghosts::unit`. */
 const MAX_RANGE_OFFSET = 3;
@@ -193,18 +194,22 @@ const DISTANCE_PENALTY = 10;
 
 const tileType = (game: ChainGame, [row, col]: Tile) => game.map.grid.grid[row]?.[col]?.tileType;
 
-/** Whether units can stand on a tile, and whether it is cover to climb over. */
-export function terrainAt(game: ChainGame, tile: Tile): "open" | "cover" | "blocked" {
-    const type = tileType(game, tile);
-    if (type?.$kind === "Empty") return "open";
-    return type?.$kind === "Cover" ? "cover" : "blocked";
+/**
+ * What a tile is to a unit on the move: ground to stand on (`Empty`, or `Cover` on its
+ * edges: `is_standable!`), an `Obstacle` a path passes over but never stops on, or
+ * blocked (`Wall`, `Unwalkable`, off the map). Units are not counted here.
+ */
+export function terrainAt(game: ChainGame, tile: Tile): "open" | "obstacle" | "blocked" {
+    const type = tileType(game, tile)?.$kind;
+    if (type === "Empty" || type === "Cover") return "open";
+    return type === "Obstacle" ? "obstacle" : "blocked";
 }
 
-/** `tile_cover!`: the cover on each side of a tile. A wall is high cover all around. */
+/** `tile_cover!`: the cover on each side of a tile. A wall is high all round, an obstacle low. */
 function tileCover(game: ChainGame, tile: Tile) {
     const type = tileType(game, tile);
     if (type?.$kind === "Cover") return type.Cover;
-    const level = type?.$kind === "Wall" ? HIGH_COVER : 0;
+    const level = type?.$kind === "Wall" ? HIGH_COVER : type?.$kind === "Obstacle" ? LOW_COVER : 0;
     return { left: level, top: level, right: level, bottom: level };
 }
 
@@ -241,14 +246,23 @@ function stepBlocks(
 ): boolean {
     if (tileType(game, to)?.$kind === "Wall") return true;
     if (!highCoverBlocks || !inner) return false;
-    const [a, b] = [tileCover(game, from), tileCover(game, to)];
-    // a wall has no sides here: it is a wall before it is cover
-    const side = (cover: typeof a, tile: Tile, name: keyof typeof a) =>
-        tileType(game, tile)?.$kind === "Cover" ? cover[name] : 0;
+    return highEdge(game, from, to);
+}
+
+/**
+ * `is_edge_high_cover!`: a high side on either tile of the edge between two neighbors.
+ * Only a `Cover` tile has sides here (`side_cover!`): a wall is a wall before it is cover,
+ * and an obstacle is low all round.
+ */
+function highEdge(game: ChainGame, from: Tile, to: Tile): boolean {
+    const side = (tile: Tile, name: "left" | "top" | "right" | "bottom") => {
+        const type = tileType(game, tile);
+        return type?.$kind === "Cover" ? type.Cover[name] : 0;
+    };
     const [dRow, dCol] = [to[0] - from[0], to[1] - from[1]];
     const out = dRow < 0 ? "top" : dRow > 0 ? "bottom" : dCol < 0 ? "left" : "right";
     const back = dRow < 0 ? "bottom" : dRow > 0 ? "top" : dCol < 0 ? "right" : "left";
-    return side(a, from, out) === HIGH_COVER || side(b, to, back) === HIGH_COVER;
+    return side(from, out) === HIGH_COVER || side(to, back) === HIGH_COVER;
 }
 
 /** `trace_line`: the segment between two tile centers, one edge at a time. */
@@ -301,6 +315,89 @@ export const lineOfSight = (game: ChainGame, from: Tile, to: Tile) =>
 /** `line_of_throw` and `perform_grenade`: only walls stop a throw, and it can't land on one. */
 export const lineOfThrow = (game: ChainGame, from: Tile, to: Tile) =>
     tileType(game, to)?.$kind !== "Wall" && traceLine(game, from, to, false);
+
+// === Moving, as `Map.trace_path` rules a path ===
+
+/**
+ * One step of `trace_path` between neighboring tiles, units aside: onto a tile that is
+ * not a wall or unwalkable, across no high side, and never from an obstacle onto another.
+ */
+export function stepAllowed(game: ChainGame, from: Tile, to: Tile): boolean {
+    const target = terrainAt(game, to);
+    if (target === "blocked") return false;
+    if (target === "obstacle" && terrainAt(game, from) === "obstacle") return false;
+    return !highEdge(game, from, to);
+}
+
+const hasUnit = (game: ChainGame, [row, col]: Tile) => !!game.map.grid.grid[row]?.[col]?.unit;
+
+/**
+ * `check_path`: the tile a path (`encodePath` bytes: the start, then a direction per step)
+ * ends on, or null where `move_unit` would abort. The start is ground to stand on, every
+ * step goes to a free neighbor `stepAllowed` lets it onto, and the path ends on ground to
+ * stand on: a unit passes over an obstacle, never stops on one. Its distance is its steps.
+ */
+export function checkPath(game: ChainGame, bytes: readonly number[]): Tile | null {
+    let tile: Tile = [bytes[0], bytes[1]];
+    if (bytes.length > 2 && terrainAt(game, tile) !== "open") return null;
+    for (const direction of bytes.slice(2)) {
+        const [row, col] = tile;
+        const next: Tile | null =
+            direction === UP
+                ? [row - 1, col]
+                : direction === DOWN
+                  ? [row + 1, col]
+                  : direction === LEFT
+                    ? [row, col - 1]
+                    : direction === RIGHT
+                      ? [row, col + 1]
+                      : null;
+        if (!next || hasUnit(game, next) || !stepAllowed(game, tile, next)) return null;
+        tile = next;
+    }
+    return terrainAt(game, tile) === "obstacle" ? null : tile;
+}
+
+/** A tile a unit can move to: the steps it takes, and a path of that many (start first). */
+export interface Reach {
+    tile: Tile;
+    steps: number;
+    path: Tile[];
+}
+
+/**
+ * Every tile a unit at `start` can move to with `mobility`: a breadth-first search that
+ * steps as `checkPath` allows, searches through obstacles without listing them, and lists
+ * each free tile to stand on (the start aside) with its fewest steps. Keyed `"row,col"`.
+ */
+export function reachable(game: ChainGame, start: Tile, mobility: number): Map<string, Reach> {
+    const seen = new Set([`${start}`]);
+    const out = new Map<string, Reach>();
+    let layer: Tile[][] = [[start]];
+    for (let steps = 1; steps <= mobility && layer.length; steps++) {
+        const next: Tile[][] = [];
+        for (const path of layer) {
+            const [row, col] = path[path.length - 1];
+            const around: Tile[] = [
+                [row - 1, col],
+                [row, col + 1],
+                [row + 1, col],
+                [row, col - 1],
+            ];
+            for (const to of around) {
+                if (seen.has(`${to}`) || hasUnit(game, to)) continue;
+                if (!stepAllowed(game, path[path.length - 1], to)) continue;
+                seen.add(`${to}`);
+                const longer = [...path, to];
+                next.push(longer);
+                if (terrainAt(game, to) === "open")
+                    out.set(`${to}`, { tile: to, steps, path: longer });
+            }
+        }
+        layer = next;
+    }
+    return out;
+}
 
 /**
  * `Unit.perform_attack`: the percent a shot hits, given the distance and the cover. `aim` is
@@ -367,18 +464,19 @@ export const effectName = (effect: number): EffectName | undefined =>
 
 /**
  * `Unit.effective_stats`: the base stats with each effect's modifier added in list order.
- * Daze takes the aim to 0; smoke takes 30 off the aim (to 0 at the least) and adds 30 defense;
- * `stats::add` caps a stat it modified at 127.
+ * Daze takes the aim and the dodge to 0; smoke takes 30 off the aim (to 0 at the least) and
+ * adds 30 defense; `stats::add` caps a stat it modified at 127. A dazed target never dodges.
  */
-export function effectiveStats<S extends { aim: number; defense: number }>(
+export function effectiveStats<S extends { aim: number; defense: number; dodge?: number }>(
     stats: S,
     effects: readonly number[],
 ): S {
-    let { aim, defense } = stats;
+    let { aim, defense, dodge } = stats;
     for (const effect of effects) {
         switch (effectKind(effect)) {
             case EFFECT_KINDS.daze:
                 aim = 0;
+                if (dodge !== undefined) dodge = 0;
                 break;
             case EFFECT_KINDS.smoke:
                 aim = Math.min(Math.max(aim - SMOKE_AIM_PENALTY, 0), STAT_CAP);
@@ -386,7 +484,7 @@ export function effectiveStats<S extends { aim: number; defense: number }>(
                 break;
         }
     }
-    return { ...stats, aim, defense };
+    return dodge === undefined ? { ...stats, aim, defense } : { ...stats, aim, defense, dodge };
 }
 
 /** `Effect` refresh: the same kind keeps the larger turns, in its place in the list. */
@@ -572,7 +670,8 @@ export interface FieldView {
     side: number;
     /** The unit standing on a cell. */
     unitAt(cell: Cell): string | undefined;
-    isCover(cell: Cell): boolean;
+    /** Whether a cell is an obstacle as the move starts: a path stepping onto one vaults it. */
+    isObstacle(cell: Cell): boolean;
     /** Whether a unit arriving on a cell would take cover there. */
     coverAt(cell: Cell): boolean;
     /**
@@ -674,7 +773,7 @@ export function* gameEvents(records: ChainRecord[], field: FieldView): Generator
                     type: "move",
                     unit,
                     path,
-                    vault: path.some((cell) => field.isCover(cell)),
+                    vault: path.slice(1).some((cell) => field.isObstacle(cell)),
                     cover: field.coverAt(end),
                 };
                 break;

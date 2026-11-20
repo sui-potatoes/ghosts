@@ -19,17 +19,17 @@ export function validateRpcUrl(input: string): RpcUrlCheck {
     try {
         url = new URL(text);
     } catch {
-        return { ok: false, error: "Not a valid URL." };
+        return { ok: false, error: "Not a valid URL" };
     }
     const local = LOCAL_HOSTS.has(url.hostname) || url.hostname.endsWith(".localhost");
     if (url.protocol === "http:") {
-        if (!local) return { ok: false, error: "Use https (http only works for localhost)." };
+        if (!local) return { ok: false, error: "Use https (http only works for localhost)" };
     } else if (url.protocol !== "https:") {
-        return { ok: false, error: "The URL must start with https://." };
+        return { ok: false, error: "The URL must start with https://" };
     }
     if (url.username || url.password) {
-        return { ok: false, error: "Credentials in the URL are not allowed." };
+        return { ok: false, error: "Credentials in the URL are not allowed" };
     }
-    if (url.hash) return { ok: false, error: "Remove the #fragment." };
+    if (url.hash) return { ok: false, error: "Remove the #fragment" };
     return { ok: true, url: (url.origin + url.pathname + url.search).replace(/\/+$/, "") };
 }

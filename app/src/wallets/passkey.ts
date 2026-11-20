@@ -45,11 +45,12 @@ import {
 } from "@mysten/wallet-standard";
 
 import { NETWORK } from "../constants";
+import { passkeySlot } from "./passkey-store";
 
 // === Persistence ===
 
 /** Local storage slot for the passkey's public key (per network). */
-const STORAGE_KEY = `ghosts:passkey:${NETWORK}`;
+const STORAGE_KEY = passkeySlot(NETWORK);
 
 export type StoredPasskey = { publicKey: string; credentialId?: string; createdAt: number };
 
@@ -77,7 +78,11 @@ export type Attachment = "platform" | "cross-platform" | "any";
 
 export const ATTACHMENTS: { value: Attachment; label: string; hint: string }[] = [
     { value: "platform", label: "This device", hint: "Touch ID, iCloud Keychain, Windows Hello" },
-    { value: "cross-platform", label: "External authenticator", hint: "YubiKey, or a phone via QR" },
+    {
+        value: "cross-platform",
+        label: "External authenticator",
+        hint: "YubiKey, or a phone via QR",
+    },
     { value: "any", label: "Any", hint: "Let the browser offer both" },
 ];
 
@@ -314,6 +319,21 @@ export function passkeyWalletInitializer(): WalletInitializer {
             return { unregister: getWallets().register(instance) };
         },
     };
+}
+
+/**
+ * Forget the passkey this device remembers: clears the stored public key and
+ * credential id and the wallet's keypair. The account itself is untouched; the
+ * next sign-in offers to create or find a passkey again.
+ */
+export function forgetPasskey() {
+    saveStoredPasskey(null);
+    getPasskeyWallet().setKeypair(null);
+}
+
+/** The remembered passkey's address, derivable without signing; null when none. */
+export function storedPasskeyAddress(): string | null {
+    return getPasskeyWallet().keypair?.toSuiAddress() ?? null;
 }
 
 /** Create a fresh credential on the authenticator and make it the wallet's account. */

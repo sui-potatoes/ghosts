@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+    blackRain,
     closeEncounterDebrief,
     deployedIntel,
     Encounter,
@@ -9,6 +10,7 @@ import {
     openBriefing,
     restartEncounter,
     paperTrail,
+    type Scenario,
 } from "@ghosts/engine";
 import { playtestScenario } from "@ghosts/engine/editor";
 import { savedRecruits, SQUAD_STORAGE_KEY } from "@ghosts/squad/model";
@@ -26,6 +28,9 @@ import { PauseMenu } from "../PauseMenu";
  * true, the engine's own after-action card screen when false.
  */
 const PODIUM_DEBRIEF = true;
+
+/** The street encounter, each game (and each restart) in a freshly drawn time of day and weather. */
+const STREET: Scenario = { ...blackRain, look: "drawn" };
 
 /**
  * An editor draft as the demo plays it (`?level=<slot>`): the scenario, or
@@ -58,7 +63,7 @@ export default function Demo({ office = false }: { office?: boolean }) {
     // Built once per mount: the draft as it was saved when the playtest opened.
     const [playtest] = useState(() => playtestOf(slot));
     const quit = () =>
-        navigate(slot !== null ? editorPath(isSlot(slot) ? slot : "scratch") : "/play/demo");
+        navigate(slot !== null ? editorPath(isSlot(slot) ? slot : "scratch") : "/play/training");
     const [paused, setPaused] = useState(false);
     // The podium debrief, up from the encounter's end until the field or a redeploy.
     const [debrief, setDebrief] = useState<EncounterDebrief | null>(null);
@@ -95,7 +100,7 @@ export default function Demo({ office = false }: { office?: boolean }) {
         <div className="fixed inset-0 h-dvh w-full bg-surface">
             <Encounter
                 key={playtest ? `level:${slot}` : office ? "office" : "kora"}
-                scenario={playtest?.scenario ?? (office ? paperTrail : undefined)}
+                scenario={playtest?.scenario ?? (office ? paperTrail : STREET)}
                 squad={squad}
                 intel={deployedIntel}
                 settings={engineSettings}

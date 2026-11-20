@@ -100,7 +100,7 @@ export function DossierPanel({
                 <p>
                     <strong>Dismiss operative</strong>
                     <small>
-                        Leaves the squad for good. All of their equipment returns to the armory.
+                        Leaves the squad for good. All of their equipment returns to the armory
                     </small>
                 </p>
                 <button className="btn" disabled={busy} onClick={() => setConfirming(true)}>
@@ -120,8 +120,8 @@ export function DossierPanel({
             >
                 {recruit.metadata.name} leaves the squad and will not come back. All of their
                 equipment is returned to the armory
-                {gear.length > 0 ? `: ${gear.join(" and ")}.` : " (they carry none right now)."} The
-                slot opens for a free hire.
+                {gear.length > 0 ? `: ${gear.join(" and ")}` : " (they carry none right now)"} The
+                slot opens for a free hire
             </ConfirmDialog>
         </div>
     );

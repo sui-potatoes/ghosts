@@ -14,6 +14,7 @@ import { NETWORK } from "../../constants";
 import { usePlayerName } from "../../hooks/usePlayerName";
 import { useSignInMethod } from "../../hooks/useSignInMethod";
 import { requestSignIn } from "../../signIn";
+import { forgetPasskey } from "../../wallets/passkey";
 
 /**
  * What the Player and Account categories show and do, as one value, so a
@@ -36,6 +37,8 @@ export type AccountBits = {
     network: string;
     signIn: () => void;
     signOut: () => Promise<void>;
+    /** Sign out, then forget the passkey this device remembers. Absent in fixtures. */
+    forgetDevice?: () => Promise<void>;
     sessions: Sessions;
 };
 
@@ -49,6 +52,12 @@ export function useAccountBits(): AccountBits {
     const balance = useBalance();
     const sessions = useSessions();
     const address = account?.address ?? null;
+    const signOut = async () => {
+        // Leave nothing signable behind: the session key removes its own
+        // alias and is wiped (best effort — it never blocks sign-out).
+        if (address) await retireSessionKey(client, address);
+        await dAppKit.disconnectWallet();
+    };
     return {
         address,
         name: player.name,
@@ -63,11 +72,10 @@ export function useAccountBits(): AccountBits {
               : { state: "ok", mist: balance.data },
         network: NETWORK,
         signIn: requestSignIn,
-        signOut: async () => {
-            // Leave nothing signable behind: the session key removes its own
-            // alias and is wiped (best effort — it never blocks sign-out).
-            if (address) await retireSessionKey(client, address);
-            await dAppKit.disconnectWallet();
+        signOut,
+        forgetDevice: async () => {
+            await signOut();
+            forgetPasskey();
         },
         sessions,
     };

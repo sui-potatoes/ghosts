@@ -100,7 +100,8 @@ test("the Move grid ranks footprints and writes edge cover onto both sides", () 
   level.unwalkable.push([3, 1]);
   const map = toMoveMap(level);
   assert.deepEqual(map.size, [3, 4]);
-  assert.deepEqual(map.tiles[0][0], { t: "cover", sides: [1, 1, 1, 1] });
+  // A free-standing crate is an obstacle: passed over, never stood on.
+  assert.deepEqual(map.tiles[0][0], { t: "obstacle" });
   assert.deepEqual(map.tiles[0][1], { t: "wall" });
   assert.deepEqual(map.tiles[0][2], { t: "unwalkable" });
   assert.deepEqual(map.tiles[0][3], { t: "empty" });

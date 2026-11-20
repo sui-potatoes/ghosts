@@ -93,6 +93,7 @@ export function boot(options: BootOptions): () => void {
       viewport.dataset.humanTextures = JSON.stringify(humanTextureStats());
       const battlefield = new Battlefield({ viewport, labels, reticle, game: s.game, renderer });
       s.battlefield = battlefield;
+      if (s.look) battlefield.setLook(s.look);
       battlefield.setPaused(s.paused);
       cleanups.push(() => battlefield.dispose());
       const applyRenderMode = () => battlefield.setRenderMode(settings.batterySaver() ? "battery" : "smooth");

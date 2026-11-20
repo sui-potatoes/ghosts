@@ -49,7 +49,7 @@ export function CharacterViewport(props: Props) {
             })
             .catch((e) => {
                 if (!cancelled)
-                    setError(e instanceof Error ? e.message : "The studio could not load.");
+                    setError(e instanceof Error ? e.message : "The studio could not load");
             });
         return () => {
             cancelled = true;
@@ -71,7 +71,7 @@ export function CharacterViewport(props: Props) {
                 })
                 .catch((e) => {
                     if (!cancelled) {
-                        setError(e instanceof Error ? e.message : "Unable to load operative.");
+                        setError(e instanceof Error ? e.message : "Unable to load operative");
                     }
                 });
         }, 90);

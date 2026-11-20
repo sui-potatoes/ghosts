@@ -21,7 +21,7 @@ function yard() {
   const level = newLevel(9, 7);
   level.name = "yard";
   put(level, "block-fill", [4, 3]); // wall tile
-  put(level, "crate", [2, 3]); // cover tile, low all round
+  put(level, "crate", [2, 3]); // an obstacle: vaulted, never stood on, low cover beside it
   put(level, "block-cover", [6, 3], 0); // low edge north of [6,3]
   put(level, "block-high", [6, 5], 0); // high edge north of [6,5]
   level.unwalkable.push([8, 6]);
@@ -76,10 +76,10 @@ test("a level becomes a scenario: centred grid, chain tiles, walls as footprints
   // The rules play on exactly the grid the chain would get.
   assert.deepEqual(scenario.ground?.tiles, exportLevel(level).move.tiles);
   assert.deepEqual(scenario.ground && [scenario.ground.minX, scenario.ground.minZ], [-4, -3]);
-  // The wall tile is a one-cell footprint in the scene; the pit an obstacle; no cell is a vault barrier.
+  // The wall tile is a one-cell footprint in the scene; the pit is blocked; the crate's obstacle is the cover cell to vault.
   assert.deepEqual(scenario.map.buildings.map((b) => [b.x, b.z, b.w, b.d]), [[0, 0, 1, 1]]);
   assert.deepEqual(scenario.map.obstacles, [[4, 3]]);
-  assert.deepEqual(scenario.map.covers, []);
+  assert.deepEqual(scenario.map.covers, [[-2, 0]]);
   // Side A is the squad on its cells, side B one hostile per cell, all moved by the origin.
   const allies = scenario.units.filter((u) => !u.enemy), hostiles = scenario.units.filter((u) => u.enemy);
   assert.deepEqual(allies.map((u) => [u.id, u.pos]), [["v", [-4, 3]], ["g", [-3, 3]]]);
@@ -123,30 +123,37 @@ test("the playtest moves, covers and sees by the chain's rules for its tiles", (
   assert.ok(paths.get(cell(6, 5).join())!.length > 2);
   unit.pos = cell(6, 5);
   assert.ok(!game.paths(unit).has(cell(6, 4).join()) || game.paths(unit).get(cell(6, 4).join())!.length > 2);
-  // Cover tiles are ground to stand on; walls and pits are not.
+  // The crate is an obstacle: never a destination, vaulted in two steps; walls and pits are not crossed.
   unit.pos = cell(2, 2);
   const around = game.paths(unit);
-  assert.ok(around.has(cell(2, 3).join()), "the crate's tile is walkable on chain");
+  assert.ok(!around.has(cell(2, 3).join()), "nobody stands on the crate");
+  assert.deepEqual(around.get(cell(2, 4).join()), [cell(2, 2), cell(2, 3), cell(2, 4)], "vaulted straight over");
   assert.ok(!around.has(cell(4, 3).join()) && !around.has(cell(8, 6).join()));
-  // The crate gives low cover against a shot from the north; the wall blocks the line through it.
+  const [vault] = game.apply({ type: "move", unit: "v", to: cell(2, 4) });
+  assert.ok(vault.type === "move" && vault.vault, "the move over the crate is a vault");
+  // The crate gives low cover against a shot from across it, none from the side; the wall blocks the line through it.
   const hostile = game.unit("h1")!;
-  unit.pos = cell(2, 3);
   hostile.pos = cell(2, 0);
   assert.equal(game.cover(unit, hostile), 25);
-  assert.equal(game.coverAt(cell(2, 3)), true);
+  hostile.pos = cell(6, 4);
+  assert.equal(game.cover(unit, hostile), 0);
+  hostile.pos = cell(2, 0);
+  assert.equal(game.coverAt(cell(2, 4)), true);
   assert.equal(game.shotBlocked(cell(3, 3), cell(5, 3)), true);
-  assert.equal(game.shotBlocked(cell(2, 0), cell(2, 3)), false);
-  // A grenade clears every cover tile within two: the crate is gone, its tile is bare.
+  assert.equal(game.shotBlocked(cell(2, 0), cell(2, 4)), false, "an obstacle blocks no line");
+  // A grenade clears every cover tile and obstacle within two: the crate is gone, its tile is bare ground.
   game.ingest({ type: "grenade", unit: "h1", at: cell(2, 2), casualties: [], environment: [] });
   assert.equal(game.cover(unit, hostile), 0);
-  assert.equal(game.coverAt(cell(2, 3)), false);
+  assert.equal(game.coverAt(cell(2, 4)), false);
+  unit.pos = cell(2, 2);
+  assert.equal(game.paths(unit).get(cell(2, 3).join())?.length, 2, "the cleared tile is a destination");
 });
 
 test("glass and tall fences stop a step and a shot like any high edge", () => {
   const level = yard();
   level.placements.push({ asset: "s13", at: [1, 4], turn: 0 }); // glass pane north of [1,4]
   level.placements.push({ asset: "s15", at: [0, 4], turn: 0 }); // tall chain-link north of [0,4]
-  level.placements.push({ asset: "s06", at: [2, 4], turn: 0 }); // low sheet fence north of [2,4]
+  level.placements.push({ asset: "s06", at: [3, 4], turn: 0 }); // low sheet fence north of [3,4]
   const game = new Encounter(scenarioFromLevel(level));
   const cell = (x: number, z: number): Cell => [x - 4, z - 3];
   const unit = game.unit("v")!;
@@ -156,8 +163,8 @@ test("glass and tall fences stop a step and a shot like any high edge", () => {
   assert.ok(paths.get(cell(1, 3).join())!.length > 2, "around the glass, not through it");
   assert.ok(paths.get(cell(0, 3).join())!.length > 2, "around the fence, not through it");
   // The low fence beside them is still a step.
-  unit.pos = cell(2, 4);
-  assert.equal(game.paths(unit).get(cell(2, 3).join())?.length, 2);
+  unit.pos = cell(3, 4);
+  assert.equal(game.paths(unit).get(cell(3, 3).join())?.length, 2);
   // An order straight through the glass is refused.
   unit.pos = cell(1, 4);
   unit.mobility = 1;
@@ -167,7 +174,7 @@ test("glass and tall fences stop a step and a shot like any high edge", () => {
   // crosses it mid-line is stopped, while one that starts or ends beside it is not.
   assert.equal(game.shotBlocked(cell(1, 0), cell(1, 5)), true, "glass");
   assert.equal(game.shotBlocked(cell(0, 0), cell(0, 5)), true, "tall fence");
-  assert.equal(game.shotBlocked(cell(2, 0), cell(2, 5)), false, "the low fence stays clear");
+  assert.equal(game.shotBlocked(cell(3, 0), cell(3, 5)), false, "the low fence stays clear");
   assert.equal(game.shotBlocked(cell(6, 0), cell(6, 6)), true, "the high block, same rule");
   assert.equal(game.shotBlocked(cell(1, 3), cell(1, 4)), false, "adjacent across the glass");
 });

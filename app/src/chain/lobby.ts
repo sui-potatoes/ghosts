@@ -238,7 +238,7 @@ export async function findInviteHost(
     ownAccountId: string | null,
     now = Date.now(),
 ): Promise<InviteHost> {
-    const none = { ok: false, message: "No game with this code" } as const;
+    const none = { ok: false, message: "No match with this code" } as const;
     const key = protectedKey(code);
     const { objects } = await client.core.getObjects({
         objectIds: [fieldId("Protected", key)],
@@ -271,7 +271,7 @@ export async function findInviteHost(
         if (normalizeSuiAddress(account.state.Searching.order) !== normalizeSuiAddress(key))
             continue;
         const sinceMs = Number(account.state.Searching.sinceMs);
-        if (isExpired(sinceMs, now)) return { ok: false, message: "This game has expired" };
+        if (isExpired(sinceMs, now)) return { ok: false, message: "This match has expired" };
         const hostId = normalizeSuiAddress(account.id);
         const own = !!ownAccountId && normalizeSuiAddress(ownAccountId) === hostId;
         return { ok: true, hostId, sinceMs, size, own };

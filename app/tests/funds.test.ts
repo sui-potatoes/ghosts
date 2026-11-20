@@ -199,7 +199,7 @@ test("a balance that cannot pay after a failure stops the action with one line a
     const w = world(0n, { fail: () => new FaucetError("rate_limited", "slow", 120) });
     await assert.rejects(
         w.funds.beforeGame(A),
-        (e: Error) => e.message === "Not enough SUI for this action. Try again in 2 min.",
+        (e: Error) => e.message === "Not enough SUI for this action. Try again in 2 min",
     );
     assert.equal(w.state.requests.length, 1);
     const down = world(0n, { fail: () => new FaucetError("unavailable", "down") });

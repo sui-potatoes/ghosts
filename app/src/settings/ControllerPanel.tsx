@@ -198,8 +198,8 @@ export function ControllerPanel() {
         value: pad ? "" : <span className="set-note">no controller</span>,
         disabled: !pad,
         description: pad
-            ? "Try every control: presses light the diagram and are named under it. Input stays on this panel until you exit."
-            : "Connect a controller to test its buttons.",
+            ? "Try every control: presses light the diagram and are named under it. Input stays on this panel until you exit"
+            : "Connect a controller to test its buttons",
         onConfirm: () => {
             setCapturing(null);
             setTesting(true);
@@ -221,8 +221,8 @@ export function ControllerPanel() {
             ),
         disabled: !pad,
         description: pad
-            ? `${what} Confirm, then press the new control — a button in use swaps over; ${padGlyph("b")} cancels.`
-            : `${what} Connect a controller to rebind.`,
+            ? `${what} Confirm, then press the new control — a button in use swaps over; ${padGlyph("b")} cancels`
+            : `${what} Connect a controller to rebind`,
         onConfirm: () => {
             setTesting(false);
             setCapturing(action);
@@ -236,64 +236,64 @@ export function ControllerPanel() {
             "Device",
             pad ? padName() || "Controller" : "Not connected",
             pad
-                ? "Standard-mapped controller. Press buttons to see them on the diagram."
-                : "Connect a controller and press any button to wake it.",
+                ? "Standard-mapped controller. Press buttons to see them on the diagram"
+                : "Connect a controller and press any button to wake it",
         ),
         layoutRow,
         testRow,
         { kind: "section", id: "menus", label: "Menus" },
-        stat("m-nav", "Navigate", g("dpad", "ls"), "Walk menu entries and setting rows."),
-        stat("m-change", "Change value", "◀  ▶", "Cycle a choice or step a slider."),
-        stat("m-select", "Select", g("a"), "Activate the focused entry."),
-        stat("m-back", "Back", g("b", "start"), "Close the dialog, or leave the screen."),
-        stat("m-cat", "Category", g("lb", "rb"), "Previous or next settings category."),
+        stat("m-nav", "Navigate", g("dpad", "ls"), "Walk menu entries and setting rows"),
+        stat("m-change", "Change value", "◀  ▶", "Cycle a choice or step a slider"),
+        stat("m-select", "Select", g("a"), "Activate the focused entry"),
+        stat("m-back", "Back", g("b", "start"), "Close the dialog, or leave the screen"),
+        stat("m-cat", "Category", g("lb", "rb"), "Previous or next settings category"),
         stat(
             "m-section",
             "Section",
             g("lt", "rt"),
-            "Jump to the previous or next section of a list.",
+            "Jump to the previous or next section of a list",
         ),
-        stat("m-reset", "Reset setting", g("x"), "Return the focused setting to its default."),
+        stat("m-reset", "Reset setting", g("x"), "Return the focused setting to its default"),
         { kind: "section", id: "combat", label: "Combat" },
         stat(
             "c-cursor",
             "Cursor / aim",
             g("dpad", "ls"),
-            "Move the tile cursor, nudge the throw, or walk targets; with nobody selected, pan the camera. Fixed.",
+            "Move the tile cursor, nudge the throw, or walk targets; with nobody selected, pan the camera. Fixed",
         ),
         stat(
             "c-confirm",
             "Confirm",
             g("a"),
-            "Move to the cursor, take the shot, throw the grenade; with nobody selected, take the operator nearest the camera. Fixed.",
+            "Move to the cursor, take the shot, throw the grenade; with nobody selected, take the operator nearest the camera. Fixed",
         ),
         stat(
             "c-cancel",
             "Cancel / deselect",
             g("b"),
-            "Leave targeting, then deselect the operator; with nobody selected, pause. Fixed.",
+            "Leave targeting, then deselect the operator; with nobody selected, pause. Fixed",
         ),
-        bindRow("wheel", "Orders on a ring: fire, grenade, overwatch, hunker, reload, extract."),
-        bindRow("prev-operator", "Select the previous operator."),
-        bindRow("next-operator", "Select the next operator."),
-        bindRow("fire", "Raise the weapon at the best target."),
-        bindRow("grenade", "Arm a grenade at the default landing point."),
-        bindRow("reload", "Fresh magazine for the selected operator."),
-        bindRow("grid", "Toggle the grid overlay."),
-        bindRow("focus", "Center the camera on the selected operator, at belt height."),
+        bindRow("wheel", "Orders on a ring: fire, grenade, overwatch, hunker, reload, extract"),
+        bindRow("prev-operator", "Select the previous operator"),
+        bindRow("next-operator", "Select the next operator"),
+        bindRow("fire", "Raise the weapon at the best target"),
+        bindRow("grenade", "Arm a grenade at the default landing point"),
+        bindRow("reload", "Fresh magazine for the selected operator"),
+        bindRow("grid", "Toggle the grid overlay"),
+        bindRow("focus", "Center the camera on the selected operator, at belt height"),
         stat(
             "c-camera",
             "Camera",
             g("rs"),
-            "Turn the field and dolly in and out with the right stick; with nobody selected it tilts, and the triggers zoom. Fixed.",
+            "Turn the field and dolly in and out with the right stick; with nobody selected it tilts, and the triggers zoom. Fixed",
         ),
-        stat("c-pause", "Pause", g("start"), "The pause menu, any time. Fixed."),
+        stat("c-pause", "Pause", g("start"), "The pause menu, any time. Fixed"),
         {
             kind: "action",
             id: "bind-reset",
             label: "Reset combat bindings",
             value: "",
-            description: "Return every pad combat binding to its default.",
+            description: "Return every pad combat binding to its default",
             onConfirm: () => setControls({ padCombat: DEFAULT_PAD_COMBAT_BINDINGS }),
         },
     ];
@@ -322,7 +322,7 @@ export function ControllerPanel() {
                             data-idle={held.length === 0 || undefined}
                             aria-live="polite"
                         >
-                            {held.length ? held.join("  ·  ") : "Press any control."}
+                            {held.length ? held.join("  ·  ") : "Press any control"}
                         </div>
                         <div className="ctl-test-exit">
                             <span className="ctl-test-hold" aria-hidden>
@@ -342,7 +342,7 @@ export function ControllerPanel() {
                     </div>
                 ) : (
                     <div className="label ctl-caption" aria-hidden>
-                        Field actions on the diagram — menu bindings in the list.
+                        Field actions on the diagram — menu bindings in the list
                     </div>
                 )}
             </div>

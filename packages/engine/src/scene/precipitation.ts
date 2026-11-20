@@ -132,6 +132,8 @@ export class Precipitation {
   private snow?: Particles;
   private current: Weather = "rain";
   private battery = true;
+  /** Share of the full rain that falls, 0..1: drops and splashes alike. */
+  private share = 1;
 
   constructor(inputs: WeatherInputs = {}, roof?: RoofMap) {
     const { rain } = LOOK;
@@ -195,6 +197,15 @@ export class Precipitation {
     return this.particles;
   }
 
+  /** How much of the rain falls, 0..1 (light rain): drop and splash counts scale with it. */
+  get amount() {
+    return this.share;
+  }
+  setAmount(amount: number) {
+    this.share = Math.min(1, Math.max(0, amount));
+    this.setBatterySaver(this.battery);
+  }
+
   setKind(kind: Weather) {
     if (kind === "snow" && !this.snow) {
       this.snow = particles(
@@ -215,7 +226,8 @@ export class Precipitation {
   setBatterySaver(enabled: boolean) {
     this.battery = enabled;
     const tier = enabled ? "battery" : "smooth";
-    this.rain.geometry.instanceCount = LOOK.rain.drops[tier];
+    this.rain.geometry.instanceCount = Math.round(LOOK.rain.drops[tier] * this.share);
+    this.splashes.geometry.instanceCount = Math.round(LOOK.rain.splashes * this.share);
     this.rain.visible = this.current === "rain";
     this.splashes.visible = this.spray.visible =
       this.current === "rain" && !enabled;

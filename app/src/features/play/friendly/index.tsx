@@ -169,8 +169,8 @@ export function FriendlyScreen() {
         if (was.role === "host") {
             raise(
                 was.since !== null && isExpired(was.since, Date.now())
-                    ? "This game has expired"
-                    : "This game was closed",
+                    ? "This match has expired"
+                    : "This match was closed",
             );
             return;
         }
@@ -254,12 +254,12 @@ export function FriendlyScreen() {
             void findInviteHost(client, parsed.bytes, id)
                 .then(async (found) => {
                     if (!found.ok) return setLocalError(found.message);
-                    if (found.own) return setLocalError("This is your own game");
+                    if (found.own) return setLocalError("This is your own match");
                     await send([() => joinLobbyTx(found.hostId, id, parsed.bytes)], {
                         what: "join",
                     });
                 })
-                .catch(() => setLocalError("Connection lost. Try again."))
+                .catch(() => setLocalError("Connection lost. Try again"))
                 .finally(() => setChecking(false));
         },
         joinOpen: (hostId) => {

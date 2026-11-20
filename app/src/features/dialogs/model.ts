@@ -26,6 +26,8 @@ export type SignInOption = {
 export type SignInState = {
     /** A passkey is already stored on this device. */
     hasPasskey: boolean;
+    /** The remembered passkey's player name (or the short form for an unnamed one). */
+    passkeyName?: string;
     /** zkLogin is configured for this build. */
     canGoogle: boolean;
     /** Extension wallets, by name (only behind the feature flag). */
@@ -41,21 +43,31 @@ const BUSY_TAG: Record<string, string> = {
 };
 
 export function signInOptions(state: SignInState): SignInOption[] {
-    const { hasPasskey, canGoogle, wallets, busy } = state;
+    const { hasPasskey, passkeyName, canGoogle, wallets, busy } = state;
     const options: SignInOption[] = [
-        {
-            id: "passkey",
-            label: "Passkey",
-            kind: hasPasskey ? "On this device" : "New",
-            hint: "Touch ID, a phone or a security key signs. No extension, no seed phrase",
-            verb: "Sign in",
-        },
+        hasPasskey
+            ? {
+                  id: "passkey",
+                  label: `Continue as ${passkeyName ?? "this passkey"}`,
+                  kind: "Passkey",
+                  hint: "Sign in with the passkey this device remembers",
+                  verb: "Sign in",
+              }
+            : {
+                  id: "passkey",
+                  label: "Create a Passkey",
+                  kind: "New",
+                  hint: "Touch ID, a phone or a security key signs. No extension, no seed phrase",
+                  verb: "Sign in",
+              },
         {
             id: "recover",
-            label: hasPasskey ? "Another Passkey" : "I Have a Passkey",
-            kind: "Recover",
-            hint: "Sign twice with an existing passkey to find its account",
-            verb: "Recover",
+            label: hasPasskey ? "Use a Different Passkey" : "I Have a Passkey",
+            kind: "Passkey",
+            hint: hasPasskey
+                ? "Sign twice with another passkey to find its account"
+                : "Sign twice with an existing passkey to find its account",
+            verb: "Sign in",
         },
         {
             id: "google",

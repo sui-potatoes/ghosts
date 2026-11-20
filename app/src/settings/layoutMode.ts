@@ -42,7 +42,7 @@ export function useLayoutRow(): SettingRow {
         id: "layout",
         label: "Settings layout",
         description:
-            "How Settings lays itself out. Auto uses the controller layout while a pad is connected and the desktop layout otherwise.",
+            "How Settings lays itself out. Auto uses the controller layout while a pad is connected and the desktop layout otherwise",
         value: LAYOUT_LABELS[controls.layout],
         onPrev: () => step(-1),
         onNext: () => step(1),

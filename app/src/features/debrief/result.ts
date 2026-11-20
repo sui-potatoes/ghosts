@@ -361,7 +361,7 @@ function rankedDebrief(result: MatchResult, podiums: number): Debrief {
     });
     const change = ranked.change;
     const lines = [`Ranked ${ranked.size}x${ranked.size} · ${ranked.tier}`];
-    if (change?.tier) lines.push(`New tier: ${change.tier.after}`);
+    if (change?.tier) lines.push(`New rank: ${change.tier.after}`);
     return {
         title,
         tone,

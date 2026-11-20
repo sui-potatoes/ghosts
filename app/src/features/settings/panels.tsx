@@ -145,7 +145,7 @@ function RestorePrompt({
             cancel={{ label: "Keep", run: close }}
             glyphs={glyphs}
         >
-            Every {what.toLowerCase()} setting returns to its default.
+            Every {what.toLowerCase()} setting returns to its default
         </Prompt>
     );
 }
@@ -173,7 +173,7 @@ function SignInGate({ what }: { what: string }) {
                         },
                     ]}
                 >
-                    Sign in to see {what}.
+                    Sign in to see {what}
                 </EmptyState>
             </Panel>
         </SettingsFrame>
@@ -292,7 +292,7 @@ function ResetPrompt({ record, close }: { record: RatingRecord; close: () => voi
             cancel={{ label: "Keep rating", run: close }}
             glyphs={glyphs}
         >
-            {`Your rating returns to ${DEFAULT_RATING}. Your record stays. The next reset is possible in ${days} ${days === 1 ? "day" : "days"}.`}
+            {`Your rating returns to ${DEFAULT_RATING}. Your record stays. The next reset is possible in ${days} ${days === 1 ? "day" : "days"}`}
         </Prompt>
     );
 }
@@ -310,9 +310,9 @@ function RankedBlock({ record }: { record: RatingRecord }) {
     return (
         <Panel variant="ghost" label="Ranked" className="gset-c3 gset-fit">
             <>
-                <ReadoutLine label="Tier">{r.tier.name}</ReadoutLine>
+                <ReadoutLine label="Rank">{r.tier.name}</ReadoutLine>
                 <ReadoutLine label="Rating">{r.rating}</ReadoutLine>
-                <ReadoutLine label="Ranked games">{r.games}</ReadoutLine>
+                <ReadoutLine label="Ranked matches">{r.games}</ReadoutLine>
                 <ReadoutLine label="Record" empty={!r.games}>
                     {`${r.wins} won · ${r.losses} lost · ${r.draws} drawn`}
                 </ReadoutLine>
@@ -325,7 +325,7 @@ function RankedBlock({ record }: { record: RatingRecord }) {
                 </ReadoutLine>
                 {r.placementLeft > 0 && (
                     <ReadoutLine label="Placement left">
-                        {`${r.placementLeft} ${r.placementLeft === 1 ? "game" : "games"}`}
+                        {`${r.placementLeft} ${r.placementLeft === 1 ? "match" : "matches"}`}
                     </ReadoutLine>
                 )}
                 <ReadoutLine label="Resets">{r.resets}</ReadoutLine>
@@ -366,7 +366,7 @@ function NamePrompt({ close }: { close: () => void }) {
             cancel={{ label: "Cancel", run: close }}
             glyphs={glyphs}
         >
-            What other players see: lowercase letters, digits and hyphens.
+            What other players see: lowercase letters, digits and hyphens
             <TextField
                 label="Name"
                 value={draft}
@@ -390,7 +390,7 @@ function formatSui(mist: bigint): string {
     return `${whole}.${frac.toString().padStart(4, "0")}`;
 }
 
-type AccountPrompt = { kind: "sign-out" } | { kind: "terminate"; termination: SessionTermination };
+type AccountPrompt = { kind: "sign-out" } | { kind: "forget" } | { kind: "terminate"; termination: SessionTermination };
 
 export function AccountPanel() {
     const { account, glyphs } = useSettingsContext();
@@ -438,7 +438,25 @@ export function AccountPanel() {
                 glyphs={glyphs}
             >
                 Disconnects this wallet from the device; this browser's session key loses access and
-                is wiped. Local preferences stay.
+                is wiped. Local preferences stay
+            </Prompt>
+        ) : prompt?.kind === "forget" ? (
+            <Prompt
+                id="prompt-forget-device"
+                tone="danger"
+                eyebrow="Account"
+                title="Forget this passkey on this device?"
+                confirm={{
+                    label: "Forget",
+                    run: () => {
+                        close();
+                        void account.forgetDevice?.();
+                    },
+                }}
+                cancel={{ label: "Keep", run: close }}
+                glyphs={glyphs}
+            >
+                You will need your passkey to sign in here again. Your account is not affected
             </Prompt>
         ) : prompt?.kind === "terminate" ? (
             <Prompt
@@ -458,7 +476,7 @@ export function AccountPanel() {
             >
                 {prompt.termination.label} loses access and can no longer sign for this account
                 {prompt.termination.local ? "; the key stored in this browser is wiped" : ""}. One
-                passkey signature confirms the removal.
+                passkey signature confirms the removal
             </Prompt>
         ) : null;
 
@@ -560,6 +578,24 @@ export function AccountPanel() {
                             },
                         ]}
                     />
+                    {account.method === "Passkey" && account.forgetDevice && (
+                        <ActionRow
+                            id="account-forget-device"
+                            group="rows"
+                            label="Forget this device"
+                            tone="danger"
+                            title="Forget this device"
+                            hint="Signs out and removes the passkey this device remembers"
+                            commands={[
+                                {
+                                    action: "confirm",
+                                    label: "Forget",
+                                    tone: "danger",
+                                    run: () => setPrompt({ kind: "forget" }),
+                                },
+                            ]}
+                        />
+                    )}
                 </List>
             </Panel>
             <Panel
@@ -1156,7 +1192,7 @@ function PadCapturePrompt({
             cancel={{ label: "Cancel", run: close }}
             glyphs={glyphs}
         >
-            Default: {def ? padGlyph(def as PadBindable) : "unbound"}.
+            Default: {def ? padGlyph(def as PadBindable) : "unbound"}
         </Prompt>
     );
 }
@@ -1282,7 +1318,7 @@ export function NetworkPanel() {
             cancel={{ label: "Later", run: () => setReloadAsk(false) }}
             glyphs={glyphs}
         >
-            The saved endpoint applies after a reload.
+            The saved endpoint applies after a reload
         </Prompt>
     ) : null;
 

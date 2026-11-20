@@ -83,16 +83,19 @@ export default function MainMenuClassic() {
     const entries: Entry[] = [
         // The playable contracts, named like the briefings name them: the
         // operation, with the location as the tag (scenario.ts carries both).
-        { label: "Demo: Black Rain", tag: "Tokyo / Sector 09", onClick: () => navigate("/demo") },
         {
-            label: "Demo: Paper Trail",
+            label: "Training: Black Rain",
+            tag: "Tokyo / Sector 09",
+            onClick: () => navigate("/demo"),
+        },
+        {
+            label: "Training: Paper Trail",
             tag: "Kōra HQ / Floor 07",
             onClick: () => navigate("/demo-2"),
         },
         ...(account ? [] : [{ label: "Login", onClick: requestSignIn }]),
         findMatch,
         { label: "Headquarters", onClick: () => navigate("/headquarters") },
-        { label: "Level Editor", tag: "tool", onClick: () => navigate("/editor") },
         { label: "Leaderboard", tag: "soon", disabled: true },
         ...(install.kind === "prompt"
             ? [{ label: "Install App", onClick: () => void install.install() }]
@@ -112,7 +115,7 @@ export default function MainMenuClassic() {
                     </h1>
                     <p className="main-menu-tagline max-w-sm text-sm leading-relaxed text-secondary">
                         You run a mercenary squad. The corporations run everything else. Take the
-                        contract, bring your people home, bill the client.
+                        contract, bring your people home, bill the client
                     </p>
                 </header>
 

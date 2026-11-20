@@ -418,7 +418,7 @@ export function Deploy({
                 cancel={{ label: "Not yet", run: () => setPrompt(null) }}
                 glyphs={glyphs}
             >
-                The three operatives take these loadouts into the match.
+                The three operatives take these loadouts into the match
             </Prompt>
         ) : prompt?.kind === "name" ? (
             <NamePrompt
@@ -457,7 +457,7 @@ export function Deploy({
                 cancel={{ label: "Keep", run: () => setPrompt(null) }}
                 glyphs={glyphs}
             >
-                The squad on the podiums stays as it is.
+                The squad on the podiums stays as it is
             </Prompt>
         ) : (
             frame.overlay
@@ -596,7 +596,7 @@ function CapChooser({ value, onChange }: { value: string; onChange: (id: string)
                 value={value}
                 onChange={onChange}
                 title="Budget cap (sample)"
-                hint="Sample caps: the game has no costs or budget yet"
+                hint="Sample caps: the match has no costs or budget yet"
                 commands={[{ action: "nav", label: "Change", glyph: "lr" }]}
             />
         </div>

@@ -13,12 +13,15 @@ import { useCurrentAccount, useDAppKit, useWallets } from "@mysten/dapp-kit-reac
 import { isEnokiWallet } from "@mysten/enoki";
 import { useEffect, useState, type ReactNode } from "react";
 
+import { useAssignedName } from "../../chain";
 import { FEATURES } from "../../constants";
 import { useGoogleSignIn } from "../../hooks/useGoogleSignIn";
+import { defaultName, getPlayerName } from "../../player/name";
 import { ListRow, type Command } from "../../ui";
 import {
     createPasskey,
     loadStoredPasskey,
+    storedPasskeyAddress,
     PASSKEY_WALLET_NAME,
     recoverPasskey,
 } from "../../wallets/passkey";
@@ -27,7 +30,7 @@ import { signInOptions } from "./model";
 
 function describe(e: unknown): string {
     if (e instanceof DOMException && e.name === "NotAllowedError")
-        return "Cancelled by the authenticator.";
+        return "Cancelled by the authenticator";
     return e instanceof Error ? e.message : String(e);
 }
 
@@ -55,6 +58,16 @@ function SignIn({ onClose }: { onClose: () => void }) {
         ? wallets.filter((w) => !isEnokiWallet(w) && w.name !== PASSKEY_WALLET_NAME)
         : [];
     const hasPasskey = loadStoredPasskey() !== null;
+    // The remembered passkey's address comes from its stored public key, so its
+    // name resolves while signed out: this device's copy, then the assigned
+    // name, then the short generated form (also while the lookup loads).
+    const passkeyAddress = hasPasskey ? storedPasskeyAddress() : null;
+    const assigned = useAssignedName(passkeyAddress ?? undefined);
+    const passkeyName = passkeyAddress
+        ? (getPlayerName(passkeyAddress).source === "local"
+              ? getPlayerName(passkeyAddress).name
+              : assigned) || defaultName(passkeyAddress)
+        : undefined;
 
     async function run(name: string, fn: () => Promise<unknown>) {
         if (busy) return;
@@ -95,6 +108,7 @@ function SignIn({ onClose }: { onClose: () => void }) {
 
     const options = signInOptions({
         hasPasskey,
+        passkeyName,
         canGoogle,
         wallets: externalWallets.map((w) => w.name),
         busy,
@@ -110,7 +124,7 @@ function SignIn({ onClose }: { onClose: () => void }) {
             back={{ action: "back", label: "Close", run: onClose }}
             eyebrow="Identify"
             title="Sign in"
-            lead="This becomes the main wallet of your squad."
+            lead="This becomes the main wallet of your squad"
             foot={
                 error && (
                     <p className="gui-dialog-error" role="status">

@@ -19,6 +19,7 @@ import {
     type RecordSource,
     type WatchSide,
 } from "@ghosts/engine";
+import { lookName, lookOfGame } from "@ghosts/engine/look";
 import type { Recruit as LocalRecruit } from "@ghosts/squad/types";
 import { useCurrentClient } from "@mysten/dapp-kit-react";
 import { ObjectError } from "@mysten/sui/client";
@@ -292,52 +293,6 @@ async function originOf(arch: GameArchive, gameId: string): Promise<GameOrigin |
     return { players: game.players, mode: game.mode, listed: listedBy(created.calls) };
 }
 
-/** When transactions ran, by digest: one batch read; a digest not served is left out. */
-async function timesOf(client: Client, digests: string[]): Promise<Map<string, number>> {
-    const out = new Map<string, number>();
-    const ledger = (client as unknown as BatchReader).ledgerService;
-    for (let i = 0; i < digests.length; i += 50) {
-        const batch = digests.slice(i, i + 50);
-        try {
-            const { response } = await ledger.batchGetTransactions({
-                digests: batch,
-                readMask: { paths: ["digest", "timestamp"] },
-            });
-            response.transactions.forEach((result, j) => {
-                const tx =
-                    result.result.oneofKind === "transaction" ? result.result.transaction : null;
-                const seconds = tx?.timestamp?.seconds;
-                if (seconds !== undefined)
-                    out.set(
-                        batch[j],
-                        Number(seconds) * 1000 + Math.floor((tx?.timestamp?.nanos ?? 0) / 1e6),
-                    );
-            });
-        } catch {
-            // no times for this batch: the rows show without them
-        }
-    }
-    return out;
-}
-
-/** The part of `SuiGrpcClient` the times are read through. */
-interface BatchReader {
-    ledgerService: {
-        batchGetTransactions(input: { digests: string[]; readMask: { paths: string[] } }): Promise<{
-            response: {
-                transactions: {
-                    result:
-                        | {
-                              oneofKind: "transaction";
-                              transaction: { timestamp?: { seconds?: bigint; nanos?: number } };
-                          }
-                        | { oneofKind: "error" | undefined };
-                }[];
-            };
-        }>;
-    };
-}
-
 /**
  * The latest finished games anyone may watch, newest first: `limit` rows (25 at first,
  * 50 with More), refreshed while the list is open and when the window comes back.
@@ -360,12 +315,8 @@ export function useRecentFinished(limit: number = RECENT_FIRST, enabled = true) 
                 },
                 limit,
             );
-            const [players, times] = await Promise.all([
-                fetchPlayers(client, [...new Set(games.flatMap((g) => g.players))]),
-                timesOf(
-                    client,
-                    games.map((g) => g.digest),
-                ),
+            const players = await fetchPlayers(client, [
+                ...new Set(games.flatMap((g) => g.players)),
             ]);
             const nameOf = new Map(players.map((p) => [p.accountId, p.name]));
             const now = Date.now();
@@ -377,7 +328,7 @@ export function useRecentFinished(limit: number = RECENT_FIRST, enabled = true) 
                             nameOf.get(game.players[0]) ?? "A player",
                             nameOf.get(game.players[1]) ?? "A player",
                         ],
-                        times.get(game.digest),
+                        game.endedMs,
                         now,
                     ),
                 ),
@@ -467,6 +418,8 @@ export interface WatchFacts {
     mode: string;
     /** The level's name. */
     level: string;
+    /** The time of day and weather the game is shown in, from its ID. */
+    conditions: string;
     /** The transaction that completed the game, once it is over and known. */
     endDigest: string | null;
     /** When that transaction ran (epoch ms); null with no end. */
@@ -575,6 +528,7 @@ export async function openChainGame(
     const facts: WatchFacts = {
         mode: modeText(story.last),
         level: start.scenario.briefing.title,
+        conditions: lookName(lookOfGame(gameId)),
         endDigest: story.finished ? (story.endTx?.digest ?? null) : null,
         playedAt: story.finished ? (story.endTx?.timestampMs ?? null) : null,
     };

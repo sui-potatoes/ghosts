@@ -34,6 +34,7 @@ function decode(bytes: Uint8Array) {
       else if (tag === 1) row.push({ t: "cover", sides: [u8(), u8(), u8(), u8()] });
       else if (tag === 2) row.push({ t: "unwalkable" });
       else if (tag === 3) row.push({ t: "wall" });
+      else if (tag === 4) row.push({ t: "obstacle" });
       else throw new Error(`abort: tile tag ${tag}`);
       if (u8() === 1) units.push(index); // Option<Unit>: a preset never has one
       index++;
@@ -89,10 +90,14 @@ test("cover sides are [left, top, right, bottom] on both tiles of an edge", () =
   assert.deepEqual(tiles[2][1], { t: "cover", sides: [0, 0, 2, 0] });
 });
 
-test("a free-standing cover claims low cover on all four sides, as the baked Black Rain does", () => {
+test("a free-standing cover is an Obstacle (tag 4, no fields), as the baked Black Rain's props are", () => {
   const level = newLevel(3, 3);
   put(level, "crate", [1, 1]);
-  assert.deepEqual(decode(toPreset(level).bytes).tiles[1][1], { t: "cover", sides: [1, 1, 1, 1] });
+  const preset = toPreset(level);
+  assert.deepEqual(decode(preset.bytes).tiles[1][1], { t: "obstacle" });
+  // row 1 starts after the id, the row count, row 0 (a length byte and three empty tiles) and its own length byte
+  const at = 32 + 1 + (1 + 3 * 2) + 1 + 2;
+  assert.deepEqual([...preset.bytes.slice(at, at + 2)], [4, 0]);
 });
 
 test("lengths past 127 take two ULEB128 bytes", () => {
@@ -127,8 +132,9 @@ test("the chain's rules show as issues", () => {
     issues(sides([[0, 0], [1, 0], [2, 0], [4, 0], [5, 0]], [[0, 1], [1, 1], [2, 1], [4, 1], [5, 1]]))[0],
     /side A has 5 deployment cells: a squad is at most 4/,
   );
-  // Cover is fine to deploy on: only walls and unwalkable tiles abort place_recruit.
-  assert.deepEqual(issues(sides([[0, 0]], [[1, 1]])), []);
+  // Edge cover is fine to deploy on; an obstacle aborts place_recruit like a wall.
+  assert.deepEqual(issues(sides([[0, 0]], [[4, 3]])), []);
+  assert.match(issues(sides([[0, 0]], [[1, 1]]))[0], /1,1 stands on an obstacle/);
 });
 
 test("the editor's own export names the same grid the preset encodes", () => {

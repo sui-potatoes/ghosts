@@ -326,7 +326,7 @@ export function useSessionRows(
                 label: "Device sessions",
                 value: <span className="text-warn">unavailable in this browser</span>,
                 description:
-                    "This browser cannot hold a session key safely; transactions keep using the passkey directly.",
+                    "This browser cannot hold a session key safely; transactions keep using the passkey directly",
             });
             return rows;
         }
@@ -345,7 +345,7 @@ export function useSessionRows(
                 ),
                 description: `Activate to terminate this session: a confirmation asks first, then one passkey signature removes it from the alias set${
                     item.local ? " and wipes the key here" : ""
-                }.`,
+                }`,
                 onConfirm: () => {
                     if (busy) return;
                     confirmTermination(item.termination);
@@ -369,7 +369,7 @@ export function useSessionRows(
                 ),
                 description: fault
                     ? `The last attempt failed: ${fault.slice(0, 110)}`
-                    : "Creates a session key that never leaves this browser and authorizes it on chain: play then needs no passkey per transaction.",
+                    : "Creates a session key that never leaves this browser and authorizes it on chain: play then needs no passkey per transaction",
                 onConfirm: authorize.run,
             });
         }

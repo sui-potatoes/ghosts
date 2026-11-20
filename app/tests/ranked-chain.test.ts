@@ -236,6 +236,8 @@ test("the two events: who plays, the mode, listed; and how it ended", () => {
     const ended = GameEnded.parse(unhex(F.gameEnded));
     assert.equal(ended.game, started.game);
     assert.deepEqual(ended.ending, { $kind: "Abandoned", Abandoned: addr(F.aliceId) });
+    // `ended_ms`, last: the clock as `complete_game` ran, 5 s in the fixture
+    assert.equal(ended.endedMs, "5000");
 });
 
 /** A storage in memory, as `sessionStorage` and `localStorage` are. */
@@ -327,9 +329,9 @@ test("every refusal of a ranked search, a reveal or a reset in plain words", () 
     const line = (module: string, code: number) =>
         rankedRefusal(`abort code: ${code}, in '0x1::${module}::f'`);
     assert.equal(line("rules", 3), "The squad costs more than your budget");
-    assert.equal(line("rules", 2), "The squad carries an item your tier has not unlocked");
+    assert.equal(line("rules", 2), "The squad carries an item your rank has not unlocked");
     assert.equal(line("rules", 5), "No level for this size yet");
-    assert.equal(line("ghosts", 9), "You are suspended from matchmaking");
+    assert.equal(line("ghosts", 9), "Suspended");
     assert.equal(line("ghosts", 6), "You are already searching or in a match");
     assert.equal(line("account", 10), "Only a rating above 1500 can be reset");
     assert.equal(line("account", 12), "The rating was reset recently");

@@ -120,8 +120,8 @@ async function call<T>(
     } catch (e) {
         if (signal.aborted) throw signal.reason;
         if (e instanceof DOMException && (e.name === "TimeoutError" || e.name === "AbortError"))
-            throw new FaucetError("timeout", "The faucet did not answer in time.");
-        throw new FaucetError("network", "Could not reach the faucet.");
+            throw new FaucetError("timeout", "The faucet did not answer in time");
+        throw new FaucetError("network", "Could not reach the faucet");
     }
     let body: unknown = {};
     try {
@@ -140,10 +140,10 @@ async function call<T>(
 
 /** A failed answer as the error the interface words. */
 function failure(status: number, body: ErrorBody, wait?: number): FaucetError {
-    if (status === 429) return new FaucetError("rate_limited", "Too many requests.", wait ?? 60);
+    if (status === 429) return new FaucetError("rate_limited", "Too many requests", wait ?? 60);
     if (status === 503 || status === 502 || status >= 500)
-        return new FaucetError("unavailable", body.error ?? "The faucet is unavailable.", wait);
-    return new FaucetError("rejected", body.error ?? "The faucet refused the request.");
+        return new FaucetError("unavailable", body.error ?? "The faucet is unavailable", wait);
+    return new FaucetError("rejected", body.error ?? "The faucet refused the request");
 }
 
 /**
@@ -160,7 +160,7 @@ export async function requestTestnetSui(request: FaucetRequest): Promise<FaucetR
 
     const deadline = new AbortController();
     const timer = setTimeout(
-        () => deadline.abort(new FaucetError("timeout", "The faucet took too long.")),
+        () => deadline.abort(new FaucetError("timeout", "The faucet took too long")),
         config.timeoutMs,
     );
     const signal = request.signal
@@ -238,10 +238,10 @@ export async function requestTestnetSui(request: FaucetRequest): Promise<FaucetR
         try {
             checkChallenge(challenge);
         } catch {
-            throw new FaucetError("rejected", "The faucet speaks a protocol this app does not.");
+            throw new FaucetError("rejected", "The faucet speaks a protocol this app does not");
         }
         if (challenge.network !== "testnet" || challenge.recipient !== recipient)
-            throw new FaucetError("rejected", "The faucet answered for another account.");
+            throw new FaucetError("rejected", "The faucet answered for another account");
         return challenge;
     }
 
@@ -260,6 +260,6 @@ async function readBalance(balance: () => Promise<bigint>): Promise<bigint> {
     try {
         return await balance();
     } catch {
-        throw new FaucetError("network", "Could not read the balance.");
+        throw new FaucetError("network", "Could not read the balance");
     }
 }

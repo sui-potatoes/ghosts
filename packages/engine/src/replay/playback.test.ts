@@ -246,7 +246,7 @@ test("live: follows new events at the edge; pause and stepping back leave it; Li
   assert.equal(state.behind, 2, "two turns behind the newest");
   game.push(GAME[6]);
   await tick();
-  assert.equal(pb.getState().total, GAME.length, "the game grows behind the viewer");
+  assert.equal(pb.getState().total, GAME.length, "the match grows behind the viewer");
   pb.goLive();
   await tick();
   state = pb.getState();

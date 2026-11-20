@@ -152,7 +152,7 @@ const PROBLEMS: Record<CodeProblem, string> = {
     chars: "Codes use letters and digits, never 0, O, 1, I or L",
     short: `A code has ${CODE_LENGTH} characters`,
     long: `A code has ${CODE_LENGTH} characters`,
-    range: "No game with this code",
+    range: "No match with this code",
 };
 
 const refuse = (problem: CodeProblem): ParsedCode => ({
@@ -298,9 +298,9 @@ export function droppedWhy(
 }
 
 export const DROPPED_LINES: Record<Dropped, string> = {
-    kicked: "The host removed you from this game",
-    expired: "This game has expired",
-    closed: "The host closed this game",
+    kicked: "The host removed you from this match",
+    expired: "This match has expired",
+    closed: "The host closed this match",
 };
 
 // === The contract's refusals ================================================
@@ -327,10 +327,10 @@ export function abortOf(message: string): Abort | null {
 const LOBBY_LINES: Record<number, string> = {
     0: "This size is not offered",
     1: "Try again",
-    3: "No game with this code",
-    4: "This game has expired",
-    5: "This game is full",
-    6: "The host removed you from this game",
+    3: "No match with this code",
+    4: "This match has expired",
+    5: "This match is full",
+    6: "The host removed you from this match",
     7: "Nobody has joined yet",
     8: "That player has left",
     9: "Only the host can do this",
@@ -338,10 +338,10 @@ const LOBBY_LINES: Record<number, string> = {
 };
 
 const GHOSTS_LINES: Record<number, string> = {
-    6: "You are already in a game or the match queue",
-    9: "Matchmaking is suspended",
+    6: "You are already in a match or the queue",
+    9: "Suspended",
     22: "Hire a squad first",
-    28: "Too many recruits for this game",
+    28: "Too many recruits for this match",
 };
 
 /** A refusal from a lobby call in the player's words; null for anything else. */
@@ -350,7 +350,9 @@ export function lobbyRefusal(message: string): string | null {
     if (!abort) return null;
     if (abort.module === "lobby") {
         if (abort.code === 2)
-            return abort.fn === "join_protected" ? "No game with this code" : "This game is closed";
+            return abort.fn === "join_protected"
+                ? "No match with this code"
+                : "This match is closed";
         return LOBBY_LINES[abort.code] ?? null;
     }
     // `check_free` holds the checks every way into a game shares (the queue too).

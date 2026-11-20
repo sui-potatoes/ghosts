@@ -380,7 +380,7 @@ export function ArmoryView({
                         action="Hire your squad"
                         onAction={() => navigate("/headquarters")}
                     >
-                        The armory opens with your account. Hiring the free squad sets it up.
+                        The armory opens with your account. Hiring the free squad sets it up
                     </Gate>
                 ) : (
                     <div className="squad-workspace hq-armory" inert={busy}>
@@ -416,7 +416,7 @@ export function ArmoryView({
                                     </div>
                                     <div className="hq-armory-empty hq-stage-placeholder">
                                         <span className="sq-eyebrow">NO MODEL YET</span>
-                                        <p>This item has no 3D model on the stage yet.</p>
+                                        <p>This item has no 3D model on the stage yet</p>
                                     </div>
                                 </>
                             ) : stageItem ? (
@@ -452,7 +452,7 @@ export function ArmoryView({
                                     <span className="sq-eyebrow">ARMORY</span>
                                     <p>
                                         Nothing on the racks yet. Requisition gear from the supply
-                                        catalog to start fitting it.
+                                        catalog to start fitting it
                                     </p>
                                     <button
                                         className="btn sq-primary"
@@ -482,7 +482,7 @@ export function ArmoryView({
                                         busy={busy}
                                         notice={
                                             fitCount(draft) >= MAX_FITTINGS
-                                                ? "Three mods is the limit — clear a type to fit another."
+                                                ? "Three mods is the limit — clear a type to fit another"
                                                 : ""
                                         }
                                         skins={weaponModelOf ? skinsFor(weaponModelOf) : []}

@@ -182,7 +182,7 @@ export function HqGateView({
                         { action: "confirm", label: "Sign in", tone: "primary", run: onSignIn },
                     ]}
                 >
-                    Sign in to see your {what}.
+                    Sign in to see your {what}
                 </EmptyState>
             ) : (
                 <div className="gui-empty">
@@ -193,7 +193,7 @@ export function HqGateView({
                                 {section === "squad" ? "Squad" : "Armory"} unavailable
                             </span>
                             <p className="gui-empty-body">
-                                This version of the game can't read your {what}.
+                                This version of the game can't read your {what}
                             </p>
                         </>
                     ) : (
@@ -284,13 +284,13 @@ export function SearchPrompt({
     return (
         <Prompt
             id="prompt-search"
-            eyebrow="Matchmaking"
+            eyebrow="Queue"
             title="Stop searching?"
             confirm={{ label: "Stop", run: onStop, deny }}
             cancel={{ label: "Keep searching", run: onKeep }}
             glyphs={glyphs}
         >
-            The squad leaves the queue.
+            The squad leaves the queue
         </Prompt>
     );
 }

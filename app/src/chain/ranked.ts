@@ -301,7 +301,7 @@ export function useRankedSearch(onRules?: (rules: ChainRules) => void) {
                 const opened = await action.attempt([createAccountTx]);
                 if (!opened.ok) return refuse(rankedRefusal(opened.message) ?? opened.message);
                 id = await fetchAccountId(client, owner, true);
-                if (!id) return refuse("Could not open your account. Try again.");
+                if (!id) return refuse("Could not open your account. Try again");
             }
             const [rules, account] = await Promise.all([
                 fetchRules(client),
@@ -316,8 +316,7 @@ export function useRankedSearch(onRules?: (rules: ChainRules) => void) {
             if (!level) return refuse(`No ${entry.size}x${entry.size} level yet`);
             if (account.state.$kind !== "Idle")
                 return refuse("You are already searching or in a match");
-            if (Number(account.suspendedUntil) > Date.now())
-                return refuse("You are suspended from matchmaking");
+            if (Number(account.suspendedUntil) > Date.now()) return refuse("Suspended");
             const score = account.score;
             const games = Number(score.wins) + Number(score.losses) + Number(score.draws);
             const tier = tierIndex(rules, Number(account.rating.rating), games);
@@ -377,7 +376,7 @@ export function useRankedSearch(onRules?: (rules: ChainRules) => void) {
                     return refuse(rankedRefusal(sent.message) ?? friendly(sent.message), abort);
                 }
             }
-            return refuse("The queue is busy. Try again.");
+            return refuse("The queue is busy. Try again");
         } catch (e) {
             refuse(friendly(e instanceof Error ? e.message : String(e)));
         }
@@ -394,9 +393,9 @@ export function useRankedSearch(onRules?: (rules: ChainRules) => void) {
 /** A failure that is not a refusal of the contract, in the player's words. */
 function friendly(message: string): string {
     if (/Failed to fetch|NetworkError|timed? ?out/i.test(message))
-        return "Connection lost. Try again.";
-    if (/reject|cancel|abort(ed)? by user|NotAllowedError/i.test(message)) return "Cancelled.";
+        return "Connection lost. Try again";
+    if (/reject|cancel|abort(ed)? by user|NotAllowedError/i.test(message)) return "Cancelled";
     if (/insufficient|gas/i.test(message))
-        return "Not enough SUI for this action. Try again shortly.";
-    return "Could not reach the network. Try again.";
+        return "Not enough SUI for this action. Try again shortly";
+    return "Could not reach the network. Try again";
 }

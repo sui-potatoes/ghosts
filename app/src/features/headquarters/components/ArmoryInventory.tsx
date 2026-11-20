@@ -157,12 +157,12 @@ export function ArmoryInventory(props: Props) {
                 {counts[category] === 0 && !(category === "mods" && upgrades.length) && (
                     <p className="sq-footnote">
                         {category === "weapons"
-                            ? "No rifles on file. Recruits without one carry the standard issue, which is not an armory item."
+                            ? "No rifles on file. Recruits without one carry the standard issue, which is not an armory item"
                             : category === "armor"
-                              ? "No armor on file."
+                              ? "No armor on file"
                               : category === "utilities"
-                                ? "No utilities on file."
-                                : "No mods in stock."}
+                                ? "No utilities on file"
+                                : "No mods in stock"}
                     </p>
                 )}
             </div>

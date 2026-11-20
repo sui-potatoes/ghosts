@@ -5,16 +5,22 @@
  * The ground as `ghosts::map` rules it, for an encounter that should play the
  * way a chain match on the same tile grid would (an editor level under
  * playtest). Tiles are the Move `Map` grid: Empty, Cover with a level per side
- * (`[left, top, right, bottom]`: west, north, east, south), Unwalkable, Wall.
+ * (`[left, top, right, bottom]`: west, north, east, south), Unwalkable, Wall,
+ * Obstacle.
  *
- * - Moving: walls and unwalkable tiles cannot be entered; a step across an edge
- *   with high cover on either side is refused (`check_path`); low cover never
- *   stops a step, and a Cover tile is ground to stand on.
+ * - Moving (`trace_path`): walls and unwalkable tiles cannot be entered; a step
+ *   across an edge with high cover on either side is refused; low cover never
+ *   stops a step. Empty and Cover tiles are ground to stand on. An Obstacle is
+ *   passed over, never stood on: a path may step onto one only to step off it
+ *   onto ground to stand on, so two in a row cannot be crossed and no path ends
+ *   on one. Every step counts one tile, the step onto an obstacle included.
  * - Cover: the side of the target facing the shot, else the neighbour's side
- *   facing it, 25 a level (`cover_bonus`); a wall counts as high all round.
- * - Sight: walls block, high cover on an inner edge blocks (`trace_line`).
+ *   facing it, 25 a level (`cover_bonus`); a wall counts as high all round, an
+ *   obstacle as low all round.
+ * - Sight: walls block, high cover on an inner edge blocks (`trace_line`);
+ *   obstacles block neither sight nor throws.
  * - Grenades: only walls stop a throw, it cannot land on one, and the blast
- *   turns every Cover tile in reach to Empty (`explode`).
+ *   turns every Cover and Obstacle tile in reach to Empty (`explode`).
  *
  * The same rules the app's `chain/match-rules.ts` ports for a live match; the
  * engine keeps its own copy as it never imports the app.
@@ -25,7 +31,8 @@ export type GroundTile =
   | { t: "empty" }
   | { t: "cover"; sides: [left: number, top: number, right: number, bottom: number] }
   | { t: "unwalkable" }
-  | { t: "wall" };
+  | { t: "wall" }
+  | { t: "obstacle" };
 
 /** A Move tile grid placed in scene cells: `tiles[row][col]` is cell `[col + minX, row + minZ]`. */
 export interface Ground {
@@ -37,6 +44,7 @@ export interface Ground {
 type Tile = readonly [row: number, col: number];
 type Sides = { left: number; top: number; right: number; bottom: number };
 
+const LOW = 1;
 const HIGH = 2;
 /** `DEFENSE_BONUS` in `ghosts::map`. */
 const DEFENSE_BONUS = 25;
@@ -69,26 +77,31 @@ export class ChainGround {
     return this.tiles[row]?.[col];
   }
 
-  /** `tile_cover!`: the cover on each side of a tile; a wall is high all round. */
+  /** `tile_cover!`: the cover on each side of a tile; a wall is high all round, an obstacle low. */
   private sides(tile: Tile): Sides {
     const type = this.at(tile);
     if (type?.t === "cover") {
       const [left, top, right, bottom] = type.sides;
       return { left, top, right, bottom };
     }
-    const level = type?.t === "wall" ? HIGH : 0;
+    const level = type?.t === "wall" ? HIGH : type?.t === "obstacle" ? LOW : 0;
     return { left: level, top: level, right: level, bottom: level };
   }
 
-  /** `side_cover!`: a Cover tile's side; anything else has none (a wall is a wall first). */
+  /** `side_cover!`: a Cover tile's side; anything else has none (a wall is a wall first, an obstacle has no edges). */
   private side(tile: Tile, name: keyof Sides) {
     return this.at(tile)?.t === "cover" ? this.sides(tile)[name] : 0;
   }
 
-  /** Where units may stand: anything inside but a wall or an unwalkable tile. */
-  terrain(cell: Cell): "open" | "blocked" {
+  /**
+   * What a cell is to a unit on the move: ground to stand on (Empty, Cover:
+   * `is_standable!`), an obstacle to pass over, or blocked (a wall, an
+   * unwalkable tile, off the grid). Units are the rules' concern.
+   */
+  terrain(cell: Cell): "open" | "obstacle" | "blocked" {
     const tile = this.at(this.tileOf(cell));
-    return !tile || tile.t === "wall" || tile.t === "unwalkable" ? "blocked" : "open";
+    if (!tile || tile.t === "wall" || tile.t === "unwalkable") return "blocked";
+    return tile.t === "obstacle" ? "obstacle" : "open";
   }
 
   /** `is_edge_high_cover!` between two neighbouring tiles. */
@@ -99,9 +112,15 @@ export class ChainGround {
     return this.side(from, out) === HIGH || this.side(to, back) === HIGH;
   }
 
-  /** One step of `check_path` between neighbouring cells: no high cover across the edge. */
+  /**
+   * One step of `trace_path` between neighbouring cells, units aside: onto a
+   * cell that is not blocked, across no high side, never from an obstacle
+   * onto another. Where the path may end is `terrain(...) === "open"`.
+   */
   step(from: Cell, to: Cell): boolean {
-    return this.terrain(to) === "open" && !this.highEdge(this.tileOf(from), this.tileOf(to));
+    const target = this.terrain(to);
+    if (target === "blocked" || (target === "obstacle" && this.terrain(from) === "obstacle")) return false;
+    return !this.highEdge(this.tileOf(from), this.tileOf(to));
   }
 
   /** `cover_bonus`: the defense `at` has against a shot from `from`, in percent points. */
@@ -184,13 +203,14 @@ export class ChainGround {
     return !!this.at(target) && this.at(target)!.t !== "wall" && this.trace(this.tileOf(from), target, false);
   }
 
-  /** `explode` with environment damage: every Cover tile within the blast becomes Empty. */
+  /** `explode` with environment damage: every Cover and Obstacle tile within the blast becomes Empty. */
   blast(at: Cell) {
     const [row, col] = this.tileOf(at);
     for (let r = row - BLAST_RADIUS; r <= row + BLAST_RADIUS; r++)
       for (let c = col - BLAST_RADIUS; c <= col + BLAST_RADIUS; c++) {
         if (Math.abs(r - row) + Math.abs(c - col) > BLAST_RADIUS) continue;
-        if (this.tiles[r]?.[c]?.t === "cover") this.tiles[r][c] = { t: "empty" };
+        const t = this.tiles[r]?.[c]?.t;
+        if (t === "cover" || t === "obstacle") this.tiles[r][c] = { t: "empty" };
       }
   }
 

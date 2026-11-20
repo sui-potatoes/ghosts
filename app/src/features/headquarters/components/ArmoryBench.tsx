@@ -60,7 +60,7 @@ const STATE_TAG = { fitted: "Fitted", drafted: "Draft", removed: "Off" } as cons
 
 /** Which upgrade gives what: one line per fitted, drafted and removed mod. */
 function FittingLines({ lines }: { lines: FittingLine<AttachmentSlot>[] }) {
-    if (lines.length === 0) return <p className="sq-footnote">No mods fitted.</p>;
+    if (lines.length === 0) return <p className="sq-footnote">No mods fitted</p>;
     return (
         <ul className="hq-fitting-lines">
             {lines.map((l, i) => (
@@ -343,7 +343,7 @@ export function WeaponBench(props: {
                 onReturn={props.onReturn}
             />
             {changed && (
-                <p className="sq-footnote">Apply or reset the mods before issuing this rifle.</p>
+                <p className="sq-footnote">Apply or reset the mods before issuing this rifle</p>
             )}
         </div>
     );
@@ -384,7 +384,7 @@ function Finish({
                     ))}
                 </div>
             ) : (
-                <p className="sq-footnote">No finishes for this weapon yet.</p>
+                <p className="sq-footnote">No finishes for this weapon yet</p>
             )}
         </section>
     );
@@ -409,7 +409,7 @@ export function ArmorBench(props: {
             <ArmorStats name={props.held.item.name} modifier={props.stats} />
             <p className="sq-footnote">
                 Modifiers apply on top of the wearer's own stats. Plate finish is set per recruit in
-                their loadout.
+                their loadout
             </p>
             <Issue
                 kind="armor"
@@ -458,7 +458,7 @@ export function UpgradeBench(props: {
                         <small>{carrier ? `Issued · ${carrier.metadata.name}` : "In armory"}</small>
                     </button>
                 ))}
-                {props.fittedOn.length === 0 && <p className="sq-footnote">Not fitted anywhere.</p>}
+                {props.fittedOn.length === 0 && <p className="sq-footnote">Not fitted anywhere</p>}
             </div>
             <div className="inventory-heading">
                 <h4>Try it on</h4>
@@ -477,7 +477,7 @@ export function UpgradeBench(props: {
                 ))}
                 {props.candidates.length === 0 && (
                     <p className="sq-footnote">
-                        No rifle has room for a {ATTACHMENT_SLOT_NAMES[a.slot].toLowerCase()}.
+                        No rifle has room for a {ATTACHMENT_SLOT_NAMES[a.slot].toLowerCase()}
                     </p>
                 )}
             </div>
@@ -603,7 +603,7 @@ export function RequisitionBench(props: {
                 </div>
             </div>
             <p className="sq-footnote">
-                Gear goes straight to the racks, and any recruit can be issued any of it.
+                Gear goes straight to the racks, and any recruit can be issued any of it
             </p>
             {props.groups.map((group) => (
                 <section key={group.title}>

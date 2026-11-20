@@ -49,7 +49,7 @@ function signedOutRow(what: string): SettingRow {
         id: "sign-in",
         label: "Log in",
         value: <span className="text-warn">not signed in</span>,
-        description: `Not signed in. Identify with a passkey or a provider to see ${what}.`,
+        description: `Not signed in. Identify with a passkey or a provider to see ${what}`,
         onConfirm: requestSignIn,
     };
 }
@@ -98,7 +98,7 @@ export function PlayerPanel() {
                 </>
             ),
             description:
-                "Your call sign, shown to other players. Follows SuiNS rules, so it can become your SuiNS name unchanged.",
+                "Your call sign, shown to other players. Follows SuiNS rules, so it can become your SuiNS name unchanged",
             onConfirm: () => setNameOpen(true),
         },
     ];
@@ -150,14 +150,14 @@ export function AccountPanel() {
             label: "Held by",
             value: method?.label ?? "—",
             description:
-                "How this account is authorized: a passkey bound to this site, or a zkLogin provider.",
+                "How this account is authorized: a passkey bound to this site, or a zkLogin provider",
         },
         {
             kind: "action",
             id: "address",
             label: "Address",
             value: copied ? "copied" : formatAddress(account.address),
-            description: "The account's Sui address. Activate to copy it to the clipboard.",
+            description: "The account's Sui address. Activate to copy it to the clipboard",
             onConfirm: copy,
         },
         {
@@ -173,14 +173,14 @@ export function AccountPanel() {
                     {formatSui(mist)} <span className="set-note">SUI</span>
                 </>
             ),
-            description: "SUI held by the address. Pays the network fee when your squad saves.",
+            description: "SUI held by the address. Pays the network fee when your squad saves",
         },
         {
             kind: "static",
             id: "network",
             label: "Network",
             value: NETWORK,
-            description: "The Sui network this build talks to. Testnet only.",
+            description: "The Sui network this build talks to. Testnet only",
         },
         { kind: "section", id: "access", label: "Account access" },
         {
@@ -194,7 +194,7 @@ export function AccountPanel() {
                 </span>
             ),
             description:
-                "A second authorizer that can take over after a delay; without it, losing the passkey or provider means losing the squad. Setup arrives in a later update.",
+                "A second authorizer that can take over after a delay; without it, losing the passkey or provider means losing the squad. Setup arrives in a later update",
         },
         {
             kind: "action",
@@ -202,7 +202,7 @@ export function AccountPanel() {
             label: "Sign out",
             value: "",
             description:
-                "Disconnect this wallet from the device: a confirmation asks first, and this browser's session key is retired with it. Local preferences stay.",
+                "Disconnect this wallet from the device: a confirmation asks first, and this browser's session key is retired with it. Local preferences stay",
             onConfirm: () => setSigningOut(true),
         },
         ...sessionRows,
@@ -227,7 +227,7 @@ export function AccountPanel() {
                         <span className="font-mono text-warn">{termination.label}</span> loses
                         access and can no longer sign for this account
                         {termination.local ? "; the key stored in this browser is wiped" : ""}. One
-                        passkey signature confirms the removal.
+                        passkey signature confirms the removal
                     </>
                 )}
             </ConfirmDialog>
@@ -243,7 +243,7 @@ export function AccountPanel() {
                 onClose={() => setSigningOut(false)}
             >
                 Disconnects this wallet from the device. This browser's session key loses access and
-                is wiped; signing in again authorizes the device anew. Local preferences stay.
+                is wiped; signing in again authorizes the device anew. Local preferences stay
             </ConfirmDialog>
         </>
     );
@@ -280,18 +280,18 @@ export function AudioPanel() {
         switchRow({
             id: "muted",
             label: "Sound",
-            description: "Silence every channel without touching the mix.",
+            description: "Silence every channel without touching the mix",
             checked: !audio.muted,
             defaultValue: !DEFAULTS.audio.muted,
             set: (on) => setAudio({ muted: !on }),
             values: { on: "On", off: "Muted" },
         }),
-        slider("master", "Master", "Overall output level. Every other channel scales under it."),
-        slider("music", "Music", "Score and ambient music."),
-        slider("sfx", "Effects", "Weapons and impacts.", previewEffect),
-        slider("voice", "Dialogue", "Squad chatter and mission dialogue.", previewDialogue),
+        slider("master", "Master", "Overall output level. Every other channel scales under it"),
+        slider("music", "Music", "Score and ambient music"),
+        slider("sfx", "Effects", "Weapons and impacts", previewEffect),
+        slider("voice", "Dialogue", "Squad chatter and mission dialogue", previewDialogue),
         // No preview callback: the list's own detent tick is the preview.
-        slider("ui", "Interface", "Menu ticks and clicks."),
+        slider("ui", "Interface", "Menu ticks and clicks"),
     ];
 
     return <SettingList rows={rows} />;
@@ -321,7 +321,7 @@ export function DisplayPanel() {
             id: "fullscreen",
             label: "Fullscreen",
             description:
-                "Take the whole display. Hold Esc to leave fullscreen; the browser forgets the choice between sessions.",
+                "Take the whole display. Hold Esc to leave fullscreen; the browser forgets the choice between sessions",
             checked: fullscreen,
             defaultValue: false,
             set: setFullscreen,
@@ -330,19 +330,19 @@ export function DisplayPanel() {
         flag(
             "batterySaver",
             "Battery saver",
-            "Lower the frame rate and scene detail to save power. Recommended on portable machines.",
+            "Lower the frame rate and scene detail to save power. Recommended on portable machines",
         ),
-        flag("scanlines", "Scanlines", "Faint CRT scanlines over the picture."),
-        flag("vignette", "Vignette", "Darkened frame edges for a low-light read."),
+        flag("scanlines", "Scanlines", "Faint CRT scanlines over the picture"),
+        flag("vignette", "Vignette", "Darkened frame edges for a low-light read"),
         flag(
             "reduceMotion",
             "Reduce motion",
-            "Cut interface animation and transitions to a minimum.",
+            "Cut interface animation and transitions to a minimum",
         ),
         flag(
             "wireframe",
             "Wireframe models",
-            "Draw gear and recruit models as triangle wireframes, with a triangle count, to check topology.",
+            "Draw gear and recruit models as triangle wireframes, with a triangle count, to check topology",
         ),
     ];
 
@@ -412,7 +412,7 @@ export function ControlsPanel() {
             id: `menu-${action}`,
             label: ACTION_LABELS[action],
             value: <Keys action={action} />,
-            description: "Menu binding. Rebinding arrives with a later update.",
+            description: "Menu binding. Rebinding arrives with a later update",
         })),
         { kind: "section", id: "combat", label: "Combat" },
         ...COMBAT_ACTIONS.map((action): SettingRow => ({
@@ -426,7 +426,7 @@ export function ControlsPanel() {
                     combatKeys(action)
                 ),
             description:
-                "Combat binding. Confirm, then press the new key — a key already in use swaps over. Esc cancels; digits stay the squad numbers.",
+                "Combat binding. Confirm, then press the new key — a key already in use swaps over. Esc cancels; digits stay the squad numbers",
             onConfirm: () => setCapturing(action),
             onReset: () => assign(action, DEFAULT_COMBAT_BINDINGS[action]),
         })),
@@ -435,14 +435,14 @@ export function ControlsPanel() {
             id: "select-operator",
             label: "Select operator",
             value: <Keys keys={["1", "–", "9"]} />,
-            description: "Operators answer to their squad number, one through nine.",
+            description: "Operators answer to their squad number, one through nine",
         },
         {
             kind: "action",
             id: "combat-reset",
             label: "Reset combat bindings",
             value: "",
-            description: "Return every combat key to its default.",
+            description: "Return every combat key to its default",
             onConfirm: () => setControls({ combat: DEFAULT_COMBAT_BINDINGS }),
         },
     ];

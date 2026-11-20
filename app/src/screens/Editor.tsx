@@ -446,7 +446,11 @@ export default function Editor() {
         const { level: fresh, dropped } = buildBase(slot);
         setSelection(null);
         commit(fresh);
-        setNotice(dropped ? `Rebuilt · ${dropped} piece(s) had no seat` : "Rebuilt from the demo");
+        setNotice(
+            dropped
+                ? `Rebuilt · ${dropped} piece(s) had no seat`
+                : "Rebuilt from the training level",
+        );
     };
 
     const resize = (width: number, depth: number) => {
@@ -685,7 +689,7 @@ export default function Editor() {
                         title={
                             playBlocked.length
                                 ? `Cannot playtest: ${playBlocked.join(" · ")}`
-                                : "Play this draft in the demo against the AI"
+                                : "Play this draft in training against the AI"
                         }
                         onClick={() => playtestRef.current()}
                     >
@@ -841,7 +845,7 @@ export default function Editor() {
                         <section className="flex flex-col gap-2 border-b border-line pb-3">
                             <h2 className="ed-chip">Selection</h2>
                             {!selection || !selectionSpec ? (
-                                <p className="ed-chip">Click a placed asset to redress it.</p>
+                                <p className="ed-chip">Click a placed asset to redress it</p>
                             ) : (
                                 <>
                                     <p className="text-[11px] text-secondary">
@@ -900,7 +904,7 @@ export default function Editor() {
                         <section className="flex flex-col gap-2 border-b border-line pb-3">
                             <h2 className="ed-chip">Light source</h2>
                             <p className="ed-chip">
-                                Click places a lamp with these dials; click a lit cell to remove it.
+                                Click places a lamp with these dials; click a lit cell to remove it
                             </p>
                             {color("Color", lamp.color, (v) =>
                                 setLamp((l) => ({ ...l, color: v })),
@@ -963,7 +967,7 @@ export default function Editor() {
                     </button>
                     <p className="ed-chip leading-relaxed normal-case">
                         Dials deviate from the chosen preset and travel with the level. Exports
-                        carry the Move map grid and the render placements, assets by uid.
+                        carry the Move map grid and the render placements, assets by uid
                     </p>
                 </aside>
             </div>
@@ -979,7 +983,7 @@ export default function Editor() {
                     >
                         <h2 className="label">Leave the editor?</h2>
                         <p className="text-xs leading-relaxed text-secondary">
-                            The draft is saved on this device and will be here when you come back.
+                            The draft is saved on this device and will be here when you come back
                         </p>
                         <div className="flex gap-1.5">
                             <button

@@ -161,6 +161,7 @@ function SceneMenu() {
           >
             <option value="morning">Morning</option>
             <option value="day">Day</option>
+            <option value="overcast">Overcast</option>
             <option value="evening">Evening</option>
             <option value="night">Night</option>
           </select>

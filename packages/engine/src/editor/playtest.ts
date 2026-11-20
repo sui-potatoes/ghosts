@@ -10,8 +10,11 @@
  *   `[x - ⌊w/2⌋, z - ⌊d/2⌋]`, which puts the shipped demos back where they were).
  * - Rules: the scenario carries the exported Move tile grid as its `ground`, so
  *   moving, cover, sight and grenades follow `ghosts::map` (`chain-ground.ts`):
- *   low cover (crates, barriers, glass panes, tall fences alike) protects but
- *   never blocks a step; high cover edges and walls do.
+ *   a crate or barrier is an Obstacle, low cover to its neighbours that a unit
+ *   vaults but never stands on (two side by side cannot be crossed); low cover
+ *   on an edge (glass panes, tall fences) protects but never blocks a step;
+ *   high cover edges and walls do. The scene counts the obstacles as its cover
+ *   cells, so units crouch beside them and vault them.
  * - Scenery: every placement becomes a catalog prop the battlefield draws and
  *   breaks; indestructible stand-ins (hit points 0) stay out of the props and
  *   are drawn as static scenery by the level's view (`playtest-view.ts`). Wall
@@ -49,8 +52,10 @@ export function playtestIssues(level: Level): string[] {
   if (level.objective) {
     const tile = toMoveMap(level).tiles[level.objective[1]]?.[level.objective[0]];
     if (!tile) issues.push("The objective is outside the grid");
-    else if (tile.t === "wall" || tile.t === "unwalkable")
-      issues.push(`The objective stands on ${tile.t === "wall" ? "a wall" : "an unwalkable tile"}: nobody can extract`);
+    else if (tile.t === "wall" || tile.t === "unwalkable" || tile.t === "obstacle")
+      issues.push(
+        `The objective stands on ${tile.t === "wall" ? "a wall" : tile.t === "obstacle" ? "an obstacle" : "an unwalkable tile"}: nobody can extract`,
+      );
   }
   return issues;
 }
@@ -107,10 +112,12 @@ export function levelPlan(level: Level): MapPlan {
   const { tiles } = toMoveMap(level);
   const buildings: Building[] = [];
   const obstacles: Cell[] = [];
+  const covers: Cell[] = [];
   tiles.forEach((row, z) =>
     row.forEach((tile, x) => {
       if (tile.t === "wall") buildings.push({ x: x + minX, z: z + minZ, w: 1, d: 1, h: WALL_HEIGHT, kind: "level-wall" });
       else if (tile.t === "unwalkable") obstacles.push([x + minX, z + minZ]);
+      else if (tile.t === "obstacle") covers.push([x + minX, z + minZ]);
     }),
   );
   const rises = level.floors.flatMap((f) => {
@@ -121,8 +128,8 @@ export function levelPlan(level: Level): MapPlan {
     id: levelPlanId(level),
     bounds: { minX, maxX: minX + level.width - 1, minZ, maxZ: minZ + level.depth - 1 },
     buildings,
-    // Cover is the ground's: no cell is a barrier to vault in the scene.
-    covers: [],
+    // The ground's obstacles: the scene's cover cells, to crouch beside and vault (the rules take cover from the ground).
+    covers,
     obstacles,
     props: levelProps(level).props,
     // A flat stage: no street, no curbs.
@@ -174,11 +181,11 @@ export function scenarioFromLevel(level: Level): Scenario {
       contract: [
         `Side A fields ${a} of your squad, side B ${b} hostile operator${b === 1 ? "" : "s"}.`,
         level.objective
-          ? "Move an operator onto the relay pad and use *Extract*, then neutralize the hostiles."
-          : "This level has no objective: neutralize every hostile to finish.",
+          ? "Move an operator onto the relay pad and use *Extract*, then neutralize the hostiles"
+          : "This level has no objective: neutralize every hostile to finish",
       ],
       rules:
-        "Two action points per operator. Movement, cover and sight follow the exported tile grid as a chain match would: walls and unwalkable tiles cannot be entered, high cover blocks a step and a shot across its edge, low cover (barriers, crates, glass panes, tall fences) protects by 25 points but never blocks a step. A grenade clears every cover tile within two. Hunker keeps the demo's flat bonus.",
+        "Two action points per operator. Movement, cover and sight follow the exported tile grid as a chain match would: walls and unwalkable tiles cannot be entered, high cover blocks a step and a shot across its edge, low cover on an edge (glass panes, tall fences) protects by 25 points but never blocks a step. Crates and barriers give the tiles beside them 25 points and can be vaulted but not stood on; two side by side cannot be crossed. A grenade clears every cover tile within two. Hunker keeps the demo's flat bonus",
       facts: [
         ["LEVEL", name.toUpperCase()],
         ["GRID", `${level.width} × ${level.depth}`],
@@ -189,12 +196,12 @@ export function scenarioFromLevel(level: Level): Scenario {
     location: { ...blackRain.location, sector: "LEVEL EDITOR / PLAYTEST", code: "LV–00.000" },
     contract: { employer: "PLAYTEST", division: "LEVEL EDITOR", value: "₡ 0", threat: "TEST", threatLevel: 1 },
     objectives: {
-      secure: { title: "Secure the relay", detail: "Reach the relay pad and extract.", order: "Take the relay" },
+      secure: { title: "Secure the relay", detail: "Reach the relay pad and extract", order: "Take the relay" },
       eliminate: { title: "Neutralize side B", order: "Clear side B" },
     },
     lines: {
-      opening: `Playtest: ${name}.`,
-      secured: "Relay secured. Eliminate remaining hostiles.",
+      opening: `Playtest: ${name}`,
+      secured: "Relay secured. Eliminate remaining hostiles",
       securedStamp: "RELAY SECURED",
     },
   };

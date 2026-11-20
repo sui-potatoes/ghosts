@@ -31,7 +31,7 @@ export const GAME_TYPE = `${GHOSTS.package}::${GAME_MODULE}::Game`;
  */
 export const GAME_STARTED_TYPE = `${GHOSTS.package}::${GAME_MODULE}::GameStarted`;
 
-/** `ghosts::ghosts::GameEnded { game, ending }`: emitted once, in `complete_game`, which deletes the game. */
+/** `ghosts::ghosts::GameEnded { game, ending, ended_ms }`: emitted once, in `complete_game`, which deletes the game. */
 export const GAME_ENDED_TYPE = `${GHOSTS.package}::${GAME_MODULE}::GameEnded`;
 
 /** The events' layouts, as `bcs.ts` decodes them. */

@@ -29,7 +29,7 @@ test("just arrived and sent: a pending screen, not a blank one", () => {
     const v = view({ starting: true });
     assert.equal(v.phase, "starting");
     assert.equal(v.pending, true);
-    assert.equal(v.headline, "Finding match");
+    assert.equal(v.headline, "Looking for an opponent");
 });
 
 test("a direct visit sends nothing and says so: an idle screen with the action to start", () => {
@@ -154,7 +154,7 @@ test("a search the queue let go of is said, with the way to search again; never 
     assert.equal(view({ expired: true, starting: true }).phase, "starting");
 });
 
-test("the search waits the ticket's lifetime before saying no match came", () => {
+test("the search waits the ticket's lifetime before saying no game came", () => {
     assert.equal(
         view({ searching: true, elapsedMs: 299_000, timeoutMs: 300_000 }).phase,
         "searching",

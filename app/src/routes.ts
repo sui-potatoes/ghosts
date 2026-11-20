@@ -13,8 +13,8 @@
 /** The route a Back press leads to; null at the top (the menu). */
 export function parentOf(pathname: string): string | null {
     if (pathname === "/") return null;
-    // The demo's operations hang off its list under Play.
-    if (pathname === "/demo" || pathname === "/demo-2") return "/play/demo";
+    // The training operations hang off their list under Play.
+    if (pathname === "/demo" || pathname === "/demo-2") return "/play/training";
     // The mode screens hang off the Play cards.
     if (pathname.startsWith("/play/")) return "/play";
     // A game in the viewer goes back to the watch screen's lists.

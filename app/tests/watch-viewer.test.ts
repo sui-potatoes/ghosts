@@ -134,7 +134,7 @@ test("the scrubber: a pip per turn with its side, the viewer's place, the kills 
     assert.equal(
         pipsOf(state()).some((p) => p.edge),
         false,
-        "a finished game has no live edge",
+        "a finished match has no live edge",
     );
 });
 
@@ -162,7 +162,7 @@ test("the banner names the winner, or why there is none, with the record in labe
             SIDES,
         ),
         { title: "Ghosts won", line: "Hostiles left the match · 2 turns · 2 units fell" },
-        "a game won off the field says why",
+        "a match won off the field says why",
     );
     assert.equal(
         banner(
@@ -320,7 +320,7 @@ test("the cursor opens on the transport and walks it left to right: buttons, eve
 test("a finished game puts its banner first: Watch replay, then Leave, above the transport", () => {
     const ids = focusOrder(state({ finished: true }));
     assert.deepEqual(ids.slice(0, 2), ["watch-replay", "watch-leave"]);
-    assert.ok(!ids.includes("watch-live"), "no Live on a finished game");
+    assert.ok(!ids.includes("watch-live"), "no Live on a finished match");
     const s = laidOut(ids);
     assert.equal(s.focused, "watch-replay");
     s.move("right");
@@ -472,7 +472,7 @@ test("the card's result for each ending", () => {
     assert.equal(resultText(null, SIDES), "No result");
 });
 
-test("the card of a live match: marked Live, no result yet, the turn so far, no date; modes read as given", () => {
+test("the card of a live game: marked Live, no result yet, the turn so far, no date; modes read as given", () => {
     const c = card({ live: true, over: false, outcome: null });
     assert.equal(c.eyebrow, "Live");
     const facts = Object.fromEntries(c.facts);
@@ -488,7 +488,7 @@ test("the card of a live match: marked Live, no result yet, the turn so far, no 
     assert.equal(Object.fromEntries(card({ turns: [TURNS[0]] }).facts).Turns, "1 turn");
 });
 
-test("the spectator menu offers Match details where the players' menu has Briefing", () => {
+test("the spectator menu offers Game details where the players' menu has Briefing", () => {
     const ids = pauseEntries({
         briefing: true,
         briefingLabel: "Match details",

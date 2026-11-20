@@ -137,7 +137,7 @@ export default function UiSample() {
             cancel={{ label: "Keep editing", run: () => setPending(null) }}
             glyphs={glyphs}
         >
-            Leaving now loses the appearance edits unless they are saved.
+            Leaving now loses the appearance edits unless they are saved
         </Prompt>
     );
 

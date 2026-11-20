@@ -89,6 +89,7 @@ export {
     type Place,
 } from "./lobby-core";
 export { useAssignedName, useSubmitNameChange } from "./names";
+export { useNameTaken, useSaveFirstName } from "./first-name";
 export { canSendTransactions, sendTransaction, TransactionSender } from "./sender";
 export { trackSaving, useSaving } from "./saving";
 export {

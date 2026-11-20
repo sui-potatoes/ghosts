@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { clearPasskeySlot, passkeySlot } from "../src/wallets/passkey-store.ts";
 import { pauseEntries, signInOptions } from "../src/features/dialogs/model.ts";
 import {
     backTarget,
@@ -24,24 +25,16 @@ function state(patch: Partial<MenuState> = {}, match: Partial<MenuState["match"]
 
 const ids = (s: MenuState) => menuRows(s).map((r) => r.id);
 
-test("signed out: Play, then Sign In, Spectate and the rest; no Find Match, no demo rows", () => {
+test("signed out: Play, then Sign In, Spectate and the rest; no Find Game, no demo rows", () => {
     assert.deepEqual(ids(state({ signedIn: false })), [
         "play",
         "sign-in",
         "watch",
         "headquarters",
-        "editor",
         "leaderboard",
         "settings",
     ]);
-    assert.deepEqual(ids(state()), [
-        "play",
-        "watch",
-        "headquarters",
-        "editor",
-        "leaderboard",
-        "settings",
-    ]);
+    assert.deepEqual(ids(state()), ["play", "watch", "headquarters", "leaderboard", "settings"]);
     const labels = menuRows(state({ signedIn: false })).map((r) => r.label);
     for (const gone of ["Find Match", "Black Rain", "Paper Trail", "Cancel Search"])
         assert.ok(!labels.includes(gone), gone);
@@ -61,13 +54,13 @@ test("Play is the first, primary row, never refused, and the one way into every 
         assert.equal(menuRows(state({}, m))[0].locked, undefined);
 });
 
-test("the Play row leads back to a search, a lobby or a match in progress", () => {
+test("the Play row leads back to a search, a lobby or a game in progress", () => {
     const searching = playRow(state({}, { searching: true }));
     assert.equal(searching.tag, "Searching");
     assert.equal(searching.hint, "Back to your search");
     const lobby = playRow(state({}, { lobby: true }));
     assert.equal(lobby.tag, "Lobby");
-    assert.equal(lobby.hint, "Back to your friendly game");
+    assert.equal(lobby.hint, "Back to your friendly match");
     const playing = playRow(state({}, { playing: true, searching: true }));
     assert.equal(playing.label, "Resume Match");
     assert.equal(playing.verb, "Resume");
@@ -109,7 +102,7 @@ test("Back on the title goes to the top row, never off the screen", () => {
     assert.equal(backTarget([]), null);
 });
 
-test("the match chip: searching with its clock, none found, in progress, or nothing", () => {
+test("the game chip: searching with its clock, none found, in progress, or nothing", () => {
     const t0 = 1_000_000;
     assert.equal(matchChip({ playing: false, searchingSinceMs: null }, t0, 120_000), null);
     assert.deepEqual(matchChip({ playing: false, searchingSinceMs: t0 }, t0 + 84_000, 120_000), {
@@ -138,16 +131,78 @@ test("sign-in options: Google refused without a key; one ceremony at a time", ()
         fresh.map((o) => o.id),
         ["passkey", "recover", "google"],
     );
-    assert.equal(fresh[0].kind, "New");
-    assert.equal(fresh[1].label, "I Have a Passkey");
     assert.ok(fresh[2].locked);
     const known = signInOptions({ hasPasskey: true, canGoogle: true, wallets: ["W"], busy: null });
-    assert.equal(known[1].label, "Another Passkey");
     assert.equal(known[2].locked, undefined);
     assert.equal(known[3].id, "wallet:W");
     const busy = signInOptions({ hasPasskey: true, canGoogle: true, wallets: [], busy: "passkey" });
     assert.equal(busy[0].tag, "Waiting");
     assert.ok(busy.every((o) => o.locked));
+});
+
+test("sign-in options: a remembered passkey continues as its player, with or without a name", () => {
+    const base = { canGoogle: false, wallets: [], busy: null };
+    const named = signInOptions({ ...base, hasPasskey: true, passkeyName: "vesper" });
+    assert.deepEqual(
+        named.slice(0, 2).map((o) => [o.id, o.label, o.kind, o.hint, o.verb]),
+        [
+            [
+                "passkey",
+                "Continue as vesper",
+                "Passkey",
+                "Sign in with the passkey this device remembers",
+                "Sign in",
+            ],
+            [
+                "recover",
+                "Use a Different Passkey",
+                "Passkey",
+                "Sign twice with another passkey to find its account",
+                "Sign in",
+            ],
+        ],
+    );
+    const unnamed = signInOptions({ ...base, hasPasskey: true, passkeyName: "ghost-1a2b" });
+    assert.equal(unnamed[0].label, "Continue as ghost-1a2b");
+});
+
+test("sign-in options: nothing remembered reads as a first visit", () => {
+    const fresh = signInOptions({ hasPasskey: false, canGoogle: false, wallets: [], busy: null });
+    assert.deepEqual(
+        fresh.slice(0, 2).map((o) => [o.label, o.kind, o.hint]),
+        [
+            [
+                "Create a Passkey",
+                "New",
+                "Touch ID, a phone or a security key signs. No extension, no seed phrase",
+            ],
+            [
+                "I Have a Passkey",
+                "Passkey",
+                "Sign twice with an existing passkey to find its account",
+            ],
+        ],
+    );
+});
+
+test("forgetting the passkey clears its storage slot and the dialog offers the first-time rows", () => {
+    const store = new Map<string, string>();
+    const storage = {
+        getItem: (k: string) => store.get(k) ?? null,
+        removeItem: (k: string) => void store.delete(k),
+    };
+    store.set("ghosts:passkey:testnet", JSON.stringify({ publicKey: "AA==", createdAt: 1 }));
+    store.set("ghosts:name:testnet:0xab", "vesper");
+    assert.equal(clearPasskeySlot(storage, "testnet"), true);
+    assert.deepEqual([...store.keys()], ["ghosts:name:testnet:0xab"]);
+    assert.equal(clearPasskeySlot(storage, "testnet"), false);
+    const after = signInOptions({
+        hasPasskey: storage.getItem(passkeySlot("testnet")) !== null,
+        canGoogle: false,
+        wallets: [],
+        busy: null,
+    });
+    assert.equal(after[0].label, "Create a Passkey");
 });
 
 test("pause entries: briefing and restart only where they make sense", () => {

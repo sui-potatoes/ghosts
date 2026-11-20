@@ -126,8 +126,14 @@ test("chain intel: aim and defense are the unit's effective ones, base stats unt
         "smoke: -30 aim, +30 defense",
     );
     assert.deepEqual([intelOf([0x12, 0x02]).aim, intelOf([0x12, 0x02]).defense], [0, 40]);
-    // the other stats are what the contract says
+    // the dodge too: a daze takes it to 0 (`DAZE_MODIFIER`), smoke leaves it
     assert.equal(intelOf([0x12]).dodge, 5);
+    assert.equal(intelOf([0x02]).dodge, 0, "dazed: dodge 0");
+    assert.deepEqual(
+        [intelOf([0x12, 0x02]).aim, intelOf([0x12, 0x02]).dodge, intelOf([0x12, 0x02]).defense],
+        [0, 0, 40],
+        "dazed in smoke: aim 0, dodge 0, defense +30",
+    );
 });
 
 test("chain intel: a smoke grenade or a flashbang carrier reads its own utility and uses", () => {

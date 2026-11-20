@@ -127,7 +127,7 @@ export function DestructionPreview({ onClose, initialKind = "crate" }: { onClose
       };
       setReady(true);
     }).catch((reason: unknown) => {
-      if (!disposed) setError(reason instanceof Error ? reason.message : "Could not load the preview.");
+      if (!disposed) setError(reason instanceof Error ? reason.message : "Could not load the preview");
     });
     return () => {
       disposed = true; controller.current = null; cleanup?.(); modal.close();
@@ -141,10 +141,10 @@ export function DestructionPreview({ onClose, initialKind = "crate" }: { onClose
     <dialog ref={dialog} className="destruction-preview" aria-labelledby="destruction-title"
       onCancel={(e) => { e.preventDefault(); onClose(); }} onKeyDown={(e) => e.stopPropagation()}>
       <header>
-        <div><small>FIELD LAB / LIVE PHYSICS</small><h2 id="destruction-title">Break something.</h2></div>
+        <div><small>FIELD LAB / LIVE PHYSICS</small><h2 id="destruction-title">Break something</h2></div>
         <button type="button" onClick={onClose} aria-label="Close destruction preview">✕</button>
       </header>
-      <p>Try the map props. Your encounter stays untouched.</p>
+      <p>Try the map props. Your encounter stays untouched</p>
       <div className="destruction-stage" ref={viewport}>
         {!ready && <span className="destruction-loading" role="status">{error || "Preparing the test floor…"}</span>}
         <span className="destruction-orbit">DRAG TO ORBIT · SCROLL TO ZOOM</span>

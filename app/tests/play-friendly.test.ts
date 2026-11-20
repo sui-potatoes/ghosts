@@ -104,7 +104,7 @@ test("4x4 opens only on a level with 4 spawn positions a side", () => {
     assert.equal(sizeLabel(4), "4 x 4");
 });
 
-test("the gate: signed out, no squad, in a match, queued, suspended, free", () => {
+test("the gate: signed out, no squad, in a game, queued, suspended, free", () => {
     assert.equal(gateOf({ ...FREE, signedIn: false })?.reason, "Sign in to play");
     assert.equal(gateOf({ ...FREE, signedIn: false })?.action?.id, "sign-in");
     assert.equal(gateOf({ ...FREE, hasAccount: false, recruits: 0 })?.reason, "Hire a squad first");
@@ -137,7 +137,7 @@ test("Start waits for a guest, refuses an invite-only game and an expired one", 
     assert.equal(startBlock(host({ guest }), LOBBY_LIFETIME_MS, LOBBY_LIFETIME_MS), null);
     assert.equal(
         startBlock(host({ guest }), LOBBY_LIFETIME_MS + 1, LOBBY_LIFETIME_MS),
-        "This game has expired",
+        "This match has expired",
     );
 });
 
@@ -151,7 +151,7 @@ test("Join on the list: the gate first, then full, then the level", () => {
         full: false,
     };
     assert.equal(joinBlock(game, null, 3), null);
-    assert.equal(joinBlock({ ...game, full: true }, null, 3), "This game is full");
+    assert.equal(joinBlock({ ...game, full: true }, null, 3), "This match is full");
     assert.equal(joinBlock({ ...game, size: 4 }, null, 3), "No 4x4 level yet");
     assert.equal(
         joinBlock({ ...game, full: true }, { reason: "Sign in to play" }, 3),
@@ -169,10 +169,10 @@ test("a game that removed the player is inactive, with its reason, before the ot
         full: false,
         removed: true,
     };
-    assert.equal(joinBlock(game, null, 3), "The host removed you from this game");
+    assert.equal(joinBlock(game, null, 3), "The host removed you from this match");
     assert.equal(
         joinBlock({ ...game, full: true }, null, 3),
-        "The host removed you from this game",
+        "The host removed you from this match",
     );
     assert.equal(
         joinBlock(game, { reason: "Sign in to play" }, 3),
@@ -184,7 +184,7 @@ test("a game that removed the player is inactive, with its reason, before the ot
 test("a write in flight: the pressed row says so, every other row waits", () => {
     assert.equal(writeBlock(null, false, "close"), undefined);
     const closing = { what: "close" } as const;
-    assert.equal(writeBlock(closing, true, "close"), "Closing game");
+    assert.equal(writeBlock(closing, true, "close"), "Closing match");
     assert.equal(writeBlock(closing, true, "start"), "Saving a change");
     // listed games are told apart by their host
     const joining = { what: "join", id: "0x1" } as const;
@@ -195,7 +195,7 @@ test("a write in flight: the pressed row says so, every other row waits", () => 
 });
 
 test("a notice goes once the list is read again without its game", () => {
-    const notice = { line: "This game was closed", host: "0x1", at: 1000 };
+    const notice = { line: "This match was closed", host: "0x1", at: 1000 };
     // read before the notice: nothing is known yet
     assert.equal(noticeStale(notice, { at: 900, hosts: [] }), false);
     assert.equal(noticeStale(notice, null), false);
@@ -245,12 +245,12 @@ const menu = (match: Partial<MenuState["match"]>): MenuState => ({
     install: "none",
 });
 
-test("the title: Play leads back to the lobby; the match chip names it", () => {
+test("the title: Play leads back to the lobby; the game chip names it", () => {
     const play = menuRows(menu({ lobby: true })).find((r) => r.id === "play")!;
-    assert.equal(play.hint, "Back to your friendly game");
+    assert.equal(play.hint, "Back to your friendly match");
     assert.equal(
         menuRows(menu({})).find((r) => r.id === "play")!.hint,
-        "Ranked, friendly, contract, demo",
+        "Ranked, friendly, contract, training",
     );
     assert.deepEqual(matchChip({ playing: false, searchingSinceMs: null, lobby: true }, 0, 1), {
         value: "Friendly lobby",
@@ -260,7 +260,7 @@ test("the title: Play leads back to the lobby; the match chip names it", () => {
     assert.equal(playRow(menu({ lobby: true, playing: true })).label, "Resume Match");
 });
 
-test("Find Match sends a player in a lobby back to it, never into the queue", () => {
+test("Find Game sends a player in a lobby back to it, never into the queue", () => {
     const state: FindState = {
         signedIn: true,
         playing: false,

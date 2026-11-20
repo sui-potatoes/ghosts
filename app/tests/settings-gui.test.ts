@@ -199,9 +199,9 @@ test("the Player panel shows the rating from the account and sends the reset to 
     // The contract keeps no peak: no peak line, no mock store, one confirmation.
     assert.doesNotMatch(block, /Peak|useRating\(|localStorage/);
     for (const label of [
-        "Tier",
+        "Rank",
         "Rating",
-        "Ranked games",
+        "Ranked matches",
         "Record",
         "Budget 3x3",
         "Budget 4x4",

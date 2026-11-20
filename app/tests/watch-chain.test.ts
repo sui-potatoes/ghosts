@@ -30,6 +30,8 @@ import { Game, type ChainGame } from "../src/chain/bcs.ts";
 import { CALLS, RecruitField, GAME_TYPE, isRecruitEntry } from "../src/chain/watch-layout.ts";
 import { GHOSTS } from "../src/constants.ts";
 import { terrainAt, toCell } from "../src/chain/match-rules.ts";
+import { scenarioFor } from "../src/chain/match-scene.ts";
+import { lookFor } from "../../packages/engine/src/scene-look.ts";
 import {
     isGameId,
     listedBy,
@@ -322,7 +324,7 @@ test("the start prepares fresh rules the same way every time: positions, health,
         r.units.map((u) => [u.id, u.pos, u.hp, u.ap, u.ammo]),
     ];
     assert.deepEqual(view(one), view(two));
-    assert.equal(one.turn, 0, "a chain game opens on turn 0, as its players see it");
+    assert.equal(one.turn, 0, "a chain match opens on turn 0, as its players see it");
     assert.equal(one.phase, "player", "the first player opens");
 });
 
@@ -331,6 +333,28 @@ test("looks dress the other side's units; the first side is dressed by the squad
     const start = watchStart(blackRain, parse("3"), new Map(), looks);
     assert.deepEqual(start.scenario.units.find((u) => u.id === R2)?.look, { armor: "nyx-heavy" });
     assert.equal(start.scenario.units.find((u) => u.id === R1)?.look, undefined);
+});
+
+test("both players and the viewer show a game in the look its ID's first two bytes give", () => {
+    const first = parse("3");
+    assert.equal(first.id, GAME);
+    const expected = lookFor(0x9a, 0x9a);
+    assert.deepEqual(expected, { time: "dawn", weather: "fog", seed: 0x9a9a });
+    for (const side of [0, 1])
+        assert.deepEqual(
+            scenarioFor(blackRain, first, side, new Map()).look,
+            expected,
+            `player ${side}`,
+        );
+    assert.deepEqual(watchStart(blackRain, first, new Map()).scenario.look, expected, "the viewer");
+    // Later versions of the same game keep it: only the ID counts.
+    assert.deepEqual(watchStart(blackRain, parse("6"), new Map()).scenario.look, expected);
+    const other = { ...first, id: `0x0000${"9a".repeat(30)}` };
+    assert.deepEqual(scenarioFor(blackRain, other, 0, new Map()).look, {
+        time: "night",
+        weather: "heavy-rain",
+        seed: 0,
+    });
 });
 
 test("a game that never reached play reads as unplayed, with who did not show", async () => {
@@ -358,7 +382,7 @@ test("a game whose versions are gone is unavailable; a live one is watched from 
     const live = await readStory(fakeArchive(null), GAME, now);
     assert.equal(live.kind, "played");
     if (live.kind !== "played") return;
-    assert.equal(live.first, now, "no history to rewind into: the game as it stands");
+    assert.equal(live.first, now, "no history to rewind into: the match as it stands");
     assert.equal(live.fromStart, false);
     assert.equal(live.finished, false);
 });
@@ -478,7 +502,7 @@ test("live: events past the cursor as the history grows, a failed read tried aga
     assert.deepEqual(
         kinds(source.events()),
         ["move", "shot:4", "hostile-phase"],
-        "joined mid-game: the past is there to rewind",
+        "joined mid-match: the past is there to rewind",
     );
     assert.equal(source.ended(), false);
     assert.equal(source.deadline(), 1_000 + 90_000);
@@ -789,9 +813,9 @@ test("a link opens live while the game exists, else its replay; only a game id i
     assert.ok(!isGameId(undefined));
 });
 
-// === The ground a blast leaves: the chain's cover tiles, as the viewer shows them ===
+// === The ground a blast leaves: the chain's obstacle tiles, as the viewer shows them ===
 
-/** `blackRain`'s tiles in the chain's grid (14 rows by 18 columns): where its map has cover. */
+/** `blackRain`'s tiles in the chain's grid (14 rows by 18 columns): its cover props, `Obstacle` tiles. */
 const COVER_TILES: [number, number][] = [
     [2, 12],
     [3, 9],
@@ -808,14 +832,14 @@ const BOUNDS = blackRain.map.bounds;
 const cellKey = (cell: readonly number[]) => cell.join(",");
 const tileCell = (tile: number[]) => toCell(tile, BOUNDS);
 
-/** The cover tiles left once the blasts at `centers` (radius 2) have gone off: `Map.explode`. */
+/** The obstacle tiles left once the blasts at `centers` (radius 2) have gone off: `Map.explode`. */
 function coverAfter(centers: [number, number][]) {
     return COVER_TILES.filter(
         ([row, col]) => !centers.some(([r, c]) => Math.abs(row - r) + Math.abs(col - c) <= 2),
     );
 }
 
-/** A game on `blackRain`'s grid with `covers` left, side 0's unit at `a`, side 1's far off. */
+/** A game on `blackRain`'s grid with the obstacles `covers` left, side 0's unit at `a`, side 1's far off. */
 function field({
     covers,
     a,
@@ -840,9 +864,7 @@ function field({
                   : null;
             const cover = covers.some(at);
             return {
-                tileType: cover
-                    ? { Cover: { left: 1, top: 1, right: 1, bottom: 1 } }
-                    : { Empty: true },
+                tileType: cover ? { Obstacle: true } : { Empty: true },
                 unit,
             };
         }),
@@ -862,25 +884,24 @@ function field({
     );
 }
 
-const RIGHT = 2;
-const LEFT = 8;
+const UP = 1;
 const blastAt = (origin: number[], target: number[], radius = 2) => [
     { Grenade: { origin, target } },
     { Explosion: [target[0], target[1], radius] },
 ];
 /**
- * A game's records: A runs over the cover at (9,6) and (9,7) (a vault), a frag lands
- * at (9,10) (taking the covers at (9,11) and (9,12), the second two tiles off), A
- * runs back over the covers, a frag lands at (9,7) (taking (9,6) and (9,7)), A runs
- * over the same tiles again, now open ground.
+ * A game's records: A vaults the obstacle at (9,6), from (10,6) to (8,6), a frag lands
+ * at (9,10) (taking the obstacles at (9,11) and (9,12), the second two tiles off), A
+ * vaults back, a frag lands at (9,7) (taking (9,6) and (9,7)), A crosses the same tile
+ * again, now open ground.
  */
 const BLASTS = {
-    placed: [{ RecruitPlaced: [9, 5] }, { RecruitPlaced: [13, 17] }],
-    run: [{ Move: [9, 4, RIGHT, RIGHT, RIGHT] }],
-    first: blastAt([9, 7], [9, 10]),
-    back: [{ Move: [9, 7, LEFT, LEFT, LEFT] }],
-    second: blastAt([9, 4], [9, 7]),
-    again: [{ Move: [9, 4, RIGHT, RIGHT, RIGHT, RIGHT] }],
+    placed: [{ RecruitPlaced: [10, 6] }, { RecruitPlaced: [13, 17] }],
+    run: [{ Move: [10, 6, UP, UP] }],
+    first: blastAt([8, 6], [9, 10]),
+    back: [{ Move: [8, 6, DOWN, DOWN] }],
+    second: blastAt([10, 6], [9, 7]),
+    again: [{ Move: [10, 6, UP, UP] }],
 };
 const turnOver = (n: number) => [{ NextTurn: n }, { NextTurn: n + 1 }];
 const RUN = [
@@ -908,10 +929,10 @@ const chainCover = (n: number) =>
     coverAfter(BLAST_CENTERS.slice(0, +(n >= AFTER_FIRST) + +(n >= AFTER_SECOND)));
 
 test("blasts take the cover the chain takes, tile by tile, at every point of the replay and either way round", () => {
-    const first = field({ covers: COVER_TILES, a: [9, 4], history: BLASTS.placed });
+    const first = field({ covers: COVER_TILES, a: [10, 6], history: BLASTS.placed });
     const last = field({
         covers: chainCover(COUNT),
-        a: [9, 8],
+        a: [8, 6],
         history: RUN,
         turn: 6,
     });
@@ -934,7 +955,7 @@ test("blasts take the cover the chain takes, tile by tile, at every point of the
             "move",
         ],
     );
-    // the vault is the cover there was when the unit moved, not what the last version holds
+    // the vault is the obstacle there was when the unit moved, not what the last version holds
     assert.deepEqual(
         [0, 6, 10].map((i) => (feed.events[i] as Extract<GameEvent, { type: "move" }>).vault),
         [true, true, false],
@@ -974,7 +995,7 @@ test("blasts take the cover the chain takes, tile by tile, at every point of the
         for (const tile of COVER_TILES)
             assert.equal(
                 rules.map.isCover(tileCell(tile)),
-                terrainAt(chain, tile) === "cover",
+                terrainAt(chain, tile) === "obstacle",
                 `tile ${tile} after ${n} events`,
             );
     }
@@ -1015,7 +1036,7 @@ test("joining a game under way shows the cover it has left, then follows the bla
     // seen from the second blast on: the first is in the history, its cover already gone
     const joined = field({
         covers: chainCover(AFTER_FIRST),
-        a: [9, 4],
+        a: [8, 6],
         history: RUN.slice(0, RUN.indexOf(BLASTS.back[0]) + 0),
         turn: 4,
     });
@@ -1031,10 +1052,10 @@ test("joining a game under way shows the cover it has left, then follows the bla
         "what the chain has now",
     );
     for (const tile of COVER_TILES)
-        assert.equal(opening.map.isCover(tileCell(tile)), terrainAt(joined, tile) === "cover");
+        assert.equal(opening.map.isCover(tileCell(tile)), terrainAt(joined, tile) === "obstacle");
 
     // the game goes on: the next blast takes its own, and a rewind to the opening gives the join back
-    const later = field({ covers: chainCover(COUNT), a: [9, 8], history: RUN, turn: 6 });
+    const later = field({ covers: chainCover(COUNT), a: [8, 6], history: RUN, turn: 6 });
     const feed = new EventFeed(start, joined, blank);
     assert.ok(feed.take(later) > 0);
     const end = rebuildEncounter(start.scenario, feed.events, feed.events.length, start.prepare);

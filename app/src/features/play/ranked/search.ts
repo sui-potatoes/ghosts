@@ -75,11 +75,11 @@ export function findAction(s: RankedSearchState, gate: string | null): FindActio
     const find = (deny?: string): FindAction => ({
         id: "find",
         label: "Find ranked match",
-        hint: deny ?? `Search for an opponent of your tier with this squad`,
+        hint: deny ?? `Search for an opponent of your rank with this squad`,
         deny,
     });
     if (s.loading) return find("Reading your record");
-    if (s.lobby) return find("Leave your friendly game first");
+    if (s.lobby) return find("Leave your friendly match first");
     if (s.contract) return find("Cancel your contract search first");
     if (s.suspendedMin > 0) return find(`Suspended for ${s.suspendedMin} min`);
     if (!s.open) return find(`No ${s.mode} level yet`);
@@ -113,7 +113,7 @@ export type SearchCard = {
 export function searchCard(s: RankedSearchState): SearchCard | null {
     const eyebrow = `Ranked ${s.mode}`;
     const squad: [string, string] = ["Squad", `${s.units} units · ${cr(s.spent)}`];
-    const tier: [string, string] = ["Tier", s.tier];
+    const tier: [string, string] = ["Rank", s.tier];
     switch (s.phase) {
         case "idle":
             return null;
@@ -157,8 +157,8 @@ export function searchCard(s: RankedSearchState): SearchCard | null {
                 title: out ? "No opponent yet" : "Looking for an opponent",
                 lines: [["Searching", clock(elapsed)], tier, squad],
                 hint: out
-                    ? "No opponent came in time. Leave the queue and search again later."
-                    : "A player of your tier. The search carries on while you use the menus.",
+                    ? "No opponent came in time. Leave the queue and search again later"
+                    : "A player of your rank. The search carries on while you use the menus",
                 back: {
                     label: out ? "Leave the queue" : "Cancel search",
                     deny: s.busy ? "Saving a change" : undefined,

@@ -581,7 +581,7 @@ function BuilderPrompt({
                 cancel={{ label: "Keep", run: close }}
                 glyphs={glyphs}
             >
-                Units that use it keep their equipment.
+                Units that use it keep their equipment
             </Prompt>
         );
     const taken =
@@ -609,7 +609,7 @@ function BuilderPrompt({
                       ["Cost", cr(squadCost(stands))],
                   ] as [string, ReactNode][],
                   confirm: "Save",
-                  body: "Load it from the saved squads whenever it fits the budget.",
+                  body: "Load it from the saved squads whenever it fits the budget",
               }
             : prompt.kind === "rename-squad"
               ? {
@@ -624,7 +624,7 @@ function BuilderPrompt({
                     title: "Save as my type",
                     lines: undefined,
                     confirm: "Save",
-                    body: "It appears under Yours when choosing a unit type.",
+                    body: "It appears under Yours when choosing a unit type",
                 };
     return (
         <Prompt

@@ -320,7 +320,7 @@ export const bytesOf = (hex: string): Uint8Array => fromHex(hex);
 const GHOSTS_LINES: Record<number, string> = {
     6: "You are already searching or in a match",
     7: "This search is over",
-    9: "You are suspended from matchmaking",
+    9: "Suspended",
     15: "The time to show the squad is over",
     22: "Hire a squad first",
     25: "A match was just found",
@@ -334,11 +334,11 @@ const GHOSTS_LINES: Record<number, string> = {
 const RULES_LINES: Record<number, string> = {
     0: "The squad does not have the size of the match",
     1: "The squad carries an item that is not offered",
-    2: "The squad carries an item your tier has not unlocked",
+    2: "The squad carries an item your rank has not unlocked",
     3: "The squad costs more than your budget",
     4: "This queue is not open",
     5: "No level for this size yet",
-    6: "That tier does not exist",
+    6: "That rank does not exist",
     7: "This size is not offered",
 };
 

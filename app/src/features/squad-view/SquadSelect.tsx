@@ -358,8 +358,8 @@ function Screen({
             >
                 {squadNow.length < count ? `${squadNow.length} of ${count} positions filled. ` : ""}
                 {friendly
-                    ? "A friendly match: whoever falls comes home."
-                    : "Whoever falls is gone for good, with their gear."}
+                    ? "A friendly match: whoever falls comes home"
+                    : "Whoever falls is gone for good, with their gear"}
             </Prompt>
         ) : prompt === "abandon" ? (
             <Prompt
@@ -378,8 +378,8 @@ function Screen({
                 glyphs={glyphs}
             >
                 {friendly
-                    ? "Your opponent wins and your squad comes home."
-                    : "Your opponent wins and your squad comes home, but you can't search for a match for a minute."}
+                    ? "Your opponent wins and your squad comes home"
+                    : "Your opponent wins and your squad comes home, but you can't search for a match for a minute"}
             </Prompt>
         ) : null;
 

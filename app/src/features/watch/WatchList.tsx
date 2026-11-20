@@ -149,7 +149,7 @@ function LivePanel({ live }: { live: ReturnType<typeof useLiveGames> }) {
                         },
                     ]}
                 >
-                    {live.isError ? offlineLine() : "Matches being played show here."}
+                    {live.isError ? offlineLine() : "Matches being played show here"}
                 </EmptyState>
             )}
         </Panel>
@@ -234,7 +234,7 @@ function MyMatches() {
                         },
                     ]}
                 >
-                    Your finished matches show here.
+                    Your finished matches show here
                 </EmptyState>
             )}
         </Panel>
@@ -354,7 +354,7 @@ function RecentPanel() {
                         },
                     ]}
                 >
-                    {recent.isError ? offlineLine() : "Finished matches show here."}
+                    {recent.isError ? offlineLine() : "Finished matches show here"}
                 </EmptyState>
             )}
         </Panel>

@@ -343,7 +343,7 @@ export function GearPicker({
                             close,
                         ]}
                     >
-                        Requisition gear in the Armory.
+                        Requisition gear in the Armory
                     </EmptyState>
                 )}
                 <StatChanges

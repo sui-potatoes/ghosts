@@ -61,7 +61,7 @@ export function GearCanvas({ model, attachments, skin, onState }: GearCanvasProp
                 if (!cancelled)
                     report.current({
                         loading: false,
-                        error: e instanceof Error ? e.message : "The stage could not load.",
+                        error: e instanceof Error ? e.message : "The stage could not load",
                     });
             });
         return () => {
@@ -90,7 +90,7 @@ export function GearCanvas({ model, attachments, skin, onState }: GearCanvasProp
                     !cancelled &&
                     report.current({
                         loading: false,
-                        error: e instanceof Error ? e.message : "Model unavailable.",
+                        error: e instanceof Error ? e.message : "Model unavailable",
                     }),
             );
         return () => {

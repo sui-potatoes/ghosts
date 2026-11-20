@@ -19,7 +19,9 @@ import {
     isOver,
     lineOfSight,
     lineOfThrow,
+    checkPath,
     outcomeFor,
+    reachable,
     rankWith,
     terrainAt,
     toCell,
@@ -70,7 +72,7 @@ function fixture(side = 0) {
         side,
         unitAt: ([x, z]) =>
             rules.units.find((u) => u.hp > 0 && u.pos[0] === x && u.pos[1] === z)?.id,
-        isCover: (cell) => rules.map.isCover(cell),
+        isObstacle: (cell) => rules.map.isCover(cell),
         coverAt: (cell) => rules.coverAt(cell),
         blast: () => [],
     };
@@ -249,6 +251,7 @@ const board = (...rows: string[]) => {
         });
         if (c === "l") return cover(1);
         if (c === "h") return cover(2);
+        if (c === "o") return { $kind: "Obstacle", Obstacle: true };
         return { $kind: c === "#" ? "Wall" : c === "x" ? "Unwalkable" : "Empty" };
     };
     const grid = rows.map((row) => [...row].map((c) => ({ tileType: tile(c), unit: null })));
@@ -310,10 +313,87 @@ test("a corner is clear if either way around it is", () => {
 test("the ground reads as the contract treats it", () => {
     const ground = board(".lx#");
     assert.equal(terrainAt(ground, [0, 0]), "open");
-    assert.equal(terrainAt(ground, [0, 1]), "cover");
+    assert.equal(terrainAt(ground, [0, 1]), "open", "edge cover is ground to stand on");
     assert.equal(terrainAt(ground, [0, 2]), "blocked");
     assert.equal(terrainAt(ground, [0, 3]), "blocked");
     assert.equal(terrainAt(ground, [5, 5]), "blocked");
+    assert.equal(terrainAt(board("o"), [0, 0]), "obstacle", "passed over, never stood on");
+});
+
+test("an obstacle is low cover to the tiles beside it, the same as a four-sided low cover tile", () => {
+    for (const prop of ["o", "l"]) {
+        // the unit at [1, 1], the obstacle north of it at [0, 1]
+        const ground = board(`.${prop}.`, "...", "...");
+        assert.equal(coverBonus(ground, [-3, 1], [1, 1]), 25, `${prop}: a shot from across it`);
+        assert.equal(
+            coverBonus(ground, [-3, 2], [1, 1]),
+            25,
+            `${prop}: the dominant axis falls back to it`,
+        );
+        assert.equal(coverBonus(ground, [1, 4], [1, 1]), 0, `${prop}: from the side`);
+        assert.equal(coverBonus(ground, [4, 1], [1, 1]), 0, `${prop}: from behind`);
+        // diagonal to the obstacle: nothing
+        assert.equal(coverBonus(ground, [-3, 0], [1, 0]), 0, `${prop}: no cover from a diagonal`);
+    }
+    // it blocks neither sight nor a throw, and a grenade can land on it
+    const ground = board("o", ".", ".");
+    assert.equal(lineOfSight(board(".", "o", "."), [0, 0], [2, 0]), true);
+    assert.equal(lineOfThrow(ground, [2, 0], [0, 0]), true);
+});
+
+test("a path passes over an obstacle and lands on ground to stand on; never two in a row, never ending on one", () => {
+    const ground = board(".....", ".o...", ".....", ".oo..", ".....");
+    // over [1,1] going down: three steps, the distance is every step
+    assert.deepEqual(checkPath(ground, [0, 1, DOWN, DOWN]), [2, 1]);
+    // turning on it is a step like any other
+    assert.deepEqual(checkPath(ground, [0, 1, DOWN, RIGHT]), [1, 2]);
+    assert.equal(checkPath(ground, [0, 1, DOWN]), null, "a path never ends on an obstacle");
+    assert.equal(
+        checkPath(ground, [3, 0, RIGHT, RIGHT, RIGHT]),
+        null,
+        "two in a row cannot be crossed",
+    );
+    assert.deepEqual(
+        checkPath(ground, [2, 2, DOWN, DOWN]),
+        [4, 2],
+        "one of a pair, down its column",
+    );
+    assert.equal(checkPath(ground, [1, 1, DOWN]), null, "nobody starts on an obstacle");
+    assert.equal(
+        checkPath(board(".", "#", "."), [0, 0, DOWN, DOWN]),
+        null,
+        "a wall is not passed over",
+    );
+    // a high side on the landing tile still blocks the step that crosses it
+    const ledge = board(".", "o", ".");
+    (ledge as { map: { grid: { grid: { tileType: unknown }[][] } } }).map.grid.grid[2][0].tileType =
+        {
+            $kind: "Cover",
+            Cover: { left: 0, top: 2, right: 0, bottom: 0 },
+        };
+    assert.equal(checkPath(ledge, [0, 0, DOWN, DOWN]), null);
+    // reach: the obstacles are searched through, never listed
+    const reach = reachable(ground, [0, 1], 3);
+    assert.ok(!reach.has("1,1") && !reach.has("3,1") && !reach.has("3,2"));
+    assert.equal(reach.get("2,1")?.steps, 2);
+    assert.equal(reachable(ground, [0, 1], 1).has("2,1"), false, "mobility bounds the steps");
+});
+
+test("a move that steps onto an obstacle is a vault", () => {
+    const { rules, play } = fixture();
+    const [walk] = play([record("Move", [...at([0, 2]), DOWN, RIGHT])]);
+    assert.equal(walk.type === "move" && walk.vault, false);
+    // a field that has an obstacle where the next path steps
+    const field: FieldView = {
+        bounds,
+        side: 0,
+        unitAt: ([x, z]) => rules.units.find((u) => u.pos[0] === x && u.pos[1] === z)?.id,
+        isObstacle: ([x, z]) => x === 1 && z === 4,
+        coverAt: () => true,
+        blast: () => [],
+    };
+    const [vault] = [...gameEvents([record("Move", [...at([1, 3]), DOWN, DOWN])], field)];
+    assert.equal(vault.type === "move" && vault.vault, true);
 });
 
 test("the odds are the contract's", () => {

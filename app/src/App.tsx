@@ -59,6 +59,8 @@ const FriendlyQa = import.meta.env.VITE_FRIENDLY_QA
 const RankedQa = import.meta.env.VITE_RANKED_QA
     ? lazy(() => import("./features/play/ranked/qa"))
     : null;
+// QA only: every look a game can be shown in, on Black Rain, registered in `VITE_LOOKS_QA=1` builds.
+const LooksQa = import.meta.env.VITE_LOOKS_QA ? lazy(() => import("./features/looks/qa")) : null;
 // The match viewer: `/watch` lists live matches, recent ones and the player's own;
 // `/watch/<game>` a match on chain, live or as a replay.
 const WatchList = lazy(() => import("./features/watch/WatchList"));
@@ -184,8 +186,9 @@ export function App() {
                     }
                 />
                 <Route path="/play/contract" element={<FindMatch />} />
+                <Route path="/play/demo" element={<Navigate to="/play/training" replace />} />
                 <Route
-                    path="/play/demo"
+                    path="/play/training"
                     element={
                         <Suspense fallback={<LoadingSpinner />}>
                             <DemoScreen />
@@ -252,6 +255,16 @@ export function App() {
                         </Suspense>
                     }
                 />
+                {LooksQa && (
+                    <Route
+                        path="/qa/looks"
+                        element={
+                            <Suspense fallback={<LoadingSpinner />}>
+                                <LooksQa />
+                            </Suspense>
+                        }
+                    />
+                )}
                 {ResultQa && (
                     <Route
                         path="/qa/match-result"

@@ -57,6 +57,7 @@ function tileBytes(tile: MoveTile): number[] {
     case "cover": return [1, ...tile.sides, 0];
     case "unwalkable": return [2, 0];
     case "wall": return [3, 0];
+    case "obstacle": return [4, 0];
   }
 }
 
@@ -93,6 +94,8 @@ export function deploymentIssues(level: Level): string[] {
       if (tile?.t === "wall") issues.push(`Deployment ${name} stands on a wall: place_recruit aborts there`);
       else if (tile?.t === "unwalkable")
         issues.push(`Deployment ${name} stands on an unwalkable tile: place_recruit aborts there`);
+      else if (tile?.t === "obstacle")
+        issues.push(`Deployment ${name} stands on an obstacle: place_recruit aborts there`);
     }
   }
   return issues;
@@ -103,7 +106,7 @@ export function deploymentIssues(level: Level): string[] {
  * Spawns follow `ghosts::deploy_squad`: the list is side a's cells then side
  * b's, each half one player's, so both sides must hold as many; a recruit goes
  * on its cell through `place_recruit`, which aborts on a wall, an unwalkable
- * tile or an occupied tile (`deploymentIssues`).
+ * tile, an obstacle or an occupied tile (`deploymentIssues`).
  */
 export function presetIssues(level: Level): PresetIssue[] {
   const issues: PresetIssue[] = [];

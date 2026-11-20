@@ -10,6 +10,7 @@
  */
 
 import type { EncounterRules, Scenario, UnitSpec } from "@ghosts/engine";
+import { lookOfGame } from "@ghosts/engine/look";
 import { unpack } from "@ghosts/squad/stats";
 
 import type { ChainGame } from "./bcs.ts";
@@ -69,7 +70,8 @@ export function scenarioFor(
             ...(look ? { look } : {}),
         };
     });
-    return { ...base, id: "match", versus: true, units };
+    // The look comes from the game's ID alone: both players and every viewer see the same sky.
+    return { ...base, id: "match", versus: true, units, look: lookOfGame(game.id) };
 }
 
 /**
@@ -92,8 +94,8 @@ const coverCells = (prop: Props["props"][number]) =>
 
 /**
  * What a blast the chain ran does to the scene, for a reader that follows the chain
- * (the viewer): `Map.explode` turns every `Cover` tile within `radius` of the blast
- * into `Empty`, whatever its health, and only those. So the cover props on those
+ * (the viewer): `Map.explode` turns every `Obstacle` (and `Cover`) tile within `radius`
+ * of the blast into `Empty`, whatever its health, and only those. So the cover props on those
  * tiles are destroyed outright, and no other cover prop is touched; the rest of the
  * scenery breaks as the scene's own blast says (scenery the ground does not keep).
  * An area weapon without `env_damage` leaves the scene as it is.
@@ -122,8 +124,8 @@ export function chainBlast(map: Props, at: Cell, radius: number, scorches = true
 
 /**
  * The scene as a game that is already under way left it, for the viewer: the cover
- * the game's map no longer has is gone, exactly (cover is `Cover` tiles, which only a
- * blast ever turns to `Empty`), and the scenery its blasts reached is broken as they
+ * the game's map no longer has is gone, exactly (a cover prop stands on an `Obstacle`
+ * tile, which only a blast ever turns to `Empty`), and the scenery its blasts reached is broken as they
  * would have. A game with no blasts in its history is left as the scene has it.
  */
 export function restoreChainBlasts(rules: EncounterRules, game: ChainGame, bounds: Bounds) {
@@ -138,7 +140,7 @@ export function restoreChainBlasts(rules: EncounterRules, game: ChainGame, bound
         // a tile off the game's grid says nothing
         const gone = cells.some((cell) => {
             const [row, col] = toTile(cell, bounds);
-            return !!game.map.grid.grid[row]?.[col] && terrainAt(game, [row, col]) !== "cover";
+            return !!game.map.grid.grid[row]?.[col] && terrainAt(game, [row, col]) !== "obstacle";
         });
         if (gone && map.health(prop.id) > 0)
             map.applyPropDamage(map.damageProp(prop.id, BREAK, "blast"));

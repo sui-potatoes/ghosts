@@ -104,7 +104,7 @@ export function SettingsView({
             cancel={{ label: "Keep editing", run: () => setLeaving(null) }}
             glyphs={glyphs}
         >
-            The typed endpoint is lost unless it is saved.
+            The typed endpoint is lost unless it is saved
         </Prompt>
     );
 

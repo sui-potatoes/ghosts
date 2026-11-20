@@ -76,7 +76,7 @@ test("the code's text: 8 bytes as a big-endian number in base 31, 13 digits", ()
     assert.ok(one.ok && hex(one.bytes) === "ffffffffffffffff");
     // One past it is 2^64: no code.
     const past = parseCode("SF297MD67PA8J");
-    assert.ok(!past.ok && past.message === "No game with this code");
+    assert.ok(!past.ok && past.message === "No match with this code");
     for (let i = 0; i < 200; i++) {
         const code = randomCode();
         const text = codeText(code);
@@ -312,20 +312,20 @@ test("aborts read in both forms the network words them", () => {
 });
 
 test("the contract's refusals as plain lines", () => {
-    assert.equal(lobbyRefusal(longAbort("lobby", "join_protected", 2)), "No game with this code");
-    assert.equal(lobbyRefusal(longAbort("lobby", "join_protected", 3)), "No game with this code");
-    assert.equal(lobbyRefusal(longAbort("lobby", "join_protected", 4)), "This game has expired");
-    assert.equal(lobbyRefusal(longAbort("lobby", "join_open", 5)), "This game is full");
+    assert.equal(lobbyRefusal(longAbort("lobby", "join_protected", 2)), "No match with this code");
+    assert.equal(lobbyRefusal(longAbort("lobby", "join_protected", 3)), "No match with this code");
+    assert.equal(lobbyRefusal(longAbort("lobby", "join_protected", 4)), "This match has expired");
+    assert.equal(lobbyRefusal(longAbort("lobby", "join_open", 5)), "This match is full");
     assert.equal(
         lobbyRefusal(longAbort("lobby", "join_open", 6)),
-        "The host removed you from this game",
+        "The host removed you from this match",
     );
-    assert.equal(lobbyRefusal(longAbort("lobby", "join_open", 2)), "This game is closed");
-    assert.equal(lobbyRefusal(longAbort("lobby", "start", 4)), "This game has expired");
+    assert.equal(lobbyRefusal(longAbort("lobby", "join_open", 2)), "This match is closed");
+    assert.equal(lobbyRefusal(longAbort("lobby", "start", 4)), "This match has expired");
     assert.equal(lobbyRefusal(longAbort("ghosts", "check_free", 22)), "Hire a squad first");
     assert.equal(
         lobbyRefusal(longAbort("ghosts", "deploy_squad", 28)),
-        "Too many recruits for this game",
+        "Too many recruits for this match",
     );
     assert.equal(lobbyRefusal(longAbort("ghosts", "next_turn", 6)), null);
     assert.equal(lobbyRefusal("Connection reset"), null);

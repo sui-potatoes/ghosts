@@ -38,7 +38,7 @@ export function MotionControls({ studio, state, onBody, civilian = false }: Prop
         try {
             await studio.playMotion(choice, loop, speed);
         } catch (e) {
-            setError(e instanceof Error ? e.message : "Unable to play motion.");
+            setError(e instanceof Error ? e.message : "Unable to play motion");
         } finally {
             setLoading(false);
         }

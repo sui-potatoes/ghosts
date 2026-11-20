@@ -158,7 +158,7 @@ function RecruitHq() {
             await new Promise((r) => setTimeout(r, delay));
             setBusy(false);
             if (fail) {
-                setError("The squad could not be hired. Try again.");
+                setError("The squad could not be hired. Try again");
                 return false;
             }
             setSlots((s) => s.map((x, i) => x ?? recruit(i)));

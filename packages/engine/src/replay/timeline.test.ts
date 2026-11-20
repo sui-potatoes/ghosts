@@ -144,7 +144,7 @@ test("turns: one per side's go, the side named by the event that opens it, kills
   assert.deepEqual(
     turnsOf(events, 0, 0).map((t) => t.round),
     [0, 0, 2],
-    "a chain game opens on round 0 (the number its players see), and a turn event names its round",
+    "a chain match opens on round 0 (the number its players see), and a turn event names its round",
   );
   assert.equal(turnAt(turns, 0), 0);
   assert.equal(turnAt(turns, 1), 0);
@@ -152,7 +152,7 @@ test("turns: one per side's go, the side named by the event that opens it, kills
   assert.equal(turnAt(turns, 4), 1);
   assert.equal(turnAt(turns, 5), 2);
   assert.equal(turnAt(turns, 6), 2);
-  assert.equal(turnsOf([], 1)[0].side, 1, "a game may open on side 1's turn");
+  assert.equal(turnsOf([], 1)[0].side, 1, "a match may open on side 1's turn");
 });
 
 /** What the scene would draw for an encounter's map: which props are standing. */

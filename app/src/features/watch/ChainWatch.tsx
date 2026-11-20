@@ -102,7 +102,7 @@ export default function ChainWatch() {
                 <Notice
                     leave={leave}
                     headline="This replay is no longer available"
-                    line="Its history is no longer kept."
+                    line="Its history is no longer kept"
                 />
             );
         case "missing":
@@ -110,7 +110,7 @@ export default function ChainWatch() {
                 <Notice
                     leave={leave}
                     headline="There is no match at this link"
-                    line="Check the link and try again."
+                    line="Check the link and try again"
                 />
             );
     }

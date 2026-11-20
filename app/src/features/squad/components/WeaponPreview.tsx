@@ -139,7 +139,7 @@ function WeaponCanvas({
         try {
             renderer = new T.WebGLRenderer({ antialias: true, alpha: true });
         } catch {
-            onError("Weapon preview could not start WebGL.");
+            onError("Weapon preview could not start WebGL");
             return;
         }
         renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -241,8 +241,7 @@ function WeaponCanvas({
                 resize();
             })
             .catch((e) => {
-                if (!disposed)
-                    onError(e instanceof Error ? e.message : "Weapon asset unavailable.");
+                if (!disposed) onError(e instanceof Error ? e.message : "Weapon asset unavailable");
             });
         return () => {
             disposed = true;

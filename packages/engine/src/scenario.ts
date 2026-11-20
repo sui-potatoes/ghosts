@@ -6,6 +6,7 @@ import { koraPlan } from "./district-plan.ts";
 import type { Appearance } from "@ghosts/squad/types";
 import type { Role } from "./game.ts";
 import type { Cell, MapPlan } from "./map.ts";
+import type { SceneLook, SettingScene } from "./scene-look.ts";
 
 /**
  * What a unit carries, by catalog id (`@ghosts/squad/catalog`): the same loadout a
@@ -57,6 +58,12 @@ export interface Briefing {
   issuer: string;
   title: string;
   setting: string;
+  /**
+   * The setting line's parts around the time and weather: a game shown in a
+   * look (`Scenario.look`) writes its own clock and weather between them
+   * (`lookSetting`); `setting` is the line without one.
+   */
+  scene?: SettingScene;
   contract: string[];
   rules: string;
   facts: [label: string, value: string][];
@@ -99,6 +106,13 @@ export interface Scenario {
    * than by the scene's own geometry. An editor level under playtest has one.
    */
   ground?: Ground;
+  /**
+   * The time of day and weather it is shown in (`scene-look.ts`), over the
+   * map's own: a chain game's from its ID; `"drawn"` a fresh random look each
+   * time the game starts (an offline game, and its restarts). Absent: the
+   * map's authored look. Indoor maps ignore it. Purely visual.
+   */
+  look?: SceneLook | "drawn";
   briefing: Briefing;
   contract: Contract;
   /** Where it happens: the debrief's sector line, the compass coordinates, the panel's file code. */
@@ -127,12 +141,13 @@ export const blackRain: Scenario = {
     issuer: "HELIOS STRATEGIC INDUSTRIES / EYES ONLY",
     title: "Operation Black Rain",
     setting: "Kōra Industrial District / 02:14 AM / Heavy rainfall. Nobody owns this city. Everybody pays.",
+    scene: { place: "Kōra Industrial District", rest: "Nobody owns this city. Everybody pays." },
     contract: [
       "Kōra Systems intercepted a Helios research shipment. The manifest sits on a relay inside Sector 09. Your squad has one window before the network purges the evidence.",
       "Move an operator onto the illuminated relay pad and use *Extract*. Neutralize the three Wraith operators to close the contract.",
     ],
     rules:
-      "Two action points per operator. Low cover reduces incoming accuracy by 25 points. Hunkering improves defense. Grenades damage every unit within two tiles, including your own, and can destroy nearby props. A flashbang dazes every unit within two tiles (aim 0), a smoke grenade covers them (+30 defense, −30 aim), friend or foe, for the rest of the turn and the next. Destroyed cover opens a route and no longer protects you. Concrete takes more punishment than wood or glass.",
+      "Two action points per operator. Low cover reduces incoming accuracy by 25 points. Hunkering improves defense. Grenades damage every unit within two tiles, including your own, and can destroy nearby props. A flashbang dazes every unit within two tiles (aim 0, dodge 0), a smoke grenade covers them (+30 defense, −30 aim), friend or foe, for the rest of the turn and the next. Destroyed cover opens a route and no longer protects you. Concrete takes more punishment than wood or glass.",
     facts: [
       ["EMPLOYER", "HELIOS INDUSTRIES"],
       ["OPPOSITION", "KŌRA / WRAITH FORCES"],
@@ -151,14 +166,14 @@ export const blackRain: Scenario = {
   objectives: {
     secure: {
       title: "Secure the relay core",
-      detail: "Reach the uplink. Extract corporate intel.",
+      detail: "Reach the uplink. Extract corporate intel",
       order: "Take the relay core",
     },
     eliminate: { title: "Neutralize hostile assets", order: "Clear Wraith forces" },
   },
   lines: {
-    opening: "Ghosts squad deployed. Retrieve the relay core.",
-    secured: "Relay core acquired. Eliminate remaining hostiles.",
+    opening: "Ghosts squad deployed. Retrieve the relay core",
+    secured: "Relay core acquired. Eliminate remaining hostiles",
     securedStamp: "RELAY CORE ACQUIRED",
   },
   units: [

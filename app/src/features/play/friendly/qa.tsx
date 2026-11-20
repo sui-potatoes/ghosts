@@ -46,7 +46,7 @@ const GATES: Record<string, Gate> = {
         reason: "Hire a squad first",
         action: { id: "headquarters", label: "Headquarters" },
     },
-    queued: { reason: "You are in the match queue", action: { id: "queue", label: "Match queue" } },
+    queued: { reason: "You are in the queue", action: { id: "queue", label: "Queue" } },
 };
 
 function fixture(state: string): FriendlyData {
@@ -125,7 +125,7 @@ function fixture(state: string): FriendlyData {
         case "list-empty":
             return { ...base, games: [] };
         case "kicked":
-            return { ...base, games: REMOVED, notice: "The host removed you from this game" };
+            return { ...base, games: REMOVED, notice: "The host removed you from this match" };
         case "removed":
             return { ...base, games: REMOVED };
         case "guest-reading":
@@ -139,11 +139,11 @@ function fixture(state: string): FriendlyData {
                 },
             };
         case "closed":
-            return { ...base, notice: "The host closed this game" };
+            return { ...base, notice: "The host closed this match" };
         case "expired":
-            return { ...base, notice: "This game has expired" };
+            return { ...base, notice: "This match has expired" };
         case "join-error":
-            return { ...base, error: "No game with this code", linkCode: "24VM-T8UT-43YRA" };
+            return { ...base, error: "No match with this code", linkCode: "24VM-T8UT-43YRA" };
         default:
             return base;
     }

@@ -74,7 +74,7 @@ function Screen({ debrief: report, squad, onField, onRedeploy, onQuit }: DemoDeb
             figures={figures}
             extras={extras}
             frame={{
-                location: ["Demo", "After action"],
+                location: ["Training", "After action"],
                 onLeave: onQuit,
                 commands: <HqCommandBar glyphs={glyphs} error="" clearError={() => {}} />,
             }}

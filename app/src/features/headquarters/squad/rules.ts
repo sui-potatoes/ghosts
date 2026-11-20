@@ -46,7 +46,7 @@ export function hireOffer(count: number, size: number): HireOffer {
 
 /** What happens to the squad after a dismissal, in the player's words. */
 export function dismissalNote(size: number): string {
-    return `The slot refills for free with the next hire, up to ${size}.`;
+    return `The slot refills for free with the next hire, up to ${size}`;
 }
 
 /**

@@ -96,7 +96,7 @@ export function CharacterCanvas({
                 if (!cancelled)
                     report.current({
                         loading: false,
-                        error: e instanceof Error ? e.message : "The stage could not load.",
+                        error: e instanceof Error ? e.message : "The stage could not load",
                     });
             });
         return () => {
@@ -129,7 +129,7 @@ export function CharacterCanvas({
                         !cancelled &&
                         report.current({
                             loading: false,
-                            error: e instanceof Error ? e.message : "Unable to load operative.",
+                            error: e instanceof Error ? e.message : "Unable to load operative",
                         }),
                 );
         }, 90);

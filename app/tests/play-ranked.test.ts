@@ -412,12 +412,12 @@ const SEARCH: RankedSearchState = {
 };
 const search = (patch: Partial<RankedSearchState> = {}) => ({ ...SEARCH, ...patch });
 
-test("Find ranked match: sign in, resume, or why it waits, in the order that matters", () => {
+test("Find ranked game: sign in, resume, or why it waits, in the order that matters", () => {
     assert.equal(findAction(search({ signedIn: false }), null).id, "sign-in");
     assert.equal(findAction(search({ playing: true }), null).id, "resume");
     assert.equal(findAction(search(), null).deny, undefined);
     assert.equal(findAction(search(), "Unit 2: needs a weapon.").deny, "Unit 2: needs a weapon.");
-    assert.equal(findAction(search({ lobby: true }), null).deny, "Leave your friendly game first");
+    assert.equal(findAction(search({ lobby: true }), null).deny, "Leave your friendly match first");
     assert.equal(
         findAction(search({ contract: true }), null).deny,
         "Cancel your contract search first",
@@ -481,7 +481,7 @@ test("4x4 is offered only once the rules give it a level", () => {
     applyRules(DEFAULT_RULES);
 });
 
-test("the wait before a ranked match: showing the squad, lost, late, the finder's wait", () => {
+test("the wait before a ranked game: showing the squad, lost, late, the finder's wait", () => {
     const at = { deadline: 60_000, now: 15_000, title: "Ranked 3x3", busy: false };
     const revealing = waitingView({ ...at, phase: "revealing" });
     assert.equal(revealing.headline, "Opponent found");
@@ -489,7 +489,7 @@ test("the wait before a ranked match: showing the squad, lost, late, the finder'
     assert.equal(revealing.pending, true);
     assert.equal(
         waitingView({ ...at, phase: "lost" }).note,
-        "This squad can no longer be shown; the match is forfeit.",
+        "This squad can no longer be shown; the match is forfeit",
     );
     assert.equal(waitingView({ ...at, phase: "late" }).left, null);
     assert.match(

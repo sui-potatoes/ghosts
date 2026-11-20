@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * `/play/demo`: the single-player operations, each deploying to its own route.
+ * `/play/training`: the single-player operations, each deploying to its own route.
  * No sign-in, no account. Back returns to Play; leaving an operation returns here.
  */
 
@@ -30,7 +30,7 @@ export function DemoScreen() {
     return (
         <FocusRoot back={back}>
             <ScreenFrame
-                location={["Play", "Demo"]}
+                location={["Play", "Training"]}
                 onLocation={leave}
                 columns="minmax(0, 480px)"
                 commands={<FocusCommandBar glyphs={glyphs} />}
@@ -48,7 +48,7 @@ function Scenarios() {
         store.focus(`demo-${DEMO_SCENARIOS[0].id}`, false);
     }, [store]);
     return (
-        <Panel label="Demo">
+        <Panel label="Training">
             <List label="Operations">
                 {DEMO_SCENARIOS.map((scenario) => (
                     <ListRow

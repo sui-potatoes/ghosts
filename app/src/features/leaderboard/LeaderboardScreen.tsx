@@ -52,6 +52,7 @@ import {
     type LeaderRow,
     type TierBand,
 } from "./model";
+import { requestSignIn } from "../../signIn";
 import "./leaderboard.css";
 
 const NAV: Command = { action: "nav", label: "Move", glyph: "ud" };
@@ -117,7 +118,7 @@ function Screen({ leave }: { leave: () => void }) {
             commands={<FocusCommandBar glyphs={glyphs} />}
         >
             <div className="lb-hub">
-                <Panel label="Tiers" className="lb-side">
+                <Panel label="Ranks" className="lb-side">
                     {dist ? (
                         <>
                             <div className="lb-tiers">
@@ -172,6 +173,26 @@ function Screen({ leave }: { leave: () => void }) {
                             ]}
                         />
                     )}
+                    {own?.kind === "signed-out" && (
+                        <ActionRow
+                            id={OWN_ID}
+                            group="table"
+                            label="Sign in to see your rank"
+                            title="Not signed in"
+                            hint="Sign in to see where you stand"
+                            instant
+                            commands={[
+                                NAV,
+                                {
+                                    action: "confirm",
+                                    label: "Sign in",
+                                    tone: "primary",
+                                    run: requestSignIn,
+                                },
+                                refreshCommand,
+                            ]}
+                        />
+                    )}
                     {own?.kind === "unranked" && (
                         <ActionRow
                             id={OWN_ID}
@@ -217,7 +238,7 @@ function Screen({ leave }: { leave: () => void }) {
                             <div className="lb-head" aria-hidden>
                                 <span className="lb-rank">Rank</span>
                                 <span className="lb-name">Name</span>
-                                <span className="lb-tier">Tier</span>
+                                <span className="lb-tier">Rank</span>
                                 <span className="lb-rating">Rating</span>
                                 <span className="lb-record">Record</span>
                                 <span className="lb-games">Matches</span>
@@ -250,7 +271,7 @@ function Screen({ leave }: { leave: () => void }) {
                                 refreshCommand,
                             ]}
                         >
-                            Players show here after their first ranked match.
+                            Players show here after their first ranked match
                         </EmptyState>
                     )}
                 </Panel>

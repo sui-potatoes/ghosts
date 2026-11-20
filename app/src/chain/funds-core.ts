@@ -142,7 +142,7 @@ export function createFunds(deps: FundsDeps): Funds {
     function cannotPay(address: string): Error {
         const at = blockedUntil.get(address);
         const when =
-            at && at > deps.now() ? `Try again in ${span(at - deps.now())}.` : "Try again shortly.";
+            at && at > deps.now() ? `Try again in ${span(at - deps.now())}` : "Try again shortly";
         return new Error(`Not enough SUI for this action. ${when}`);
     }
 

@@ -222,6 +222,8 @@ const TileType = bcs.enum("TileType", {
     }),
     Unwalkable: null,
     Wall: null,
+    /** Passed over, never stood on: low cover to the tiles beside it (tag 4). */
+    Obstacle: null,
 });
 
 /** `ghosts::map::Map` up to its `units`; `Grid<Tile>` is its rows of tiles, then `rows` and `cols`. */
@@ -405,8 +407,12 @@ export const GameStarted = bcs.struct("GameStarted", {
     listed: bcs.bool(),
 });
 
-/** `ghosts::ghosts::GameEnded`: emitted once, as a game is wrapped up and deleted. */
-export const GameEnded = bcs.struct("GameEnded", { game: bcs.Address, ending: Ending });
+/** `ghosts::ghosts::GameEnded`: emitted once, as a game is wrapped up and deleted, with the clock's time then. */
+export const GameEnded = bcs.struct("GameEnded", {
+    game: bcs.Address,
+    ending: Ending,
+    endedMs: bcs.u64(),
+});
 export type ChainRecord = ChainGame["history"][number];
 
 /** `sui::clock::Clock`: the time the contract goes by. */

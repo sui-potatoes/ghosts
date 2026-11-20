@@ -426,23 +426,23 @@ function settledOutcome(before: Score, after: Score): Settled | null {
 }
 
 const HEADLINES: Record<Outcome | Settled | "ended", [title: string, detail: string]> = {
-    victory: ["Victory", "The other side is down. Your survivors are coming home."],
-    defeat: ["Defeat", "Your squad is gone. Their dog tags go on the wall."],
-    draw: ["Draw", "Nobody walked away from this one."],
-    stalemate: ["Draw", "Neither side finished it in time. Your survivors are coming home."],
-    abandoned: ["Match abandoned", "You can't search for a match for a minute."],
-    "opponent-abandoned": ["Victory", "Your opponent walked out. Your squad is coming home."],
+    victory: ["Victory", "The other side is down. Your survivors are coming home"],
+    defeat: ["Defeat", "Your squad is gone. Their dog tags go on the wall"],
+    draw: ["Draw", "Nobody walked away from this one"],
+    stalemate: ["Draw", "Neither side finished it in time. Your survivors are coming home"],
+    abandoned: ["Match abandoned", "You can't search for a match for a minute"],
+    "opponent-abandoned": ["Victory", "Your opponent walked out. Your squad is coming home"],
     forfeited: [
         "Match forfeited",
-        `You missed ${MAX_MISSED_TURNS} turns in a row. You can't search for a match for a minute.`,
+        `You missed ${MAX_MISSED_TURNS} turns in a row. You can't search for a match for a minute`,
     ],
-    "opponent-forfeited": ["Victory", "Your opponent stopped playing. Your squad is coming home."],
-    "no-show": ["No squad deployed", "You can't search for a match for a minute."],
-    "opponent-no-show": ["Victory", "Your opponent never deployed. Your squad is coming home."],
-    "settled-win": ["Victory", "Your opponent is out of the match. Your squad is coming home."],
-    "settled-loss": ["Defeat", "The match went to your opponent. Whoever survived is home."],
-    "settled-draw": ["Draw", "Nobody won this one. Your survivors are coming home."],
-    ended: ["Match over", "The match is finished, and whoever survived is home."],
+    "opponent-forfeited": ["Victory", "Your opponent stopped playing. Your squad is coming home"],
+    "no-show": ["No squad deployed", "You can't search for a match for a minute"],
+    "opponent-no-show": ["Victory", "Your opponent never deployed. Your squad is coming home"],
+    "settled-win": ["Victory", "Your opponent is out of the match. Your squad is coming home"],
+    "settled-loss": ["Defeat", "The match went to your opponent. Whoever survived is home"],
+    "settled-draw": ["Draw", "Nobody won this one. Your survivors are coming home"],
+    ended: ["Match over", "The match is finished, and whoever survived is home"],
 };
 
 const WINS: (Outcome | Settled | "ended")[] = [
@@ -652,7 +652,7 @@ function ResultScreen({
                 opponent,
                 ranked: {
                     size: mode.size,
-                    tier: TIERS[mode.tier]?.name ?? `Tier ${mode.tier + 1}`,
+                    tier: TIERS[mode.tier]?.name ?? `Rank ${mode.tier + 1}`,
                     change: ranked.change,
                 },
             };
@@ -1016,10 +1016,10 @@ export default function Match() {
                 }}
             >
                 {isFriendly(game.data)
-                    ? "Your opponent wins and your squad comes home."
+                    ? "Your opponent wins and your squad comes home"
                     : ranked
-                      ? "Your opponent wins, your rating drops, and you can't search for a match for a minute."
-                      : "Your opponent wins and your squad comes home, but you can't search for a match for a minute."}
+                      ? "Your opponent wins, your rating drops, and you can't search for a match for a minute"
+                      : "Your opponent wins and your squad comes home, but you can't search for a match for a minute"}
             </ConfirmDialog>
         </>
     );

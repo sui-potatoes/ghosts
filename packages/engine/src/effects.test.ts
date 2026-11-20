@@ -13,7 +13,7 @@ import { baseIntel } from "./intel.ts";
 import { blackRain, type Scenario } from "./scenario.ts";
 import { Overlays } from "./scene/overlays.ts";
 import { Space } from "./scene/space.ts";
-import { effectKindOfTag, effectLines, effectsTag, unitCombat } from "./status-effects.ts";
+import { effectDetail, effectKindOfTag, effectLines, effectsTag, unitCombat } from "./status-effects.ts";
 import { burstUnits, grenadeBlockReason } from "./targeting.ts";
 
 /**
@@ -178,7 +178,12 @@ test("a second effect of a kind keeps the larger timer, in the same slot, with n
   game.apply({ type: "smoke-grenade", unit: a.id, at: [1, 3] });
   game.apply({ type: "flashbang", unit: a.id, at: [1, 3] });
   assert.deepEqual(effectsOf(b), ["Smoke:2", "Daze:2"], "both kinds coexist, in the order they landed");
-  assert.deepEqual([unitCombat(b).aim, unitCombat(b).defense], [0, b.defense + 30], "daze and smoke: aim 0, defense +30");
+  b.dodge = 40;
+  assert.deepEqual(
+    [unitCombat(b).aim, unitCombat(b).dodge, unitCombat(b).defense],
+    [0, 0, b.defense + 30],
+    "daze and smoke: aim 0, dodge 0, defense +30",
+  );
   game.beginEnemy();
   assert.deepEqual(effectsOf(b), ["Smoke:1", "Daze:1"]);
   h.ap = 2;
@@ -223,10 +228,10 @@ test("the journal rebuilds every unit's effects, turn by turn", () => {
 
 test("feed lines name the throw and each effect with its numbers", () => {
   const name = (id: string) => id.toUpperCase();
-  assert.equal(describe({ type: "flashbang", unit: "v", at: [0, 0] }, name), "V threw a flashbang. Burst radius: 2.");
-  assert.equal(describe({ type: "smoke-grenade", unit: "v", at: [0, 0] }, name), "V threw a smoke grenade. Burst radius: 2.");
-  assert.equal(describe({ type: "effect-start", unit: "g", effect: { kind: "Daze", turns: 2 } }, name), "G: dazed, aim 0, 2 turns left.");
-  assert.equal(describe({ type: "effect-end", unit: "g", kind: "Smoke" }, name), "G: no longer in smoke.");
+  assert.equal(describe({ type: "flashbang", unit: "v", at: [0, 0] }, name), "V threw a flashbang. Burst radius: 2");
+  assert.equal(describe({ type: "smoke-grenade", unit: "v", at: [0, 0] }, name), "V threw a smoke grenade. Burst radius: 2");
+  assert.equal(describe({ type: "effect-start", unit: "g", effect: { kind: "Daze", turns: 2 } }, name), "G: dazed, aim 0, dodge 0, 2 turns left");
+  assert.equal(describe({ type: "effect-end", unit: "g", kind: "Smoke" }, name), "G: no longer in smoke");
 });
 
 test("the status line and the marker say what each effect does and for how long", () => {
@@ -235,7 +240,7 @@ test("the status line and the marker say what each effect does and for how long"
       { kind: "Daze", turns: 1 },
       { kind: "Smoke", turns: 2 },
     ]).map((e) => e.text),
-    ["Dazed: aim 0, 1 turn left", "In smoke: +30 defense, −30 aim, 2 turns left"],
+    ["Dazed: aim 0, dodge 0, 1 turn left", "In smoke: +30 defense, −30 aim, 2 turns left"],
   );
   assert.equal(effectsTag([{ kind: "Daze", turns: 2 }]), "DAZED 2");
   const { game, b } = skirmish();
@@ -318,4 +323,31 @@ test("the hostile phase plays its throws and the effects that run out", () => {
   assert.ok(start > 0, "the hostile threw its flashbang");
   assert.equal(events[start + 1]?.type, "effect-start");
   assert.ok(events.at(-1)!.type === "turn" || events.at(-1)!.type === "effect-end" || game.result);
+});
+
+test("a daze takes the dodge to 0 as well as the aim: a dazed target never dodges", () => {
+  const { game, a, h } = skirmish();
+  h.dodge = 100;
+  h.hp = h.maxHp = 99;
+  assert.equal(unitCombat(h).dodge, 100);
+  // Every hit on a target with dodge 100 is dodged...
+  a.aim = 100;
+  const shot = () => {
+    a.ap = 2;
+    a.ammo = a.clip;
+    game.phase = "player";
+    return game.apply({ type: "fire", unit: a.id, target: h.id }).find((e) => e.type === "shot");
+  };
+  const before = Array.from({ length: 10 }, shot);
+  assert.ok(before.every((e) => e?.type === "shot" && !e.hit), "dodged every time");
+  // ...and none once it is dazed: its effective dodge is 0, its base dodge untouched.
+  h.effects = [{ kind: "Daze", turns: 2 }];
+  assert.equal(unitCombat(h).dodge, 0);
+  assert.equal(h.dodge, 100);
+  const dazed = Array.from({ length: 10 }, shot);
+  assert.ok(dazed.some((e) => e?.type === "shot" && e.hit), "a dazed target is hit");
+  assert.equal(effectDetail("Daze"), "aim 0, dodge 0");
+  // Smoke leaves the dodge alone.
+  h.effects = [{ kind: "Smoke", turns: 2 }];
+  assert.equal(unitCombat(h).dodge, 100);
 });

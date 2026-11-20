@@ -194,9 +194,9 @@ function Intro({ open, onHire }: { open: number; onHire: () => void }) {
             </h2>
             <p className="gui-prompt-body">
                 {open === FREE_RECRUITS
-                    ? `Hire up to ${COUNT_WORDS[open]} recruits at no cost.`
-                    : `Hire ${COUNT_WORDS[open] ?? open} more at no cost.`}{" "}
-                They report to the stands below, ready to equip.
+                    ? `Hire up to ${COUNT_WORDS[open]} recruits at no cost`
+                    : `Hire ${COUNT_WORDS[open] ?? open} more at no cost`}{" "}
+                They report to the stands below, ready to equip
             </p>
             <Plaque id="rec-hire" label="Hire squad" hint="Free" run={onHire} variant="intro" />
         </div>

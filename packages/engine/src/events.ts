@@ -79,42 +79,42 @@ const pad2 = (n: number) => String(n).padStart(2, "0");
 export function describe(event: GameEvent, name: (id: string) => string): string | null {
   switch (event.type) {
     case "move":
-      return `${name(event.unit)} repositioned. −1 AP.`;
+      return `${name(event.unit)} repositioned. −1 AP`;
     case "shot": {
       const { hit, crit, damage, killed } = event;
       const outcome = hit
         ? `${crit ? "CRITICAL / " : ""}${damage} damage${killed ? " / neutralized" : ""}`
         : "miss";
-      return `${name(event.unit)} → ${name(event.target)}: ${outcome}.`;
+      return `${name(event.unit)} → ${name(event.target)}: ${outcome}`;
     }
     case "reload":
-      return `${name(event.unit)} reloaded. −1 AP.`;
+      return `${name(event.unit)} reloaded. −1 AP`;
     case "grenade": {
       const broken = event.environment?.filter((p) => p.destroyed).length ?? 0;
-      return `${name(event.unit)} deployed fragmentation grenade. Blast radius: 2.${broken ? ` ${broken} prop${broken === 1 ? "" : "s"} destroyed.` : ""}`;
+      return `${name(event.unit)} deployed fragmentation grenade. Blast radius: 2${broken ? `. ${broken} prop${broken === 1 ? "" : "s"} destroyed` : ""}`;
     }
     case "flashbang":
-      return `${name(event.unit)} threw a flashbang. Burst radius: 2.`;
+      return `${name(event.unit)} threw a flashbang. Burst radius: 2`;
     case "smoke-grenade":
-      return `${name(event.unit)} threw a smoke grenade. Burst radius: 2.`;
+      return `${name(event.unit)} threw a smoke grenade. Burst radius: 2`;
     case "effect-start": {
       const detail = effectDetail(event.effect.kind);
-      return `${name(event.unit)}: ${effectName(event.effect.kind).toLowerCase()}${detail ? `, ${detail}` : ""}, ${turnsLeft(event.effect.turns)}.`;
+      return `${name(event.unit)}: ${effectName(event.effect.kind).toLowerCase()}${detail ? `, ${detail}` : ""}, ${turnsLeft(event.effect.turns)}`;
     }
     case "effect-end":
-      return `${name(event.unit)}: no longer ${effectName(event.kind).toLowerCase()}.`;
+      return `${name(event.unit)}: no longer ${effectName(event.kind).toLowerCase()}`;
     case "hunker":
-      return `${name(event.unit)} hunkered down. Defense increased.`;
+      return `${name(event.unit)} hunkered down. Defense increased`;
     case "overwatch":
-      return `${name(event.unit)} on overwatch.`;
+      return `${name(event.unit)} on overwatch`;
     case "switch-weapon":
-      return `${name(event.unit)} switched to the ${event.weapon}.`;
+      return `${name(event.unit)} switched to the ${event.weapon}`;
     case "watch-spent":
       return null;
     case "secure":
-      return `${name(event.unit)} secured the objective.`;
+      return `${name(event.unit)} secured the objective`;
     case "turn":
-      return `Turn ${pad2(event.turn)}. Ghosts has control.`;
+      return `Turn ${pad2(event.turn)}. Ghosts has control`;
     case "hostile-phase":
       return null;
   }

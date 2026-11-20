@@ -32,6 +32,8 @@ export type ModeCard = {
     verb: string;
     /** Shown, focusable, refused: the reason the bar gives. */
     locked?: string;
+    /** Signed out: the confirm opens the sign-in dialog instead of the route. */
+    signIn?: true;
 };
 
 export const MODE_ORDER: ModeId[] = ["ranked", "friendly", "contract", "demo", "factions", "watch"];
@@ -45,8 +47,8 @@ const CARDS: Record<ModeId, ModeCard> = {
         name: "Ranked match",
         route: "/play/ranked",
         lines: [
-            "Build a squad for each match within your tier's credit budget.",
-            "Wins raise your rating, losses lower it.",
+            "Build a squad for each match within your rank's credit budget",
+            "Wins raise your rating, losses lower it",
         ],
         tag: "Open",
         hint: "A squad built for the match, your rating at stake",
@@ -57,11 +59,11 @@ const CARDS: Record<ModeId, ModeCard> = {
         name: "Friendly match",
         route: "/play/friendly",
         lines: [
-            "Invite a friend with a code, or open a game to anyone.",
-            "Your rating does not move.",
+            "Invite a friend with a code, or open a match to anyone",
+            "Your rating does not move",
         ],
         tag: "Open",
-        hint: "Invite a friend with a code, or open a game to anyone",
+        hint: "Invite a friend with a code, or open a match to anyone",
         verb: "Open",
     },
     contract: {
@@ -69,8 +71,8 @@ const CARDS: Record<ModeId, ModeCard> = {
         name: CONTRACT_NAME,
         route: "/play/contract",
         lines: [
-            "Your own recruits. They earn experience and can be lost.",
-            "Rating does not change.",
+            "Your own recruits. They earn experience and can be lost",
+            "Rating does not change",
         ],
         tag: "Open",
         hint: "Your own squad against another player's",
@@ -78,9 +80,9 @@ const CARDS: Record<ModeId, ModeCard> = {
     },
     demo: {
         id: "demo",
-        name: "Demo",
-        route: "/play/demo",
-        lines: ["Two single-player operations against the AI."],
+        name: "Training",
+        route: "/play/training",
+        lines: ["Two single-player operations against the AI"],
         tag: "Open",
         hint: "Black Rain and Paper Trail",
         verb: "Open",
@@ -90,8 +92,8 @@ const CARDS: Record<ModeId, ModeCard> = {
         name: "Faction wars",
         route: null,
         lines: [
-            "Three corporations post missions. A squad works for any of them, for a set reward or a random one.",
-            "Each corporation has public influence that moves with the missions fought, and you keep your own standing with each.",
+            "Three corporations post missions. A squad works for any of them, for a set reward or a random one",
+            "Each corporation has public influence that moves with the missions fought, and you keep your own standing with each",
         ],
         tag: "Soon",
         hint: "Missions for three corporations, with influence and standing",
@@ -102,7 +104,7 @@ const CARDS: Record<ModeId, ModeCard> = {
         id: "watch",
         name: "Spectate",
         route: "/watch",
-        lines: ["Live matches and replays."],
+        lines: ["Live matches and replays"],
         tag: "Open",
         hint: "Live matches and replays",
         verb: "Open",
@@ -125,7 +127,7 @@ const MODE_NAMES: Record<PlayMode, string> = {
 
 /** Why the other play modes wait while the player is busy, in plain words. */
 function busyReason(busy: NonNullable<Busy>): string {
-    if (busy.kind === "lobby") return "Leave your friendly game first";
+    if (busy.kind === "lobby") return "Leave your friendly match first";
     if (busy.kind === "playing") return "Finish your match first";
     return `Cancel your ${MODE_NAMES[busy.mode]} search first`;
 }
@@ -136,9 +138,17 @@ const PLAY_MODES: PlayMode[] = ["ranked", "friendly", "contract"];
  * The cards, top to bottom. While the player searches, waits in a lobby or plays,
  * the card of that mode leads back to it and the other play modes say why they wait.
  */
-export function modeCards(busy: Busy = null): ModeCard[] {
+export function modeCards(busy: Busy = null, signedIn = true): ModeCard[] {
     return MODE_ORDER.map((id) => {
         const card = CARDS[id];
+        if (!signedIn && PLAY_MODES.includes(id as PlayMode))
+            return {
+                ...card,
+                tag: "Sign in",
+                hint: "Sign in to play",
+                verb: "Sign in",
+                signIn: true,
+            };
         if (!busy || !PLAY_MODES.includes(id as PlayMode)) return card;
         const mine =
             (busy.kind === "lobby" && id === "friendly") ||
@@ -155,7 +165,7 @@ export function modeCards(busy: Busy = null): ModeCard[] {
         if (busy.kind === "playing" && busy.mode === null)
             return { ...card, locked: busyReason(busy) };
         if (mine && busy.kind === "lobby")
-            return { ...card, tag: "In lobby", hint: "Back to your friendly game" };
+            return { ...card, tag: "In lobby", hint: "Back to your friendly match" };
         if (mine) return { ...card, tag: "Searching", hint: "Back to your search" };
         return { ...card, locked: busyReason(busy) };
     });

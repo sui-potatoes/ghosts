@@ -22,7 +22,7 @@ type Props = { open: boolean; onClose: () => void };
 
 function describe(e: unknown): string {
     if (e instanceof DOMException && e.name === "NotAllowedError")
-        return "Cancelled by the authenticator.";
+        return "Cancelled by the authenticator";
     return e instanceof Error ? e.message : String(e);
 }
 
@@ -262,7 +262,7 @@ export function SignInModal({ open, onClose }: Props) {
                         </h2>
                         <p className="font-mono text-[13px] leading-relaxed tracking-[0.02em] text-secondary">
                             Choose how your account is held. This becomes the main wallet of your
-                            squad.
+                            squad
                         </p>
                     </div>
                     <button
@@ -278,7 +278,7 @@ export function SignInModal({ open, onClose }: Props) {
                     <Option
                         glyph="passkey"
                         title="Passkey"
-                        description="Touch ID, iCloud Keychain or an external authenticator signs for you. No extension, no seed phrase."
+                        description="Touch ID, iCloud Keychain or an external authenticator signs for you. No extension, no seed phrase"
                         state={state("passkey", "Waiting…")}
                         selected={selected === "passkey"}
                         onHover={() => hover("passkey")}
@@ -307,8 +307,8 @@ export function SignInModal({ open, onClose }: Props) {
                         title="Google"
                         description={
                             canGoogle
-                                ? "zkLogin: your Google account becomes a Sui address. Nothing to install or back up."
-                                : "zkLogin is unavailable: no Enoki API key configured for this build."
+                                ? "zkLogin: your Google account becomes a Sui address. Nothing to install or back up"
+                                : "zkLogin is unavailable: no Enoki API key configured for this build"
                         }
                         disabled={!canGoogle}
                         state={state("google", "Opening…")}
@@ -322,7 +322,7 @@ export function SignInModal({ open, onClose }: Props) {
                             icon={w.icon}
                             glyph="wallet"
                             title={w.name}
-                            description="A wallet you already use."
+                            description="A wallet you already use"
                             state={state(w.name, "Connecting…")}
                             selected={selected === `wallet:${w.name}`}
                             onHover={() => hover(`wallet:${w.name}`)}

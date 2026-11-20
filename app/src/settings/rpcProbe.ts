@@ -41,12 +41,12 @@ export async function probeRpc(url: string): Promise<RpcProbe> {
         if (blockedByCsp) {
             return {
                 ok: false,
-                error: "Blocked by this site's Content-Security-Policy, which does not allow connections to that endpoint.",
+                error: "Blocked by this site's Content-Security-Policy, which does not allow connections to that endpoint",
             };
         }
         return {
             ok: false,
-            error: `Could not reach the endpoint (${e instanceof Error ? e.message : String(e)}).`,
+            error: `Could not reach the endpoint (${e instanceof Error ? e.message : String(e)})`,
         };
     } finally {
         document.removeEventListener("securitypolicyviolation", onViolation);
@@ -57,13 +57,13 @@ export async function probeRpc(url: string): Promise<RpcProbe> {
     } catch {
         return {
             ok: false,
-            error: `Could not verify the network: the public ${NETWORK} fullnode is unreachable.`,
+            error: `Could not verify the network: the public ${NETWORK} fullnode is unreachable`,
         };
     }
     if (found.chainId !== expected) {
         return {
             ok: false,
-            error: `Wrong network: this endpoint is chain ${found.chainId}, the app plays on ${NETWORK} (${expected}).`,
+            error: `Wrong network: this endpoint is chain ${found.chainId}, the app plays on ${NETWORK} (${expected})`,
         };
     }
     return { ok: true, latencyMs: found.latencyMs, chainId: found.chainId };

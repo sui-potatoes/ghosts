@@ -115,7 +115,7 @@ test("a smaller squad leaves the last podiums vacant", () => {
     );
 });
 
-test("outcomes read as the Match result names them", () => {
+test("outcomes read as the Game result names them", () => {
     assert.equal(debriefOf(result({ outcome: "defeat" })).tone, "loss");
     assert.equal(debriefOf(result({ outcome: "stalemate" })).title, "Draw");
     assert.equal(debriefOf(result({ outcome: "opponent-forfeited" })).title, "Victory");
@@ -426,7 +426,7 @@ test("a ranked loss and a new tier are said; an unread rating is not guessed", (
             },
         }),
     );
-    assert.deepEqual(up.lines, ["Ranked 3x3 · Contractor", "New tier: Operative"]);
+    assert.deepEqual(up.lines, ["Ranked 3x3 · Contractor", "New rank: Operative"]);
     assert.equal(
         debriefOf(ranked({ ranked: { size: 3, tier: "Rookie", change: null } })).rating,
         null,

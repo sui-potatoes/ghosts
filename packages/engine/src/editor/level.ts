@@ -354,7 +354,8 @@ export type MoveTile =
   | { t: "empty" }
   | { t: "cover"; sides: [left: number, top: number, right: number, bottom: number] }
   | { t: "unwalkable" }
-  | { t: "wall" };
+  | { t: "wall" }
+  | { t: "obstacle" };
 
 export interface MoveMapExport {
   /** `[rows, cols]` — a row is one line of constant z. */
@@ -385,17 +386,20 @@ export interface LevelExport {
 }
 
 /**
- * The tile grid the rules see. Cell footprints: `cover` is a Cover tile with
- * low cover on every side (the free-standing barrier), `obstacle` is
+ * The tile grid the rules see. Cell footprints: `cover` (the free-standing
+ * barrier, a crate) is an Obstacle, low cover to the tiles beside it that a
+ * unit passes over but never stands on; the editor's `obstacle` footprint is
  * Unwalkable, `solid` is Wall. Edge assets write cover levels onto the sides
  * of both adjacent tiles — high for a solid wall, glazing and tall fences (the
  * contract has no see-through blocker, so they block sight too), low for low
  * partitions, nothing for a door. Painted unwalkable tiles stay Unwalkable;
- * where claims overlap a cell the strongest wins. Destructibility stays with
+ * where claims overlap a cell the strongest wins (wall, unwalkable, obstacle,
+ * then edge cover). Destructibility stays with
  * the render props for now.
  */
 export function toMoveMap(level: Level): MoveMapExport {
   const walls = new Set<string>();
+  const props = new Set<string>();
   const pits = new Set<string>(level.unwalkable.filter((c) => inLevel(level, c)).map(key));
   const sides = new Map<string, [number, number, number, number]>();
   const side = (cell: Cell, index: 0 | 1 | 2 | 3, value: number) => {
@@ -427,7 +431,7 @@ export function toMoveMap(level: Level): MoveMapExport {
       if (!inLevel(level, cell)) continue;
       if (spec.footprint === "solid") walls.add(key(cell));
       else if (spec.footprint === "obstacle") pits.add(key(cell));
-      else for (const index of [0, 1, 2, 3] as const) side(cell, index, LOW);
+      else props.add(key(cell));
     }
   }
   const tiles: MoveTile[][] = [];
@@ -438,6 +442,7 @@ export function toMoveMap(level: Level): MoveMapExport {
       const cover = sides.get(name);
       if (walls.has(name)) row.push({ t: "wall" });
       else if (pits.has(name)) row.push({ t: "unwalkable" });
+      else if (props.has(name)) row.push({ t: "obstacle" });
       else if (cover) row.push({ t: "cover", sides: cover });
       else row.push({ t: "empty" });
     }

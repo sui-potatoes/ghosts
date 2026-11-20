@@ -420,7 +420,7 @@ export function Squad({ squad, tab, onTab, glyphs, frame, guard, save }: Props) 
             cancel={{ label: "Keep", run: () => setPrompt(null) }}
             glyphs={glyphs}
         >
-            {prompt.recruit.name} leaves the squad. A dismissed operative cannot be hired back.
+            {prompt.recruit.name} leaves the squad. A dismissed operative cannot be hired back
         </Prompt>
     ) : (
         frame.overlay

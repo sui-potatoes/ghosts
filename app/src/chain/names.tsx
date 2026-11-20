@@ -22,12 +22,13 @@ import { NAMES } from "../constants";
 import { setPlayerName } from "../player/name";
 import { canSendTransactions, sendTransaction } from "./sender";
 
-const QUERY_KEY = "assigned-name";
+export const ASSIGNED_NAME_KEY = "assigned-name";
+const QUERY_KEY = ASSIGNED_NAME_KEY;
 
 type Client = ReturnType<typeof useCurrentClient>;
 
 /** A refusal with a message written for the dialog, not for the console. */
-class NameRefusal extends Error {}
+export class NameRefusal extends Error {}
 
 /** `<name>` from `<name>.<domain>`; `null` for any other name. */
 function nameUnderDomain(suinsName: string): string | null {
@@ -38,7 +39,7 @@ function nameUnderDomain(suinsName: string): string | null {
 }
 
 /** The address the leaf `<name>.<domain>` resolves to, `null` when free. */
-async function leafTarget(client: Client, name: string): Promise<string | null> {
+export async function leafTarget(client: Client, name: string): Promise<string | null> {
     const { address } = await client.core.resolveNameServiceAddress({
         name: `${name}.${NAMES.domain}`,
     });
@@ -59,22 +60,23 @@ export async function assignedName(client: Client, address: string): Promise<str
  * assignment other devices read. Refuses before signing when the name
  * resolves to someone else.
  */
-async function nameChangeTransaction(
+export async function nameChangeTransaction(
     client: Client,
     sender: string,
     name: string,
+    into?: Transaction,
 ): Promise<Transaction> {
     const [target, assigned] = await Promise.all([
         leafTarget(client, name),
         assignedName(client, sender),
     ]);
-    if (target && target !== sender) throw new NameRefusal("That name is taken.");
+    if (target && target !== sender) throw new NameRefusal("That name is taken");
     const old = assigned && assigned !== name ? assigned : null;
     // The old leaf can only be removed or renamed while it still resolves to
     // the sender; anything else is left where it is.
     const oldOwned = old !== null && (await leafTarget(client, old)) === sender;
 
-    const tx = new Transaction();
+    const tx = into ?? new Transaction();
     const instance = tx.object(NAMES.instance);
     const suins = tx.object(NAMES.suins);
     const call = (fn: string, ...args: TransactionArgument[]) =>
@@ -97,14 +99,14 @@ async function nameChangeTransaction(
 }
 
 /** The chain's refusal in the player's terms, `null` for anything unmapped. */
-function refusal(message: string): string | null {
+export function refusal(message: string): string | null {
     const abort = message.match(/abort code: (\d+), in '[^']+::commander_names::/);
     if (abort) {
-        if (abort[1] === "3") return "That name was taken a moment ago.";
-        if (abort[1] === "5") return "That name belongs to another address.";
+        if (abort[1] === "3") return "That name was taken a moment ago";
+        if (abort[1] === "5") return "That name belongs to another address";
         return null;
     }
-    if (/gas/i.test(message)) return "Not enough SUI for this action. Try again shortly.";
+    if (/gas/i.test(message)) return "Not enough SUI for this action. Try again shortly";
     return null;
 }
 
@@ -154,7 +156,7 @@ export function useSubmitNameChange(): {
                 console.warn(`Changing the name to "${name}" on chain failed:`, e);
                 const message = e instanceof Error ? e.message : String(e);
                 throw new Error(
-                    refusal(message) ?? "The change didn't go through; the name is as it was.",
+                    refusal(message) ?? "The change didn't go through; the name is as it was",
                     { cause: e },
                 );
             } finally {

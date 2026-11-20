@@ -73,7 +73,7 @@ export function useHeadquarters() {
         </Gate>
     ) : !connected ? (
         <Gate heading="IDENTIFICATION REQUIRED" action="Sign in" onAction={requestSignIn}>
-            Sign in to see your squad.
+            Sign in to see your squad
         </Gate>
     ) : loading ? (
         <LoadingSpinner />

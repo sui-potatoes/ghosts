@@ -44,6 +44,8 @@ export interface StartedEvent {
 export interface EndedEvent {
     gameId: string;
     ending: GameEnding;
+    /** When it ended (epoch ms): `ended_ms`, the clock's time in `complete_game`. */
+    endedMs: number;
     digest: string;
     checkpoint: bigint | null;
 }
@@ -132,7 +134,9 @@ export interface RecentGame {
     players: [string, string];
     mode: ChainMode;
     ending: GameEnding;
-    /** The transaction that wrapped it up: when it ended. */
+    /** When it ended (epoch ms), as its `GameEnded` says. */
+    endedMs: number;
+    /** The transaction that wrapped it up. */
     digest: string;
 }
 
@@ -175,6 +179,7 @@ export function decodeEnded(raw: RawEvent): EndedEvent | null {
         return {
             gameId: event.game,
             ending: event.ending,
+            endedMs: Number(event.endedMs),
             digest: raw.transactionDigest,
             checkpoint: checkpointOf(raw),
         };
@@ -252,6 +257,7 @@ export async function recentGames(reads: RecentReads, limit: number): Promise<Re
                 players: [origin.players[0], origin.players[1]],
                 mode: origin.mode,
                 ending: end.ending,
+                endedMs: end.endedMs,
                 digest: end.digest,
             });
         }

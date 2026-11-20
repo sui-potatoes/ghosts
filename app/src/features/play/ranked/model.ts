@@ -209,7 +209,7 @@ export type PickSection = {
 };
 
 const unlockText = (tier: string | undefined): string =>
-    tier ? `Unlocks at ${tier}` : "Not available at this tier";
+    tier ? `Unlocks at ${tier}` : "Not available at this rank";
 
 /** Why a loadout cannot be fielded at this rating, or undefined when it can. */
 export function lockedReason(loadout: Loadout, rating: number): string | undefined {
@@ -329,7 +329,7 @@ export function gearSections(squad: Stand[], index: number, limits: Limits): Pic
         if (slot === "utility")
             options.push(
                 option("utility:none", slot, "None", withItem(unit, slot, null), 0, !have, {
-                    description: "Nothing in the utility slot.",
+                    description: "Nothing in the utility slot",
                 }),
             );
         const shown = new Set(items.map((item) => item.id));
@@ -483,10 +483,10 @@ export function squadIssues(
 ): Issue[] {
     const issues: Issue[] = [];
     if (squad.length !== squadSize(mode))
-        issues.push({ kind: "size", message: `A ${mode} squad has ${squadSize(mode)} units.` });
+        issues.push({ kind: "size", message: `A ${mode} squad has ${squadSize(mode)} units` });
     squad.forEach((unit, i) => {
         if (!unit) {
-            issues.push({ kind: "illegal", unit: i, message: `Choose a type for unit ${i + 1}.` });
+            issues.push({ kind: "illegal", unit: i, message: `Choose a type for unit ${i + 1}` });
             return;
         }
         for (const issue of validateSquad([unit], rating, "3x3")) {
@@ -502,7 +502,7 @@ export function squadIssues(
     if (budget !== null && spent > budget)
         issues.push({
             kind: "over-budget",
-            message: `${cr(spent - budget)} over the ${cr(budget)} budget.`,
+            message: `${cr(spent - budget)} over the ${cr(budget)} budget`,
         });
     return issues;
 }
@@ -643,9 +643,9 @@ export function tierNotice(
     const lead = `You are now ${tier.name}. The ${mode} budget is ${cr(budget ?? 0)}`;
     const rest = left ?? 0;
     if (over)
-        return `${lead}, ${cr(-rest)} less than this squad costs. Trim it before the next match.`;
-    if ((budget ?? 0) > was.budget && rest > 0) return `${lead}, with ${cr(rest)} left to spend.`;
-    return `${lead}.`;
+        return `${lead}, ${cr(-rest)} less than this squad costs. Trim it before the next match`;
+    if ((budget ?? 0) > was.budget && rest > 0) return `${lead}, with ${cr(rest)} left to spend`;
+    return `${lead}`;
 }
 
 export const seenNow = (rating: number, mode: Mode): Saved["seen"] => {

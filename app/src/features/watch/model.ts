@@ -242,6 +242,8 @@ export function transportKeys(
 export interface CardFacts {
     mode?: string;
     level?: string;
+    /** The time of day and weather it is shown in: "Dusk · Light rain". */
+    conditions?: string;
     /** When it was completed (epoch ms), once it is over. */
     playedAt?: number | null;
 }
@@ -278,6 +280,7 @@ export function matchCard(opts: {
     const rows: [string, string][] = [];
     if (facts.mode) rows.push(["Mode", facts.mode]);
     if (facts.level) rows.push(["Level", facts.level]);
+    if (facts.conditions) rows.push(["Conditions", facts.conditions]);
     rows.push(["Result", opts.over ? resultText(opts.outcome, sides) : "In progress"]);
     rows.push(["Turns", opts.over ? plural(rounds, "turn") : `${plural(rounds, "turn")} so far`]);
     if (opts.over && facts.playedAt) {

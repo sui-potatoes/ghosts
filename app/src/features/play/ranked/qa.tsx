@@ -26,9 +26,9 @@ import type { WaitingPhase } from "./waiting";
 
 const LINES: Record<string, string> = {
     "over-budget": "The squad costs more than your budget",
-    locked: "The squad carries an item your tier has not unlocked",
+    locked: "The squad carries an item your rank has not unlocked",
     level: "No 4x4 level yet",
-    suspended: "You are suspended from matchmaking",
+    suspended: "Suspended",
     searching: "You are already searching or in a match",
 };
 

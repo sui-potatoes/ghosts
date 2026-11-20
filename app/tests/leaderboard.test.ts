@@ -324,7 +324,7 @@ test("ordered by rating, ties by fewer games, then name; unranked accounts left 
     );
 });
 
-test("the distribution counts the displayed tiers; matches are half the games", () => {
+test("the distribution counts the displayed tiers; games are half the games", () => {
     // The testnet table as read: five placing players under 1650, one at 1867.
     const rows = rankRows(
         [
@@ -343,7 +343,7 @@ test("the distribution counts the displayed tiers; matches are half the games", 
     assert.deepEqual(
         d.tiers.map((t) => t.players),
         [0, 5, 1, 0],
-        "ai-turtle at 1332 with 3 games is matched as a Contractor",
+        "ai-turtle at 1332 with 3 matches is matched as a Contractor",
     );
     assert.equal(d.ranked, 6);
     assert.equal(d.matches, 11);
@@ -374,7 +374,7 @@ test("the signed-in player's row is marked, and the line above leads to it", () 
     assert.deepEqual(ownLine(true, rankRows(accounts, TIERS, PLACEMENT, null)), {
         kind: "unranked",
     });
-    assert.equal(ownLine(false, mine), null);
+    assert.deepEqual(ownLine(false, mine), { kind: "signed-out" });
 });
 
 test("row texts: the record and the bar's line name every number", () => {

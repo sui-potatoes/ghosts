@@ -5,7 +5,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ChainGround, type GroundTile } from "../../packages/engine/src/chain-ground.ts";
 import type { ChainGame } from "../src/chain/bcs.ts";
-import { coverBonus, lineOfSight, lineOfThrow, terrainAt } from "../src/chain/match-rules.ts";
+import {
+    coverBonus,
+    lineOfSight,
+    lineOfThrow,
+    stepAllowed,
+    terrainAt,
+} from "../src/chain/match-rules.ts";
 
 /**
  * A playtest plays an editor level by the engine's copy of the `ghosts::map`
@@ -25,6 +31,7 @@ function randomGrid(rows: number, cols: number): GroundTile[][] {
             const r = random();
             if (r < 0.08) return { t: "wall" };
             if (r < 0.12) return { t: "unwalkable" };
+            if (r < 0.2) return { t: "obstacle" };
             if (r < 0.45) {
                 const side = () => (random() < 0.6 ? 0 : random() < 0.6 ? 1 : 2);
                 return { t: "cover", sides: [side(), side(), side(), side()] };
@@ -56,14 +63,16 @@ function chainGame(tiles: GroundTile[][]): ChainGame {
                                   ? "Empty"
                                   : tile.t === "wall"
                                     ? "Wall"
-                                    : "Unwalkable",
+                                    : tile.t === "obstacle"
+                                      ? "Obstacle"
+                                      : "Unwalkable",
                       },
         })),
     );
     return { map: { grid: { grid } } } as unknown as ChainGame;
 }
 
-test("the playtest's chain rules agree with the live match's on cover, sight, throws and ground", () => {
+test("the playtest's chain rules agree with the live match's on cover, sight, throws, ground and steps", () => {
     for (let round = 0; round < 6; round++) {
         const [rows, cols] = [7 + round, 9 + round];
         const tiles = randomGrid(rows, cols);
@@ -91,12 +100,21 @@ test("the playtest's chain rules agree with the live match's on cover, sight, th
                 lineOfThrow(game, a, b),
                 `throw ${where}`,
             );
-            const terrain = terrainAt(game, b);
-            assert.equal(
-                ground.terrain(cell(...b)),
-                terrain === "blocked" ? "blocked" : "open",
-                where,
-            );
+            assert.equal(ground.terrain(cell(...b)), terrainAt(game, b), where);
+            // a step to each neighbour, as `trace_path` takes it
+            for (const [dr, dc] of [
+                [-1, 0],
+                [1, 0],
+                [0, -1],
+                [0, 1],
+            ]) {
+                const to: [number, number] = [a[0] + dr, a[1] + dc];
+                assert.equal(
+                    ground.step(cell(...a), cell(...to)),
+                    stepAllowed(game, a, to),
+                    `step ${round}: ${a} -> ${to}`,
+                );
+            }
         }
     }
 });

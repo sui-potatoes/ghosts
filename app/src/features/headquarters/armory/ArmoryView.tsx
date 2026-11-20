@@ -264,7 +264,7 @@ export function ArmoryView({ data, ops }: { data: ArmoryData; ops: ArmoryOps }) 
                 cancel={{ label: "Keep fitting", run: () => setPrompt(null) }}
                 glyphs={glyphs}
             >
-                The new mods are lost unless they are applied.
+                The new mods are lost unless they are applied
             </Prompt>
         ) : prompt?.kind === "search" ? (
             <SearchPrompt
@@ -315,7 +315,7 @@ export function ArmoryView({ data, ops }: { data: ArmoryData; ops: ArmoryOps }) 
                             },
                         ]}
                     >
-                        The armory opens with your squad.
+                        The armory opens with your squad
                     </EmptyState>
                 </HqFrame>
             ) : (
@@ -763,7 +763,7 @@ function Workspace(props: WorkspaceProps) {
                     hint="New gear into storage, free"
                     commands={[openSupply]}
                 >
-                    Requisition gear to fit and equip it.
+                    Requisition gear to fit and equip it
                 </EmptyState>
             )}
         </Panel>
@@ -1417,7 +1417,7 @@ function Workspace(props: WorkspaceProps) {
                                 );
                             })}
                         </List>
-                        {recruits.length === 0 && <p className="gui-note">No recruits on file.</p>}
+                        {recruits.length === 0 && <p className="gui-note">No recruits on file</p>}
                     </div>
                 </FocusScope>
             );

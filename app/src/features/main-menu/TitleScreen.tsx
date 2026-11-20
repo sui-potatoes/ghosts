@@ -462,13 +462,13 @@ function StopSearchPrompt({
     return (
         <Prompt
             id="prompt-stop-search"
-            eyebrow="Matchmaking"
+            eyebrow="Queue"
             title="Stop searching?"
             confirm={{ label: "Stop", run: onStop, deny }}
             cancel={{ label: "Keep searching", run: onKeep }}
             glyphs={glyphs}
         >
-            The squad leaves the queue.
+            The squad leaves the queue
         </Prompt>
     );
 }

@@ -40,6 +40,8 @@ function tilesOf(map: typeof PresetMap.$inferType): MoveTile[][] {
                 }
                 case "Unwalkable":
                     return { t: "unwalkable" };
+                case "Obstacle":
+                    return { t: "obstacle" };
                 default:
                     return { t: "wall" };
             }

@@ -288,7 +288,7 @@ export function HeadquartersView({ data, ops }: { data: HqData; ops: HqOps }) {
                 glyphs={glyphs}
             >
                 {unsaved.length > 1 ? names(unsaved) : "The look and voice"} would be lost unless
-                they are saved.
+                they are saved
             </Prompt>
         ) : prompt?.kind === "dismiss" ? (
             <DismissPrompt

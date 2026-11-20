@@ -261,6 +261,17 @@ test("effective stats: daze zeroes the aim, smoke takes 30 off it and adds 30 de
     assert.equal(effectiveStats({ aim: 0, defense: 120 }, [0x12]).defense, 127);
 });
 
+test("effective stats: a daze takes the dodge to 0 as well, smoke leaves it, either order", () => {
+    const base = { aim: 65, defense: 10, dodge: 40 };
+    assert.deepEqual(effectiveStats(base, [0x02]), { aim: 0, defense: 10, dodge: 0 });
+    assert.deepEqual(effectiveStats(base, [0x12]), { aim: 35, defense: 40, dodge: 40 });
+    assert.deepEqual(effectiveStats(base, [0x02, 0x12]), { aim: 0, defense: 40, dodge: 0 });
+    assert.deepEqual(effectiveStats(base, [0x12, 0x02]), { aim: 0, defense: 40, dodge: 0 });
+    // the base is untouched, and the dodge is back once the daze is gone
+    assert.equal(base.dodge, 40);
+    assert.equal(effectiveStats(base, []).dodge, 40);
+});
+
 test("hit chance with effects: 65, then 35 in smoke, 0 dazed, 10 close up, 65 after", () => {
     const shot = (aim: number, defense: number, distance: number) =>
         hitChance({ aim, range: 4, areaSize: 0 }, defense, distance, 0);

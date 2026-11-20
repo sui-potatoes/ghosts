@@ -17,6 +17,7 @@ import { aimHuman, holdHuman, play } from "../humans";
 import { createPortraitStudio } from "../portrait-studio";
 import { renderCadence, renderPixelRatio, type RenderMode } from "../render-policy";
 import { applyTimeOfDay, type TimeOfDay } from "../scene-weather";
+import { TIME_PRESETS, WEATHER_PARAMS, type SceneLook } from "../scene-look";
 import { Callouts, type Anchor, type Projected, type ShotResult } from "./callouts";
 import { SceneClock } from "./clock";
 import { Effects, reducedMotion } from "./effects";
@@ -70,6 +71,10 @@ export class Battlefield {
   game: Encounter;
   renderMode: RenderMode = "battery";
   timeOfDay: TimeOfDay = "night";
+  /** The game's look (`setLook`); null: the map's authored one. */
+  look: SceneLook | null = null;
+  /** The look's fog, as a multiple of the time of day's. */
+  private fogScale = 1;
   /** The selected operator's id; "" with nobody selected. */
   selected = "";
   cinematic = false;
@@ -1037,6 +1042,7 @@ export class Battlefield {
         fog.density *= air.density;
         this.ambient.intensity *= air.ambient;
       }
+      (this.scene.fog as T.FogExp2).density *= this.fogScale;
       this.renderer.toneMappingExposure = exposure ?? p.exposure;
       this.mist.mesh.material.uniforms.tint.value.setHex(p.mist);
       this.air.setLit(p.lights, this.scene);
@@ -1058,7 +1064,7 @@ export class Battlefield {
     this.precipitation.setKind(this.indoors || noAir ? "clear" : weather);
     const kind = this.precipitation.kind;
     // The ground follows the weather: ripples only in rain, a dusting over a dulled street in snow.
-    wetGround.rippleAmount.value = kind === "rain" ? LOOK.rain.ripples : 0;
+    wetGround.rippleAmount.value = kind === "rain" ? LOOK.rain.ripples * this.precipitation.amount : 0;
     wetGround.wetAmount.value = kind === "snow" ? LOOK.snow.wet : 1;
     this.air.setSnow(kind === "snow");
     // The air does too (fog, sky light, the probe): re-apply the time of day under the new weather.
@@ -1066,6 +1072,22 @@ export class Battlefield {
     this.host.dataset.weather = weather;
     this.host.dataset.snowParticles = String(this.precipitation.particles);
     this.invalidate();
+  }
+
+  /**
+   * Show the game in `look` (`scene-look.ts`): a time-of-day preset, what
+   * falls and how much, and the fog. Indoors, the interior rig stays.
+   */
+  setLook(look: SceneLook) {
+    if (this.indoors) return;
+    this.look = look;
+    const weather = WEATHER_PARAMS[look.weather];
+    this.fogScale = weather.fog;
+    this.precipitation.setAmount(weather.amount);
+    this.timeOfDay = TIME_PRESETS[look.time];
+    // Re-applies the time of day under the new weather.
+    this.setWeather(weather.fall);
+    this.host.dataset.look = `${look.time} ${look.weather}`;
   }
 
   setRenderMode(mode: RenderMode) {

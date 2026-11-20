@@ -75,7 +75,7 @@ export function findView(s: FindState): FindView {
         return {
             phase: "signed-out",
             headline: "Sign in",
-            note: "A contract match needs a player on file.",
+            note: "A contract match needs a player on file",
             action: { id: "sign-in", label: "Sign in" },
             pending: false,
         };
@@ -83,23 +83,23 @@ export function findView(s: FindState): FindView {
         return {
             phase: "playing",
             headline: "Match in progress",
-            note: "Your squad is on the field.",
+            note: "Your squad is on the field",
             action: { id: "resume", label: "Resume match" },
             pending: false,
         };
     if (s.lobby)
         return {
             phase: "lobby",
-            headline: "Friendly game open",
-            note: "Leave or close your friendly game to search for a contract match.",
-            action: { id: "lobby", label: "Open friendly game" },
+            headline: "Friendly match open",
+            note: "Leave or close your friendly match to search for a contract match",
+            action: { id: "lobby", label: "Open friendly match" },
             pending: false,
         };
     if (s.ranked)
         return {
             phase: "ranked",
             headline: "Ranked search on",
-            note: "Cancel your ranked search to search for a contract match.",
+            note: "Cancel your ranked search to search for a contract match",
             action: { id: "ranked", label: "Open ranked search" },
             pending: false,
         };
@@ -107,7 +107,7 @@ export function findView(s: FindState): FindView {
         return {
             phase: "suspended",
             headline: "Suspended",
-            note: `Matchmaking is suspended for ${s.suspendedMin} min.`,
+            note: `Suspended for ${s.suspendedMin} min`,
             action: { id: "menu", label: "Back to menu" },
             pending: false,
         };
@@ -115,7 +115,7 @@ export function findView(s: FindState): FindView {
         return {
             phase: "timeout",
             headline: "No match found",
-            note: "No opponent came in time. Leave the queue and search again later.",
+            note: "No opponent came in time. Leave the queue and search again later",
             action: {
                 id: "cancel",
                 label: "Leave the queue",
@@ -126,8 +126,8 @@ export function findView(s: FindState): FindView {
     if (s.searching)
         return {
             phase: "searching",
-            headline: "Finding match",
-            note: "Looking for an opponent for your recruits. The search carries on while you use the menus.",
+            headline: "Looking for an opponent",
+            note: "Looking for an opponent for your recruits. The search carries on while you use the menus",
             action: {
                 id: "cancel",
                 label: "Cancel search",
@@ -139,7 +139,7 @@ export function findView(s: FindState): FindView {
         return {
             phase: "funding",
             headline: "Preparing",
-            note: "Getting your account ready, then the squad queues.",
+            note: "Getting your account ready, then the squad queues",
             action: { id: "cancel", label: "Cancel search", inactive: "Preparing" },
             pending: true,
         };
@@ -147,7 +147,7 @@ export function findView(s: FindState): FindView {
         return {
             phase: "hiring",
             headline: "Hiring the squad",
-            note: "Your first recruits sign on, then the squad queues.",
+            note: "Your first recruits sign on, then the squad queues",
             action: { id: "cancel", label: "Cancel search", inactive: "Hiring the squad" },
             pending: true,
         };
@@ -162,8 +162,8 @@ export function findView(s: FindState): FindView {
     if (s.starting)
         return {
             phase: "starting",
-            headline: "Finding match",
-            note: "Joining the queue.",
+            headline: "Looking for an opponent",
+            note: "Joining the queue",
             action: { id: "cancel", label: "Cancel search", inactive: "Joining the queue" },
             pending: true,
         };
@@ -171,7 +171,7 @@ export function findView(s: FindState): FindView {
         return {
             phase: "expired",
             headline: "No match found",
-            note: "The search ran out of time without an opponent.",
+            note: "The search ran out of time without an opponent",
             action: { id: "find", label: "Search again" },
             pending: false,
         };
@@ -179,7 +179,7 @@ export function findView(s: FindState): FindView {
     return {
         phase: "idle",
         headline: "Contract",
-        note: "Your own recruits. They earn experience and can be lost. Rating does not change.",
+        note: "Your own recruits. They earn experience and can be lost. Rating does not change",
         action: { id: "find", label: "Find match" },
         pending: false,
     };

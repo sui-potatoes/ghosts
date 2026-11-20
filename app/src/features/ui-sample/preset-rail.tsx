@@ -243,7 +243,7 @@ export function NamePrompt({ title, initial, confirm, glyphs, onDone, onCancel }
             cancel={{ label: "Cancel", run: onCancel }}
             glyphs={glyphs}
         >
-            Saved on this device.
+            Saved on this device
             <TextField label="Name" value={name} onChange={setName} onSubmit={submit} />
         </Prompt>
     );

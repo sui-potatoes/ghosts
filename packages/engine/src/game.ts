@@ -169,8 +169,13 @@ export interface GameAuthority {
   cover(from: Unit, at: Unit): number;
   clearShot(from: Cell, to: Cell): boolean;
   clearThrow(from: Cell, to: Cell): boolean;
-  terrain(cell: Cell): "open" | "cover" | "blocked";
-  /** Whether a step between two neighbouring open cells is allowed (an edge may block it); all are when absent. */
+  /** Ground to stand on, an obstacle a path passes over but never stops on, or neither. */
+  terrain(cell: Cell): "open" | "obstacle" | "blocked";
+  /**
+   * Whether a step between two neighbouring cells that are not blocked is
+   * allowed (an edge may block it); all are when absent. Two obstacles in a row
+   * are refused by the rules whatever this says.
+   */
   step?(from: Cell, to: Cell): boolean;
   /** The cover `at` has with no attacker in mind, for the HUD and the poses; the scene's geometry when absent. */
   shelter?(at: Cell): number;
@@ -469,11 +474,17 @@ export class Encounter {
   throwBlocked(from: Cell, to: Cell) {
     return this.authority ? !this.authority.clearThrow(from, to) : !this.map.clearThrow(from, to);
   }
-  private groundOpen(p: Cell) {
-    return this.authority ? this.authority.terrain(p) === "open" : this.map.open(p);
+  /**
+   * What a cell is to a unit on the move: ground to stand on, an obstacle (a
+   * cover prop, `TileType::Obstacle` on chain) to pass over but never stop on,
+   * or blocked. The demo's own map: its cover cells are the obstacles.
+   */
+  terrain(p: Cell): "open" | "obstacle" | "blocked" {
+    if (this.authority) return this.authority.terrain(p);
+    return this.map.open(p) ? "open" : this.map.isCover(p) && this.map.inBounds(p) ? "obstacle" : "blocked";
   }
-  private groundCover(p: Cell) {
-    return this.authority ? this.authority.terrain(p) === "cover" : this.map.isCover(p);
+  private groundOpen(p: Cell) {
+    return this.terrain(p) === "open";
   }
   /** Whether the edge between two neighbouring cells lets a unit through. */
   private passable(from: Cell, to: Cell) {
@@ -485,36 +496,51 @@ export class Encounter {
       !this.units.some((u) => u !== unit && u.hp > 0 && key(u.pos) === key(p))
     );
   }
+  /**
+   * Where `unit` can move this action, each cell with the path there (the
+   * start first; the start itself is listed as a one-cell path): `trace_path`
+   * as a breadth-first search. A step goes to a free neighbour that is not
+   * blocked, across an edge that lets it through; it may go onto an obstacle
+   * only to pass over it, the next step landing on ground to stand on, never on
+   * a second obstacle. Every step counts one tile, the step onto an obstacle
+   * included, and `mobility` bounds them. Obstacles are searched through but
+   * never listed. Among paths of the fewest steps the plainest is kept: no
+   * vault before a vault, a straight one before one that turns on the obstacle.
+   */
   paths(unit: Unit) {
-    const found = new Map<string, Cell[]>();
-    const queue: Cell[][] = [[unit.pos]];
-    found.set(key(unit.pos), [unit.pos]);
-    for (let i = 0; i < queue.length; i++) {
-      const path = queue[i];
-      if (path.length > unit.mobility) continue;
-      const [x, z] = path[path.length - 1];
-      for (const p of [
-        [x + 1, z],
-        [x - 1, z],
-        [x, z + 1],
-        [x, z - 1],
-      ] as Cell[]) {
-        if (!found.has(key(p)) && this.walkable(p, unit) && this.passable([x, z], p)) {
-          const next = [...path, p];
-          found.set(key(p), next);
-          queue.push(next);
-        } else if (this.groundCover(p)) {
-          const landing: Cell = [p[0] + p[0] - x, p[1] + p[1] - z];
-          if (
-            path.length + 1 <= unit.mobility &&
-            !found.has(key(landing)) &&
-            this.walkable(landing, unit)
-          ) {
-            const next = [...path, p, landing];
-            found.set(key(landing), next);
-            queue.push(next);
-          }
+    const found = new Map<string, Cell[]>([[key(unit.pos), [unit.pos]]]);
+    const seen = new Set([key(unit.pos)]);
+    let layer: Cell[][] = [[unit.pos]];
+    for (let steps = 1; steps <= unit.mobility && layer.length; steps++) {
+      const next = new Map<string, { path: Cell[]; rank: number }>();
+      for (const path of layer) {
+        const at = path[path.length - 1];
+        const before = path[path.length - 2];
+        const over = !!before && this.terrain(at) === "obstacle";
+        const [x, z] = at;
+        for (const p of [
+          [x + 1, z],
+          [x - 1, z],
+          [x, z + 1],
+          [x, z - 1],
+        ] as Cell[]) {
+          if (seen.has(key(p))) continue;
+          const ground = this.terrain(p);
+          if (ground === "blocked" || (over && ground === "obstacle")) continue;
+          if (this.units.some((u) => u !== unit && u.hp > 0 && key(u.pos) === key(p))) continue;
+          if (!this.passable(at, p)) continue;
+          // 0: a plain step; 1: landing straight over an obstacle; 2: turning on it
+          const straight = over && p[0] - x === x - before[0] && p[1] - z === z - before[1];
+          const rank = !over ? 0 : straight ? 1 : 2;
+          const had = next.get(key(p));
+          if (!had || rank < had.rank) next.set(key(p), { path: [...path, p], rank });
         }
+      }
+      layer = [];
+      for (const [k, { path }] of next) {
+        seen.add(k);
+        layer.push(path);
+        if (this.terrain(path[path.length - 1]) === "open") found.set(k, path);
       }
     }
     return found;
@@ -539,7 +565,8 @@ export class Encounter {
       type: "move",
       unit: u.id,
       path,
-      vault: path.some((c) => this.groundCover(c)),
+      // a vault: the path steps onto an obstacle and off it
+      vault: path.slice(1).some((c) => this.terrain(c) === "obstacle"),
       cover: this.coverValue(p, false) > 0,
     });
     return path;
@@ -625,7 +652,9 @@ export class Encounter {
     if (hit && a.plusOne > 0 && this.random() * 100 < a.plusOne) raw++;
     if (crit) raw += Math.floor(a.damage / 2);
     // a shot can be dodged, and a dodge shows as a miss (`Dodged` in a chain match)
-    if (hit && b.dodge > 0 && this.random() * 100 < b.dodge) hit = crit = false;
+    // a dazed target cannot dodge: its effective dodge is 0 (`DAZE_MODIFIER`)
+    const dodge = unitCombat(b).dodge;
+    if (hit && dodge > 0 && this.random() * 100 < dodge) hit = crit = false;
     const damage = hit ? Math.max(1, raw - b.armor) : 0;
     const killed = hit && b.hp - damage <= 0;
     const cover = !hit && this.map.props.find((p) =>

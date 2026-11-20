@@ -125,7 +125,7 @@ export const EQUIPMENT: Equipment[] = [
     type: "ASSAULT RIFLE",
     slot: "primary",
     description:
-      "Compact, dependable. The weapon you reach for when the contract gets complicated.",
+      "Compact, dependable. The weapon you reach for when the contract gets complicated",
     weight: 3.2,
     stat: "2–6 damage · 3 rounds · 10% crit",
     model: "rifle",
@@ -136,7 +136,7 @@ export const EQUIPMENT: Equipment[] = [
     type: "MARKSMAN RIFLE",
     slot: "primary",
     description:
-      "A long sightline and a steady hand. Built for deliberate engagements.",
+      "A long sightline and a steady hand. Built for deliberate engagements",
     weight: 4.7,
     stat: "4–6 damage · 3 rounds · 20% crit",
     model: "sniper",
@@ -146,7 +146,7 @@ export const EQUIPMENT: Equipment[] = [
     name: "Plasma Rifle",
     type: "PLASMA RIFLE",
     slot: "primary",
-    description: "High damage and critical potential for precise engagements.",
+    description: "High damage and critical potential for precise engagements",
     weight: 3.2,
     stat: "5–7 damage · 3 rounds · 30% crit",
     model: "plasma",
@@ -157,7 +157,7 @@ export const EQUIPMENT: Equipment[] = [
     type: "SERVICE PISTOL",
     slot: "sidearm",
     description:
-      "A lightweight fallback for close encounters and depleted magazines.",
+      "A lightweight fallback for close encounters and depleted magazines",
     weight: 0.9,
     stat: "2–4 damage · 6 rounds",
     model: "pistol",
@@ -168,7 +168,7 @@ export const EQUIPMENT: Equipment[] = [
     type: "LIGHT ARMOR",
     slot: "armor",
     description:
-      "The original fitted carrier. Flexible coverage without sacrificing movement.",
+      "The original fitted carrier. Flexible coverage without sacrificing movement",
     weight: 3.4,
     stat: "+1 armor · +10% dodge",
     model: "armor",
@@ -179,7 +179,7 @@ export const EQUIPMENT: Equipment[] = [
     type: "LIGHT ARMOR",
     slot: "armor",
     description:
-      "Close-fitting ceramic plates over woven graphite. Articulated ribs, gauntlets and contoured leg protection for the quiet approach.",
+      "Close-fitting ceramic plates over woven graphite. Articulated ribs, gauntlets and contoured leg protection for the quiet approach",
     weight: 2.6,
     stat: "+1 armor · +10% dodge",
     model: "assassin-armor",
@@ -190,7 +190,7 @@ export const EQUIPMENT: Equipment[] = [
     type: "MEDIUM ARMOR",
     slot: "armor",
     description:
-      "Overlapping shoulder shells, wrapped thigh protection and a reinforced cuirass. Built to move through contested ground.",
+      "Overlapping shoulder shells, wrapped thigh protection and a reinforced cuirass. Built to move through contested ground",
     weight: 4.8,
     stat: "+2 armor",
     model: "assassin-mid",
@@ -201,7 +201,7 @@ export const EQUIPMENT: Equipment[] = [
     type: "HEAVY ARMOR",
     slot: "armor",
     description:
-      "Continuous breach cuirass, reinforced shoulder arches and twin dorsal power housings. Layered limb shields give Wraith its imposing silhouette.",
+      "Continuous breach cuirass, reinforced shoulder arches and twin dorsal power housings. Layered limb shields give Wraith its imposing silhouette",
     weight: 7.2,
     stat: "+3 armor · +1 health · −1 mobility · −10% dodge",
     model: "assassin-heavy",
@@ -212,7 +212,7 @@ export const EQUIPMENT: Equipment[] = [
     type: "THROWABLE",
     slot: "utility",
     description:
-      "Fragmentation grenade. Thrown up to 5 tiles; deals 4 damage, less armor, to every unit within 2 tiles of the target, friend or foe, and destroys cover. Cannot be dodged. One per match.",
+      "Fragmentation grenade. Thrown up to 5 tiles; deals 4 damage, less armor, to every unit within 2 tiles of the target, friend or foe, and destroys cover. Cannot be dodged. One per match",
     weight: 0.5,
     stat: "4 damage · 2-tile blast",
     model: "grenade",
@@ -223,7 +223,7 @@ export const EQUIPMENT: Equipment[] = [
     type: "THROWABLE",
     slot: "utility",
     description:
-      "Thrown up to 5 tiles; every unit within 2 tiles of the target, friend or foe, is smoked: +30 defense and −30 aim for the rest of this turn and the enemy's turn. No damage, and cover stays. One per match.",
+      "Thrown up to 5 tiles; every unit within 2 tiles of the target, friend or foe, is smoked: +30 defense and −30 aim for the rest of this turn and the enemy's turn. No damage, and cover stays. One per match",
     weight: 0.6,
     stat: "+30 defense · −30 aim",
     model: "smoke",
@@ -234,7 +234,7 @@ export const EQUIPMENT: Equipment[] = [
     type: "THROWABLE",
     slot: "utility",
     description:
-      "Thrown up to 5 tiles; every unit within 2 tiles of the target, friend or foe, is dazed: aim 0 for the rest of this turn and the enemy's turn. No damage, and cover stays. One per match.",
+      "Thrown up to 5 tiles; every unit within 2 tiles of the target, friend or foe, is dazed: aim 0 and dodge 0 for the rest of this turn and the enemy's turn. No damage, and cover stays. One per match",
     weight: 0.4,
     stat: "Aim 0 · 2-tile burst",
     model: "flash",
@@ -245,7 +245,7 @@ export const EQUIPMENT: Equipment[] = [
     type: "MEDICAL",
     slot: "utility",
     description:
-      "Compact dressings and emergency supplies. Get your people home.",
+      "Compact dressings and emergency supplies. Get your people home",
     weight: 0.8,
     stat: "Restore 4 health",
     model: "medkit",

@@ -407,20 +407,20 @@ export function friendlyError(e: unknown): string {
             message,
         )
     )
-        return "Not enough SUI for this action. Try again shortly.";
-    if (/reject|cancel|abort(ed)? by user|NotAllowedError/i.test(message)) return "Cancelled.";
+        return "Not enough SUI for this action. Try again shortly";
+    if (/reject|cancel|abort(ed)? by user|NotAllowedError/i.test(message)) return "Cancelled";
     if (/Failed to fetch|NetworkError|timed? ?out/i.test(message))
-        return "Connection lost. Try again.";
+        return "Connection lost. Try again";
     if (/function_name: Some\("cancel_(search|ranked)"\).*, 25\)/.test(message))
-        return "A match was just found: joining it.";
+        return "A match was just found: joining it";
     return lobbyRefusal(message) ?? rankedRefusal(message) ?? message;
 }
 
 const target = (fn: string) => `${GHOSTS.package}::account::${fn}`;
 
 /** Create the player's `Account` — one per address, held by the `Registry`. */
-export function createAccountTx(): Transaction {
-    const tx = new Transaction();
+export function createAccountTx(into?: Transaction): Transaction {
+    const tx = into ?? new Transaction();
     tx.moveCall({ target: target("new_account"), arguments: [tx.object(GHOSTS.registry)] });
     return tx;
 }

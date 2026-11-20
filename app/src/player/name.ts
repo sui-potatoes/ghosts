@@ -35,9 +35,9 @@ export function normalizeName(input: string): string {
 
 /** Why `name` is not an acceptable name, or `null` when it is. */
 export function validateName(name: string): string | null {
-    if (name.length < NAME_MIN) return `At least ${NAME_MIN} characters.`;
-    if (name.length > NAME_MAX) return `At most ${NAME_MAX} characters.`;
-    if (!LABEL.test(name)) return "Lowercase letters, digits and hyphens; no hyphen at the ends.";
+    if (name.length < NAME_MIN) return `At least ${NAME_MIN} characters`;
+    if (name.length > NAME_MAX) return `At most ${NAME_MAX} characters`;
+    if (!LABEL.test(name)) return "Lowercase letters, digits and hyphens; no hyphen at the ends";
     return null;
 }
 

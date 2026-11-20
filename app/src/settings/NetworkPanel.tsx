@@ -50,14 +50,14 @@ export function NetworkPanel() {
         }
         updateSettings((s) => ({ ...s, network: { rpcUrl: check.url } }));
         setDraft(check.url);
-        setNotice("Saved. Reload to apply.");
+        setNotice("Saved. Reload to apply");
     }
 
     function reset() {
         updateSettings((s) => ({ ...s, network: { rpcUrl: "" } }));
         setDraft("");
         setStatus({ kind: "idle" });
-        setNotice("Back to the default. Reload to apply.");
+        setNotice("Back to the default. Reload to apply");
     }
 
     // The clients were built at startup; a saved change waits for a reload.
@@ -86,7 +86,7 @@ export function NetworkPanel() {
                 <p className="text-[12px] text-secondary">
                     Optional. Leave empty for the public {NETWORK} fullnode. https only (http for
                     localhost). The endpoint must serve {NETWORK}; a different network is refused.
-                    Changes apply after a reload.
+                    Changes apply after a reload
                 </p>
                 <p className="min-h-[1.25rem] text-[12px] text-warn" role="status">
                     {!check.ok && draft ? check.error : null}
@@ -129,7 +129,7 @@ export function NetworkPanel() {
                 {status.kind === "done" &&
                     (status.result.ok ? (
                         <p className="text-accent">
-                            OK: {NETWORK} ({status.result.chainId}), {status.result.latencyMs} ms.
+                            OK: {NETWORK} ({status.result.chainId}), {status.result.latencyMs} ms
                         </p>
                     ) : (
                         <p className="text-warn">{status.result.error}</p>

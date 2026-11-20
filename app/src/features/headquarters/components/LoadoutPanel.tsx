@@ -177,7 +177,7 @@ export function LoadoutPanel(props: Props) {
                     ) : (
                         <p className="sq-footnote">
                             Carrying the standard issue rifle. Draw a rifle from the racks below to
-                            fit it in the armory.
+                            fit it in the armory
                         </p>
                     )}
                 </section>
@@ -206,7 +206,7 @@ export function LoadoutPanel(props: Props) {
                 <section className="hq-carried" aria-label="Carried utility">
                     {carried.length === 0 && (
                         <p className="sq-footnote">
-                            Nothing equipped. Equip a utility from the racks below.
+                            Nothing equipped. Equip a utility from the racks below
                         </p>
                     )}
                     {carried.map((u) => (

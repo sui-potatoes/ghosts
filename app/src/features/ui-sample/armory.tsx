@@ -233,7 +233,7 @@ export function Armory({ armory, tab, onTab, wearer, glyphs, frame, save }: Prop
             cancel={{ label: "Cancel", run: () => setPrompt(null) }}
             glyphs={glyphs}
         >
-            Added to the armory rack, ready to issue or fit.
+            Added to the armory rack, ready to issue or fit
         </Prompt>
     ) : (
         frame.overlay

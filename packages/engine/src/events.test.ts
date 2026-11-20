@@ -23,7 +23,7 @@ test("the journal holds every event and the feed is written from it", () => {
     [u] = g.allies;
   g.apply({ type: "hunker", unit: u.id });
   assert.deepEqual(g.events, [{ type: "hunker", unit: u.id }]);
-  assert.equal(g.log[0], `${u.name} hunkered down. Defense increased.`);
+  assert.equal(g.log[0], `${u.name} hunkered down. Defense increased`);
   assert.equal(describe({ type: "hostile-phase" }, String), null);
 });
 
@@ -97,5 +97,5 @@ test("ingest applies an event decided elsewhere without re-deciding it", () => {
   assert.equal(u.ammo, 2);
   assert.equal(u.ap, 0);
   assert.equal(g.kills[u.id], 1);
-  assert.equal(g.log[0], `${u.name} → ${enemy.name}: 9 damage / neutralized.`);
+  assert.equal(g.log[0], `${u.name} → ${enemy.name}: 9 damage / neutralized`);
 });

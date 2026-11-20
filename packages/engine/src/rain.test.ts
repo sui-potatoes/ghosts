@@ -76,3 +76,24 @@ test("the volume follows the camera's focus on the ground plane only", () => {
     weather.dispose();
   }
 });
+
+test("light rain draws a share of the drops and splashes, in either tier", () => {
+  const weather = new Precipitation();
+  try {
+    const rain = named(weather, "GPU rain"),
+      splashes = named(weather, "GPU rain splashes");
+    weather.setAmount(0.3);
+    assert.equal(weather.amount, 0.3);
+    assert.equal(rain.geometry.instanceCount, Math.round(LOOK.rain.drops.battery * 0.3));
+    weather.setBatterySaver(false);
+    assert.equal(rain.geometry.instanceCount, Math.round(LOOK.rain.drops.smooth * 0.3));
+    assert.equal(splashes.geometry.instanceCount, Math.round(LOOK.rain.splashes * 0.3));
+    weather.setKind("clear");
+    weather.setKind("rain");
+    assert.equal(rain.geometry.instanceCount, Math.round(LOOK.rain.drops.smooth * 0.3), "kept across weathers");
+    weather.setAmount(1);
+    assert.equal(rain.geometry.instanceCount, LOOK.rain.drops.smooth);
+  } finally {
+    weather.dispose();
+  }
+});

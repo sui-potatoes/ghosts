@@ -108,7 +108,7 @@ const gate = (patch: Partial<Parameters<typeof resetDeny>[0]>) =>
         ...patch,
     });
 
-test("the reset: from above 1500 only, never in a match or a search, once a week", () => {
+test("the reset: from above 1500 only, never in a game or a search, once a week", () => {
     assert.equal(gate({}), undefined);
     assert.equal(gate({ rating: 1500 }), "Only a rating above 1500 can be reset");
     assert.equal(gate({ rating: 1320 }), "Only a rating above 1500 can be reset");

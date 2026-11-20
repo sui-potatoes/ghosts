@@ -76,6 +76,7 @@ test("GameStarted and GameEnded decode from the package's bytes: players in turn
     assert.ok(ended);
     assert.equal(ended.gameId, RANKED_GAME.id);
     assert.deepEqual(ended.ending, { $kind: "Abandoned", Abandoned: ALICE });
+    assert.equal(ended.endedMs, 5000, "when it ended, from the event itself");
     assert.equal(ended.digest, "E");
     assert.equal(ended.checkpoint, null);
 
@@ -98,6 +99,7 @@ test("the ending a wrap-up announces: the GameEnded of that game among the trans
     const other = GameEnded.serialize({
         game: hex("ab".repeat(32)),
         ending: { Draw: true },
+        endedMs: 1n,
     } as never).toBytes();
     const events = [
         { eventType: `${GHOSTS.package}::ghosts::Something`, bcs: new Uint8Array() },
@@ -307,7 +309,7 @@ test("modes in words: ranked with size and tier name, friendly with size, contra
     );
     assert.equal(
         modeText({ mode: { $kind: "Ranked", Ranked: { size: 2, tier: 9 } } as never }),
-        "Ranked 2x2 · Tier 10",
+        "Ranked 2x2 · Rank 10",
     );
     assert.equal(
         modeText({ mode: { $kind: "Friendly", Friendly: { size: 4 } } as never }),
@@ -366,7 +368,7 @@ test("the drawn first mover: names, results and squads go by turn order, not by 
     assert.deepEqual(
         [...new Set(unitsOnMap(deploying).map(({ unit }) => unit.owner))],
         [BOB],
-        "the finder's squad is placed as the game is created",
+        "the finder's squad is placed as the match is created",
     );
     assert.deepEqual(RANKED_GAME.players, [ALICE, BOB]);
     const row = recentRow(
@@ -398,7 +400,7 @@ test("the drawn first mover: names, results and squads go by turn order, not by 
 });
 
 test("a ranked replay: virtual units named by their loadouts, unique on a side, figures from presets", () => {
-    assert.equal(Number(RANKED_GAME.recruits.size), 0, "no recruit entries in a ranked game");
+    assert.equal(Number(RANKED_GAME.recruits.size), 0, "no recruit entries in a ranked match");
     const dress = rankedDress(RANKED_GAME, RANKED_GAME.id);
     const owner = new Map(unitsOnMap(RANKED_GAME).map(({ unit }) => [unit.recruit, unit.owner]));
     const namesOf = (account: string) =>
@@ -418,7 +420,7 @@ test("a ranked replay: virtual units named by their loadouts, unique on a side, 
     assert.deepEqual(
         again.squad.map((r) => r.appearance),
         dress.squad.map((r) => r.appearance),
-        "seeded by the game: the same game dresses the same",
+        "seeded by the match: the same match dresses the same",
     );
     const start = watchStart(blackRain, RANKED_GAME, dress.names, dress.looks);
     assert.deepEqual(
@@ -445,7 +447,7 @@ test("the QA fixture: 25 rows with More, 50 after, few without More, empty", () 
 
 // === The Spectate screen's copy ===
 
-test("Spectate: three match panels, Refresh to read again, Play leads to /play, nothing about the device or the demo", () => {
+test("Spectate: three game panels, Refresh to read again, Play leads to /play, nothing about the device or the demo", () => {
     const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
     const list = read("../src/features/watch/WatchList.tsx");
     for (const title of ['"Live matches"', '"Recent matches"', '"My matches"', '"Spectate"'])
@@ -473,7 +475,7 @@ test("Spectate: three match panels, Refresh to read again, Play leads to /play, 
         .replace(/^\s*(\/\/|\*|\/\*).*$/gm, "");
     assert.doesNotMatch(
         copy,
-        /"Look again"|"Try again"|"\/demo"|\bdemo\b|this device|Your games|could not be read|did not answer|not responding|try again later/i,
+        /"Look again"|"Try again"|"\/demo"|\bdemo\b|this device|"Your matches"|could not be read|did not answer|not responding|try again later/i,
     );
 });
 
@@ -536,7 +538,11 @@ const startedEvent = (i: number, listed = true): RawEvent => ({
 });
 const endedEvent = (i: number): RawEvent => ({
     eventType: GAME_ENDED_TYPE,
-    bcs: GameEnded.serialize({ game: gameAt(i), ending: { Draw: true } } as never).toBytes(),
+    bcs: GameEnded.serialize({
+        game: gameAt(i),
+        ending: { Draw: true },
+        endedMs: BigInt(1_700_000_000_000 + i * 1000),
+    } as never).toBytes(),
     transactionDigest: `E${i}`,
     checkpoint: String(1001 + i * 2),
 });

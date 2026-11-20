@@ -6,6 +6,8 @@ import * as T from 'three';
 export const timePresets = {
   morning: { sky: 0x9caebc, fog: 0xb5b9bb, density: .014, sun: 0xffd2a0, strength: 3.8, position: [-24, 13, -12], ambient: 1.35, rim: .25, exposure: 1.05, lights: false, mist: 0xc3c3bf },
   day: { sky: 0x98b8cf, fog: 0xb4c7d4, density: .009, sun: 0xfff3df, strength: 4.8, position: [-8, 35, 12], ambient: 1.7, rim: .2, exposure: 1, lights: false, mist: 0xc6d3d9 },
+  // Day under a lid of cloud: no hard sun, a flat grey sky, the street lit from above.
+  overcast: { sky: 0x8b939c, fog: 0x9ba3ab, density: .013, sun: 0xdce2ea, strength: 1.5, position: [-10, 32, 8], ambient: 2.1, rim: .15, exposure: 1, lights: false, mist: 0xb2b8be },
   evening: { sky: 0x4b4356, fog: 0x82747f, density: .017, sun: 0xffae70, strength: 3.2, position: [24, 10, 8], ambient: .85, rim: .4, exposure: 1.08, lights: true, mist: 0xb5a3b5 },
   night: { sky: 0x0c1019, fog: 0x252b3b, density: .019, sun: 0xc6d2ed, strength: 3.6, position: [-16, 18, 5], ambient: .95, rim: .55, exposure: 1.12, lights: true, mist: 0x9aa8c0 },
 } as const;

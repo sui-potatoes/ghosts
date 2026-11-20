@@ -51,7 +51,7 @@ export function waitingView(w: WaitingInput): WaitingView {
         case "revealing":
             return {
                 headline: "Opponent found",
-                note: "Showing your squad. The match starts as soon as it is in.",
+                note: "Showing your squad. The match starts as soon as it is in",
                 left: clock(left),
                 action: null,
                 pending: true,
@@ -59,7 +59,7 @@ export function waitingView(w: WaitingInput): WaitingView {
         case "failed":
             return {
                 headline: "Opponent found",
-                note: `${w.line ?? "Could not show the squad"}. Trying again.`,
+                note: `${w.line ?? "Could not show the squad"}. Trying again`,
                 left: clock(left),
                 action: null,
                 pending: true,
@@ -67,7 +67,7 @@ export function waitingView(w: WaitingInput): WaitingView {
         case "lost":
             return {
                 headline: "Opponent found",
-                note: "This squad can no longer be shown; the match is forfeit.",
+                note: "This squad can no longer be shown; the match is forfeit",
                 left: null,
                 action: null,
                 pending: w.busy,
@@ -75,7 +75,7 @@ export function waitingView(w: WaitingInput): WaitingView {
         case "late":
             return {
                 headline: "Opponent found",
-                note: "The time to show the squad is over; the match goes to your opponent.",
+                note: "The time to show the squad is over; the match goes to your opponent",
                 left: null,
                 action: null,
                 pending: w.busy,
@@ -83,7 +83,7 @@ export function waitingView(w: WaitingInput): WaitingView {
         case "waiting":
             return {
                 headline: "Opponent found",
-                note: "Your squad is in. Waiting for your opponent to show theirs.",
+                note: "Your squad is in. Waiting for your opponent to show theirs",
                 left: clock(left),
                 action: null,
                 pending: true,
@@ -91,7 +91,7 @@ export function waitingView(w: WaitingInput): WaitingView {
         case "called":
             return {
                 headline: "Opponent never showed",
-                note: "Your opponent did not show a squad in time. The match is yours.",
+                note: "Your opponent did not show a squad in time. The match is yours",
                 left: null,
                 action: { label: "Continue", deny: w.busy ? "Saving a change" : undefined },
                 pending: false,

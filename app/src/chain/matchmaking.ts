@@ -375,7 +375,7 @@ export function useMatchSearch() {
             setLookupError(null);
             void find().catch((e: unknown) => {
                 setHiring(false);
-                setLookupError(e instanceof Error ? e.message : "Could not reach the network.");
+                setLookupError(e instanceof Error ? e.message : "Could not reach the network");
             });
         },
         /** Leave the queue the search waits in. Active as soon as the `Account` shows the search. */
@@ -542,5 +542,5 @@ export function useMatchmakingDriver() {
 /** A failed reveal in the player's words. */
 function revealLine(message: string): string {
     if (/, 15\)|abort code:?\s*15/.test(message)) return "The time to show the squad is over";
-    return "Could not show the squad. Trying again.";
+    return "Could not show the squad. Trying again";
 }

@@ -108,11 +108,15 @@ export const recordText = (r: { wins: number; losses: number; draws: number }) =
 export const rowHint = (row: LeaderRow, tiers: readonly TierBand[]) =>
     `Rank ${row.rank} · ${tiers[row.tier]?.name ?? ""} · Rating ${row.rating} · ${plural(row.games, "ranked match", "ranked matches")}`;
 
-/** What the line above the table says to the signed-in player; null signed out. */
-export type OwnLine = { kind: "ranked"; rank: number; rowId: string } | { kind: "unranked" } | null;
+/** What the line above the table says to the player; null until the table is read. */
+export type OwnLine =
+    | { kind: "ranked"; rank: number; rowId: string }
+    | { kind: "unranked" }
+    | { kind: "signed-out" }
+    | null;
 
 export function ownLine(signedIn: boolean, rows: readonly LeaderRow[]): OwnLine {
-    if (!signedIn) return null;
+    if (!signedIn) return { kind: "signed-out" };
     const own = rows.find((r) => r.own);
     return own ? { kind: "ranked", rank: own.rank, rowId: rowId(own) } : { kind: "unranked" };
 }

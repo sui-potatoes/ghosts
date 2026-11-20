@@ -48,6 +48,7 @@ import {
     isOver,
     lineOfSight,
     lineOfThrow,
+    stepAllowed,
     terrainAt,
     throwValid,
     toCell,
@@ -146,6 +147,8 @@ export function chainDriver({
         };
         rules.authority = {
             terrain: (cell) => terrainAt(latest, tile(cell)),
+            // `trace_path`'s step: no high side across the edge, never two obstacles in a row
+            step: (from, to) => stepAllowed(latest, tile(from), tile(to)),
             clearShot: (from, to) => lineOfSight(latest, tile(from), tile(to)),
             clearThrow: (from, to) => lineOfThrow(latest, tile(from), tile(to)),
             cover: (from, at) => coverBonus(latest, tile(from.pos), tile(at.pos)),
@@ -187,7 +190,7 @@ export function chainDriver({
             side,
             unitAt: ([x, z]) =>
                 rules.units.find((u) => u.hp > 0 && u.pos[0] === x && u.pos[1] === z)?.id,
-            isCover: (cell) => terrainAt(latest, tile(cell)) === "cover",
+            isObstacle: (cell) => terrainAt(latest, tile(cell)) === "obstacle",
             coverAt: (cell) => rules.coverAt(cell),
             blast: (cell) => rules.map.blastProps(cell),
         };

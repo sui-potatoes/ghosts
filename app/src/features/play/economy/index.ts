@@ -236,10 +236,10 @@ const TIER_NAMES = [
 /** The lines the published tiers carry; a tier whose unlocks differ gets one built from them. */
 const TIER_SUMMARIES: Record<string, string> = {
     "rifle-1,armor-1,armor-2,frag-grenade,flashbang,smoke-grenade":
-        "Standard rifles, light and medium armor, frag, flash and smoke grenades.",
-    "rifle-2": "Adds the sharpshooter rifle.",
-    "armor-3,rifle-3": "Adds heavy armor and the plasma rifle.",
-    "": "Everything, with the largest budget.",
+        "Standard rifles, light and medium armor, frag, flash and smoke grenades",
+    "rifle-2": "Adds the sharpshooter rifle",
+    "armor-3,rifle-3": "Adds heavy armor and the plasma rifle",
+    "": "Everything, with the largest budget",
 };
 
 /** The catalog's name for an item, lowercased mid-sentence. */
@@ -251,7 +251,7 @@ function summaryOf(unlocks: string[], first: boolean): string {
     const names = unlocks.map(catalogName);
     const list =
         names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : names[0];
-    return first ? `${list}.` : `Adds ${list}.`;
+    return first ? `${list}` : `Adds ${list}`;
 }
 
 /** The order unlocks are listed in, as the published tiers list them. */
@@ -280,7 +280,7 @@ function build(next: EconomyRules) {
     PRICES = { ...next.prices };
     const ids = UNLOCK_ORDER.filter((id) => id in next.prices);
     TIERS = next.tiers.map((tier, i) => {
-        const named = TIER_NAMES[i] ?? { id: `tier-${i}`, name: `Tier ${i + 1}` };
+        const named = TIER_NAMES[i] ?? { id: `tier-${i}`, name: `Rank ${i + 1}` };
         const unlocks = ids.filter((id) => next.unlock[id] === i);
         return {
             ...named,
@@ -349,21 +349,21 @@ export const PRESETS: readonly Preset[] = [
     {
         id: "recruit",
         name: "Recruit",
-        role: "A rifle and light armor: the cheapest unit that can hold a line.",
+        role: "A rifle and light armor: the cheapest unit that can hold a line",
         loadout: { preset: "recruit", weapon: "rifle-1", armor: "armor-1", utility: null },
         swaps: ALL_SLOTS,
     },
     {
         id: "runner",
         name: "Runner",
-        role: "Light armor to stay quick and dodge, a grenade to flush cover.",
+        role: "Light armor to stay quick and dodge, a grenade to flush cover",
         loadout: { preset: "runner", weapon: "rifle-1", armor: "armor-1", utility: "frag-grenade" },
         swaps: ALL_SLOTS,
     },
     {
         id: "assault",
         name: "Assault",
-        role: "Medium armor, rifle and grenade: the line unit that trades well up close.",
+        role: "Medium armor, rifle and grenade: the line unit that trades well up close",
         loadout: {
             preset: "assault",
             weapon: "rifle-1",
@@ -375,14 +375,14 @@ export const PRESETS: readonly Preset[] = [
     {
         id: "sniper",
         name: "Sniper",
-        role: "Sharpshooter rifle from range; spends nothing on a utility.",
+        role: "Sharpshooter rifle from range; spends nothing on a utility",
         loadout: { preset: "sniper", weapon: "rifle-2", armor: "armor-1", utility: null },
         swaps: ALL_SLOTS,
     },
     {
         id: "heavy",
         name: "Heavy",
-        role: "Plasma rifle in heavy armor: slow, hard to put down, hits hardest.",
+        role: "Plasma rifle in heavy armor: slow, hard to put down, hits hardest",
         loadout: { preset: "heavy", weapon: "rifle-3", armor: "armor-3", utility: null },
         swaps: ALL_SLOTS,
     },
@@ -504,11 +504,11 @@ export function validateSquad(
     const issues: Issue[] = [];
     const tier = tierOf(rating);
     if (squad.length !== squadSize(mode))
-        issues.push({ kind: "size", message: `A ${mode} squad has ${squadSize(mode)} units.` });
+        issues.push({ kind: "size", message: `A ${mode} squad has ${squadSize(mode)} units` });
     squad.forEach((unit, i) => {
         const preset = presetOf(unit.preset);
         if (!preset)
-            issues.push({ kind: "illegal", unit: i, message: `Unit ${i + 1} has no preset.` });
+            issues.push({ kind: "illegal", unit: i, message: `Unit ${i + 1} has no preset` });
         for (const slot of ALL_SLOTS) {
             const id = unit[slot];
             if (id === null) {
@@ -517,7 +517,7 @@ export function validateSquad(
                         kind: "illegal",
                         unit: i,
                         slot,
-                        message: `Unit ${i + 1} needs a ${SLOT_NAMES[slot]}.`,
+                        message: `Unit ${i + 1} needs a ${SLOT_NAMES[slot]}`,
                     });
                 continue;
             }
@@ -528,7 +528,7 @@ export function validateSquad(
                     unit: i,
                     slot,
                     item: id,
-                    message: `Unit ${i + 1} cannot carry that as a ${SLOT_NAMES[slot]}.`,
+                    message: `Unit ${i + 1} cannot carry that as a ${SLOT_NAMES[slot]}`,
                 });
                 continue;
             }
@@ -538,7 +538,7 @@ export function validateSquad(
                     unit: i,
                     slot,
                     item: id,
-                    message: `The ${preset.name} keeps its ${SLOT_NAMES[slot]}.`,
+                    message: `The ${preset.name} keeps its ${SLOT_NAMES[slot]}`,
                 });
             if (!tier.items.includes(id))
                 issues.push({
@@ -547,8 +547,8 @@ export function validateSquad(
                     slot,
                     item: id,
                     message: item.tier
-                        ? `${item.name} unlocks at ${TIERS.find((t) => t.id === item.tier)!.name}.`
-                        : `${item.name} is not offered.`,
+                        ? `${item.name} unlocks at ${TIERS.find((t) => t.id === item.tier)!.name}`
+                        : `${item.name} is not offered`,
                 });
         }
     });
@@ -557,7 +557,7 @@ export function validateSquad(
     if (limit !== null && total > limit)
         issues.push({
             kind: "over-budget",
-            message: `The squad costs ${total} credits; the budget is ${limit}.`,
+            message: `The squad costs ${total} credits; the budget is ${limit}`,
         });
     return issues;
 }

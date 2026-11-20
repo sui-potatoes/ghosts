@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Friendly matches in the shared interface language: a landing with three ways
+ * Friendly gamees in the shared interface language: a landing with three ways
  * in (host, join with a code, open games), the host's setup, the lobby (as host
  * or guest) and the list of open games. It draws what it is given: the live
  * screen (`index.tsx`) feeds it from the chain, the QA harness (`qa.tsx`) from
@@ -96,7 +96,7 @@ export type FriendlyOps = {
 };
 
 const COLUMNS = "minmax(0, 520px) minmax(0, 420px) minmax(0, 1fr)";
-const TITLES: Record<View, string> = { landing: "Friendly", host: "Host", open: "Open games" };
+const TITLES: Record<View, string> = { landing: "Friendly", host: "Host", open: "Open matches" };
 
 /** The clock, ticking once a second while `on`. */
 function useNow(on: boolean): number {
@@ -171,7 +171,7 @@ export function FriendlyView({ data, ops }: { data: FriendlyData; ops: FriendlyO
           ? { action: "back", label: "Play", run: ops.leaveScreen }
           : { action: "back", label: "Friendly", run: () => goView("landing") };
 
-    const title = lobby ? (lobby.kind === "host" ? "Your game" : "Joined") : TITLES[view];
+    const title = lobby ? (lobby.kind === "host" ? "Your match" : "Joined") : TITLES[view];
 
     return (
         <FocusRoot back={back}>
@@ -183,7 +183,7 @@ export function FriendlyView({ data, ops }: { data: FriendlyData; ops: FriendlyO
                         {copied && <StatusChip label="Clipboard" value="Copied" />}
                         {data.pending && (
                             <StatusChip
-                                label="Game"
+                                label="Match"
                                 value={DOING[data.pending.what]}
                                 state="busy"
                             />
@@ -324,10 +324,10 @@ function Landing({
                 <ListRow
                     id="host"
                     group="main"
-                    name="Host a game"
+                    name="Host a match"
                     kind="Open to anyone, or invite only"
-                    title="Host a game"
-                    hint={gate?.reason ?? "Open a game with your recruits"}
+                    title="Host a match"
+                    hint={gate?.reason ?? "Open a match with your recruits"}
                     instant
                     commands={[
                         {
@@ -353,14 +353,14 @@ function Landing({
                 <ListRow
                     id="open"
                     group="main"
-                    name="Open games"
-                    kind="Games anyone can join"
+                    name="Open matches"
+                    kind="Matches anyone can join"
                     tag={count === null ? undefined : String(count)}
                     tagTone={count ? "accent" : "dim"}
-                    title="Open games"
+                    title="Open matches"
                     hint={
                         count === null
-                            ? "Games anyone can join"
+                            ? "Matches anyone can join"
                             : count > 0
                               ? `${count} waiting for an opponent`
                               : "Nobody is waiting now"
@@ -412,7 +412,7 @@ function HostSetup({
     }, [store]);
     return (
         <>
-            <Panel label="Host a game" className="gfr-main">
+            <Panel label="Host a match" className="gfr-main">
                 <Eyebrow>Size</Eyebrow>
                 {SIZES.map((n) => {
                     const block = sizeBlock(n, presetSide);
@@ -448,7 +448,7 @@ function HostSetup({
                     title="Open to"
                     hint={
                         listed
-                            ? "Listed in Open games for anyone to join"
+                            ? "Listed in Open matches for anyone to join"
                             : "Only someone with the code or the link"
                     }
                     options={[
@@ -461,14 +461,14 @@ function HostSetup({
                 <ActionRow
                     id="host-create"
                     group="main"
-                    label={pending?.what === "host" ? DOING.host : "Open game"}
-                    title="Open game"
+                    label={pending?.what === "host" ? DOING.host : "Open match"}
+                    title="Open match"
                     hint={listed ? "Anyone can take the other side" : "You get a code to share"}
                     instant
                     commands={[
                         {
                             action: "confirm",
-                            label: "Open game",
+                            label: "Open match",
                             tone: "primary",
                             deny: gate?.reason ?? blocked ?? writeBlock(pending, busy, "host"),
                             run: open,
@@ -546,7 +546,7 @@ function LobbyPanel({
                 <ReadoutLine label="Host">{personLine(lobby.host)}</ReadoutLine>
                 <ReadoutLine label="Size">{`Up to ${lobby.size} recruits each`}</ReadoutLine>
                 <ReadoutLine label="Status" empty>
-                    {expired ? "This game has expired" : "Waiting for the host to start"}
+                    {expired ? "This match has expired" : "Waiting for the host to start"}
                 </ReadoutLine>
                 {error && (
                     <ReadoutLine label="Refused">
@@ -556,10 +556,10 @@ function LobbyPanel({
                 <ActionRow
                     id="leave"
                     group="main"
-                    label={labelOf("leave", "Leave game")}
+                    label={labelOf("leave", "Leave match")}
                     tone="danger"
-                    title="Leave game"
-                    hint="Back to the open games"
+                    title="Leave match"
+                    hint="Back to the open matches"
                     commands={[
                         {
                             action: "confirm",
@@ -579,8 +579,8 @@ function LobbyPanel({
     return (
         <>
             <Panel
-                label="Your game"
-                meta={`${sizeLabel(lobby.size)} · ${lobby.listed ? "Open game" : "Invite only"}`}
+                label="Your match"
+                meta={`${sizeLabel(lobby.size)} · ${lobby.listed ? "Open match" : "Invite only"}`}
                 className="gfr-main"
             >
                 {!lobby.listed &&
@@ -612,17 +612,17 @@ function LobbyPanel({
                         </>
                     ) : (
                         <ReadoutLine label="Code" empty>
-                            On the device that opened this game
+                            On the device that opened this match
                         </ReadoutLine>
                     ))}
-                <Eyebrow>In the game</Eyebrow>
+                <Eyebrow>In the match</Eyebrow>
                 {lobby.listed ? (
                     <ReadoutLine label="Guest" empty={!lobby.guest}>
                         {lobby.guest ? personLine(lobby.guest) : "Waiting for someone to join"}
                     </ReadoutLine>
                 ) : (
                     <ReadoutLine label="Status" empty>
-                        {expired ? "This game has expired" : "Starts when your friend joins"}
+                        {expired ? "This match has expired" : "Starts when your friend joins"}
                     </ReadoutLine>
                 )}
                 {error && (
@@ -655,7 +655,7 @@ function LobbyPanel({
                         label={labelOf("kick", "Remove guest")}
                         tone="danger"
                         title="Remove guest"
-                        hint="They cannot join this game again"
+                        hint="They cannot join this match again"
                         commands={[
                             {
                                 action: "confirm",
@@ -670,9 +670,9 @@ function LobbyPanel({
                 <ActionRow
                     id="close"
                     group="main"
-                    label={labelOf("close", "Close game")}
+                    label={labelOf("close", "Close match")}
                     tone="danger"
-                    title="Close game"
+                    title="Close match"
                     hint={lobby.listed ? "Takes it off the list" : "The code stops working"}
                     commands={[
                         {
@@ -731,7 +731,7 @@ function CodePrompt({
             glyphs={glyphs}
         >
             Thirteen characters, with or without the dashes. A pasted link works too. The match
-            starts as you join.
+            starts as you join
             <TextField
                 label="Code"
                 value={value}
@@ -782,7 +782,7 @@ function OpenGames({
     }, [store, first]);
     return (
         <Panel
-            label="Open games"
+            label="Open matches"
             meta={games === null ? undefined : String(shown.length)}
             className="gfr-main gfr-open"
         >
@@ -801,33 +801,33 @@ function OpenGames({
                 onChange={(v) => setSize(v as "any" | "3" | "4")}
             />
             {line && (
-                <ReadoutLine label="Game">
+                <ReadoutLine label="Match">
                     <span className="gfr-warn">{line}</span>
                 </ReadoutLine>
             )}
             {games === null ? (
-                <ReadoutLine label="Games" empty>
+                <ReadoutLine label="Matches" empty>
                     Reading the list
                 </ReadoutLine>
             ) : shown.length === 0 ? (
                 <EmptyState
                     id="open-empty"
                     group="main"
-                    headline="NO OPEN GAMES"
-                    action="Host a game"
+                    headline="NO OPEN MATCHES"
+                    action="Host a match"
                     commands={[
                         {
                             action: "confirm",
-                            label: "Host a game",
+                            label: "Host a match",
                             deny: gate?.reason,
                             run: host,
                         },
                     ]}
                 >
-                    Nobody is waiting right now. Host one and others can join it.
+                    Nobody is waiting right now. Host one and others can join it
                 </EmptyState>
             ) : (
-                <List label="Open games">
+                <List label="Open matches">
                     {shown.map((game) => (
                         <OpenRow
                             key={game.hostId}

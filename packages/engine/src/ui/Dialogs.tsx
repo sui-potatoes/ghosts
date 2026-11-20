@@ -8,6 +8,7 @@ import { revealEncounter } from "../aftermath/reveal";
 import { weaponName } from "../game";
 import type { Panel } from "../session";
 import { pad2 } from "../html";
+import { lookSetting } from "../scene-look";
 import { Glyph } from "./Hud";
 import { useSession } from "./useSession";
 
@@ -134,7 +135,7 @@ function FieldBriefing({ deploy }: { deploy: boolean }) {
       <h2 className="hud-prompt-title" id="briefing-title">
         {b.title}
       </h2>
-      <p className="hud-prompt-body">{b.setting}</p>
+      <p className="hud-prompt-body">{lookSetting(b.setting, b.scene, s.battlefield?.look ?? null)}</p>
       <dl className="hud-prompt-lines">
         {b.facts.map(([label, value]) => (
           <div key={label}>

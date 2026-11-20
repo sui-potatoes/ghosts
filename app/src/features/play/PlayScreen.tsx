@@ -30,6 +30,7 @@ import {
 import { ModeArt } from "./icons";
 import { modeCards, rankedFacts, type Busy, type ModeCard, type PlayMode } from "./model";
 import type { Standing } from "./rating";
+import { requestSignIn } from "../../signIn";
 import { useStanding } from "./useStanding";
 import "./play.css";
 
@@ -70,7 +71,7 @@ function useBusy(): Busy {
 export default function PlayScreen() {
     const leave = useGoUp();
     const glyphs = useGlyphSet();
-    const { standing } = useStanding();
+    const { standing, signedIn } = useStanding();
     const { name } = usePlayerName();
     const busy = useBusy();
     const back: Command = { action: "back", label: "Menu", run: leave };
@@ -91,7 +92,7 @@ export default function PlayScreen() {
                 columns="minmax(0, 1fr)"
                 commands={<FocusCommandBar glyphs={glyphs} />}
             >
-                <Cards standing={standing} busy={busy} />
+                <Cards standing={standing} busy={busy} signedIn={signedIn} />
             </ScreenFrame>
         </FocusRoot>
     );
@@ -107,7 +108,15 @@ function startCard(busy: Busy): string {
     return "play-ranked";
 }
 
-function Cards({ standing, busy }: { standing: Standing; busy: Busy }) {
+function Cards({
+    standing,
+    busy,
+    signedIn,
+}: {
+    standing: Standing;
+    busy: Busy;
+    signedIn: boolean;
+}) {
     const store = useFocusStore();
     useLayoutEffect(() => {
         store.focus(startCard(busy), false);
@@ -116,7 +125,7 @@ function Cards({ standing, busy }: { standing: Standing; busy: Busy }) {
     return (
         <div className="gui-play">
             <div className="gui-play-cards" role="list">
-                {modeCards(busy).map((card) => (
+                {modeCards(busy, signedIn).map((card) => (
                     <Card key={card.id} card={card} standing={standing} />
                 ))}
             </div>
@@ -138,7 +147,7 @@ function Card({ card, standing }: { card: ModeCard; standing: Standing }) {
                 label: card.verb,
                 tone: card.locked ? undefined : "primary",
                 deny: card.locked,
-                run: () => card.route && navigate(card.route),
+                run: () => (card.signIn ? requestSignIn() : card.route && navigate(card.route)),
             },
         ],
         instant: !card.locked,
@@ -173,7 +182,7 @@ function Card({ card, standing }: { card: ModeCard; standing: Standing }) {
             {facts && (
                 <span className="gui-play-facts">
                     <span className="gui-play-fact">
-                        <span className="gui-play-fact-label">Tier</span>
+                        <span className="gui-play-fact-label">Rank</span>
                         <span className="gui-play-fact-value">{facts.tier}</span>
                     </span>
                     <span className="gui-play-fact">
@@ -188,7 +197,7 @@ function Card({ card, standing }: { card: ModeCard; standing: Standing }) {
                     ))}
                     {facts.placementLeft > 0 && (
                         <span className="gui-play-fact">
-                            <span className="gui-play-fact-label">Placement games left</span>
+                            <span className="gui-play-fact-label">Placement matches left</span>
                             <span className="gui-play-fact-value">{facts.placementLeft}</span>
                         </span>
                     )}

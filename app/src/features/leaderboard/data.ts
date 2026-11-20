@@ -75,7 +75,7 @@ export function useTierBands(): {
         bands: data
             ? {
                   tiers: data.tiers.map((t, i) => ({
-                      name: TIERS[i]?.name ?? `Tier ${i + 1}`,
+                      name: TIERS[i]?.name ?? `Rank ${i + 1}`,
                       min: Number(t.minRating),
                   })),
                   placement: { games: data.placementGames, tier: data.placementTier },

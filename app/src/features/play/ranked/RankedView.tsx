@@ -13,10 +13,12 @@ import { useEffect, useLayoutEffect, useState } from "react";
 
 import {
     ActionRow,
+    EmptyState,
     FocusCommandBar,
     FocusRoot,
     FocusScope,
     ListRow,
+    Panel,
     ScreenFrame,
     StatusChip,
     useFocusable,
@@ -216,6 +218,42 @@ export function RankedView({
         />
     );
 
+    // Signed out there is nothing to build for: the screen opens on the way in.
+    if (!state.signedIn)
+        return (
+            <FocusRoot back={back}>
+                <ScreenFrame
+                    location={["Play", "Ranked"]}
+                    onLocation={ops.leave}
+                    status={<StatusChip label="Match" value="Sign in" />}
+                    columns="minmax(0, 480px)"
+                    commands={<FocusCommandBar glyphs={glyphs} />}
+                >
+                    <Panel label="Ranked match">
+                        <EmptyState
+                            id="sign-in"
+                            group="start"
+                            title="Sign in"
+                            hint="Sign in to play"
+                            headline="Sign in"
+                            action="Sign in"
+                            instant
+                            commands={[
+                                {
+                                    action: "confirm",
+                                    label: "Sign in",
+                                    tone: "primary",
+                                    run: ops.signIn,
+                                },
+                            ]}
+                        >
+                            A ranked match needs a player on file
+                        </EmptyState>
+                    </Panel>
+                </ScreenFrame>
+            </FocusRoot>
+        );
+
     const searchingChip =
         full.phase === "searching" && full.sinceMs !== null
             ? clock(now - full.sinceMs)
@@ -234,7 +272,7 @@ export function RankedView({
                             <StatusChip label="Match" value={searchingChip} state="live" />
                         )}
                         <StatusChip label="Rating" value={String(standing.rating)} />
-                        <StatusChip label="Tier" value={tier.name} />
+                        <StatusChip label="Rank" value={tier.name} />
                         {standing.placementLeft > 0 && state.signedIn && (
                             <StatusChip
                                 label="Placement"

@@ -145,7 +145,7 @@ function LayoutPrompt() {
             onConfirm={() => choose("controller")}
             onClose={() => choose("desktop")}
         >
-            Switch to the controller layout? You can change this later in Settings → Controller.
+            Switch to the controller layout? You can change this later in Settings → Controller
         </ConfirmDialog>
     );
 }

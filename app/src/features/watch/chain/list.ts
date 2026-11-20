@@ -59,7 +59,7 @@ export const roundOf = (game: Pick<ChainGame, "turn">) => Math.floor(game.turn /
 const two = (n: number) => String(n).padStart(2, "0");
 
 /** A tier's name by its index in the rules; a tier this build does not know by its number. */
-export const tierName = (tier: number) => TIERS[tier]?.name ?? `Tier ${tier + 1}`;
+export const tierName = (tier: number) => TIERS[tier]?.name ?? `Rank ${tier + 1}`;
 
 /**
  * A game's mode in words: "Ranked 3x3 · Contractor" (squad size a side, and the tier

@@ -6,6 +6,7 @@ import { localDriver, type DriverFactory, type EncounterDriver } from "./driver"
 import { Encounter, type Cell, type Unit } from "./game";
 import type { ObserverView } from "./observer";
 import type { Scenario } from "./scenario";
+import { gameLook, type SceneLook } from "./scene-look";
 import type { Battlefield } from "./scene/battlefield";
 
 /** What the field's clicks do: move, aim a shot, or aim one of the throws (the mode is the throw's order). */
@@ -64,9 +65,13 @@ export class Session {
   version = 0;
   private readonly listeners = new Set<() => void>();
 
+  /** The game's look, fixed for this game (a restart draws a fresh one); null: the map's own. */
+  look: SceneLook | null;
+
   constructor(scenario?: Scenario, makeDriver: DriverFactory = localDriver, observer: ObserverView | null = null) {
     this.observer = observer;
     this.game = new Encounter(scenario);
+    this.look = gameLook(this.game.scenario);
     this.makeDriver = makeDriver;
     this.driver = makeDriver(this.game);
     this.target = this.game.enemies[0]?.id ?? "";

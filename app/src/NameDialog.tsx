@@ -72,7 +72,7 @@ export function NameDialog({ open, onClose }: Props) {
                         </h2>
                         <p className="text-[13px] text-secondary">
                             What other players see. Lowercase letters, digits and hyphens: a SuiNS
-                            name, registered to your address when you save.
+                            name, registered to your address when you save
                         </p>
                     </div>
                     <button

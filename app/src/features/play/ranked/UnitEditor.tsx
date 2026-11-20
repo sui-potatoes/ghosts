@@ -156,7 +156,7 @@ export function UnitEditor({
                                 <p className="grk-warn-note">
                                     <i className="gui-warn-mark" aria-hidden />
                                     Choosing a type replaces this unit&apos;s equipment with that
-                                    type&apos;s kit.
+                                    type&apos;s kit
                                 </p>
                             )}
                             <Eyebrow>Built in</Eyebrow>
@@ -172,7 +172,7 @@ export function UnitEditor({
                             <Eyebrow meta={`${own.length} / ${8}`}>Yours</Eyebrow>
                             {own.length === 0 && (
                                 <p className="grk-quiet">
-                                    Change a unit&apos;s equipment, then save it as your own type.
+                                    Change a unit&apos;s equipment, then save it as your own type
                                 </p>
                             )}
                             {own.map((o) => (
@@ -392,7 +392,7 @@ function Detail({
         ? (option.locked ?? (option.description || option.role || gearText(option.unit)))
         : unit
           ? gearText(unit)
-          : `Unit ${unitNumber(index)} has no type. Choose one to give it a kit.`;
+          : `Unit ${unitNumber(index)} has no type. Choose one to give it a kit`;
     return (
         <aside className="grk-detail" aria-live="polite">
             <span className="grk-detail-eyebrow">{option ? "If chosen" : "Now"}</span>

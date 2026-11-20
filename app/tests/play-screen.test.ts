@@ -23,11 +23,11 @@ test("the cards in order: ranked, friendly, contract, demo, faction wars, specta
         ["ranked", "friendly", "contract", "demo", "factions", "watch"],
     );
     assert.equal(cardOf("watch").name, "Spectate");
-    assert.deepEqual(cardOf("watch").lines, ["Live matches and replays."]);
+    assert.deepEqual(cardOf("watch").lines, ["Live matches and replays"]);
     assert.equal(cardOf("contract").name, CONTRACT_NAME);
     assert.deepEqual(cardOf("contract").lines, [
-        "Your own recruits. They earn experience and can be lost.",
-        "Rating does not change.",
+        "Your own recruits. They earn experience and can be lost",
+        "Rating does not change",
     ]);
     for (const card of modeCards()) {
         assert.ok(card.name && card.verb && card.hint && card.tag);
@@ -39,7 +39,7 @@ test("ranked, friendly, contract and demo open their screens", () => {
     assert.equal(routeOf("ranked"), "/play/ranked");
     assert.equal(routeOf("friendly"), "/play/friendly");
     assert.equal(routeOf("contract"), "/play/contract");
-    assert.equal(routeOf("demo"), "/play/demo");
+    assert.equal(routeOf("demo"), "/play/training");
     assert.deepEqual(
         DEMO_SCENARIOS.map((d) => [d.name, d.route]),
         [
@@ -70,7 +70,7 @@ test("no card names the chain or a key", () => {
         );
 });
 
-test("a search, a lobby or a match leads its own card back and holds the others", () => {
+test("a search, a lobby or a game leads its own card back and holds the others", () => {
     const ranked = modeCards({ kind: "searching", mode: "ranked" });
     const by = (cards: ReturnType<typeof modeCards>, id: string) => cards.find((c) => c.id === id)!;
     assert.equal(by(ranked, "ranked").tag, "Searching");
@@ -81,7 +81,7 @@ test("a search, a lobby or a match leads its own card back and holds the others"
     assert.equal(by(contract, "ranked").locked, "Cancel your contract search first");
     const lobby = modeCards({ kind: "lobby" });
     assert.equal(by(lobby, "friendly").tag, "In lobby");
-    assert.equal(by(lobby, "ranked").locked, "Leave your friendly game first");
+    assert.equal(by(lobby, "ranked").locked, "Leave your friendly match first");
     const playing = modeCards({ kind: "playing", mode: "ranked" });
     assert.equal(by(playing, "ranked").route, "/match");
     assert.equal(by(playing, "ranked").verb, "Resume");
@@ -143,11 +143,11 @@ test("the ranked facts are the player's standing, the sizes without a level left
 
 test("Back from a mode screen goes up to Play; Play's parent is the menu", () => {
     assert.equal(parentOf("/play"), "/");
-    for (const p of ["/play/ranked", "/play/friendly", "/play/contract", "/play/demo"])
+    for (const p of ["/play/ranked", "/play/friendly", "/play/contract", "/play/training"])
         assert.equal(parentOf(p), "/play");
     // A demo operation goes back to the demo's list.
-    assert.equal(parentOf("/demo"), "/play/demo");
-    assert.equal(parentOf("/demo-2"), "/play/demo");
+    assert.equal(parentOf("/demo"), "/play/training");
+    assert.equal(parentOf("/demo-2"), "/play/training");
 });
 
 test("the numbers on the Play screen carry their unit or label", () => {
@@ -165,4 +165,23 @@ test("the numbers on the Play screen carry their unit or label", () => {
     );
     assert.match(panels, /r\.budgets\["3x3"\]\} cr/);
     assert.match(panels, /r\.budgets\["4x4"\]\} cr/);
+});
+
+test("signed out, the modes that need an account lead to sign in; the rest stay open", () => {
+    const cards = modeCards(null, false);
+    const by = (id: string) => cards.find((c) => c.id === id)!;
+    for (const id of ["ranked", "friendly", "contract"]) {
+        assert.equal(by(id).tag, "Sign in", id);
+        assert.equal(by(id).verb, "Sign in", id);
+        assert.equal(by(id).hint, "Sign in to play", id);
+        assert.equal(by(id).signIn, true, id);
+        assert.equal(by(id).locked, undefined, id);
+    }
+    for (const id of ["demo", "watch"]) {
+        assert.equal(by(id).tag, "Open", id);
+        assert.equal(by(id).signIn, undefined, id);
+    }
+    assert.equal(by("factions").tag, "Soon");
+    // Signed in, with or without an account on file, they are open.
+    for (const card of modeCards(null, true)) assert.equal(card.signIn, undefined);
 });
