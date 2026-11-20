@@ -28,7 +28,8 @@ use sui::bcs::BCS;
 /// An unknown kind, or turns out of `1..=MAX_TURNS`.
 const EInvalidEffect: u64 = 0;
 
-/// Dazed: the unit's aim is 0. From the flashbang.
+/// Dazed: the unit's aim and dodge are 0, it can neither shoot straight nor
+/// dodge. From the flashbang.
 const DAZE: u8 = 0;
 /// In smoke: the unit's defense is up by `SMOKE_DEFENSE`, its aim down by
 /// `SMOKE_AIM_PENALTY`. From the smoke grenade.
@@ -51,10 +52,11 @@ const MAX_TURNS: u8 = 15;
 const TURNS_MASK: u8 = 0x0F;
 /// The sign bit of a `Stats` modifier value: `SIGN + n` is `-n`.
 const SIGN: u8 = 0x80;
-/// The largest modifier value, as `-AIM_ALL` takes any aim to 0.
-const AIM_ALL: u8 = 0x7F;
-/// The `Stats` modifier of a daze: `-AIM_ALL` aim (offset 1).
-const DAZE_MODIFIER: u128 = ((SIGN + AIM_ALL) as u128) << (1 * 8);
+/// The largest modifier value, as `-ALL` takes any stat to 0.
+const ALL: u8 = 0x7F;
+/// The `Stats` modifier of a daze: `-ALL` aim (offset 1), `-ALL` dodge
+/// (offset 4).
+const DAZE_MODIFIER: u128 = ((SIGN + ALL) as u128) << (1 * 8) | ((SIGN + ALL) as u128) << (4 * 8);
 /// The `Stats` modifier of smoke: `-SMOKE_AIM_PENALTY` aim (offset 1),
 /// `+SMOKE_DEFENSE` defense (offset 5).
 const SMOKE_MODIFIER: u128 =
@@ -93,8 +95,8 @@ public fun is_daze(e: &Effect): bool { e.kind() == DAZE }
 public fun is_smoke(e: &Effect): bool { e.kind() == SMOKE }
 
 /// The `Stats` modifier the effect adds to the unit it is on, see `stats::add`.
-/// A daze takes all the aim, which no smoke can give back: the aim of a unit
-/// that has both is 0.
+/// A daze takes all the aim and all the dodge, which no smoke can give back:
+/// the aim and the dodge of a unit that has both are 0.
 public fun modifier(e: &Effect): Stats {
     stats::new_unchecked(match (e.0 >> 4) {
         DAZE => DAZE_MODIFIER,

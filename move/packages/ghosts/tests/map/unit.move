@@ -210,6 +210,32 @@ fun effective_stats_follow_effects() {
 }
 
 #[test]
+/// A unit with dodge 40, dazed and in smoke: aim 0, dodge 0, defense +30, in
+/// either order; the dodge is back once the daze runs out, the smoke with it.
+fun daze_takes_the_dodge() {
+    let mut unit = new(@1.to_id(), @2.to_id(), stats::new(7, 65, 10, 0, 40), vector[]);
+    unit.apply_effect(effect::daze());
+    unit.apply_effect(effect::smoke());
+    let stats = unit.effective_stats();
+    assert_eq!(stats.aim(), 0);
+    assert_eq!(stats.dodge(), 0);
+    assert_eq!(stats.defense(), 30);
+    assert_eq!(stats.mobility(), 7);
+    assert_eq!(unit.stats.dodge(), 40);
+
+    let mut other = new(@1.to_id(), @2.to_id(), stats::new(7, 65, 10, 0, 40), vector[]);
+    other.apply_effect(effect::smoke());
+    other.apply_effect(effect::daze());
+    assert_eq!(other.effective_stats(), stats);
+
+    unit.tick_effects();
+    unit.tick_effects();
+    assert_eq!(unit.effective_stats().dodge(), 40);
+    unit.destroy();
+    other.destroy();
+}
+
+#[test]
 /// The hit chance before, during and after effects on the shooter, from aim 65
 /// at range 4 with the range-4 weapon: 65 clean, 35 in smoke, 0 dazed, 0 with
 /// both, and the distance bonus still on top of aim 0 at range 2: 10.

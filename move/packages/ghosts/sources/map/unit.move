@@ -234,6 +234,9 @@ public fun perform_attack(
 #[allow(lint(public_random))]
 /// Apply damage to unit, can be dodged (shot) or not (explosive).
 ///
+/// The armor and dodge are the unit's `effective_stats`: a dazed unit does not
+/// dodge.
+///
 /// Returns: (is_dodged, damage applied, is_kia),
 public fun apply_damage(
     unit: &mut Unit,

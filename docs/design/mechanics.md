@@ -273,7 +273,7 @@ dodge draw is made (always); dodged = can_dodge && draw < dodge_stat      // dod
 hp  = max(hp - dmg, 0); kia = (hp == 0)
 ```
 
-Armor is applied before the dodge roll and does not interact with it. When `d == 0` (only with a damage stat of 0 and no bonuses), `apply_damage` is skipped in single-target mode (`map.move:258-260`): no dodge draw, record `Damage(0)`.
+`armor` and `dodge_stat` are the target's effective stats (a dazed target's dodge is 0). Armor is applied before the dodge roll and does not interact with it. When `d == 0` (only with a damage stat of 0 and no bonuses), `apply_damage` is skipped in single-target mode (`map.move:258-260`): no dodge draw, record `Damage(0)`.
 
 Single target, after a hit (`map.move:257-273`): the target unit is extracted from its tile; the record is `Dodged` if dodged, else `CriticalHit(dmg)` if the crit roll succeeded, else `Damage(dmg)` (`dmg` after armor); if killed, `UnitKIA(recruit, x1, y1)` follows and the unit goes to `map.fallen`, otherwise it is put back. A kill therefore empties the tile at once; the recruit dies at the next turn change (below).
 
@@ -323,10 +323,10 @@ Effects (`S/map/effect.move`): an `Effect` is one byte, `kind << 4 | turns`. `Un
 
 | Kind | Tag | Turns | Modifier (added with `stats::add`, floored at 0, capped at 127) |
 | --- | --- | --- | --- |
-| Daze | 0 | 2 | aim -127: effective aim 0 |
+| Daze | 0 | 2 | aim -127, dodge -127: effective aim 0, dodge 0 |
 | Smoke | 1 | 2 | aim -30, defense +30 |
 
-- Effective stats: base, then each effect's modifier in list order. Daze takes all aim, so a unit with both has aim 0 either way.
+- Effective stats: base, then each effect's modifier in list order. Daze takes all aim and all dodge, so a unit with both has aim 0, dodge 0 and defense +30 either way. A dazed target never dodges: its dodge draw is still made, against 0.
 - Refresh: an effect of a kind the unit has sets its turns to the larger of the two; no stacking.
 - `turns` counts `next_turn` calls. In `next_turn`, after `NextTurn`, `Map.next_turn` walks `Map.units` once: each unit (either side) loses one turn on every effect and those at 0 are removed (`EffectEnd` each), and the units of the side starting its turn get AP back. Thrown on A's turn with 2 turns, an effect lasts the rest of A's turn and B's turn, and ends when B ends his.
 - A unit that falls takes its effects into `fallen`; nothing ticks them and no `EffectEnd` is written: its `UnitKIA` ends them.

@@ -235,11 +235,13 @@ public struct GameStarted has copy, drop {
     listed: bool,
 }
 
-/// A game was wrapped up and deleted, and how it ended: the only place the
-/// ending is kept once the `Game` is gone.
+/// A game was wrapped up and deleted, how it ended, and when: `ended_ms` is the
+/// time it was wrapped up. The only place the ending is kept once the `Game` is
+/// gone.
 public struct GameEnded has copy, drop {
     game: ID,
     ending: Ending,
+    ended_ms: u64,
 }
 
 /// Where a game stands. It only moves forward: `Deploying`, `Playing`, `Over`.
@@ -842,7 +844,7 @@ public fun complete_game(
     if (!friendly && game.misbehaved(0)) first.suspend(now + SUSPENSION_MS);
     if (!friendly && game.misbehaved(1)) second.suspend(now + SUSPENSION_MS);
 
-    event::emit(GameEnded { game: id, ending });
+    event::emit(GameEnded { game: id, ending, ended_ms: now });
     let Game { id, map, recruits, .. } = game;
     map.destroy();
     recruits.destroy_empty();

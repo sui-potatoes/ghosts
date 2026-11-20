@@ -58,33 +58,46 @@ function encode({ map }: Scenario) {
     if (rows >= 128 || cols >= 128) throw new Error("Vector lengths past 127 need ULEB128");
 
     const bytes = [...new Array(32).fill(0), rows];
+    // the `TileType` tag of each tile, `kinds[row][col]`
+    const kinds: number[][] = [];
     for (let z = minZ; z <= maxZ; z++) {
         bytes.push(cols);
+        const row: number[] = [];
         for (let x = minX; x <= maxX; x++) {
-            // `TileType` by declaration order, then an empty `Option<Unit>`
-            if (tactical.isCover([x, z])) bytes.push(1, 1, 1, 1, 1, 0);
-            else if (tactical.open([x, z])) bytes.push(0, 0);
-            else if (inBuilding(plan, [x, z])) bytes.push(3, 0);
-            else bytes.push(2, 0);
+            // `TileType` by declaration order, a low cover on every side of a
+            // `Cover`, then an empty `Option<Unit>`
+            const kind = tactical.isCover([x, z])
+                ? 1
+                : tactical.open([x, z])
+                  ? 0
+                  : inBuilding(plan, [x, z])
+                    ? 3
+                    : 2;
+            bytes.push(kind, ...(kind === 1 ? [1, 1, 1, 1] : []), 0);
+            row.push(kind);
         }
+        kinds.push(row);
     }
     bytes.push(...u16(rows), ...u16(cols));
     // `Map.fallen`: nobody has fallen on a preset
     bytes.push(0);
-    return { bytes, tactical, rows, cols };
+    return { bytes, kinds, rows, cols };
 }
 
 const functions = MAPS.map(({ fn, doc, scenario, spawns }) => {
-    const { bytes, tactical, rows, cols } = encode(scenario);
+    const { bytes, kinds, rows, cols } = encode(scenario);
     const { minX, minZ } = scenario.map.bounds;
 
     if (new Set(spawns.map(String)).size !== spawns.length)
         throw new Error(`${fn}: repeated spawn`);
-    for (const cell of spawns)
-        if (!tactical.open(cell)) throw new Error(`${fn}: spawn [${cell}] is not open`);
-
     // A cell is `[x, z]` in the scene and `[row, col]` on chain.
-    const positions = spawns.map(([x, z]) => `vector[${z - minZ}, ${x - minX}]`).join(", ");
+    const tiles = spawns.map(([x, z]) => [z - minZ, x - minX]);
+    // a spawn is `Empty` as baked: not a cover, a wall or an unwalkable tile
+    for (const [i, [row, col]] of tiles.entries())
+        if (kinds[row]?.[col] !== 0)
+            throw new Error(`${fn}: spawn [${spawns[i]}] is not empty ground on chain`);
+
+    const positions = tiles.map(([row, col]) => `vector[${row}, ${col}]`).join(", ");
     console.log(`${fn}: ${rows}x${cols}, ${bytes.length} bytes, ${spawns.length / 2} a side`);
 
     return `/// ${doc}

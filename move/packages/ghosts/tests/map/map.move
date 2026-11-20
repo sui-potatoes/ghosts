@@ -1096,6 +1096,56 @@ fun dazed_shooter_misses() {
     assert_eq!(dazed, 0);
 }
 
+/// A recruit of `owner` that dodges every dodgeable hit: dodge 100.
+fun dodger_of(owner: address, ctx: &mut TxContext): ghosts::recruit::Recruit {
+    let mut recruit = recruit_of(owner, ctx);
+    let armor = ghosts::stats::new(0, 0, 0, 0, 100);
+    recruit.add_armor(ghosts::armor::new(b"Dodger".to_string(), armor, ctx));
+    recruit
+}
+
+#[test]
+/// A dazed target has no dodge: one who dodges every shot is hit while dazed,
+/// and dodges again once the daze has run out. The daze takes the dodge out of
+/// the outcomes, it adds none: a hit still costs no less than a dodge.
+fun dazed_target_cannot_dodge() {
+    use std::unit_test::{assert_eq, destroy};
+
+    let ctx = &mut tx_context::dummy();
+    let mut rng = sui::random::new_generator_from_seed_for_testing(b"daze");
+    let mut map = new(@0.to_id(), 4);
+    let mut shooter = recruit_of(ALICE, ctx);
+    let weapon = ghosts::stats_builder::new().aim(35).damage(1).spread(0).build_weapon();
+    shooter.add_weapon(ghosts::weapon::new(b"Test".to_string(), weapon, ctx));
+    let target = dodger_of(BOB, ctx);
+    map.place_recruit(&shooter, 0, 0);
+    map.place_recruit(&target, 0, 2);
+
+    let dodged = map.perform_attack(&mut rng, 0, 0, 0, 2);
+    assert_eq!(dodged[1], history::new_dodged());
+
+    // dazed: dodge 0, every shot lands
+    map.apply_effect_for_testing(0, 2, effect::daze());
+    assert_eq!(map.unit(0, 2).borrow().effective_stats().dodge(), 0);
+    map.reset_ap(ALICE.to_id());
+    let hit = map.perform_attack(&mut rng, 0, 0, 0, 2);
+    assert_eq!(hit[1], history::new_damage(1));
+    assert_eq!(map.unit(0, 2).borrow().hp(), 9);
+    assert!(bcs::to_bytes(&dodged).length() <= bcs::to_bytes(&hit).length());
+
+    // the daze runs out as Bob ends his turn: the dodge is back
+    map.next_turn(BOB.to_id());
+    map.next_turn(ALICE.to_id());
+    assert_eq!(map.effects_at(0, 2), vector[]);
+    assert_eq!(map.unit(0, 2).borrow().effective_stats().dodge(), 100);
+    let history = map.perform_attack(&mut rng, 0, 0, 0, 2);
+    assert_eq!(history[1], history::new_dodged());
+    assert_eq!(map.unit(0, 2).borrow().hp(), 9);
+
+    destroy(vector[shooter, target]);
+    map.destroy();
+}
+
 #[test, expected_failure(abort_code = EPathTooShort)]
 fun flashbang_out_of_range_fails() {
     let ctx = &mut tx_context::dummy();
@@ -1256,4 +1306,116 @@ fun map_bcs_with_effects() {
 public fun apply_effect_for_testing(map: &mut Map, x: u16, y: u16, effect: Effect): Record {
     let effect = map.grid[x, y].unit.borrow_mut().apply_effect(effect);
     history::new_effect_start(x, y, effect)
+}
+
+// === Black Rain ===
+
+/// The low covers of Black Rain, `(x, y)` each: the scene's cover props, the
+/// scene cell `[cx, cz]` at `(cz + 7, cx + 9)`.
+const BLACK_RAIN_COVERS: vector<vector<u16>> = vector[
+    vector[2, 12],
+    vector[3, 9],
+    vector[4, 5],
+    vector[6, 13],
+    vector[6, 14],
+    vector[9, 6],
+    vector[9, 7],
+    vector[9, 11],
+    vector[9, 12],
+    vector[11, 3],
+];
+
+#[test]
+/// Black Rain as the scene has it: 14 rows (the scene's z) by 18 columns (its
+/// x); the four shops are walls, every cover is low on all four sides, the rest
+/// is street. Every spawn is empty ground, and no unit stands within a rifle's
+/// reach of the other side as it deploys: the closest are 8 tiles apart.
+fun black_rain_tiles() {
+    use std::unit_test::assert_eq;
+
+    let map = black_rain(@1.to_id());
+    let (rows, cols) = map.size();
+    assert_eq!(vector[rows, cols], vector[14, 18]);
+    let low = cover(LOW_COVER, LOW_COVER, LOW_COVER, LOW_COVER);
+    let (mut walls, mut covers) = (0u64, vector[]);
+    14u16.do!(
+        |x| 18u16.do!(
+            |y| match (map.grid[x, y].tile_type) {
+                TileType::Wall => walls = walls + 1,
+                TileType::Cover { .. } => {
+                    assert_eq!(map.grid[x, y].tile_type, low);
+                    covers.push_back(vector[x, y]);
+                },
+                TileType::Empty => (),
+                TileType::Unwalkable => abort,
+            },
+        ),
+    );
+    assert_eq!(covers, BLACK_RAIN_COVERS);
+    assert_eq!(walls, 64);
+
+    // a shop's corner, a cover prop, the crossing in the middle of the street
+    assert!(map.is_tile_wall(0, 0) && map.is_tile_wall(11, 13) && map.is_tile_wall(12, 2));
+    assert!(map.is_tile_cover(9, 6) && map.is_tile_cover(3, 9));
+    assert_eq!(map.grid[7, 9].tile_type, TileType::Empty);
+
+    let positions = black_rain_positions();
+    assert_eq!(
+        positions,
+        vector[
+            vector[11, 6],
+            vector[12, 8],
+            vector[11, 10],
+            vector[4, 11],
+            vector[5, 14],
+            vector[3, 6],
+        ],
+    );
+    positions.do_ref!(|p| {
+        assert_eq!(map.grid[p[0] as u16, p[1] as u16].tile_type, TileType::Empty);
+        assert!(map.grid[p[0] as u16, p[1] as u16].unit.is_none());
+    });
+    let mut closest = 0xFFFFu16;
+    3u64.do!(|i| 3u64.do!(|j| {
+        let (a, b) = (positions[i], positions[3 + j]);
+        let d = grid::manhattan_distance!(a[0] as u16, a[1] as u16, b[0] as u16, b[1] as u16);
+        closest = closest.min(d);
+    }));
+    assert_eq!(closest, 8);
+    map.destroy();
+}
+
+#[test]
+/// A frag on Black Rain turns every cover in its blast into street, and only
+/// those: the unit behind one loses its 25, and the tile walks like any other.
+/// Walls stay.
+fun black_rain_frag_clears_cover() {
+    use grid::direction::{down, right};
+    use std::unit_test::{assert_eq, destroy};
+
+    let ctx = &mut tx_context::dummy();
+    let mut rng = sui::random::new_generator_from_seed_for_testing(vector[1]);
+    let mut map = black_rain(@1.to_id());
+    let mut thrower = recruit_of(ALICE, ctx);
+    thrower.add_utility(ghosts::items::frag_grenade(ctx));
+    let target = recruit_of(BOB, ctx);
+    map.place_recruit(&thrower, 8, 3);
+    map.place_recruit(&target, 8, 6);
+
+    // behind the cover at (9, 6) from a shot up the column
+    assert_eq!(map.cover_bonus(12, 6, 8, 6), DEFENSE_BONUS);
+    map.perform_grenade(&mut rng, 8, 3, 9, 7);
+
+    BLACK_RAIN_COVERS.do!(|p| {
+        let reached = grid::manhattan_distance!(p[0], p[1], 9, 7) <= GRENADE_RADIUS;
+        assert_eq!(map.is_tile_cover(p[0], p[1]), !reached);
+    });
+    assert_eq!(map.grid[9, 6].tile_type, TileType::Empty);
+    assert_eq!(map.grid[9, 7].tile_type, TileType::Empty);
+    assert_eq!(map.cover_bonus(12, 6, 8, 6), 0);
+    assert!(map.is_tile_wall(9, 2));
+    assert!(map.check_path(vector[8, 6, down!(), right!()]).is_some());
+
+    destroy(vector[thrower, target]);
+    map.destroy();
 }

@@ -3892,6 +3892,7 @@ fun test_ranked_no_show() {
     let ended = event::events_by_type<GameEnded>();
     assert_eq!(ended.length(), 1);
     assert_eq!(ended[0].ending, Ending::NoShow(object::id(&f.alice)));
+    assert_eq!(ended[0].ended_ms, limit + 1);
 
     assert!(f.alice.is_idle() && f.bob.is_idle());
     assert_eq!(f.alice.suspended_until(), limit + 1 + SUSPENSION_MS);
@@ -4561,13 +4562,18 @@ fun started(game: &Game, mode: Mode, listed: bool): GameStarted {
     GameStarted { game: object::id(game), players: game.players, mode, listed }
 }
 
-/// Wrap the game up, and check it was told once, ending as `ending`.
+/// Wrap the game up, and check it was told once, ending as `ending`, at the time
+/// on the clock.
 fun complete_announced(f: &mut Fixture, game: Game, ending: Ending) {
     use std::unit_test::assert_eq;
 
     let id = object::id(&game);
     f.complete(game);
-    assert_eq!(event::events_by_type<GameEnded>(), vector[GameEnded { game: id, ending }]);
+    let ended_ms = f.clock.timestamp_ms();
+    assert_eq!(
+        event::events_by_type<GameEnded>(),
+        vector[GameEnded { game: id, ending, ended_ms }],
+    );
     assert_eq!(event::events_by_type<GameStarted>().length(), 0);
 }
 
