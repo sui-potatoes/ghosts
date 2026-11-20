@@ -1,0 +1,205 @@
+// The printer behind `fixtures.ts`: Move test code, kept as text, not part of the package.
+//
+// To regenerate: copy `move/` to a scratch directory, append the code below (without these
+// comment lines) to `packages/ghosts/tests/ghosts.move`, which it extends (a module takes one
+// `extend` per mode, and the code uses that file's `setup_*`, `deploy` and `end_turn` helpers),
+// then run in `packages/ghosts`:
+//
+//     sui move test print_ -s 2>&1 | grep -o 'FIX [A-Za-z0-9]* [0-9a-f]*'
+//
+// Each line is `FIX <name> <hex>`: the name is the key in `fixtures.ts`. `gameScript0` to
+// `gameScript10` are the game after each step of the scripted match `parity.test.ts` plays in the
+// sandbox. Nothing is added to the repo.
+
+use ghosts::effect;
+use grid::direction::{up, left};
+use std::{bcs::to_bytes, debug};
+use sui::hex;
+
+fun fix(name: vector<u8>, bytes: vector<u8>) {
+    let mut line = b"FIX ".to_string();
+    line.append(name.to_string());
+    line.append(b" ".to_string());
+    line.append(hex::encode(bytes).to_string());
+    debug::print(&line);
+}
+
+/// A recruit with a Standard Rifle, no armor, carrying the utility of `kind`
+/// (none for 255), in the `Account` of the sender.
+fun hire_kind(acc: &mut Account, kind: u8, ctx: &mut TxContext): ID {
+    let mut recruit = recruit_module::new("Jane Doe", ctx);
+    recruit.add_weapon(items::rifle(1, ctx));
+    if (kind != 255) recruit.add_utility(items::utility(kind, ctx));
+    let id = object::id(&recruit);
+    acc.add_recruit(recruit);
+    id
+}
+
+#[test]
+fun print_records() {
+    let id = object::id_from_address(@0xabc);
+    let records = vector[
+        history::new_reload(5, 4),
+        history::new_next_turn(7),
+        history::new_move(vector[6, 5, 1, 8]),
+        history::new_attack(vector[5, 4], vector[0, 3]),
+        history::new_recruit_placed(11, 6),
+        history::new_damage(3),
+        history::new_miss(),
+        history::new_explosion(2, 3, 2),
+        history::new_critical_hit(6),
+        history::new_grenade(vector[1, 1], vector[2, 2]),
+        history::new_kia(id, 3, 1),
+        history::new_dodged(),
+        history::new_flashbang(vector[4, 4], vector[5, 6]),
+        history::new_smoke_grenade(vector[2, 2], vector[3, 1]),
+        history::new_effect_start(3, 1, effect::daze()),
+        history::new_effect_start(2, 3, effect::new(1, 1)),
+        history::new_effect_end(3, 1, 0),
+        history::new_effect_end(2, 3, 1),
+    ];
+    fix(b"records", to_bytes(&records));
+}
+
+#[test]
+fun print_legacy_games() {
+    let mut fixture = setup_grenadiers();
+    let f = &mut fixture;
+    fix(b"accountIdle", to_bytes(&f.alice));
+    let mut game = f.start();
+    fix(b"gameDeploying", to_bytes(&game));
+    f.clock.set_for_testing(1000);
+    f.deploy(&mut game);
+    fix(b"gamePlayingT0", to_bytes(&game));
+    f.end_turn(&mut game);
+    move_unit(
+        &mut game,
+        &f.bob,
+        &f.clock,
+        vector[6, 5, up!(), up!(), left!(), left!(), left!(), left!(), up!()],
+        f.ts.ctx(),
+    );
+    fix(b"gamePlayingT1Moved", to_bytes(&game));
+    f.clock.set_for_testing(91_001);
+    f.ts.next_tx(BOB);
+    next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());
+    f.clock.set_for_testing(181_002);
+    next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());
+    fix(b"gamePlayingMissed", to_bytes(&game));
+    ts::return_shared(game);
+    fixture.finish();
+}
+
+#[test]
+fun print_legacy_won_fallen() {
+    let mut fixture = setup_grenadiers();
+    let f = &mut fixture;
+    let mut game = f.start();
+    f.clock.set_for_testing(1000);
+    f.deploy(&mut game);
+    kill(&mut game, vector[f.alice_recruit]);
+    fix(b"gameOverWonFallen", to_bytes(&game));
+    ts::return_shared(game);
+    fixture.finish();
+}
+
+#[test]
+fun print_legacy_abandoned() {
+    let mut fixture = setup_grenadiers();
+    let f = &mut fixture;
+    let mut game = f.start();
+    f.clock.set_for_testing(1000);
+    f.deploy(&mut game);
+    abandon_game(&mut game, &f.alice, f.ts.ctx());
+    fix(b"gameOverAbandoned", to_bytes(&game));
+    ts::return_shared(game);
+    fixture.finish();
+}
+
+/// Four recruits a side on an empty 8x8 map. Alice: smoke (2, 1), frags (2, 4), (2, 5),
+/// (2, 6). Bob: smoke (6, 1), flashbang (6, 3), plain (5, 5) and (7, 7). Positions are
+/// popped from the back, so they are listed in reverse of the squad's order.
+fun print_script(prefix: vector<u8>) {
+    let positions = vector[
+        vector[2, 6],
+        vector[2, 5],
+        vector[2, 4],
+        vector[2, 1],
+        vector[7, 7],
+        vector[5, 5],
+        vector[6, 3],
+        vector[6, 1],
+    ];
+    let mut n = 0u8;
+    let mut fixture = setup_on!(
+        |id| map::new(id, 8),
+        positions,
+        |acc, ctx| {
+            n = n + 1;
+            if (n == 1) {
+                hire_kind(acc, SMOKE, ctx);
+                hire_kind(acc, FRAG, ctx);
+                hire_kind(acc, FRAG, ctx);
+                hire_kind(acc, FRAG, ctx)
+            } else {
+                hire_kind(acc, SMOKE, ctx);
+                hire_kind(acc, FLASHBANG, ctx);
+                hire_kind(acc, 255, ctx);
+                hire_kind(acc, 255, ctx)
+            }
+        },
+    );
+    let f = &mut fixture;
+    let mut game = f.start();
+    f.clock.set_for_testing(1000);
+
+    // Bob deploys first, as the sandbox's opponent does
+    f.ts.next_tx(BOB);
+    let squad = ts::ids_for_address<Recruit>(object::id_address(&f.bob));
+    deploy_squad(&mut game, &mut f.bob, &f.clock, tickets(squad), f.ts.ctx());
+    f.ts.next_tx(ALICE);
+    let squad = ts::ids_for_address<Recruit>(object::id_address(&f.alice));
+    deploy_squad(&mut game, &mut f.alice, &f.clock, tickets(squad), f.ts.ctx());
+    fix(name_of(prefix, b"0"), to_bytes(&game));
+
+    // Alice smokes (3, 2): her own smoker only
+    f.throw_effect(&mut game, true, SMOKE, vector[2, 1], vector[3, 2]);
+    fix(name_of(prefix, b"1"), to_bytes(&game));
+    f.end_turn(&mut game);
+    fix(name_of(prefix, b"2"), to_bytes(&game));
+
+    // Bob smokes (4, 1), refreshing Alice's smoker, then flashes (5, 4): the plain recruit at
+    // (5, 5) comes before his own flashbanger at (6, 3) in the unit index
+    f.throw_effect(&mut game, false, SMOKE, vector[6, 1], vector[4, 1]);
+    fix(name_of(prefix, b"3"), to_bytes(&game));
+    f.throw_effect(&mut game, false, FLASHBANG, vector[6, 3], vector[5, 4]);
+    fix(name_of(prefix, b"4"), to_bytes(&game));
+    f.end_turn(&mut game);
+    fix(name_of(prefix, b"5"), to_bytes(&game));
+
+    // Alice throws three frags at the dazed recruit on (5, 5): it falls to the third
+    perform_grenade(&mut game, &f.alice, &f.rng, &f.clock, 2, 4, 5, 5, f.ts.ctx());
+    fix(name_of(prefix, b"6"), to_bytes(&game));
+    perform_grenade(&mut game, &f.alice, &f.rng, &f.clock, 2, 5, 5, 5, f.ts.ctx());
+    fix(name_of(prefix, b"7"), to_bytes(&game));
+    perform_grenade(&mut game, &f.alice, &f.rng, &f.clock, 2, 6, 5, 5, f.ts.ctx());
+    fix(name_of(prefix, b"8"), to_bytes(&game));
+
+    // Alice ends: every effect left runs out; Bob ends too
+    f.end_turn(&mut game);
+    fix(name_of(prefix, b"9"), to_bytes(&game));
+    f.end_turn(&mut game);
+    fix(name_of(prefix, b"10"), to_bytes(&game));
+
+    ts::return_shared(game);
+    fixture.finish();
+}
+
+#[test]
+fun print_effects_script() { print_script(b"gameScript") }
+
+fun name_of(prefix: vector<u8>, suffix: vector<u8>): vector<u8> {
+    let mut p = prefix;
+    p.append(suffix);
+    p
+}

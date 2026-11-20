@@ -44,7 +44,11 @@ const ARMOR_MODELS: Record<string, string> = {
 };
 
 /** Catalog models by the utility names `ghosts::items` mints. */
-const UTILITY_MODELS: Record<string, string> = { "Frag Grenade": "frag" };
+const UTILITY_MODELS: Record<string, string> = {
+    "Frag Grenade": "frag",
+    "Smoke Grenade": "smoke",
+    Flashbang: "flash",
+};
 
 export const utilityModel = (u: { name: string }): string | undefined => UTILITY_MODELS[u.name];
 export const weaponModel = (w: { name: string }) => WEAPON_MODELS[w.name] ?? DEFAULT_PRIMARY;

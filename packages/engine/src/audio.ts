@@ -56,17 +56,20 @@ export class CombatAudio {
     const audio = (this.context ??= new AudioContext());
     void audio.resume();
     const duration =
-      kind === "grenade" ? 0.6 : kind === "sniper" ? 0.3 : kind === "click" ? 0.05 : 0.13;
+      kind === "smoke" ? 1.4 : kind === "grenade" ? 0.6 : kind === "sniper" ? 0.3 : kind === "click" ? 0.05 : 0.13;
     const buffer = audio.createBuffer(1, audio.sampleRate * duration, audio.sampleRate);
     const data = buffer.getChannelData(0);
+    // The smoke's hiss swells and settles; every other tone is a decaying burst.
     for (let i = 0; i < data.length; i++)
-      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / data.length, 3);
+      data[i] =
+        (Math.random() * 2 - 1) *
+        (kind === "smoke" ? Math.sin((Math.PI * i) / data.length) * 0.6 : Math.pow(1 - i / data.length, 3));
     const source = audio.createBufferSource();
     source.buffer = buffer;
     const filter = audio.createBiquadFilter();
-    filter.type = "lowpass";
+    filter.type = kind === "smoke" ? "highpass" : "lowpass";
     filter.frequency.value =
-      kind === "grenade" ? 240 : kind === "sniper" ? 700 : kind === "click" ? 2800 : 1500;
+      kind === "smoke" ? 2400 : kind === "grenade" ? 240 : kind === "sniper" ? 700 : kind === "click" ? 2800 : 1500;
     const gain = audio.createGain();
     gain.gain.value = (kind === "click" ? 0.03 : 0.12) * level;
     source.connect(filter).connect(gain).connect(audio.destination);

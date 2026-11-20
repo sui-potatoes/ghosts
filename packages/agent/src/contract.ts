@@ -52,8 +52,9 @@ export const TESTNET_DEPLOYMENT: Deployment = {
 const CLOCK = "0x6";
 /** `items::rifle` tier 1: the "Standard Rifle", the one the squad is armed with. */
 const STANDARD_RIFLE = 1;
-/** `items::utility` kind 0: the frag grenade. */
-const FRAG_GRENADE_KIND = 0;
+/** `items::utility` kinds, as `requisition_utility` takes them. Only appended. */
+export const UTILITY_KINDS = { frag_grenade: 0, flashbang: 1, smoke_grenade: 2 } as const;
+export type UtilityName = keyof typeof UTILITY_KINDS;
 
 /**
  * Take `name`, shaped like the app's rename: an earlier leaf of this address is
@@ -170,20 +171,23 @@ export function acceptSeatsTx(d: Deployment, seats: PendingSeat[]): Transaction 
 export interface Fitting {
     recruit: ObjectRef;
     rifle: boolean;
+    /** Whether the free utility slot needs filling. */
     grenade: boolean;
+    /** What goes in it: the frag grenade unless said. The slot takes one utility. */
+    utility?: UtilityName;
 }
 
 /**
- * Arm recruits at home as the armory does: a hire carries a Standard Rifle but no `Grenade`,
+ * Arm recruits at home as the armory does: a hire carries a Standard Rifle but no utility,
  * and a recruit whose rifle was taken off has no `Attack` or `Reload` once on the map. Each
- * standard rifle and frag grenade is requisitioned, equipped while the recruit is borrowed and
- * handed back, in one transaction.
+ * standard rifle and utility (a frag grenade, a flashbang or a smoke grenade) is requisitioned,
+ * equipped while the recruit is borrowed and handed back, in one transaction.
  */
 export function armSquadTx(d: Deployment, account: string, fittings: Fitting[]): Transaction {
     const tx = new Transaction();
     const target = (fn: string) => `${d.package}::${ACCOUNT_MODULE}::${fn}`;
     const acc = tx.object(account);
-    for (const { recruit, rifle: needsRifle, grenade: needsGrenade } of fittings) {
+    for (const { recruit, rifle: needsRifle, grenade: needsGrenade, utility } of fittings) {
         const [borrowed, borrow] = tx.moveCall({
             target: target("borrow_recruit"),
             arguments: [acc, tx.receivingRef(recruit)],
@@ -198,7 +202,7 @@ export function armSquadTx(d: Deployment, account: string, fittings: Fitting[]):
         if (needsGrenade) {
             const [grenade] = tx.moveCall({
                 target: target("requisition_utility"),
-                arguments: [acc, tx.pure.u8(FRAG_GRENADE_KIND)],
+                arguments: [acc, tx.pure.u8(UTILITY_KINDS[utility ?? "frag_grenade"])],
             });
             tx.moveCall({ target: target("equip_utility"), arguments: [borrowed, grenade] });
         }
@@ -283,6 +287,20 @@ export function actionsTx(
                     tx.pure.u16(action.ty),
                 );
                 break;
+            case "flashbang":
+            case "smoke_grenade":
+                // nothing rolls, so there is no `Random` to pass
+                call(
+                    action.kind === "flashbang" ? "perform_flashbang" : "perform_smoke_grenade",
+                    gameObject(),
+                    me(),
+                    clock(),
+                    tx.pure.u16(action.x),
+                    tx.pure.u16(action.y),
+                    tx.pure.u16(action.tx),
+                    tx.pure.u16(action.ty),
+                );
+                break;
             case "next_turn":
                 call("next_turn", gameObject(), me(), clock());
                 break;
@@ -321,7 +339,7 @@ const ABORTS: Record<string, Record<number, string>> = {
         3: "That unit has no AP left.",
         4: "The weapon is already full.",
         5: "That unit cannot do that: it is not in its actions.",
-        6: "Every charge of that unit's grenade is spent.",
+        6: "That unit has no use left of that grenade.",
     },
     matchmaker: {
         0: "This account already has a live ticket in the queue.",

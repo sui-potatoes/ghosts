@@ -1,12 +1,14 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
+import type { ThrowOrder } from "./action-registry";
 import { localDriver, type DriverFactory, type EncounterDriver } from "./driver";
 import { Encounter, type Cell, type Unit } from "./game";
 import type { Scenario } from "./scenario";
 import type { Battlefield } from "./scene/battlefield";
 
-export type Mode = "move" | "fire" | "grenade";
+/** What the field's clicks do: move, aim a shot, or aim one of the throws (the mode is the throw's order). */
+export type Mode = "move" | "fire" | ThrowOrder;
 /** The briefing dialog: read from the pause menu, or the deployment briefing with the squad. */
 export type Panel = "intel" | "deploy";
 export type Tone = "" | "hit" | "miss";
@@ -31,6 +33,7 @@ export class Session {
   /** An order is out with the driver — a transaction may be in flight. */
   resolving = false;
   resultShown = false;
+  /** The landing tile of the throw being aimed, whichever grenade it is. */
   grenadeTarget: Cell | null = null;
   /** The controller's radial action menu is open, and its highlighted entry. */
   wheel = false;

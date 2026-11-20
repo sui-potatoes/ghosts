@@ -18,8 +18,6 @@ import { acquireArmoryWeapon, isArmoryGun } from "@ghosts/squad/studio/armory-we
 import { acquireArmoryUtility, isArmoryUtility } from "@ghosts/squad/studio/armory-utilities";
 import { EquipmentAssets } from "@ghosts/squad/studio/equipment-assets";
 
-import { PLANNED_UTILITIES } from "./armory/planned";
-
 const WIDTH = 256;
 const HEIGHT = 192;
 
@@ -111,13 +109,6 @@ export async function drawGearThumbnails(): Promise<Record<string, string>> {
             } else object = await assets.get(item.model);
             out[item.id] = draw(object);
             release?.();
-            await breathe();
-        }
-        // The planned utilities, by their model ids, for the requisition catalog.
-        for (const { model } of PLANNED_UTILITIES) {
-            const utility = acquireArmoryUtility(model);
-            out[model] = draw(utility.model);
-            utility.release();
             await breathe();
         }
         for (const item of ATTACHMENTS) {

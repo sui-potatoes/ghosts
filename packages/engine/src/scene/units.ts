@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import * as T from "three";
+import type { ThrowOrder } from "../action-registry";
 import { shortestAngle } from "../aim-transition";
 import { aimClip } from "../combat-pose";
 import type { Encounter, Unit } from "../game";
@@ -119,8 +120,16 @@ export class Units {
     this.markers.aim(target, readout);
   }
 
-  /** Bring rigs and markers in line with the rules; `aiming` leaves poses to the aim camera. */
-  sync(selected: string, aiming: boolean) {
+  /**
+   * Bring rigs and markers in line with the rules; `aiming` leaves poses to the
+   * aim camera. Returns whether the lingering smoke changed (it follows the
+   * effects: on with `effect-start`, gone with `effect-end` or the unit's fall).
+   */
+  sync(selected: string, aiming: boolean): boolean {
+    const smoked = new Set(
+      this.game.units.filter((u) => u.hp > 0 && u.effects.some((e) => e.kind === "Smoke" && e.turns > 0)).map((u) => u.id),
+    );
+    const changed = this.o.effects.syncLingering(smoked);
     for (const u of this.game.units) {
       const r = this.rigs.get(u.id)!;
       this.markers.sync(u, u.id === selected);
@@ -131,6 +140,7 @@ export class Units {
         if (!r.busy && !aiming) this.rest(u);
       }
     }
+    return changed;
   }
 
   /** Per frame: skeletons, then markers over the bodies. */
@@ -139,6 +149,7 @@ export class Units {
       const r = this.rigs.get(u.id)!;
       if (!r.dead || r.action?.isRunning()) updateHuman(r, dt, this.map.surfaceHeight);
       this.markers.place(u, r.root.position, camera, width, height);
+      if (u.hp > 0) this.o.effects.placeLingering(u.id, r.root.position);
     }
   }
 
@@ -275,8 +286,12 @@ export class Units {
     return this.busyWith(u, (r) => this.clip(r, reloadMotion(u.weapon, this.game.cover(u) > 0), 1.35));
   }
 
-  /** Whoever the blast hurt reacts once `settled`, as the casualties may still be on their way. */
-  grenade(u: Unit, p: Cell, onImpact?: () => void, settled?: Promise<unknown>) {
+  /**
+   * A throw of `kind`: the frag's blast (whoever it hurt reacts once `settled`,
+   * as the casualties may still be on their way), the flashbang's flash, or
+   * the smoke grenade's cloud. The last two hurt nobody.
+   */
+  grenade(u: Unit, p: Cell, onImpact?: () => void, settled?: Promise<unknown>, kind: ThrowOrder = "grenade") {
     const { animator, effects } = this.o;
     return this.busyWith(u, async (r) => {
       const target = this.vec(p, 0.2);
@@ -286,6 +301,12 @@ export class Units {
       await animator.tween(duration * 0.43, () => {});
       await effects.lob(r.hand.getWorldPosition(new T.Vector3()), target, metal);
       onImpact?.();
+      if (kind !== "grenade") {
+        await (kind === "flashbang" ? effects.flash(target) : effects.smokeBurst(target));
+        await settled;
+        r.gun.visible = true;
+        return;
+      }
       await effects.explosion(target);
       await settled;
       await Promise.all(

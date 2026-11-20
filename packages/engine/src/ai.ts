@@ -1,8 +1,10 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
+import { GRENADE_RADIUS, GRENADE_RANGE, usesLeft } from "./action-registry.ts";
 import type { GameEvent } from "./events.ts";
 import { distance, type Cell, type Encounter, type Unit } from "./game.ts";
+import { grenadeBlockReason } from "./targeting.ts";
 
 /**
  * Hostile decisions, pure: each reads the encounter and names what a hostile
@@ -42,6 +44,49 @@ export function hostileAction(game: Encounter, enemy: Unit): HostileAction | nul
   return target ? { kind: "fire", target } : null;
 }
 
+export type HostileThrow = { order: "flashbang" | "smoke-grenade"; at: Cell };
+
+/**
+ * A grenade worth throwing before the shot, for a hostile that holds its
+ * ground with AP to spare: a flashbang that dazes the most of the squad and
+ * none of its own side (the thrower included); else, once it is down to half
+ * health, a smoke grenade over itself and its side with none of the squad in
+ * it. Null when it carries neither or no tile is worth it: it just shoots.
+ */
+export function hostileThrow(game: Encounter, enemy: Unit): HostileThrow | null {
+  if (enemy.hp <= 0 || enemy.ap < 2) return null;
+  const tiles = (order: HostileThrow["order"]) => {
+    const out: Cell[] = [];
+    for (let dx = -GRENADE_RANGE; dx <= GRENADE_RANGE; dx++)
+      for (let dz = -GRENADE_RANGE; dz <= GRENADE_RANGE; dz++) {
+        const p: Cell = [enemy.pos[0] + dx, enemy.pos[1] + dz];
+        if (Math.abs(dx) + Math.abs(dz) <= GRENADE_RANGE && !grenadeBlockReason(game, enemy, p, order)) out.push(p);
+      }
+    return out;
+  };
+  const caught = (side: Unit[], p: Cell) => side.filter((u) => distance(u.pos, p) <= GRENADE_RADIUS).length;
+  const best = (order: HostileThrow["order"], score: (p: Cell) => number): HostileThrow | null => {
+    let pick: Cell | null = null,
+      top = 0;
+    for (const p of tiles(order)) {
+      const value = score(p);
+      if (value > top) [pick, top] = [p, value];
+    }
+    return pick && { order, at: pick };
+  };
+  if (usesLeft(enemy, "Flashbang")) {
+    const flash = best("flashbang", (p) => (caught(game.enemies, p) ? 0 : caught(game.allies, p)));
+    if (flash) return flash;
+  }
+  if (usesLeft(enemy, "SmokeGrenade") && enemy.hp * 2 <= enemy.maxHp) {
+    const smoke = best("smoke-grenade", (p) =>
+      distance(p, enemy.pos) > GRENADE_RADIUS || caught(game.allies, p) ? 0 : caught(game.enemies, p),
+    );
+    if (smoke) return smoke;
+  }
+  return null;
+}
+
 /**
  * The whole hostile phase, one event at a time. State changes as the
  * generator advances, so a caller that animates each event before asking for
@@ -49,8 +94,7 @@ export function hostileAction(game: Encounter, enemy: Unit): HostileAction | nul
  */
 export function* hostilePhase(game: Encounter): Generator<GameEvent, void, void> {
   if (game.result || game.phase !== "player") return;
-  game.beginEnemy();
-  yield* game.events.slice(-1);
+  yield* game.beginEnemy();
   for (const enemy of [...game.enemies]) {
     if (!game.allies.length) break;
     if (enemy.hp <= 0) continue;
@@ -63,13 +107,15 @@ export function* hostilePhase(game: Encounter): Generator<GameEvent, void, void>
         if (enemy.hp <= 0) break;
       }
     }
+    const thrown = hostileThrow(game, enemy);
+    if (thrown) yield* game.apply({ type: thrown.order, unit: enemy.id, at: thrown.at });
+    if (enemy.hp <= 0 || !game.allies.length) continue;
     const next = hostileAction(game, enemy);
     if (next?.kind === "reload") yield* game.apply({ type: "reload", unit: enemy.id });
     else if (next?.kind === "fire")
       yield* game.apply({ type: "fire", unit: enemy.id, target: next.target.id });
   }
   if (!game.result) {
-    game.nextTurn();
-    yield* game.events.slice(-1);
+    yield* game.nextTurn();
   }
 }

@@ -58,7 +58,7 @@ export function applyDeploymentNames(units: Unit[], looks: Map<string, Deploymen
 }
 
 /** The squad catalog's utilities by the chain item that stands for them (`items.json`). */
-const UTILITY_ITEMS: Record<string, string> = { frag: "frag-grenade" };
+const UTILITY_ITEMS: Record<string, string> = { frag: "frag-grenade", flash: "flashbang", smoke: "smoke-grenade" };
 
 /** What a carried utility grants, from `items.json`; nothing for one with no chain item. */
 function utilityActions(id: string | null): UnitAction[] {

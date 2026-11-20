@@ -31,6 +31,7 @@ import {
     fetchGameRefs,
     moveUnitOrder,
     nextTurnOrder,
+    effectThrowOrder,
     reloadOrder,
     strikeOrder,
     type GameRefs,
@@ -41,6 +42,9 @@ import {
     turnLimitMs,
     turnStartedAt,
     canDo,
+    effectBytes,
+    effectiveStats,
+    effectsOf,
     encodePath,
     gameEvents,
     hitChance,
@@ -48,6 +52,7 @@ import {
     lineOfSight,
     lineOfThrow,
     terrainAt,
+    throwValid,
     toCell,
     toTile,
     coverBonus,
@@ -136,6 +141,8 @@ function syncUnits(rules: EncounterRules, game: ChainGame) {
         u.damage = stats.damage;
         // what the unit carries, with the uses left: the command bar offers exactly these
         u.actions = unitActions(unit.actions);
+        // daze and smoke as the chain has them; the base stats above stay as they are
+        u.effects = effectsOf(unit.effects);
     }
 }
 
@@ -197,9 +204,15 @@ export function chainDriver({
                 const [from, to] = [tile(a.pos), tile(b.pos)];
                 if (!lineOfSight(latest, from, to)) return 0;
                 const distance = Math.abs(from[0] - to[0]) + Math.abs(from[1] - to[1]);
+                // the shooter's effective aim, the target's effective defense
+                const aim = effectiveStats({ aim: a.aim, defense: 0 }, effectBytes(a.effects)).aim;
+                const defense = effectiveStats(
+                    { aim: 0, defense: statsOf(b.id)?.defense ?? 0 },
+                    effectBytes(b.effects),
+                ).defense;
                 return hitChance(
-                    { aim: a.aim, range: a.range, areaSize: statsOf(a.id)?.areaSize ?? 0 },
-                    statsOf(b.id)?.defense ?? 0,
+                    { aim, range: a.range, areaSize: statsOf(a.id)?.areaSize ?? 0 },
+                    defense,
                     distance,
                     coverBonus(latest, from, to),
                 );
@@ -342,6 +355,8 @@ export function chainDriver({
                 reload: "Reload",
                 fire: "Attack",
                 grenade: "Grenade",
+                flashbang: "Flashbang",
+                "smoke-grenade": "SmokeGrenade",
             } as const;
             const need = needs[command.type as keyof typeof needs];
             if (need && !canDo(latest, unit.id, need)) return Promise.resolve([]);
@@ -367,7 +382,19 @@ export function chainDriver({
                 }
                 case "grenade": {
                     const to = toTile(command.at as Cell, MATCH_BOUNDS);
+                    if (!throwValid(latest, from, to)) return Promise.resolve([]);
                     return strike((r) => strikeOrder("perform_grenade", r, from, to));
+                }
+                // nothing rolls for these: no `Random`, and the burst comes back as effect records
+                case "flashbang":
+                case "smoke-grenade": {
+                    const to = toTile(command.at as Cell, MATCH_BOUNDS);
+                    if (!throwValid(latest, from, to)) return Promise.resolve([]);
+                    const action =
+                        command.type === "flashbang"
+                            ? "perform_flashbang"
+                            : "perform_smoke_grenade";
+                    return strike((r) => effectThrowOrder(action, r, from, to));
                 }
                 // overwatch, hunkering and the rest are the local rules' own
                 default:

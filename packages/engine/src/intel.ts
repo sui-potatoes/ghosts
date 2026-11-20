@@ -1,9 +1,9 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
-import { actionName, hasKind, usesLeft } from "./action-registry.ts";
+import { actionName, hasKind, specOf, THROW_ORDERS, usesLeft } from "./action-registry.ts";
 import { allows, distance, key, weapons, type Cell, type Encounter, type Unit } from "./game.ts";
-import { effectName } from "./status-effects.ts";
+import { effectDetail, effectName, unitCombat } from "./status-effects.ts";
 
 /**
  * What the unit readout knows about one unit on the field: who it is, what it
@@ -55,8 +55,11 @@ export interface UnitIntel {
     defense?: number;
     critChance?: number;
   };
-  /** Active status effects; the game has none yet, so this stays empty. */
-  effects: { id: string; label: string; turns?: number }[];
+  /**
+   * Active status effects, in the order the unit carries them: the state's
+   * name ("Dazed"), what it does with labelled numbers ("aim 0"), turns left.
+   */
+  effects: { id: string; label: string; turns?: number; detail?: string }[];
 }
 
 export type ModKind = "scope" | "laser" | "stock" | "clip";
@@ -99,6 +102,8 @@ const WEAPON_NAMES: Record<Unit["weapon"], string> = {
  */
 export function baseIntel(game: Pick<Encounter, "phase">, u: Unit, armorName?: string | null): UnitIntel {
   const armed = allows(u, "fire");
+  // The one utility slot: whichever grenade the unit carries.
+  const thrown = THROW_ORDERS.map((order) => specOf(order).id).find((kind) => hasKind(u, kind));
   return {
     id: u.id,
     known: true,
@@ -117,14 +122,17 @@ export function baseIntel(game: Pick<Encounter, "phase">, u: Unit, armorName?: s
     },
     weapon: armed ? { name: WEAPON_NAMES[u.weapon] ?? weapons[u.weapon].label, mods: [] } : null,
     armor: armorName ? { name: armorName } : null,
-    utility: hasKind(u, "Grenade") ? { name: actionName("Grenade"), uses: usesLeft(u, "Grenade"), max: null } : null,
+    utility: thrown ? { name: actionName(thrown), uses: usesLeft(u, thrown), max: null } : null,
     stats: {
-      aim: u.aim,
+      // What it shoots with now: status effects counted.
+      aim: unitCombat(u).aim,
       damage: [u.damage, u.damage],
       range: u.range,
       mobility: u.mobility,
     },
-    effects: (u.effects ?? []).map((e) => ({ id: e.kind, label: effectName(e.kind), turns: e.turns })),
+    effects: (u.effects ?? [])
+      .filter((e) => e.turns > 0)
+      .map((e) => ({ id: e.kind, label: effectName(e.kind), turns: e.turns, detail: effectDetail(e.kind) })),
   };
 }
 

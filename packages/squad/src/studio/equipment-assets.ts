@@ -8,6 +8,8 @@ import { createFurnitureUpgrade } from "./furniture-upgrades";
 import { createServiceFurniture } from "./service-rifle";
 import { familyFinish } from "./rifle-shapes";
 import { createFieldSupply } from "./field-supplies";
+import { createFlashbang, flashbangFinish } from "./flashbang";
+import { createSmokeGrenade, smokeGrenadeFinish } from "./smoke-grenade";
 import { attachmentById } from "../catalog";
 import { createSidearm } from "./sidearm";
 import { assetUrl } from "./character-assets";
@@ -197,6 +199,10 @@ export class EquipmentAssets {
             }
         } else if (type === "grenade" || type === "medkit") {
             group.add(createFieldSupply(type));
+        } else if (type === "smoke") {
+            group.add(createSmokeGrenade({ detail: "high", finish: smokeGrenadeFinish() }));
+        } else if (type === "flash") {
+            group.add(createFlashbang({ detail: "high", finish: flashbangFinish() }));
         } else throw Error(`${type}: long guns come from held-weapons.`);
         const bounds = new T.Box3().setFromObject(group),
             center = bounds.getCenter(new T.Vector3());

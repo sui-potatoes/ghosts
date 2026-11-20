@@ -10,6 +10,7 @@ import {
   GRENADE_RADIUS,
   GRENADE_RANGE,
   MAX_RANGE_OFFSET,
+  THROW_EFFECT,
   hasKind,
   loadoutActions,
   spendUse,
@@ -17,7 +18,7 @@ import {
   usesLeft,
   type UnitAction,
 } from "./action-registry.ts";
-import type { UnitEffect } from "./status-effects.ts";
+import { endEffect, freshEffect, setEffect, tickEffects, unitCombat, type UnitEffect } from "./status-effects.ts";
 import type { WeaponMod } from "./intel.ts";
 // Local presentation simulation. Rules reference ghosts::{unit,map,stats}; no chain imports.
 export type { Cell };
@@ -44,7 +45,16 @@ export const weaponName = (u: Pick<Unit, "weapon" | "gear">) =>
         : u.gear.weapon.name;
 export type Role = "ASSAULT" | "RECON" | "HEAVY" | "SPECIALIST";
 /** The orders the HUD offers a unit; chain `Attack` is `fire`. */
-export type UnitOrder = "move" | "fire" | "grenade" | "reload" | "overwatch" | "hunker" | "secure";
+export type UnitOrder =
+  | "move"
+  | "fire"
+  | "grenade"
+  | "flashbang"
+  | "smoke-grenade"
+  | "reload"
+  | "overwatch"
+  | "hunker"
+  | "secure";
 /** What an ally deployed from a recruit carries, as the readouts name it (a scenario's units carry none). */
 export interface UnitGear {
   /** The primary weapon by name, with its fitted mods; null when unarmed. */
@@ -92,7 +102,7 @@ export interface Unit {
    * `Unit.actions`, or the demo's from the loadout (`loadoutActions`).
    */
   actions: UnitAction[];
-  /** Status effects on the unit; none exist yet (status-effects.ts). */
+  /** Status effects on the unit, in the order they landed (`Unit.effects`, status-effects.ts). */
   effects: UnitEffect[];
 }
 /** Whether `u` carries `order` at all (`Unit.has_action`): AP, ammo and uses aside. */
@@ -186,9 +196,10 @@ export function groundAuthority(ground: ChainGround): GameAuthority {
     clearThrow: (from, to) => ground.clearThrow(from, to),
     blast: (at) => ground.blast(at),
     cover,
+    // `Unit.perform_attack`: the shooter's effective aim, the target's cover plus effective defense.
     chance: (a, b) =>
       ground.clearShot(a.pos, b.pos)
-        ? ChainGround.hitChance(a.aim, a.range, distance(a.pos, b.pos), cover(a, b) + b.defense)
+        ? ChainGround.hitChance(unitCombat(a).aim, a.range, distance(a.pos, b.pos), cover(a, b) + unitCombat(b).defense)
         : 0,
   };
 }
@@ -302,6 +313,8 @@ export class Encounter {
         a.ammo--;
         a.magazines[a.weapon] = a.ammo;
         b.hp = Math.max(0, b.hp - event.damage);
+        // `UnitKIA` ends every effect on the unit; no `EffectEnd` is written.
+        if (b.hp <= 0) b.effects = [];
         if (event.killed) this.creditKill(a, b);
         return;
       }
@@ -320,8 +333,25 @@ export class Encounter {
         for (const { unit, damage, killed } of event.casualties) {
           const target = this.unit(unit)!;
           target.hp -= damage;
+          if (target.hp <= 0) target.effects = [];
           if (killed) this.creditKill(u, target);
         }
+        return;
+      }
+      case "flashbang":
+      case "smoke-grenade": {
+        // `Unit.throw`: one AP and the use; the burst lands as `effect-start`s.
+        const u = this.unit(event.unit)!;
+        u.ap--;
+        spendUse(u, specOf(event.type).id);
+        return;
+      }
+      case "effect-start":
+        setEffect(this.unit(event.unit)!.effects, event.effect);
+        return;
+      case "effect-end": {
+        const u = this.unit(event.unit)!;
+        u.effects = endEffect(u.effects, event.kind);
         return;
       }
       case "hunker": {
@@ -360,13 +390,16 @@ export class Encounter {
         this.unit(event.unit)!.ap--;
         this.secured = true;
         return;
+      // Both are a `next_turn`: one turn off every effect on every living unit.
       case "hostile-phase":
         this.phase = "enemy";
         for (const u of this.enemies) u.ap = 2;
+        this.tick();
         return;
       case "turn":
         this.phase = "player";
         this.turn = event.turn;
+        this.tick();
         for (const u of this.allies) {
           u.ap = 2;
           u.overwatch = false;
@@ -374,6 +407,23 @@ export class Encounter {
         }
         return;
     }
+  }
+  /** `Map.next_turn`'s walk: one turn off every effect on every unit still standing. */
+  private tick() {
+    for (const u of this.units) if (u.hp > 0) tickEffects(u.effects);
+  }
+  /**
+   * The living units in `Map.units` order (row-major by tile: row, then
+   * column), the order the contract writes `EffectStart` and `EffectEnd` in.
+   * A tile's row is its scene `z`, its column its `x`.
+   */
+  unitsInMapOrder(): Unit[] {
+    return this.units.filter((u) => u.hp > 0).sort((a, b) => a.pos[1] - b.pos[1] || a.pos[0] - b.pos[0]);
+  }
+  /** After a turn end: an `effect-end` for every effect that ran out, unit by unit, in list order. */
+  private expire() {
+    for (const u of this.unitsInMapOrder())
+      for (const e of u.effects.filter((e) => e.turns <= 0)) this.emit({ type: "effect-end", unit: u.id, kind: e.kind });
   }
   /** Run `fn` and return the events it emitted. */
   private record(fn: () => unknown): GameEvent[] {
@@ -395,6 +445,9 @@ export class Encounter {
         }
         case "grenade":
           return this.throwGrenade(u, command.at);
+        case "flashbang":
+        case "smoke-grenade":
+          return this.throwEffect(u, command.at, command.type);
         case "reload":
           return this.reload(u);
         case "hunker":
@@ -517,16 +570,18 @@ export class Encounter {
     );
     return barrier ? (hunkered ? 50 : 25) : hunkered ? 20 : 0;
   }
+  /** The odds `a` hits `b`, in percent: effective aim against cover and effective defense (status effects counted). */
   chance(a: Unit, b: Unit) {
     if (this.authority) return this.authority.chance(a, b);
     const d = distance(a.pos, b.pos);
     if (d > a.range + MAX_RANGE_OFFSET || this.map.coverPeek(a.pos, b.pos).blocked) return 0;
+    const aim = unitCombat(a).aim;
     return Math.max(
       0,
       Math.min(
         100,
-        a.aim + (d < a.range ? (a.range - d) * 5 : -(d - a.range) * 10),
-      ) - this.cover(b, a) - b.defense,
+        aim + (d < a.range ? (a.range - d) * 5 : -(d - a.range) * 10),
+      ) - Math.min(100, this.cover(b, a) + unitCombat(b).defense),
     );
   }
   /** Whether `a` has a line and the range to shoot `b` at all, AP aside. */
@@ -607,6 +662,31 @@ export class Encounter {
     this.emit({ type: "grenade", unit: u.id, at: [...p], casualties, environment });
     return true;
   }
+  /**
+   * `Map.perform_flashbang` / `Map.perform_smoke_grenade`: the frag's throw
+   * checks (range, wall, line of throw), then the effect on every living unit
+   * within the burst, either side, the thrower too. No damage, cover stays.
+   */
+  throwEffect(u: Unit, p: Cell, order: "flashbang" | "smoke-grenade") {
+    const kind = specOf(order).id;
+    if (
+      !this.canAct(u) ||
+      !allows(u, order) ||
+      usesLeft(u, kind) === 0 ||
+      distance(u.pos, p) > GRENADE_RANGE ||
+      this.throwBlocked(u.pos, p)
+    )
+      return false;
+    this.emit({ type: order, unit: u.id, at: [...p] });
+    const fresh = freshEffect(THROW_EFFECT[order]!);
+    for (const t of this.unitsInMapOrder()) {
+      if (distance(t.pos, p) > GRENADE_RADIUS) continue;
+      // `refresh`: a kind already on the unit keeps the larger timer.
+      const had = t.effects.find((e) => e.kind === fresh.kind);
+      this.emit({ type: "effect-start", unit: t.id, effect: { kind: fresh.kind, turns: Math.max(fresh.turns, had?.turns ?? 0) } });
+    }
+    return true;
+  }
   secure(u: Unit) {
     if (!this.canAct(u) || !allows(u, "secure") || this.secured || distance(u.pos, this.relay) > 0)
       return false;
@@ -628,11 +708,19 @@ export class Encounter {
     this.emit({ type: "overwatch", unit: u.id });
     return true;
   }
-  beginEnemy() {
-    this.emit({ type: "hostile-phase" });
+  /** The player's `next_turn`: the hostile phase, then the effects that ran out. Returns the events. */
+  beginEnemy(): GameEvent[] {
+    return this.record(() => {
+      this.emit({ type: "hostile-phase" });
+      this.expire();
+    });
   }
-  nextTurn() {
-    this.emit({ type: "turn", turn: this.turn + 1 });
+  /** The hostiles' `next_turn`: the player's turn, then the effects that ran out. Returns the events. */
+  nextTurn(): GameEvent[] {
+    return this.record(() => {
+      this.emit({ type: "turn", turn: this.turn + 1 });
+      this.expire();
+    });
   }
   /** `reactionFire` as events, for the hostile phase. */
   react(ally: Unit, enemy: Unit): GameEvent[] {

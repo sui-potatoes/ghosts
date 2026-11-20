@@ -24,6 +24,20 @@ const PATHS = {
     </>
   ),
   grenade: <path d="m13 4 3-2 3 3-2 3M8 6l8 8M6 8c-4 4-4 8-1 11s7 3 11-1 4-8 1-11-7-3-11 1Z" />,
+  // The flashbang and the daze it leaves: a burst of rays around a bright core.
+  flash: (
+    <>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M12 2v4m0 12v4M2 12h4m12 0h4M5 5l2.5 2.5m9 9L19 19M5 19l2.5-2.5m9-9L19 5" />
+    </>
+  ),
+  // The smoke grenade and the cover it leaves: a low, drifting cloud.
+  smoke: (
+    <>
+      <path d="M6 18a4 4 0 0 1-.5-8A5 5 0 0 1 15 8.5a4 4 0 0 1 3.5 7.5" />
+      <path d="M4 21h10m-6-3h12" />
+    </>
+  ),
   eye: (
     <>
       <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z" />

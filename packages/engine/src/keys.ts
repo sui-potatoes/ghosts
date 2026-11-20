@@ -12,6 +12,8 @@ export type CombatAction =
   | "move"
   | "fire"
   | "grenade"
+  | "flashbang"
+  | "smoke-grenade"
   | "reload"
   | "overwatch"
   | "hunker"
@@ -32,6 +34,8 @@ export const COMBAT_ACTIONS: CombatAction[] = [
   "move",
   "fire",
   "grenade",
+  "flashbang",
+  "smoke-grenade",
   "reload",
   "overwatch",
   "hunker",
@@ -51,6 +55,8 @@ export const COMBAT_LABELS: Record<CombatAction, string> = {
   move: "Move",
   fire: "Fire weapon",
   grenade: "Grenade",
+  flashbang: "Flashbang",
+  "smoke-grenade": "Smoke grenade",
   reload: "Reload",
   overwatch: "Overwatch",
   hunker: "Hunker",
@@ -70,6 +76,8 @@ export const DEFAULT_COMBAT_BINDINGS: CombatBindings = {
   move: ["m"],
   fire: ["x"],
   grenade: ["t"],
+  flashbang: ["b"],
+  "smoke-grenade": ["k"],
   reload: ["r"],
   overwatch: ["o"],
   hunker: ["h"],

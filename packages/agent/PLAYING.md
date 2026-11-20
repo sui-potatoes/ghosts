@@ -38,7 +38,9 @@ gp whoami
 | `legal [--unit X,Y] [--kind K] [--limit N]`   | Raw legal orders with hit chances                               |
 | `move X,Y PATH`                               | Move the unit at X,Y along PATH                                 |
 | `attack X,Y TX,TY`                            | Shoot                                                           |
-| `grenade X,Y TX,TY`                           | Throw the grenade                                               |
+| `grenade X,Y TX,TY`                           | Throw the frag grenade                                          |
+| `flashbang X,Y TX,TY`                         | Throw the flashbang: daze everyone in the blast                 |
+| `smoke_grenade X,Y TX,TY`                     | Throw the smoke grenade: smoke everyone in the blast            |
 | `reload X,Y`                                  | Reload                                                          |
 | `end`                                         | `next_turn`: end your turn                                      |
 | `deploy`                                      | Place your squad when the game starts                           |
@@ -123,6 +125,11 @@ loop:
 - A grenade has one use per match (`grenade:1` in `actions`), range 5 (|dx|+|dy|), damage 4 in
   a radius-2 diamond, friend and foe, cannot be dodged, and walls block the throw (`A wall blocks
   the throw`). Use it when `enemiesHit` is 2+ and `alliesHit` is 0.
+- A flashbang or a smoke grenade (`flashbang:1`, `smoke_grenade:1`) has the same range and radius
+  but no damage and no dice: it can be followed by other orders. A dazed unit has aim 0. A unit in
+  smoke has 30 less aim and 30 more defense. Either lasts the rest of the turn it lands in and
+  the next; the same one again refreshes it. Units show `effects` with the turns left, and
+  their `aim` and `defense` count them. A unit carries one grenade of the three.
 - Shot chance is aim, +5 per tile inside range, -10 per tile past it (up to range+3), minus cover at
   the target (-25 low `+`, -50 high `=`) and the target's defense. Walls and high cover in between
   block the line. Dodge can still avoid damage.

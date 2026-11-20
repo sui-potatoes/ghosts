@@ -14,6 +14,7 @@ import type { Backend } from "./backend.ts";
 import type { Policy } from "./bot.ts";
 import { nameProblem, normalizeName } from "./names.ts";
 import {
+    effectiveStats,
     FREE_RECRUITS,
     legalActions,
     SEARCH_TIMEOUT_MS,
@@ -29,6 +30,7 @@ import {
     type GameState,
     type Receipt,
     type UnitActionEntry,
+    type UnitEffect,
 } from "./types.ts";
 import { pollingWake, type Wake } from "./wake.ts";
 
@@ -72,9 +74,15 @@ export interface ObservedUnit {
     ap: number;
     ammo: string;
     grenade: boolean;
+    /** Whether the unit has a flashbang or a smoke grenade left to throw. */
+    flashbang: boolean;
+    smokeGrenade: boolean;
+    /** Status effects on the unit, with the turn changes each has left. */
+    effects: UnitEffect[];
     /** Every action the unit has, with the uses it has left (`null`: unlimited). */
     actions: UnitActionEntry[];
     mobility: number;
+    /** Aim and defense as they count in a shot, effects included. */
     aim: number;
     range: number;
     damage: string;
@@ -390,6 +398,7 @@ export class GhostsAgent {
                 .filter((unit) => unit.side === owner)
                 .forEach((unit, i) => {
                     const mark = alphabet[i] ?? "?";
+                    const stats = effectiveStats(unit);
                     marks.set(`${unit.x},${unit.y}`, mark);
                     units.push({
                         mark,
@@ -400,14 +409,17 @@ export class GhostsAgent {
                         ap: unit.ap,
                         ammo: `${unit.ammo}/${unit.ammoMax}`,
                         grenade: hasUsesLeft(unit, "grenade"),
+                        flashbang: hasUsesLeft(unit, "flashbang"),
+                        smokeGrenade: hasUsesLeft(unit, "smoke_grenade"),
+                        effects: unit.effects,
                         actions: unit.actions,
-                        mobility: unit.stats.mobility,
-                        aim: unit.stats.aim,
-                        range: unit.stats.range,
-                        damage: `${unit.stats.damage}±${unit.stats.spread}`,
-                        armor: unit.stats.armor,
-                        dodge: unit.stats.dodge,
-                        defense: unit.stats.defense,
+                        mobility: stats.mobility,
+                        aim: stats.aim,
+                        range: stats.range,
+                        damage: `${stats.damage}±${stats.spread}`,
+                        armor: stats.armor,
+                        dodge: stats.dodge,
+                        defense: stats.defense,
                     });
                 });
         }

@@ -9,7 +9,7 @@
  */
 
 import { ATTACHMENTS, itemById } from "@ghosts/squad/catalog";
-import type { Attachment, Equipment } from "@ghosts/squad/types";
+import type { Attachment } from "@ghosts/squad/types";
 
 import actionsCatalog from "../../../../../packages/catalog/actions.json";
 import itemsCatalog from "../../../../../packages/catalog/items.json";
@@ -24,7 +24,6 @@ import { fitOf, stockCounts, type Gear } from "../armory";
 import { armorModel, utilityModel, weaponModel } from "../mapping";
 import { weaponName } from "../squad/rules";
 import { REQUISITIONABLE } from "../utilities";
-import { PLANNED_UTILITIES, type PlannedModel, type PlannedUtility } from "./planned";
 import { MOD_SLOTS, stackRows } from "./rules";
 import type { Order } from "./types";
 
@@ -107,12 +106,10 @@ export type SupplyEntry = {
     /** The catalog id for the thumbnail and the stage. */
     model?: string;
     attachment?: Attachment;
-    /** What requisitioning it orders; none for a planned utility, which cannot be had. */
-    order?: Order;
+    /** What requisitioning it orders. */
+    order: Order;
     /** The utility's actions, from the catalog. */
     actions?: { kind: string; uses: number | null }[];
-    /** A planned utility (`./planned`): shown, not requisitioned. */
-    planned?: PlannedUtility;
 };
 
 const recruitsCarrying = <T>(recruits: ChainRecruit[], pick: (r: ChainRecruit) => T[]) =>
@@ -255,32 +252,17 @@ export const SUPPLY: Record<Tab, SupplyEntry[]> = {
             attachment: a,
             order: { kind: a.slot, tier: a.tier },
         })),
-    // The contract's utilities, then the planned ones, which only show here.
-    utilities: [
-        ...REQUISITIONABLE.map((u): SupplyEntry => ({
-            kind: "supply",
-            tab: "utilities",
-            id: `utility-${u.kind}`,
-            name: u.name,
-            model: utilityModel(u),
-            order: { utility: u.kind },
-            actions: ITEMS.find((i) => i.name === u.name)?.actions,
-        })),
-        ...PLANNED_UTILITIES.map((u): SupplyEntry => ({
-            kind: "supply",
-            tab: "utilities",
-            id: u.id,
-            name: u.name,
-            model: u.model,
-            planned: u,
-        })),
-    ],
+    utilities: REQUISITIONABLE.map((u): SupplyEntry => ({
+        kind: "supply",
+        tab: "utilities",
+        id: `utility-${u.kind}`,
+        name: u.name,
+        model: utilityModel(u),
+        order: { utility: u.kind },
+        actions: ITEMS.find((i) => i.name === u.name)?.actions,
+    })),
 };
 
 /** The stage model of a catalog id (`rifle`, `grenade`, …). */
 export const stageModel = (catalogId: string | undefined) =>
     catalogId ? itemById(catalogId)?.model : undefined;
-
-/** A supply line's stage model: the catalog's, or a planned utility's own. */
-export const supplyStageModel = (e: SupplyEntry): Equipment["model"] | PlannedModel | undefined =>
-    e.planned ? e.planned.model : stageModel(e.model);

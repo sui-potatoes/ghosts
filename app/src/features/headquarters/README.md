@@ -97,8 +97,10 @@ inventory (Weapons / Armor / Mods), a full-size 3D stage and a bench.
   the actions each grants and its uses per match, read from the decoded object;
   copy from `packages/catalog`. Issue and return like armor; a full slot
   (`MAX_UTILITIES`) shows "Swap for …" and the swap runs as ordered steps.
-  The Frag Grenade shows on the stage (`utilityModel` in `mapping.ts` names its
-  catalog model, `@ghosts/squad/studio/armory-utilities` builds it once, shared
+  The Frag Grenade, the Flashbang and the Smoke Grenade are all in the requisition list
+  (one utility per recruit; equipping one swaps the other out) and show on the stage
+  (`utilityModel` in `mapping.ts` names their
+  catalog models, `@ghosts/squad/studio/armory-utilities` builds it once, shared
   by reference count like the rifles; the stage frames it by its own bounds and
   scales the zoom limits to it). The band is plain: the builder only exports
   where the stencils go. A utility without a model shows a short placeholder.

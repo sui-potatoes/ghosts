@@ -21,6 +21,7 @@ import {
     GameBcs,
     GameStateBcs,
     MapBcs,
+    MapPresetBcs,
     RecordBcs,
     RecruitBcs,
     SeatBcs,
@@ -274,6 +275,12 @@ test("every history record decodes, in the contract's variant order", () => {
             "Grenade",
             "UnitKIA",
             "Dodged",
+            "Flashbang",
+            "SmokeGrenade",
+            "EffectStart",
+            "EffectStart",
+            "EffectEnd",
+            "EffectEnd",
         ],
     );
     assert.deepEqual(records.map(decodeRecord), [
@@ -289,14 +296,25 @@ test("every history record decodes, in the contract's variant order", () => {
         { kind: "grenade", from: [1, 1], to: [2, 2] },
         { kind: "kia", recruit: `0x${"abc".padStart(64, "0")}`, x: 3, y: 1 },
         { kind: "dodged" },
+        { kind: "flashbang", from: [4, 4], to: [5, 6] },
+        { kind: "smoke_grenade", from: [2, 2], to: [3, 1] },
+        { kind: "effect_start", x: 3, y: 1, effect: "daze", turns: 2 },
+        { kind: "effect_start", x: 2, y: 3, effect: "smoke", turns: 1 },
+        { kind: "effect_end", x: 3, y: 1, effect: "daze" },
+        { kind: "effect_end", x: 2, y: 3, effect: "smoke" },
     ]);
 });
 
 test("the preset maps are the ones Move builds, with nobody fallen", () => {
     for (const hex of [DEMO_1, DEMO_2, BLACK_RAIN]) {
-        const map = MapBcs.parse(bytes(hex));
+        // Presets leave out the unit index, which Move rebuilds from the grid: with no unit on
+        // a preset, the index is empty, and the same bytes with an empty one are a `Map` too.
+        const map = MapPresetBcs.parse(bytes(hex));
         assert.deepEqual(map.fallen, []);
         // Move's `from_bytes` takes all the bytes: the map is the whole of them.
-        assert.equal(Buffer.from(MapBcs.serialize(map).toBytes()).toString("hex"), hex);
+        assert.equal(Buffer.from(MapPresetBcs.serialize(map).toBytes()).toString("hex"), hex);
+        const indexed = MapBcs.parse(bytes(`${hex}00`));
+        assert.deepEqual(indexed.units, []);
+        assert.equal(Buffer.from(MapBcs.serialize(indexed).toBytes()).toString("hex"), `${hex}00`);
     }
 });

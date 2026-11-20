@@ -19,7 +19,8 @@ identity   whoami | name <name> | setup
 queue      find | cancel | status
 state      state [--moves N] | legal [--unit X,Y] [--kind K] [--limit N]
 wait       wait [--timeout SECONDS]        (returns when you must act, or the time is up)
-act        move X,Y PATH | attack X,Y TX,TY | grenade X,Y TX,TY | reload X,Y
+act        move X,Y PATH | attack X,Y TX,TY | reload X,Y
+           grenade X,Y TX,TY | flashbang X,Y TX,TY | smoke_grenade X,Y TX,TY
            end | deploy | complete | abandon | act ID [ID...]
 PATH is letters u d l r (up = x-1, down = x+1, left = y-1, right = y+1), e.g. uull.
 Env: GHOSTS_NETWORK (default testnet), GHOSTS_SEAT=N or GHOSTS_KEY_FILE.`;
@@ -40,7 +41,15 @@ export interface Parsed {
     };
 }
 
-const KINDS = ["move", "attack", "grenade", "reload", "next_turn"] as const;
+const KINDS = [
+    "move",
+    "attack",
+    "grenade",
+    "flashbang",
+    "smoke_grenade",
+    "reload",
+    "next_turn",
+] as const;
 
 function usage(message: string): ActionError {
     return new ActionError("bad_action", `${message}\n${USAGE}`);
@@ -113,6 +122,8 @@ export function orderIds(parsed: Parsed): string[] | null {
         }
         case "attack":
         case "grenade":
+        case "flashbang":
+        case "smoke_grenade":
             arity(parsed, 2, `X,Y TX,TY: ${command} 3,1 0,3`);
             return [`${command}:${tile(parseTile(p[0]))}:${tile(parseTile(p[1], "target"))}`];
         case "reload":
@@ -148,7 +159,13 @@ export function describeRecord(record: GameRecord): string {
         case "attack":
             return `attack ${tile(record.from)} -> ${tile(record.to)}`;
         case "grenade":
-            return `grenade ${tile(record.from)} -> ${tile(record.to)}`;
+        case "flashbang":
+        case "smoke_grenade":
+            return `${record.kind} ${tile(record.from)} -> ${tile(record.to)}`;
+        case "effect_start":
+            return `${record.effect} on ${record.x},${record.y} for ${record.turns} turns`;
+        case "effect_end":
+            return `${record.effect} on ${record.x},${record.y} ends`;
         case "reload":
             return `reload ${record.x},${record.y}`;
         case "placed":

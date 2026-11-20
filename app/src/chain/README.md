@@ -114,15 +114,28 @@ is what the screens and the future encounter driver import.
   way (`sendTransaction`), in the same line.
 - `match-rules.ts` — the same questions the contract answers (whose turn, is it
   over, the odds of a shot, the cover, the line of sight, where a unit can stand,
-  what a finished game pays),
-  and `Game.history` read as engine events. Pure, tested on its own. The driver
+  what a finished game pays, status effects and the odds with them, whether a
+  grenade can be thrown and who is in its burst),
+  and `Game.history` read as engine events, effect records included. Pure, tested on its own. The driver
   hands these to the engine as `Encounter.authority`, so the odds on screen and the
   paths on offer are the contract's. The line and cover functions were compared
   with the contract on every tile pair of Black Rain; a new map deserves the same.
 - `driver.ts` — the `EncounterDriver` of a match. What the rules can work out
   plays at once and settles behind the scene: moves, reloads, ending a turn. Shots
   and grenades go out at once too, and the scene starts on them; only what the dice
-  decide waits for the answer. If the chain refuses something already played, the
+  decide waits for the answer. The flashbang and the smoke grenade roll nothing: they
+  go out as `perform_flashbang` and `perform_smoke_grenade` with no `Random`, and the
+  burst comes back as `EffectStart` records. If the chain refuses something already played, the
   queue behind it is dropped and the field walks back to what is true. The
   opponent's turn is `Game.history`, polled. Imported by `screens/Match.tsx` only,
   as it brings the engine.
+
+## Effects and the layout the app decodes
+
+`Unit` ends in `effects: vector<Effect>`, one byte per effect (`kind << 4 | turns`, daze 0,
+smoke 1), and `Map` ends in `units: vector<u16>`, the tiles holding a unit as
+`row * cols + col`. Map presets leave `units` out (`PresetMap`). Action kinds 4 and 5 are
+the flashbang and the smoke grenade, utility kinds 1 and 2; history records 12 to 15 are
+`Flashbang`, `SmokeGrenade`, `EffectStart` and `EffectEnd`. Daze and smoke last two turn
+changes, every `next_turn` of either side taking one off. `tests/chain-effects.test.ts`
+holds the byte-level cases, written from the contract's layout.

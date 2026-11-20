@@ -58,6 +58,34 @@
             "records": ["Grenade", "Explosion", "Damage", "UnitKIA"]
         },
         {
+            "id": "Flashbang",
+            "tag": 4,
+            "status": "chain",
+            "name": "Throw flashbang",
+            "description": "Costs 1 AP. Throw up to 5 tiles; every unit within 2 tiles of the target, friend or foe, is dazed: aim 0 for the rest of this turn and the enemy's turn. No damage, cover stays. Walls block the throw.",
+            "source": "utility",
+            "ap": 1,
+            "endsActivation": false,
+            "uses": 1,
+            "chain": "perform_flashbang",
+            "engine": "flashbang",
+            "records": ["Flashbang", "EffectStart"]
+        },
+        {
+            "id": "SmokeGrenade",
+            "tag": 5,
+            "status": "chain",
+            "name": "Throw smoke grenade",
+            "description": "Costs 1 AP. Throw up to 5 tiles; every unit within 2 tiles of the target, friend or foe, is smoked: +30 defense and −30 aim for the rest of this turn and the enemy's turn. No damage, cover stays. Walls block the throw.",
+            "source": "utility",
+            "ap": 1,
+            "endsActivation": false,
+            "uses": 1,
+            "chain": "perform_smoke_grenade",
+            "engine": "smoke-grenade",
+            "records": ["SmokeGrenade", "EffectStart"]
+        },
+        {
             "id": "Overwatch",
             "tag": null,
             "status": "engine",

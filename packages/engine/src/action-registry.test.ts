@@ -45,7 +45,7 @@ const constant = (path: string, name: string) => Number(new RegExp(`const ${name
 
 test("the registry has every ActionKind tag of action.move, under its catalog id and tag", () => {
   const kinds = chainKinds();
-  assert.deepEqual(kinds, ["Move", "Attack", "Reload", "Grenade"]);
+  assert.deepEqual(kinds, ["Move", "Attack", "Reload", "Grenade", "Flashbang", "SmokeGrenade"]);
   kinds.forEach((kind, tag) => {
     const spec = actionSpec(kind);
     assert.ok(spec, `${kind} is in the registry`);
@@ -123,10 +123,20 @@ test("demo units carry what their loadout gives, like chain units", () => {
   assert.deepEqual(loadouts.get(a.id)!.actions.find((x) => x.kind === "Grenade"), { kind: "Grenade", uses: 1 });
   assert.ok(!loadouts.get(b.id)!.actions.some((x) => x.kind === "Grenade"), "no frag, no grenade");
   assert.ok(loadouts.get(b.id)!.actions.some((x) => x.kind === "Attack"));
-  for (const foe of game.enemies) {
-    // hostiles are built from their kit too, with the orders of a chain unit and none of the demo's
-    assert.deepEqual(loadouts.get(foe.id)!.actions.map((x) => x.kind), ["Move", "Attack", "Reload"]);
-  }
+  // hostiles are built from their kit too, with the orders of a chain unit and none of the demo's:
+  // Black Rain's Wraiths carry a flashbang, nothing, and a smoke grenade
+  assert.deepEqual(
+    game.enemies.map((foe) => loadouts.get(foe.id)!.actions.map((x) => x.kind)),
+    [
+      ["Move", "Attack", "Reload", "Flashbang"],
+      ["Move", "Attack", "Reload"],
+      ["Move", "Attack", "Reload", "SmokeGrenade"],
+    ],
+  );
+  const kit = (utility: string) =>
+    deploymentLoadouts([recruit(a.id, "mx4", utility)], game.units, blackRain).get(a.id)!.actions.filter((x) => x.uses !== null);
+  assert.deepEqual(kit("flash"), [{ kind: "Flashbang", uses: 1 }], "the flashbang item grants its one throw");
+  assert.deepEqual(kit("smoke"), [{ kind: "SmokeGrenade", uses: 1 }], "the smoke grenade item grants its one throw");
 });
 
 test("limited uses go down with each throw and refuse at zero", () => {

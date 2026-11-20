@@ -34,7 +34,7 @@ const recruit = {
     ],
 } as unknown as Parameters<typeof chainUnitIntel>[1];
 
-const mapUnit = (grenadeUses: number, armed = true) =>
+const mapUnit = (grenadeUses: number, armed = true, effects: number[] = []) =>
     ({
         recruit: "0xr",
         owner: "0xa",
@@ -69,7 +69,11 @@ const mapUnit = (grenadeUses: number, armed = true) =>
                 : []),
             { uses: grenadeUses, kind: kind("Grenade") },
         ],
+        effects,
     }) as unknown as Parameters<typeof chainUnitIntel>[2];
+
+const intelOf = (effects: number[]) =>
+    chainUnitIntel(base(), recruit, mapUnit(1, true, effects)).stats;
 
 const base = () => {
     const game = new Encounter();
@@ -110,6 +114,55 @@ test("chain intel: a thrown grenade reads spent, an unarmed unit unarmed, a miss
     const intel = chainUnitIntel(base(), noWeapon, mapUnit(0, false));
     assert.equal(intel.weapon, null);
     assert.equal(intel.utility, null);
+});
+
+test("chain intel: aim and defense are the unit's effective ones, base stats untouched on chain", () => {
+    // base aim 70, defense 10
+    assert.deepEqual([intelOf([]).aim, intelOf([]).defense], [70, 10]);
+    assert.deepEqual([intelOf([0x02]).aim, intelOf([0x02]).defense], [0, 10], "dazed: aim 0");
+    assert.deepEqual(
+        [intelOf([0x12]).aim, intelOf([0x12]).defense],
+        [40, 40],
+        "smoke: -30 aim, +30 defense",
+    );
+    assert.deepEqual([intelOf([0x12, 0x02]).aim, intelOf([0x12, 0x02]).defense], [0, 40]);
+    // the other stats are what the contract says
+    assert.equal(intelOf([0x12]).dodge, 5);
+});
+
+test("chain intel: a smoke grenade or a flashbang carrier reads its own utility and uses", () => {
+    for (const [name, action] of [
+        ["Smoke Grenade", "SmokeGrenade"],
+        ["Flashbang", "Flashbang"],
+    ]) {
+        const carrier = {
+            ...recruit,
+            utilities: [
+                {
+                    id: "0x6",
+                    name,
+                    stats: { value: "0" },
+                    actions: [{ uses: 1, kind: kind(action) }],
+                },
+            ],
+        } as unknown as typeof recruit;
+        const unit = {
+            ...(mapUnit(1) as object),
+            actions: [
+                { uses: null, kind: kind("Move") },
+                { uses: 1, kind: kind(action) },
+            ],
+        } as unknown as Parameters<typeof chainUnitIntel>[2];
+        assert.deepEqual(chainUnitIntel(base(), carrier, unit).utility, { name, uses: 1, max: 1 });
+        const spent = {
+            ...(unit as object),
+            actions: [
+                { uses: null, kind: kind("Move") },
+                { uses: 0, kind: kind(action) },
+            ],
+        } as unknown as Parameters<typeof chainUnitIntel>[2];
+        assert.equal(chainUnitIntel(base(), carrier, spent).utility?.uses, 0, name);
+    }
 });
 
 test("the opponent's line: assigned name, rating and record from the Account", () => {

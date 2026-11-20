@@ -3,6 +3,7 @@
 
 import type { Cell, Weapon } from "./game.ts";
 import type { PropDamage } from "./environment.ts";
+import { effectDetail, effectName, turnsLeft, type UnitEffect } from "./status-effects.ts";
 
 /**
  * What happened, as the rules decided it. The scene animates events, the
@@ -36,6 +37,24 @@ export type GameEvent =
       casualties: { unit: string; damage: number; killed: boolean }[];
       environment?: PropDamage[];
     }
+  /**
+   * A flashbang or a smoke grenade thrown at `at` (`Flashbang` / `SmokeGrenade`
+   * records): no damage, cover untouched. What it did follows as one
+   * `effect-start` per unit in the burst, in `Map.units` order.
+   */
+  | { type: "flashbang" | "smoke-grenade"; unit: string; at: Cell }
+  /**
+   * `EffectStart`: `effect` is on the unit as it now has it, turns included
+   * (a refresh carries the larger timer). Replayed, it sets the kind's entry or
+   * adds it at the end of the unit's list.
+   */
+  | { type: "effect-start"; unit: string; effect: UnitEffect }
+  /**
+   * `EffectEnd`: the kind ran out at a turn end and is gone. Follows the
+   * `hostile-phase` or `turn` event that took its last turn off; a unit that
+   * falls loses its effects with no `effect-end`.
+   */
+  | { type: "effect-end"; unit: string; kind: string }
   | { type: "hunker"; unit: string }
   | { type: "overwatch"; unit: string }
   | { type: "switch-weapon"; unit: string; weapon: Weapon }
@@ -50,6 +69,7 @@ export type Command =
   | { type: "move"; unit: string; to: Cell }
   | { type: "fire"; unit: string; target: string }
   | { type: "grenade"; unit: string; at: Cell }
+  | { type: "flashbang" | "smoke-grenade"; unit: string; at: Cell }
   | { type: "switch-weapon"; unit: string; weapon: Weapon }
   | { type: "reload" | "hunker" | "overwatch" | "secure"; unit: string };
 
@@ -73,6 +93,16 @@ export function describe(event: GameEvent, name: (id: string) => string): string
       const broken = event.environment?.filter((p) => p.destroyed).length ?? 0;
       return `${name(event.unit)} deployed fragmentation grenade. Blast radius: 2.${broken ? ` ${broken} prop${broken === 1 ? "" : "s"} destroyed.` : ""}`;
     }
+    case "flashbang":
+      return `${name(event.unit)} threw a flashbang. Burst radius: 2.`;
+    case "smoke-grenade":
+      return `${name(event.unit)} threw a smoke grenade. Burst radius: 2.`;
+    case "effect-start": {
+      const detail = effectDetail(event.effect.kind);
+      return `${name(event.unit)}: ${effectName(event.effect.kind).toLowerCase()}${detail ? `, ${detail}` : ""}, ${turnsLeft(event.effect.turns)}.`;
+    }
+    case "effect-end":
+      return `${name(event.unit)}: no longer ${effectName(event.kind).toLowerCase()}.`;
     case "hunker":
       return `${name(event.unit)} hunkered down. Defense increased.`;
     case "overwatch":

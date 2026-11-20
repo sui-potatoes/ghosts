@@ -21,9 +21,12 @@ import {
   costLabel,
   GRENADE_RADIUS,
   GRENADE_RANGE,
+  isThrowOrder,
   MAX_RANGE_OFFSET,
   REFUSAL_TEXT,
+  THROW_EFFECT,
   type CommandState,
+  type ThrowOrder,
 } from "../action-registry";
 import { action, cancelTargeting, deselect, endTurn, fire, pick, select, throwGrenade } from "../actions";
 import { runCombatAction } from "../controls";
@@ -35,8 +38,8 @@ import { timePresets, type TimeOfDay } from "../scene-weather";
 import type { Weather } from "../scene/precipitation";
 import { session } from "../session";
 import { engineSettings } from "../settings";
-import { effectiveStats, effectLines } from "../status-effects";
-import { damagePreview, grenadeBlockReason, shotBlockReason } from "../targeting";
+import { effectDetail, effectLines, effectName, unitCombat } from "../status-effects";
+import { burstUnits, damagePreview, grenadeBlockReason, shotBlockReason } from "../targeting";
 import { Icon, type IconName } from "./icons";
 import { TargetIntel } from "./intel/IntelLayer";
 import { INSPECT_COMMAND, useInspect } from "./intel/store";
@@ -92,6 +95,8 @@ function padFor(order: UnitOrder | undefined): PadKey {
   const binds = engineSettings().padCombat();
   if (order === "move") return "a";
   if (order === "fire" || order === "grenade" || order === "reload") return binds[order];
+  // One utility slot: the grenade button arms whichever grenade the operator carries.
+  if (order && isThrowOrder(order)) return binds.grenade;
   return order ? binds.wheel : "";
 }
 
@@ -344,7 +349,7 @@ export function UnitPanel() {
   const u = s.selectedUnit();
   if (!u) return null;
   const effects = effectLines(u.effects);
-  const stats = effectiveStats({ aim: u.aim, defense: 0, mobility: u.mobility, armor: u.armor }, u.effects);
+  const stats = unitCombat(u);
   const changed = (k: keyof typeof stats, base: number) => (stats[k] !== base ? (stats[k] > base ? "up" : "down") : undefined);
   const armed = u.actions.some((a) => a.kind === "Attack");
   return (
@@ -383,16 +388,24 @@ export function UnitPanel() {
         <p className="hud-unit-stats">
           <span>{armed ? weaponName(u) : "Unarmed"}</span>
           <span data-shift={changed("aim", u.aim)}>AIM {stats.aim}</span>
+          {(u.defense > 0 || stats.defense !== u.defense) && (
+            <span data-shift={changed("defense", u.defense)}>DEF {stats.defense}</span>
+          )}
           <span data-shift={changed("mobility", u.mobility)}>MOB {stats.mobility}</span>
           <span data-shift={changed("armor", u.armor)}>ARM {stats.armor}</span>
         </p>
         {effects.length > 0 && (
           <ul className="hud-effects" aria-label="Status effects">
             {effects.map((e) => (
-              <li key={e.kind} title={e.description}>
+              <li key={e.kind} title={e.description} data-effect={e.kind}>
                 <Icon name={e.icon ?? "unknown"} />
-                {e.name}
-                <b>{e.turns}T</b>
+                <span>
+                  {e.name}
+                  {e.detail ? `: ${e.detail},` : ","}
+                </span>
+                <b>
+                  {e.turns} turn{e.turns === 1 ? "" : "s"} left
+                </b>
               </li>
             ))}
           </ul>
@@ -492,6 +505,11 @@ function AimShot({ u, t }: { u: Unit; t: Unit | undefined }) {
   const reason = shotBlockReason(game, u, t);
   const preview = damagePreview(u, t);
   const tiles = distance(u.pos, t.pos);
+  // What the status effects on either side do to these odds (already in them).
+  const notes = [
+    ...u.effects.filter((e) => e.turns > 0).map((e) => `${effectName(e.kind)}: ${effectDetail(e.kind)}`),
+    ...t.effects.filter((e) => e.turns > 0).map((e) => `Target ${effectName(e.kind).toLowerCase()}: ${effectDetail(e.kind)}`),
+  ];
   return (
     <div className="hud-aim">
       <strong className="hud-aim-odds">
@@ -518,6 +536,11 @@ function AimShot({ u, t }: { u: Unit; t: Unit | undefined }) {
             {" · ALL AP"}
           </span>
         )}
+        {notes.length > 0 && (
+          <span className="hud-hint" data-effects>
+            {notes.join(" · ")}
+          </span>
+        )}
       </div>
       <div className="hud-aim-intel">
         <TargetIntel />
@@ -526,15 +549,50 @@ function AimShot({ u, t }: { u: Unit; t: Unit | undefined }) {
   );
 }
 
-/** What the bar says while a throw is aimed. */
-function AimThrow({ u }: { u: Unit }) {
+/** What each throw does to whoever its burst catches, for the bar. */
+const THROW_VERB: Record<ThrowOrder, string> = { grenade: "Hits", flashbang: "Dazes", "smoke-grenade": "Smokes" };
+
+/** What the bar says while a throw is aimed: the frag's blast, or the burst of a flashbang or a smoke grenade. */
+function AimThrow({ u, kind }: { u: Unit; kind: ThrowOrder }) {
   const s = useSession();
   const { game, busy } = s;
   const target = s.grenadeTarget;
-  const reason = grenadeBlockReason(game, u, target);
-  const affected = target ? game.units.filter((a) => a.hp > 0 && distance(a.pos, target) <= GRENADE_RADIUS) : [];
+  // While the throw plays its use is already spent: no refusal to show.
+  const reason = busy ? null : grenadeBlockReason(game, u, target, kind);
+  const affected = burstUnits(game, target);
   const friendly = affected.filter((a) => a.enemy === u.enemy);
-  const props = target && !busy ? game.map.blastProps(target) : [];
+  const effect = THROW_EFFECT[kind];
+  const props = target && !busy && kind === "grenade" ? game.map.blastProps(target) : [];
+  if (effect)
+    return (
+      <div className="hud-aim">
+        <strong className="hud-aim-odds">
+          {target ? distance(u.pos, target) : "—"}
+          <small>/{GRENADE_RANGE}</small>
+        </strong>
+        <div className="hud-aim-text">
+          <span className="hud-aim-target">
+            Landing tile
+            <small>
+              {affected.length - friendly.length} HOSTILE · {friendly.length} SQUAD · {GRENADE_RADIUS}-TILE BURST
+            </small>
+          </span>
+          {reason ? (
+            <span className="hud-hint" data-deny>
+              <i className="hud-warn-mark" />
+              {reason}
+            </span>
+          ) : affected.length ? (
+            <span className="hud-hint" data-deny={(effect === "Daze" && friendly.length > 0) || undefined}>
+              {effect === "Daze" && friendly.length > 0 && <i className="hud-warn-mark" />}
+              {THROW_VERB[kind]} {affected.map((a) => a.name).join(", ")}: {effectDetail(effect)}
+            </span>
+          ) : (
+            <span className="hud-hint">Nobody in the burst</span>
+          )}
+        </div>
+      </div>
+    );
   return (
     <div className="hud-aim">
       <strong className="hud-aim-odds">
@@ -582,14 +640,14 @@ export function CommandBar() {
   const { game, busy } = s;
   const u = s.selectedUnit();
   const myTurn = !game.result && game.phase === "player";
-  const aiming = !!u && myTurn && (s.mode === "fire" || s.mode === "grenade");
+  const aiming = !!u && myTurn && (s.mode === "fire" || isThrowOrder(s.mode));
   const commands = u ? commandsOf(game, u) : [];
   const hoveredCommand = commands.find((c) => c.kind === hovered);
   const locked = busy || s.resolving;
 
   let context: ReactNode;
   if (aiming && s.mode === "fire") context = <AimShot u={u!} t={s.targetUnit()} />;
-  else if (aiming) context = <AimThrow u={u!} />;
+  else if (aiming && isThrowOrder(s.mode)) context = <AimThrow u={u!} kind={s.mode} />;
   else if (hoveredCommand) {
     context = hoveredCommand.refusal ? (
       <p className="hud-hint" data-deny>
@@ -682,7 +740,7 @@ export function CommandBar() {
                 busy ||
                 (s.mode === "fire"
                   ? !!shotBlockReason(game, u!, s.targetUnit())
-                  : !!grenadeBlockReason(game, u!, s.grenadeTarget))
+                  : !!grenadeBlockReason(game, u!, s.grenadeTarget, isThrowOrder(s.mode) ? s.mode : "grenade"))
               }
               onClick={() => void (s.mode === "fire" ? fire() : throwGrenade())}
             />

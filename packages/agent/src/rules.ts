@@ -13,11 +13,14 @@
 import {
     ActionError,
     type Action,
+    type EffectKind,
+    type GameRecord,
     type GameState,
     type Stats,
     type Tile,
     type Unit,
     type UnitAction,
+    type UnitEffect,
 } from "./types.ts";
 
 export const UP = 1;
@@ -32,10 +35,69 @@ const MAX_RANGE_OFFSET = 3;
 const DISTANCE_BONUS = 5;
 const DISTANCE_PENALTY = 10;
 
-/** `map::perform_grenade`: the numbers of a throw are the grenade action's, not an item's. */
+/**
+ * `map::perform_grenade`: the numbers of a throw are the grenade action's, not an item's. The
+ * range and the radius are the same for the frag grenade, the flashbang and the smoke grenade;
+ * the damage is the frag grenade's alone.
+ */
 export const GRENADE_RANGE = 5;
 export const GRENADE_RADIUS = 2;
 export const GRENADE_DAMAGE = 4;
+
+/** The three throws, each an action of its own: the frag grenade, the flashbang and the smoke. */
+export const THROWS = ["grenade", "flashbang", "smoke_grenade"] as const;
+export type ThrowKind = (typeof THROWS)[number];
+export type ThrowAction = Extract<Action, { kind: ThrowKind }>;
+/** A throw that rolls nothing and deals no damage: it only puts an effect on units it reaches. */
+export type EffectThrowKind = Exclude<ThrowKind, "grenade">;
+export type EffectThrowAction = Extract<Action, { kind: EffectThrowKind }>;
+
+export const isThrow = (kind: Action["kind"]): kind is ThrowKind =>
+    (THROWS as readonly string[]).includes(kind);
+export const isEffectThrow = (kind: Action["kind"]): kind is EffectThrowKind =>
+    kind === "flashbang" || kind === "smoke_grenade";
+
+/** `effect`: what each throw puts on the units it reaches, and for how long. */
+export const THROW_EFFECT: Record<EffectThrowKind, EffectKind> = {
+    flashbang: "daze",
+    smoke_grenade: "smoke",
+};
+/** `effect::DAZE_TURNS` and `effect::SMOKE_TURNS`: the turn changes an effect lasts. */
+export const EFFECT_TURNS: Record<EffectKind, number> = { daze: 2, smoke: 2 };
+/** `effect::SMOKE_AIM_PENALTY` and `effect::SMOKE_DEFENSE`. */
+export const SMOKE_AIM_PENALTY = 30;
+export const SMOKE_DEFENSE = 30;
+/** `stats::add` caps a modified value at 127. */
+const MODIFIED_MAX = 127;
+
+/** `effect::modifier`: the signed change an effect makes to the stats it touches. */
+const MODIFIERS: Record<EffectKind, Partial<Record<"aim" | "defense", number>>> = {
+    daze: { aim: -127 },
+    smoke: { aim: -SMOKE_AIM_PENALTY, defense: SMOKE_DEFENSE },
+};
+
+/**
+ * `unit::effective_stats`: the base stats with the modifier of each effect added in order, as
+ * `stats::add` does it: a stat never goes below 0, and one a modifier touches is capped at 127.
+ * Only aim and defense change today. A daze takes all the aim, which smoke does not give back.
+ */
+export function effectiveStats(unit: Pick<Unit, "stats" | "effects">): Stats {
+    if (unit.effects.length === 0) return unit.stats;
+    const stats = { ...unit.stats };
+    for (const { kind } of unit.effects) {
+        for (const [name, change] of Object.entries(MODIFIERS[kind])) {
+            const stat = name as "aim" | "defense";
+            const base = stats[stat];
+            const value = change < 0 ? base - Math.min(-change, base) : base + change;
+            stats[stat] = Math.min(value, MODIFIED_MAX);
+        }
+    }
+    return stats;
+}
+
+/** The effect of the kind on the unit, if it has one. */
+export const effectOf = (unit: Pick<Unit, "effects">, kind: EffectKind) =>
+    unit.effects.find((effect) => effect.kind === kind);
 
 /** Whether the unit has an action of the kind, whatever uses are left. */
 export const hasAction = (unit: Unit, kind: UnitAction) =>
@@ -47,6 +109,17 @@ export const hasAction = (unit: Unit, kind: UnitAction) =>
  */
 export const hasUsesLeft = (unit: Unit, kind: UnitAction) =>
     unit.actions.some((action) => action.kind === kind && (action.uses === null || action.uses > 0));
+
+/**
+ * `unit::spend_use`: take a use of the first action of the kind that has one left. Unlimited
+ * actions (`uses` of `null`) have none to take.
+ */
+export function spendUse(unit: Unit, kind: UnitAction): void {
+    const spent = unit.actions.find(
+        (action) => action.kind === kind && (action.uses === null || action.uses > 0),
+    );
+    if (spent && spent.uses !== null) spent.uses -= 1;
+}
 
 /** The most orders one transaction may carry. */
 export const MAX_BATCH = 8;
@@ -150,7 +223,7 @@ export function reachable(state: GameState, unit: Unit): Map<string, number[]> {
     let frontier: { x: number; y: number; path: number[] }[] = [{ x: unit.x, y: unit.y, path: [] }];
     const seen = new Set([`${unit.x},${unit.y}`]);
 
-    for (let distance = 0; distance < unit.stats.mobility; distance++) {
+    for (let distance = 0; distance < effectiveStats(unit).mobility; distance++) {
         const next: typeof frontier = [];
         for (const { x, y, path } of frontier) {
             for (const direction of [UP, RIGHT, DOWN, LEFT]) {
@@ -358,6 +431,8 @@ export function actionId(action: Action): string {
             return `reload:${action.x},${action.y}`;
         case "attack":
         case "grenade":
+        case "flashbang":
+        case "smoke_grenade":
             return `${action.kind}:${action.x},${action.y}:${action.tx},${action.ty}`;
         default:
             return action.kind;
@@ -375,10 +450,10 @@ export function parseAction(id: string): Action {
     }
     match = /^reload:(\d+),(\d+)$/.exec(id);
     if (match) return { kind: "reload", x: Number(match[1]), y: Number(match[2]) };
-    match = /^(attack|grenade):(\d+),(\d+):(\d+),(\d+)$/.exec(id);
+    match = /^(attack|grenade|flashbang|smoke_grenade):(\d+),(\d+):(\d+),(\d+)$/.exec(id);
     if (match) {
         return {
-            kind: match[1] as "attack" | "grenade",
+            kind: match[1] as "attack" | ThrowKind,
             x: Number(match[2]),
             y: Number(match[3]),
             tx: Number(match[4]),
@@ -426,7 +501,7 @@ export function refusal(
 
     switch (action.kind) {
         case "move": {
-            if (action.path.length > unit.stats.mobility)
+            if (action.path.length > effectiveStats(unit).mobility)
                 return "The path exceeds the unit's mobility.";
             return checkPath(state, action.x, action.y, action.path)
                 ? null
@@ -438,7 +513,7 @@ export function refusal(
             if (unit.ammo <= 0) return "The weapon is empty: reload.";
             if (!inBounds(state, action.tx, action.ty)) return "The target is off the map.";
             const target = unitAt(state, action.tx, action.ty);
-            if (unit.stats.areaSize > 0) {
+            if (effectiveStats(unit).areaSize > 0) {
                 if (state.tiles[action.tx][action.ty].kind === "wall")
                     return "Cannot target a wall.";
             } else {
@@ -447,17 +522,19 @@ export function refusal(
             }
             const chance = shotChance(
                 state,
-                unit.stats,
+                effectiveStats(unit),
                 action.x,
                 action.y,
                 action.tx,
                 action.ty,
-                target?.stats.defense ?? 0,
+                target ? effectiveStats(target).defense : 0,
             );
             return chance === null ? "The target is out of range or out of sight." : null;
         }
-        case "grenade": {
-            if (!hasUsesLeft(unit, "grenade")) return "This unit has no grenade left.";
+        case "grenade":
+        case "flashbang":
+        case "smoke_grenade": {
+            if (!hasUsesLeft(unit, action.kind)) return THROW_SPENT[action.kind];
             if (!inBounds(state, action.tx, action.ty)) return "The target is off the map.";
             if (manhattan(action.x, action.y, action.tx, action.ty) > GRENADE_RANGE) {
                 return "The target is out of throwing range.";
@@ -470,8 +547,156 @@ export function refusal(
     }
 }
 
-/** Orders that roll dice. Only transfers may follow `Random` in a transaction, so they go last. */
+const THROW_SPENT: Record<ThrowKind, string> = {
+    grenade: "This unit has no grenade left.",
+    flashbang: "This unit has no flashbang left.",
+    smoke_grenade: "This unit has no smoke grenade left.",
+};
+
+/**
+ * Orders that roll dice. Only transfers may follow `Random` in a transaction, so they go last.
+ * The flashbang and the smoke grenade roll nothing.
+ */
 export const rollsDice = (action: Action) => action.kind === "attack" || action.kind === "grenade";
+
+// === Effects ===
+
+/** `Map.units` order: row-major by tile (`x * cols + y`). Effects land on units in this order. */
+export function inUnitOrder(state: Pick<GameState, "cols">, units: Unit[]): Unit[] {
+    return [...units].sort((a, b) => a.x * state.cols + a.y - (b.x * state.cols + b.y));
+}
+
+/**
+ * `Unit.apply_effect`: put an effect of the kind on the unit, for the turns that kind lasts.
+ * One it has already is refreshed to the longer of the two, in its place; a new one goes last.
+ * Returns the effect as the unit now has it.
+ */
+export function applyEffect(unit: Unit, kind: EffectKind): UnitEffect {
+    const turns = EFFECT_TURNS[kind];
+    const has = effectOf(unit, kind);
+    if (has) {
+        has.turns = Math.max(has.turns, turns);
+        return { ...has };
+    }
+    const effect = { kind, turns };
+    unit.effects.push(effect);
+    return { ...effect };
+}
+
+/**
+ * `Map.spread_effect`: the effect on every unit within `GRENADE_RADIUS` of `(x, y)`, either
+ * side's. Records an `EffectStart` per unit, in `Map.units` order.
+ */
+export function spreadEffect(state: GameState, x: number, y: number, kind: EffectKind) {
+    const records: GameRecord[] = [];
+    for (const unit of inUnitOrder(state, blastUnits(state, x, y, GRENADE_RADIUS))) {
+        const { turns } = applyEffect(unit, kind);
+        records.push({ kind: "effect_start", x: unit.x, y: unit.y, effect: kind, turns });
+    }
+    return records;
+}
+
+/**
+ * `Map.perform_flashbang` and `Map.perform_smoke_grenade`: the throw costs 1 AP and a use, then
+ * the header record and an `EffectStart` per unit in the burst. Nothing rolls, nothing is
+ * damaged, covers stay. Changes `state`.
+ */
+export function throwEffect(state: GameState, action: EffectThrowAction): GameRecord[] {
+    const unit = unitAt(state, action.x, action.y)!;
+    unit.ap -= 1;
+    spendUse(unit, action.kind);
+    const header = { from: [action.x, action.y], to: [action.tx, action.ty] };
+    return [
+        { kind: action.kind, ...header },
+        ...spreadEffect(state, action.tx, action.ty, THROW_EFFECT[action.kind]),
+    ];
+}
+
+/**
+ * `ghosts::next_turn` as it changes the map: the fallen are buried, the turn passes, and in a
+ * single walk of `Map.units` every unit gets one turn off each effect, those at zero going,
+ * while the units of the side whose turn begins get their AP back. Changes `state`.
+ *
+ * Records the `EffectEnd`s, unit by unit in `Map.units` order and in the order a unit had its
+ * effects: the `NextTurn` record is the caller's, as it comes first. With `last` the game ends
+ * on this turn change (`MAX_TURNS`): the chain stops before the walk.
+ */
+export function passTurn(state: GameState, last = false): GameRecord[] {
+    state.fallen = [];
+    state.turn += 1;
+    state.active = state.turn % state.players.length;
+    if (last) return [];
+    const records: GameRecord[] = [];
+    for (const unit of inUnitOrder(state, state.units)) {
+        if (unit.side === state.active) unit.ap = unit.apMax;
+        for (const effect of unit.effects) effect.turns -= 1;
+        for (const effect of unit.effects.filter((e) => e.turns === 0)) {
+            records.push({ kind: "effect_end", x: unit.x, y: unit.y, effect: effect.kind });
+        }
+        unit.effects = unit.effects.filter((effect) => effect.turns > 0);
+    }
+    return records;
+}
+
+/** What a unit carries, by the tile it stands on. */
+export interface EffectsAt {
+    x: number;
+    y: number;
+    effects: UnitEffect[];
+}
+
+/**
+ * Rebuild the effects of every unit from the history alone, the way a client without the game
+ * objects does: the tiles of the units that carry any, each with its effects in the order the
+ * unit got them. `EffectStart` sets the effect of its kind, or adds it last; `NextTurn` takes a
+ * turn off every effect; `EffectEnd` removes the kind, which must have run out; `Move` takes a
+ * unit's effects along its path; `UnitKIA` ends them all. Throws if the history is not one a
+ * game wrote: an effect that ran out and stayed, or ended with turns left or never was.
+ */
+export function replayEffects(history: GameRecord[]): EffectsAt[] {
+    const tiles: EffectsAt[] = [];
+    const at = (x: number, y: number) => tiles.find((tile) => tile.x === x && tile.y === y);
+    const drop = (tile: EffectsAt) => tiles.splice(tiles.indexOf(tile), 1);
+
+    for (const record of history) {
+        if (record.kind === "move") {
+            const [x0, y0, ...path] = record.path;
+            const tile = at(x0, y0);
+            if (!tile) continue;
+            let [x, y] = [x0, y0];
+            for (const direction of path) {
+                x += STEPS[direction][0];
+                y += STEPS[direction][1];
+            }
+            [tile.x, tile.y] = [x, y];
+        } else if (record.kind === "kia") {
+            const tile = at(record.x, record.y);
+            if (tile) drop(tile);
+        } else if (record.kind === "next_turn") {
+            for (const tile of tiles) for (const effect of tile.effects) effect.turns -= 1;
+        } else if (record.kind === "effect_start") {
+            const tile = at(record.x, record.y) ?? { x: record.x, y: record.y, effects: [] };
+            if (!tiles.includes(tile)) tiles.push(tile);
+            const has = tile.effects.find((effect) => effect.kind === record.effect);
+            if (has) has.turns = record.turns;
+            else tile.effects.push({ kind: record.effect, turns: record.turns });
+        } else if (record.kind === "effect_end") {
+            const tile = at(record.x, record.y);
+            const has = tile?.effects.find((effect) => effect.kind === record.effect);
+            if (!tile || !has || has.turns !== 0) {
+                throw new Error(`The ${record.effect} on (${record.x}, ${record.y}) did not end.`);
+            }
+            tile.effects = tile.effects.filter((effect) => effect !== has);
+            if (tile.effects.length === 0) drop(tile);
+        }
+    }
+    for (const tile of tiles) {
+        if (tile.effects.some((effect) => effect.turns <= 0)) {
+            throw new Error(`An effect on (${tile.x}, ${tile.y}) ran out without an end.`);
+        }
+    }
+    return tiles;
+}
 
 /** Apply an order that rolls no dice to a copy of the state. */
 export function applyDeterministic(state: GameState, action: Action): GameState {
@@ -485,12 +710,10 @@ export function applyDeterministic(state: GameState, action: Action): GameState 
         const unit = unitAt(next, action.x, action.y)!;
         unit.ammo = unit.ammoMax;
         unit.ap -= 1;
+    } else if (isEffectThrow(action.kind)) {
+        throwEffect(next, action as EffectThrowAction);
     } else if (action.kind === "next_turn") {
-        // `bury_fallen`, then `reset_ap` for the side whose turn begins
-        next.fallen = [];
-        next.turn += 1;
-        next.active = next.turn % next.players.length;
-        for (const unit of next.units) if (unit.side === next.active) unit.ap = unit.apMax;
+        passTurn(next);
     }
     return next;
 }
@@ -498,7 +721,8 @@ export function applyDeterministic(state: GameState, action: Action): GameState 
 /**
  * Check a whole batch against the state each order would find, and return it
  * parsed. A dice roll can only be the last order, since its result decides what
- * makes sense next, and so is a turn's end.
+ * makes sense next, and so is a turn's end. A flashbang or a smoke grenade rolls
+ * nothing, so orders can follow it.
  */
 export function validateBatch(
     state: GameState,
@@ -519,7 +743,8 @@ export function validateBatch(
         if (rollsDice(action) && !last) {
             throw new ActionError("illegal_action", `${id}: a dice roll must be the last action.`);
         }
-        if (!rollsDice(action) && action.kind !== "move" && action.kind !== "reload" && !last) {
+        const plain = action.kind === "move" || action.kind === "reload";
+        if (!rollsDice(action) && !plain && !isEffectThrow(action.kind) && !last) {
             throw new ActionError("illegal_action", `${id}: must be the last action.`);
         }
         cursor = applyDeterministic(cursor, action);
@@ -540,7 +765,7 @@ export interface LegalAction {
     damage?: { min: number; max: number };
     /** The target's HP (attack). */
     targetHp?: number;
-    /** Units in the blast (grenade, area attack). */
+    /** Units in the blast (any throw, area attack). */
     enemiesHit?: number;
     alliesHit?: number;
     /** Best chance any enemy has of hitting this unit on the tile (move). */
@@ -561,20 +786,14 @@ function moveOption(
     const enemies = state.units.filter((other) => other.side !== unit.side);
     const canShootAfter = hasAction(unit, "attack") && unit.ap > 1 && unit.ammo > 0;
     let [threat, bestShot, enemyDistance] = [0, 0, Infinity];
+    const mine = effectiveStats(unit);
     for (const enemy of enemies) {
         enemyDistance = Math.min(enemyDistance, manhattan(x, y, enemy.x, enemy.y));
-        const incoming = shotChance(state, enemy.stats, enemy.x, enemy.y, x, y, unit.stats.defense);
+        const theirs = effectiveStats(enemy);
+        const incoming = shotChance(state, theirs, enemy.x, enemy.y, x, y, mine.defense);
         threat = Math.max(threat, incoming ?? 0);
         if (canShootAfter) {
-            const outgoing = shotChance(
-                state,
-                unit.stats,
-                x,
-                y,
-                enemy.x,
-                enemy.y,
-                enemy.stats.defense,
-            );
+            const outgoing = shotChance(state, mine, x, y, enemy.x, enemy.y, theirs.defense);
             bestShot = Math.max(bestShot, outgoing ?? 0);
         }
     }
@@ -609,7 +828,8 @@ export function legalActions(state: GameState, side: number, nowMs: number): Leg
     const enemies = state.units.filter((unit) => unit.side !== side);
 
     for (const unit of mine) {
-        const { x, y, stats } = unit;
+        const { x, y } = unit;
+        const stats = effectiveStats(unit);
         const attacks: LegalAction[] = [];
         if (hasAction(unit, "attack") && unit.ammo > 0) {
             for (const enemy of enemies) {
@@ -620,7 +840,7 @@ export function legalActions(state: GameState, side: number, nowMs: number): Leg
                     y,
                     enemy.x,
                     enemy.y,
-                    enemy.stats.defense,
+                    effectiveStats(enemy).defense,
                 );
                 if (chance === null) continue;
                 const blast = blastUnits(state, enemy.x, enemy.y, stats.areaSize);
@@ -641,7 +861,8 @@ export function legalActions(state: GameState, side: number, nowMs: number): Leg
         }
         options.push(...attacks.sort((a, b) => b.hitChance! - a.hitChance!));
 
-        if (hasUsesLeft(unit, "grenade")) {
+        for (const kind of THROWS) {
+            if (!hasUsesLeft(unit, kind)) continue;
             const throws: LegalAction[] = [];
             for (
                 let tx = Math.max(0, x - GRENADE_RANGE);
@@ -655,12 +876,13 @@ export function legalActions(state: GameState, side: number, nowMs: number): Leg
                 ) {
                     const blast = blastUnits(state, tx, ty, GRENADE_RADIUS);
                     const enemiesHit = blast.filter((other) => other.side !== side).length;
-                    if (enemiesHit === 0) continue;
-                    const action: Action = { kind: "grenade", x, y, tx, ty };
+                    // a smoke grenade is for anyone in it, mine or theirs; the rest are for enemies
+                    if (kind === "smoke_grenade" ? blast.length === 0 : enemiesHit === 0) continue;
+                    const action: Action = { kind, x, y, tx, ty };
                     if (refusal(state, side, action, nowMs)) continue;
                     throws.push({
                         id: actionId(action),
-                        kind: "grenade",
+                        kind,
                         unit: [x, y],
                         to: [tx, ty],
                         enemiesHit,
@@ -668,7 +890,10 @@ export function legalActions(state: GameState, side: number, nowMs: number): Leg
                     });
                 }
             }
-            const value = (a: LegalAction) => a.enemiesHit! * 2 - a.alliesHit! * 3;
+            const value = (a: LegalAction) =>
+                kind === "smoke_grenade"
+                    ? a.alliesHit! * 2 - a.enemiesHit! * 3
+                    : a.enemiesHit! * 2 - a.alliesHit! * 3;
             options.push(...throws.sort((a, b) => value(b) - value(a)));
         }
 

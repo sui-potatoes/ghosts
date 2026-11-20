@@ -7,16 +7,17 @@ import { bcs } from "@mysten/sui/bcs";
 import { assetSpec } from "../../packages/engine/src/catalog.ts";
 import { newLevel, toMoveMap, type MoveTile } from "../../packages/engine/src/editor/level.ts";
 import { encodeMap, toPreset } from "../../packages/engine/src/editor/preset.ts";
-import { GameMap } from "../src/chain/bcs.ts";
+import { GameMap, PresetMap } from "../src/chain/bcs.ts";
 
 /**
- * The editor's preset bytes against the app's decoder of the DEPLOYED `Map`
- * (`bcs.ts`, no trailing `units`) and against the frozen testnet `Preset`.
+ * The editor's preset bytes against the app's decoder of a preset's `Map`
+ * (`bcs.ts`: no trailing `units`, which the contract rebuilds from the grid) and
+ * against the frozen testnet `Preset`.
  * `Preset` is `ghosts::ghosts::Preset`: id, map, name, positions.
  */
 const Preset = bcs.struct("Preset", {
     id: bcs.Address,
-    map: GameMap,
+    map: PresetMap,
     name: bcs.string(),
     positions: bcs.vector(bcs.vector(bcs.u8())),
 });
@@ -26,7 +27,7 @@ const LIVE =
     "6e834d1a513585caf95dd3a104723b1ad4de19c88e75f47a209dd2e0c96451b96e834d1a513585caf95dd3a104723b1ad4de19c88e75f47a209dd2e0c96451b90e1203000300030003000300000000000000000000000000000000000300030003000300030012030003000300030003000000000000000000000000000000000003000300030003000300120300030003000300030000000000000000000000000000000101010101000300030003000300030012030003000300030003000000000000000000010101010100000000000000030003000300030003001200000000000000000000010101010100000000000000000000000000000000000000000000000000120000000000000000000000000000000000000000000000000000000000000000000000001200000000000000000000000000000000000000000000000000000101010101000101010101000000000000001200000000000000000000000000000000000000000000000000000000000000000000000012000000000000000000000000000000000000000000000000000000000000000000000000120300030003000000000000000101010101000101010101000000000000000101010101000101010101000000000000000000000012030003000300000000000000000000000000000000000000000000000000000000000000120300030003000101010101000000000000000000000000000000000000000300030003000300000012030003000300000000000000000000000000000000000000000003000300030003000000120000000000000000000000000000000000000000000000000000030003000300030000000e001200000a426c61636b205261696e06020b06020c08020b0a02040b02050e020306";
 
 /** The deployed decoder's tiles in the editor's JSON shape. */
-function tilesOf(map: typeof GameMap.$inferType): MoveTile[][] {
+function tilesOf(map: typeof PresetMap.$inferType): MoveTile[][] {
     return map.grid.grid.map((row) =>
         row.map((tile): MoveTile => {
             assert.equal(tile.unit, null);
@@ -61,7 +62,7 @@ test("the frozen testnet preset decodes, and the editor's framing reproduces its
     );
 });
 
-test("an editor level's preset bytes parse with the deployed Map schema", () => {
+test("an editor level's preset bytes parse with the preset Map schema", () => {
     const level = newLevel(9, 6);
     const put = (
         kind: Parameters<typeof assetSpec>[0],
@@ -88,11 +89,15 @@ test("an editor level's preset bytes parse with the deployed Map schema", () => 
         preset.issues.filter((i) => i.level === "error"),
         [],
     );
-    const map = GameMap.parse(preset.bytes);
+    const map = PresetMap.parse(preset.bytes);
     assert.equal(map.grid.rows, 6);
     assert.equal(map.grid.cols, 9);
     assert.equal(map.fallen.length, 0);
     assert.deepEqual(tilesOf(map), toMoveMap(level).tiles);
     // BCS writes the same bytes back: nothing the contract reads is left over.
-    assert.deepEqual([...GameMap.serialize(map).toBytes()], [...preset.bytes]);
+    assert.deepEqual([...PresetMap.serialize(map).toBytes()], [...preset.bytes]);
+    // with its (empty) unit index appended, the live `Map` decoder reads the same map
+    const live = GameMap.parse(Uint8Array.from([...preset.bytes, 0]));
+    assert.deepEqual(live.units, []);
+    assert.deepEqual(tilesOf(live), toMoveMap(level).tiles);
 });

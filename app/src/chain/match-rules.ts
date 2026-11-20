@@ -266,7 +266,11 @@ export const lineOfSight = (game: ChainGame, from: Tile, to: Tile) =>
 export const lineOfThrow = (game: ChainGame, from: Tile, to: Tile) =>
     tileType(game, to)?.$kind !== "Wall" && traceLine(game, from, to, false);
 
-/** `Unit.perform_attack`: the percent a shot hits, given the distance and the cover. */
+/**
+ * `Unit.perform_attack`: the percent a shot hits, given the distance and the cover. `aim` is
+ * the shooter's effective aim (`effectiveStats`) and `defense` the target's effective defense.
+ * There is no floor: a dazed shooter (aim 0) still has the distance bonus, and none past the range.
+ */
 export function hitChance(
     shooter: { aim: number; range: number; areaSize: number },
     defense: number,
@@ -284,6 +288,120 @@ export function hitChance(
     // an area weapon aims at the tile: neither cover nor defense apply
     const lowered = areaSize > 0 ? 0 : Math.min(cover + defense, 100);
     return chance - Math.min(chance, lowered);
+}
+
+// === Status effects, as `ghosts::effect` and `Unit.effective_stats` work them ===
+
+/** `ghosts::effect` kinds, the high nibble of an effect byte. */
+export const EFFECT_KINDS = { daze: 0, smoke: 1 } as const;
+export type EffectName = keyof typeof EFFECT_KINDS;
+
+/** How many `next_turn` calls a fresh daze and a fresh smoke last (`DAZE_TURNS`, `SMOKE_TURNS`). */
+export const EFFECT_TURNS = { daze: 2, smoke: 2 } as const;
+/** `SMOKE_DEFENSE` and `SMOKE_AIM_PENALTY` in `ghosts::effect`. */
+export const SMOKE_DEFENSE = 30;
+export const SMOKE_AIM_PENALTY = 30;
+/** What `stats::add` caps a modified stat at. */
+const STAT_CAP = 127;
+
+/** The engine's id of each kind (`effects.json`), `#<kind>` for one this client doesn't know. */
+export const effectId = (kind: number): string =>
+    kind === EFFECT_KINDS.daze ? "Daze" : kind === EFFECT_KINDS.smoke ? "Smoke" : `#${kind}`;
+
+/** The effects of a unit on chain as the engine carries them: catalog id and turns left. */
+export const effectsOf = (bytes: readonly number[]): { kind: string; turns: number }[] =>
+    bytes.map((b) => ({ kind: effectId(effectKind(b)), turns: effectTurns(b) }));
+
+/** The engine's effects as chain bytes; the ones with no turns left, and kinds unknown here, are left out. */
+export const effectBytes = (effects: readonly { kind: string; turns: number }[]): number[] =>
+    effects.flatMap(({ kind, turns }) => {
+        const tag = Object.values(EFFECT_KINDS).find((k) => effectId(k) === kind);
+        return tag === undefined || turns <= 0 ? [] : [effectByte(tag, turns)];
+    });
+
+/** The kind of an effect byte (`kind << 4 | turns`). */
+export const effectKind = (effect: number) => effect >> 4;
+/** The turns an effect byte has left. */
+export const effectTurns = (effect: number) => effect & 0x0f;
+/** An effect byte for a kind and its turns. */
+export const effectByte = (kind: number, turns: number) => (kind << 4) | turns;
+/** The name of an effect byte's kind, if this client knows it. */
+export const effectName = (effect: number): EffectName | undefined =>
+    (Object.keys(EFFECT_KINDS) as EffectName[]).find((n) => EFFECT_KINDS[n] === effectKind(effect));
+
+/**
+ * `Unit.effective_stats`: the base stats with each effect's modifier added in list order.
+ * Daze takes the aim to 0; smoke takes 30 off the aim (to 0 at the least) and adds 30 defense;
+ * `stats::add` caps a stat it modified at 127.
+ */
+export function effectiveStats<S extends { aim: number; defense: number }>(
+    stats: S,
+    effects: readonly number[],
+): S {
+    let { aim, defense } = stats;
+    for (const effect of effects) {
+        switch (effectKind(effect)) {
+            case EFFECT_KINDS.daze:
+                aim = 0;
+                break;
+            case EFFECT_KINDS.smoke:
+                aim = Math.min(Math.max(aim - SMOKE_AIM_PENALTY, 0), STAT_CAP);
+                defense = Math.min(defense + SMOKE_DEFENSE, STAT_CAP);
+                break;
+        }
+    }
+    return { ...stats, aim, defense };
+}
+
+/** `Effect` refresh: the same kind keeps the larger turns, in its place in the list. */
+export function withEffect(effects: readonly number[], effect: number): number[] {
+    const at = effects.findIndex((e) => effectKind(e) === effectKind(effect));
+    if (at < 0) return [...effects, effect];
+    return effects.map((e, i) => (i === at ? Math.max(e, effect) : e));
+}
+
+/** `Unit.tick_effects`: one turn off each effect; the ones at 0 are gone, with the kinds that went. */
+export function tickEffects(effects: readonly number[]): { effects: number[]; ended: number[] } {
+    const ended: number[] = [];
+    const kept = effects.flatMap((e) => {
+        if (effectTurns(e) > 1) return [e - 1];
+        ended.push(effectKind(e));
+        return [];
+    });
+    return { effects: kept, ended };
+}
+
+// === Grenades, as `Map.thrower` and the throws work them out ===
+
+/** `GRENADE_RANGE` and `GRENADE_RADIUS` in `ghosts::map`, shared by every grenade. */
+export const GRENADE_RANGE = 5;
+export const GRENADE_RADIUS = 2;
+
+const manhattan = (a: Tile, b: Tile) => Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]);
+
+/**
+ * Whether a throw from one tile to another is allowed: in range, not onto a wall, over no wall,
+ * from a tile holding a unit (`Map.thrower`). What the unit itself needs (the action, AP, a use
+ * left) is `canDo` and `hasUsesLeft`.
+ */
+export function throwValid(game: ChainGame, from: Tile, to: Tile): boolean {
+    return (
+        manhattan(from, to) <= GRENADE_RANGE &&
+        tileType(game, to)?.$kind !== "Wall" &&
+        lineOfThrow(game, from, to) &&
+        !!game.map.grid.grid[from[0]]?.[from[1]]?.unit
+    );
+}
+
+/**
+ * The tiles a flashbang or smoke grenade lands on: every unit within `GRENADE_RADIUS` of the
+ * target, either side's and the thrower's own, in `Map.units` order (ascending `row * cols + col`),
+ * which is the order the `EffectStart` records name them in.
+ */
+export function burstOf(game: ChainGame, target: Tile): { row: number; col: number }[] {
+    return unitsOnMap(game).filter(
+        ({ row, col }) => manhattan([row, col], target) <= GRENADE_RADIUS,
+    );
 }
 
 // === What a game pays, as `ghosts::ghosts` works it out ===
@@ -371,7 +489,7 @@ export const blastCells = (game: ChainGame, bounds: Bounds): Cell[] =>
     );
 
 /** What a unit may be ordered to do: `ghosts::action::Action`. */
-export type UnitAction = "Move" | "Attack" | "Reload" | "Grenade";
+export type UnitAction = "Move" | "Attack" | "Reload" | "Grenade" | "Flashbang" | "SmokeGrenade";
 
 /** Whether the unit on the map for `recruit` has `action`; the chain refuses the order otherwise. */
 export function canDo(game: ChainGame, recruit: string, action: UnitAction) {
@@ -571,6 +689,40 @@ export function* gameEvents(records: ChainRecord[], field: FieldView): Generator
                 const { casualties } = takeBlast();
                 if (unit)
                     yield { type: "grenade", unit, at, casualties, environment: field.blast(at) };
+                break;
+            }
+            case "Flashbang":
+            case "SmokeGrenade": {
+                i++;
+                const { origin, target } =
+                    record.$kind === "Flashbang" ? record.Flashbang : record.SmokeGrenade;
+                const unit = field.unitAt(toCell(origin, bounds));
+                // what it did follows as one `EffectStart` per unit in the burst, read as they come
+                if (unit)
+                    yield {
+                        type: record.$kind === "Flashbang" ? "flashbang" : "smoke-grenade",
+                        unit,
+                        at: toCell(target, bounds),
+                    };
+                break;
+            }
+            case "EffectStart": {
+                i++;
+                const [row, col, effect] = record.EffectStart;
+                const unit = field.unitAt(toCell([row, col], bounds));
+                if (unit)
+                    yield {
+                        type: "effect-start",
+                        unit,
+                        effect: { kind: effectId(effectKind(effect)), turns: effectTurns(effect) },
+                    };
+                break;
+            }
+            case "EffectEnd": {
+                i++;
+                const [row, col, kind] = record.EffectEnd;
+                const unit = field.unitAt(toCell([row, col], bounds));
+                if (unit) yield { type: "effect-end", unit, kind: effectId(kind) };
                 break;
             }
             case "NextTurn": {

@@ -14,7 +14,7 @@ import type { ModKind, OpponentIntel, UnitIntel } from "@ghosts/engine";
 import { unpack } from "@ghosts/squad/stats";
 
 import type { ChainAccount, ChainRecruit } from "./ghosts";
-import { RANKS, type unitsOnMap } from "./match-rules.ts";
+import { effectiveStats, RANKS, type unitsOnMap } from "./match-rules.ts";
 
 /** `UPGRADE_KINDS` in order: the `kind` byte of a `WeaponUpgrade`. */
 const MOD_KINDS: readonly ModKind[] = ["scope", "laser", "stock", "clip"];
@@ -35,7 +35,8 @@ type Recruit = Pick<ChainRecruit, "metadata" | "rank" | "weapon" | "armor" | "ut
 export function chainUnitIntel(base: UnitIntel, recruit?: Recruit, unit?: MapUnit): UnitIntel {
     const intel: UnitIntel = { ...base, stats: { ...base.stats } };
     if (unit) {
-        const s = unpack(BigInt(unit.stats.value));
+        // effects (daze, smoke) change the aim and the defense the unit shoots and is shot with
+        const s = effectiveStats(unpack(BigInt(unit.stats.value)), unit.effects);
         const armed = unit.actions.some(({ kind }) => kind.$kind === "Attack");
         intel.stats = {
             aim: s.aim,

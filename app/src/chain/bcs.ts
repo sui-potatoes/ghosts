@@ -87,17 +87,26 @@ const ActionKind = bcs.enum("ActionKind", {
     Attack: null,
     Reload: null,
     Grenade: null,
-    ...Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`Unknown${i + 4}`, null])),
-} as { Move: null; Attack: null; Reload: null; Grenade: null } & Record<`Unknown${number}`, null>);
+    Flashbang: null,
+    SmokeGrenade: null,
+    ...Object.fromEntries(Array.from({ length: 10 }, (_, i) => [`Unknown${i + 6}`, null])),
+} as {
+    Move: null;
+    Attack: null;
+    Reload: null;
+    Grenade: null;
+    Flashbang: null;
+    SmokeGrenade: null;
+} & Record<`Unknown${number}`, null>);
 
 /** `ghosts::action::Action`: a kind and how many uses are left of it, `null` for unlimited. */
 const Action = bcs.struct("Action", { uses: bcs.option(bcs.u8()), kind: ActionKind });
 
-/** `ghosts::utility::Utility`: what a recruit carries for the actions it grants (the frag grenade). */
+/** `ghosts::utility::Utility`: what a recruit carries for the actions it grants (a grenade). */
 export const Utility = bcs.struct("Utility", {
     id: bcs.Address,
     name: bcs.string(),
-    /** A modifier added to the carrier's stats, like an armor's: zero for the frag grenade. */
+    /** A modifier added to the carrier's stats, like an armor's: zero for the grenades. */
     stats: Stats,
     /** The actions the item adds to its carrier, with the uses they come with. */
     actions: bcs.vector(Action),
@@ -112,7 +121,7 @@ export const Recruit = bcs.struct("Recruit", {
     stats: Stats,
     weapon: bcs.option(Weapon),
     armor: bcs.option(Armor),
-    /** In slot order, at most `MAX_UTILITIES` (1 for now). */
+    /** In slot order, at most `MAX_UTILITIES` (1). */
     utilities: bcs.vector(Utility),
     leader: bcs.Address,
 });
@@ -161,6 +170,12 @@ export const Account = bcs.struct("Account", {
     score: Score,
 });
 
+/**
+ * `ghosts::effect::Effect`: one byte, `kind << 4 | turns`. Kinds are `EFFECT_KINDS`;
+ * `effectKind` and `effectTurns` take it apart.
+ */
+const Effect = bcs.u8();
+
 /** `ghosts::unit::Unit`: a recruit as the map holds them, with the `Account` it belongs to. */
 export const MapUnit = bcs.struct("Unit", {
     recruit: bcs.Address,
@@ -174,6 +189,8 @@ export const MapUnit = bcs.struct("Unit", {
      * actions of its utilities, each with its uses left; no weapon, no `Attack` or `Reload`.
      */
     actions: bcs.vector(Action),
+    /** The status effects on the unit (daze, smoke), at most one per kind, in the order they landed. */
+    effects: bcs.vector(Effect),
 });
 
 /** `ghosts::map::TileType`. */
@@ -189,8 +206,8 @@ const TileType = bcs.enum("TileType", {
     Wall: null,
 });
 
-/** `ghosts::map::Map`; `Grid<Tile>` is its rows of tiles, then `rows` and `cols`. */
-export const GameMap = bcs.struct("Map", {
+/** `ghosts::map::Map` up to its `units`; `Grid<Tile>` is its rows of tiles, then `rows` and `cols`. */
+const mapFields = {
     id: bcs.Address,
     grid: bcs.struct("Grid", {
         grid: bcs.vector(
@@ -201,10 +218,23 @@ export const GameMap = bcs.struct("Map", {
     }),
     /** Units killed since the last turn change, off their tiles and not yet buried. */
     fallen: bcs.vector(MapUnit),
+};
+
+/**
+ * `ghosts::map::Map` as a map preset has it: `Map.units` left out, which the contract then
+ * rebuilds from the grid (`Map.from_bytes`).
+ */
+export const PresetMap = bcs.struct("Map", mapFields);
+
+/** `ghosts::map::Map`. */
+export const GameMap = bcs.struct("Map", {
+    ...mapFields,
+    /** The tiles holding a unit, as `row * cols + col` in ascending order: the order effect records name units in. */
+    units: bcs.vector(bcs.u16()),
 });
 
 /** `ghosts::history::Record`, variants in declaration order. */
-const GameRecord = bcs.enum("Record", {
+export const GameRecord = bcs.enum("Record", {
     Reload: bcs.vector(bcs.u16()),
     NextTurn: bcs.u16(),
     Move: bcs.vector(bcs.u8()),
@@ -223,6 +253,18 @@ const GameRecord = bcs.enum("Record", {
     }),
     UnitKIA: bcs.tuple([bcs.Address, bcs.u16(), bcs.u16()]),
     Dodged: null,
+    Flashbang: bcs.struct("Flashbang", {
+        origin: bcs.vector(bcs.u16()),
+        target: bcs.vector(bcs.u16()),
+    }),
+    SmokeGrenade: bcs.struct("SmokeGrenade", {
+        origin: bcs.vector(bcs.u16()),
+        target: bcs.vector(bcs.u16()),
+    }),
+    /** `(x, y, effect)`: the unit on the tile has the effect, with its turns left (a refresh is a start too). */
+    EffectStart: bcs.tuple([bcs.u16(), bcs.u16(), Effect]),
+    /** `(x, y, kind)`: the effect of that kind ran out on the unit on the tile. */
+    EffectEnd: bcs.tuple([bcs.u16(), bcs.u16(), bcs.u8()]),
 });
 
 /** `ghosts::ghosts::Ending`: how a game ended; a player is their `Account` ID. */

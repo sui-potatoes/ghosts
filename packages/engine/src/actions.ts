@@ -3,7 +3,7 @@
 
 import { audio } from "./audio";
 import type { Command, GameEvent } from "./events";
-import { ACTIONS, hasKind, REFUSAL_TEXT, refusalOf } from "./action-registry";
+import { ACTIONS, hasKind, isThrowOrder, REFUSAL_TEXT, refusalOf } from "./action-registry";
 import { allows, Encounter, type Cell } from "./game";
 import { applyDeploymentNames, applyLoadouts } from "./squad-bridge";
 // @ts-ignore Native editor adapter is shared JavaScript.
@@ -39,12 +39,12 @@ function syncScene() {
     u && aimed && { chance: game.chance(u, aimed), ...damagePreview(u, aimed) },
   );
   battlefield.showRange(u, s.mode === "move" && !s.busy && !!u && allows(u, "move"));
-  if (u && s.mode === "grenade" && !s.busy) battlefield.showGrenadeRange(u);
+  if (u && isThrowOrder(s.mode) && !s.busy) battlefield.showGrenadeRange(u, s.mode);
   battlefield.setHover(false);
   battlefield.showPath(undefined);
   if (!u || s.mode === "move" || game.result) void battlefield.leaveAim();
   else if (s.mode === "fire" && t) void battlefield.aimAt(u, t.pos, "fire");
-  else if (s.mode === "grenade") {
+  else if (isThrowOrder(s.mode)) {
     // Keep the overhead camera while choosing the landing point; shoulder shot begins on throw.
     if (!s.busy) void battlefield.leaveAim();
     if (s.grenadeTarget) battlefield.showPath([u.pos, s.grenadeTarget], true);
@@ -135,7 +135,7 @@ export function select(id: string) {
   const u = s.game.units.find((u) => u.id === id);
   if (!u || u.hp <= 0) return;
   if (u.enemy) {
-    if (s.mode === "grenade") {
+    if (isThrowOrder(s.mode)) {
       void pick(u.pos, u.id);
       return;
     }
@@ -214,24 +214,28 @@ export async function fire() {
   });
 }
 
+/** Throw the grenade being aimed (the frag, the flashbang or the smoke grenade: the mode says which). */
 export async function throwGrenade() {
   const s = session;
   const u = s.selectedUnit();
-  if (!s.grenadeTarget || !u) return;
+  const kind = s.mode;
+  if (!s.grenadeTarget || !u || !isThrowOrder(kind)) return;
   const at: Cell = [...s.grenadeTarget];
   await perform(async () => {
-    const command: Command = { type: "grenade", unit: u.id, at };
+    const command: Command = { type: kind, unit: u.id, at };
     if (s.driver.remote) {
-      // The throw and the blast are certain; only who it hurt waits for the answer.
-      const environment = s.game.map.blastProps(at);
+      // The throw and the burst are certain; only who it caught waits for the answer.
+      const environment = kind === "grenade" ? s.game.map.blastProps(at) : [];
       const answer = resolve(command);
-      await presentThrow(u, at, environment, answer);
-      const thrown = (await answer).length > 0;
+      await presentThrow(u, at, environment, answer, kind);
+      const events = await answer;
       s.battlefield.sync();
       refresh();
-      if (!thrown) notify("ORDER REFUSED", "miss");
+      if (!events.length) notify("ORDER REFUSED", "miss");
+      // The effects it left, played once they are known (the throw itself already was).
+      else if (kind !== "grenade") await play(events.filter((e) => e.type !== kind));
     } else if (!(await order(command))) {
-      notify(grenadeBlockReason(s.game, u, at) ?? "THROW UNAVAILABLE");
+      notify(grenadeBlockReason(s.game, u, at, kind) ?? "THROW UNAVAILABLE");
       return;
     }
     s.grenadeTarget = null;
@@ -268,12 +272,12 @@ export async function action(name: string) {
       await fire();
       return;
     }
-    if (name === "grenade" && s.mode === "grenade" && s.grenadeTarget) {
+    if (isThrowOrder(name) && s.mode === name && s.grenadeTarget) {
       await throwGrenade();
       return;
     }
     s.mode = name as Mode;
-    s.grenadeTarget = name === "grenade" ? defaultGrenadeTarget(s.game, u) : null;
+    s.grenadeTarget = isThrowOrder(name) ? defaultGrenadeTarget(s.game, u, name) : null;
     if (name === "fire") {
       s.target = bestShotTarget(s.game, u)?.id ?? "";
       audio.tone("aim", u.weapon);
@@ -290,8 +294,8 @@ export async function pick(p: Cell, id?: string) {
   const s = session;
   if (s.busy || s.game.result) return;
   const u = s.selectedUnit();
-  if (u && s.mode === "grenade") {
-    const reason = grenadeBlockReason(s.game, u, p);
+  if (u && isThrowOrder(s.mode)) {
+    const reason = grenadeBlockReason(s.game, u, p, s.mode);
     if (reason) {
       notify(reason);
       return;

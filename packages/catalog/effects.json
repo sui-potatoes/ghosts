@@ -1,0 +1,32 @@
+{
+    "version": 1,
+    "effects": [
+        {
+            "id": "Daze",
+            "kind": 0,
+            "status": "chain",
+            "name": "Dazed",
+            "description": "Aim is 0 for the rest of this turn and the enemy's turn. The unit can still move, throw and take cover.",
+            "turns": 2,
+            "stats": {
+                "aim": "0"
+            },
+            "source": "flashbang",
+            "records": ["EffectStart", "EffectEnd"]
+        },
+        {
+            "id": "Smoke",
+            "kind": 1,
+            "status": "chain",
+            "name": "Smoked",
+            "description": "+30 defense and −30 aim for the rest of this turn and the enemy's turn. Blasts ignore it.",
+            "turns": 2,
+            "stats": {
+                "aim": -30,
+                "defense": 30
+            },
+            "source": "smoke-grenade",
+            "records": ["EffectStart", "EffectEnd"]
+        }
+    ]
+}

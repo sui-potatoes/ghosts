@@ -195,6 +195,33 @@ export const strikeOrder =
         });
     };
 
+/**
+ * Throw a flashbang or a smoke grenade from one tile to another. Nothing rolls, so there
+ * is no `Random`: `perform_flashbang` and `perform_smoke_grenade` take the game, the account
+ * and the clock, then the two tiles.
+ */
+export const effectThrowOrder =
+    (
+        action: "perform_flashbang" | "perform_smoke_grenade",
+        refs: GameRefs,
+        from: [number, number],
+        to: [number, number],
+    ): Order =>
+    (tx) => {
+        tx.moveCall({
+            target: target(action),
+            arguments: [
+                tx.sharedObjectRef(refs.game),
+                tx.sharedObjectRef(refs.account),
+                tx.sharedObjectRef(refs.clock),
+                tx.pure.u16(from[0]),
+                tx.pure.u16(from[1]),
+                tx.pure.u16(to[0]),
+                tx.pure.u16(to[1]),
+            ],
+        });
+    };
+
 export const nextTurnOrder =
     (refs: GameRefs): Order =>
     (tx) => {

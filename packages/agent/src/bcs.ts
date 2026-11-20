@@ -17,10 +17,12 @@ import type {
     GameState,
     GameStatus,
     Search,
+    EffectKind,
     Stats,
     Tile,
     Unit,
     UnitAction,
+    UnitEffect,
 } from "./types.ts";
 
 const Table = bcs.struct("Table", { id: bcs.Address, size: bcs.u64() });
@@ -33,10 +35,18 @@ const ActionKindBcs = bcs.enum("ActionKind", {
     Attack: null,
     Reload: null,
     Grenade: null,
+    Flashbang: null,
+    SmokeGrenade: null,
 });
 
 /** `ghosts::action::Action`: how many uses are left (`null`: unlimited), then the kind. */
 const ActionBcs = bcs.struct("Action", { uses: bcs.option(bcs.u8()), kind: ActionKindBcs });
+
+/**
+ * `ghosts::effect::Effect`: one byte, `kind << 4 | turns`. The kinds are appended only:
+ * `DAZE` is 0 and `SMOKE` is 1.
+ */
+const EffectBcs = bcs.u8();
 
 /** `ghosts::unit::Unit`: a recruit as the map holds them, with the `Account` it belongs to. */
 const UnitBcs = bcs.struct("Unit", {
@@ -47,6 +57,8 @@ const UnitBcs = bcs.struct("Unit", {
     ammo: Param,
     stats: StatsBcs,
     actions: bcs.vector(ActionBcs),
+    /** The status effects on the unit, at most one of each kind, in the order it got them. */
+    effects: bcs.vector(EffectBcs),
 });
 
 const TileType = bcs.enum("TileType", {
@@ -63,8 +75,7 @@ const TileType = bcs.enum("TileType", {
 
 const TileBcs = bcs.struct("Tile", { tileType: TileType, unit: bcs.option(UnitBcs) });
 
-/** `ghosts::map::Map`; `Grid<Tile>` is its rows of tiles, then `rows` and `cols`. */
-export const MapBcs = bcs.struct("Map", {
+const MapFields = {
     id: bcs.Address,
     grid: bcs.struct("Grid", {
         grid: bcs.vector(bcs.vector(TileBcs)),
@@ -73,7 +84,20 @@ export const MapBcs = bcs.struct("Map", {
     }),
     /** Units killed since the last turn change, off their tiles and not yet buried. */
     fallen: bcs.vector(UnitBcs),
-});
+};
+
+/**
+ * `ghosts::map::Map`; `Grid<Tile>` is its rows of tiles, then `rows` and `cols`.
+ * `units` is the unit index: the tile of every unit on the map, as `x * cols + y`, in
+ * ascending order. Effects land on units in this order.
+ */
+export const MapBcs = bcs.struct("Map", { ...MapFields, units: bcs.vector(bcs.u16()) });
+
+/**
+ * A `Map` as the presets are written: without the unit index, which `map::from_bytes` rebuilds
+ * from the grid. A preset holds no units, so the index would be empty.
+ */
+export const MapPresetBcs = bcs.struct("MapPreset", MapFields);
 
 /** `ghosts::history::Record`, variants in declaration order. */
 export const RecordBcs = bcs.enum("Record", {
@@ -93,6 +117,18 @@ export const RecordBcs = bcs.enum("Record", {
     /** The recruit and the tile it fell on. */
     UnitKIA: bcs.tuple([bcs.Address, bcs.u16(), bcs.u16()]),
     Dodged: null,
+    Flashbang: bcs.struct("Flashbang", {
+        origin: bcs.vector(bcs.u16()),
+        target: bcs.vector(bcs.u16()),
+    }),
+    SmokeGrenade: bcs.struct("SmokeGrenade", {
+        origin: bcs.vector(bcs.u16()),
+        target: bcs.vector(bcs.u16()),
+    }),
+    /** The tile of the unit and the effect as it now has it, with its turns left. */
+    EffectStart: bcs.tuple([bcs.u16(), bcs.u16(), EffectBcs]),
+    /** The tile of the unit and the kind that ran out. */
+    EffectEnd: bcs.tuple([bcs.u16(), bcs.u16(), bcs.u8()]),
 });
 
 /** `ghosts::ghosts::Ending`: how a game ended; a player is their `Account` ID. */
@@ -268,7 +304,8 @@ export function encodeStats(stats: Stats): bigint {
     }, 0n);
 }
 
-type DecodedMap = ReturnType<typeof MapBcs.parse>;
+/** What `gridSize` and `decodeTiles` read: a decoded `Map`, or a preset without its index. */
+type DecodedMap = ReturnType<typeof MapPresetBcs.parse>;
 type DecodedGame = ReturnType<typeof GameBcs.parse>;
 
 /**
@@ -291,6 +328,29 @@ export function decodeTiles(map: DecodedMap): Tile[][] {
         }),
     );
 }
+
+/** `effect::kind`: the tag in the high nibble of an `Effect`, in the order Move numbers them. */
+export const EFFECT_KINDS: readonly EffectKind[] = ["daze", "smoke"];
+
+/** An `Effect` byte (`kind << 4 | turns`) as the plain view. */
+export function decodeEffect(byte: number): UnitEffect {
+    return { kind: EFFECT_KINDS[byte >> 4], turns: byte & 0x0f };
+}
+
+/** The inverse of `decodeEffect`: the byte `effect::new(kind, turns)` makes. */
+export function encodeEffect({ kind, turns }: UnitEffect): number {
+    return (EFFECT_KINDS.indexOf(kind) << 4) | turns;
+}
+
+/** `ActionKind`, as the plain view: the variant name in snake case. */
+const ACTION_NAMES: Record<string, UnitAction> = {
+    Move: "move",
+    Attack: "attack",
+    Reload: "reload",
+    Grenade: "grenade",
+    Flashbang: "flashbang",
+    SmokeGrenade: "smoke_grenade",
+};
 
 type DecodedEnding = ReturnType<typeof EndingBcs.parse>;
 
@@ -365,9 +425,10 @@ export function decodeGame(bytes: Uint8Array, version: string): GameState {
                 ammoMax: unit.ammo.maxValue,
                 stats: decodeStats(unit.stats),
                 actions: unit.actions.map(({ kind, uses }) => ({
-                    kind: kind.$kind.toLowerCase() as UnitAction,
+                    kind: ACTION_NAMES[kind.$kind],
                     uses,
                 })),
+                effects: unit.effects.map(decodeEffect),
             });
         }),
     );
@@ -477,6 +538,35 @@ export function decodeRecord(record: ReturnType<typeof RecordBcs.parse>): GameRe
                 recruit: record.UnitKIA[0],
                 x: record.UnitKIA[1],
                 y: record.UnitKIA[2],
+            };
+        case "Flashbang":
+            return {
+                kind: "flashbang",
+                from: record.Flashbang.origin,
+                to: record.Flashbang.target,
+            };
+        case "SmokeGrenade":
+            return {
+                kind: "smoke_grenade",
+                from: record.SmokeGrenade.origin,
+                to: record.SmokeGrenade.target,
+            };
+        case "EffectStart": {
+            const { kind, turns } = decodeEffect(record.EffectStart[2]);
+            return {
+                kind: "effect_start",
+                x: record.EffectStart[0],
+                y: record.EffectStart[1],
+                effect: kind,
+                turns,
+            };
+        }
+        case "EffectEnd":
+            return {
+                kind: "effect_end",
+                x: record.EffectEnd[0],
+                y: record.EffectEnd[1],
+                effect: EFFECT_KINDS[record.EffectEnd[2]],
             };
         default:
             return { kind: "dodged" };

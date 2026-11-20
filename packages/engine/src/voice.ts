@@ -24,6 +24,8 @@ export type VoiceEvent =
   | "fire"
   | "kill"
   | "grenade"
+  /** A flashbang or a smoke grenade: nothing that frags. */
+  | "utility"
   | "hunker"
   | "overwatch"
   | "hit";
@@ -36,6 +38,7 @@ export const PHRASES: Record<VoiceEvent, string[]> = {
   fire: ["taking-the-shot"],
   kill: ["target-neutralised"],
   grenade: ["frag-out", "fire-in-the-hole"],
+  utility: ["fire-in-the-hole"],
   hunker: ["understood-holding-corner"],
   overwatch: ["staying-on-target-firing"],
   hit: ["panting-im-hit"],

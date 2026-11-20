@@ -12,7 +12,7 @@
  */
 
 import type { Backend } from "./backend.ts";
-import { decodeTiles, gridSize, MapBcs, winnerOf } from "./bcs.ts";
+import { decodeTiles, gridSize, MapPresetBcs, winnerOf } from "./bcs.ts";
 import { referencePolicy, type Policy } from "./bot.ts";
 import { BLACK_RAIN, BLACK_RAIN_POSITIONS } from "./maps.ts";
 import {
@@ -20,6 +20,7 @@ import {
     blastUnits,
     coverBonus,
     DEPLOY_LIMIT_MS,
+    effectiveStats,
     FREE_RECRUITS,
     GRENADE_DAMAGE,
     GRENADE_RADIUS,
@@ -29,9 +30,13 @@ import {
     MAX_MISSED_TURNS,
     MAX_TURNS,
     parseAction,
+    passTurn,
+    spendUse,
     SUSPENSION_MS,
+    throwEffect,
     turnLimitMs,
     unitAt,
+    type EffectThrowAction,
 } from "./rules.ts";
 import {
     ActionError,
@@ -149,6 +154,12 @@ interface Utility {
 /** `items::frag_grenade`: a `Grenade` action usable once per match. */
 const fragGrenade = (): Utility => ({ actions: [entry("grenade", 1)] });
 
+/** `items::flashbang`: a `Flashbang` action usable once per match. */
+export const flashbangUtility = (): Utility => ({ actions: [entry("flashbang", 1)] });
+
+/** `items::smoke_grenade`: a `SmokeGrenade` action usable once per match. */
+export const smokeGrenadeUtility = (): Utility => ({ actions: [entry("smoke_grenade", 1)] });
+
 /** A recruit at home in the `Account`. */
 interface Recruit {
     id: string;
@@ -209,7 +220,7 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
 
     /** `new_game`: the first half of the spawn positions goes to the first player. */
     function freshGame(waiting: string, finder: string): GameState {
-        const map = MapBcs.parse(Uint8Array.from(Buffer.from(BLACK_RAIN, "hex")));
+        const map = MapPresetBcs.parse(Uint8Array.from(Buffer.from(BLACK_RAIN, "hex")));
         const spawns = options.positions ?? BLACK_RAIN_POSITIONS;
         const half = spawns.length / 2;
         return {
@@ -301,6 +312,7 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
                 ammoMax: stats.ammo,
                 stats,
                 // `from_recruit`: base, weapon, then each utility's actions, none merged
+                effects: [],
                 actions: given
                     ? structuredClone(given.actions)
                     : [
@@ -366,7 +378,7 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
     function attack(state: GameState, action: Extract<Action, { kind: "attack" }>): GameRecord[] {
         const { x, y, tx, ty } = action;
         const unit = unitAt(state, x, y)!;
-        const { stats } = unit;
+        const stats = effectiveStats(unit);
         const records: GameRecord[] = [{ kind: "attack", from: [x, y], to: [tx, ty] }];
         const range = manhattan(x, y, tx, ty);
         const target = unitAt(state, tx, ty);
@@ -375,7 +387,8 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
                 ? 0
                 : Math.min(
                       100,
-                      (range > 0 ? coverBonus(state, x, y, tx, ty) : 0) + target!.stats.defense,
+                      (range > 0 ? coverBonus(state, x, y, tx, ty) : 0) +
+                          effectiveStats(target!).defense,
                   );
         const base = hitChance(stats, range, defense);
         const chance = options.adjustHitChance
@@ -438,12 +451,10 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
             return [];
         }
 
-        const ended = applyDeterministic(state, { kind: "next_turn" });
-        state.turn = ended.turn;
-        state.active = ended.active;
-        state.units = ended.units;
+        // at `MAX_TURNS` the chain ends the game before the walk of the units
+        const ended = passTurn(state, state.turn + 1 >= MAX_TURNS);
         options.afterNextTurn?.(state);
-        const records: GameRecord[] = [{ kind: "next_turn", turn: state.turn }];
+        const records: GameRecord[] = [{ kind: "next_turn", turn: state.turn }, ...ended];
         if (state.turn >= MAX_TURNS) over(state, { kind: "stalemate", by: null });
         else state.deadlineMs = now() + turnLimitMs(state.turn);
         return records;
@@ -484,7 +495,8 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
     function apply(state: GameState, side: number, action: Action): GameRecord[] {
         let records: GameRecord[] = [];
         // `begin_turn_action`: acting at all clears the missed turns.
-        if (["move", "reload", "attack", "grenade"].includes(action.kind)) state.missed[side] = 0;
+        const acts = ["move", "reload", "attack", "grenade", "flashbang", "smoke_grenade"];
+        if (acts.includes(action.kind)) state.missed[side] = 0;
         switch (action.kind) {
             case "deploy":
                 records = deploy(state, side);
@@ -495,11 +507,8 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
             case "grenade": {
                 // `perform_grenade`: a use of the first grenade action that has one left
                 const unit = unitAt(state, action.x, action.y)!;
-                const spent = unit.actions.find(
-                    (a) => a.kind === "grenade" && (a.uses === null || a.uses > 0),
-                )!;
                 unit.ap -= 1;
-                if (spent.uses !== null) spent.uses -= 1;
+                spendUse(unit, "grenade");
                 const custom = options.throwEffect?.(state, unit, action.tx, action.ty) ?? null;
                 records = custom ?? [
                     { kind: "grenade", from: [action.x, action.y], to: [action.tx, action.ty] },
@@ -515,6 +524,10 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
                 ];
                 break;
             }
+            case "flashbang":
+            case "smoke_grenade":
+                records = throwEffect(state, action as EffectThrowAction);
+                break;
             case "move":
                 state.units = applyDeterministic(state, action).units;
                 records = [{ kind: "move", path: [action.x, action.y, ...action.path] }];

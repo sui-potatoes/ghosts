@@ -178,6 +178,20 @@ export const ACTIONS: readonly ActionSpec[] = [
     icon: "grenade",
     targeting: { mode: "area", range: GRENADE_RANGE, radius: GRENADE_RADIUS },
   }),
+  // `Unit.perform_flashbang`: the frag's throw checks (`Map.thrower`, `Unit.throw`); dazes the burst.
+  spec("Flashbang", {
+    order: "flashbang",
+    key: "flashbang",
+    icon: "flash",
+    targeting: { mode: "area", range: GRENADE_RANGE, radius: GRENADE_RADIUS },
+  }),
+  // `Unit.perform_smoke_grenade`: the same throw; smokes the burst.
+  spec("SmokeGrenade", {
+    order: "smoke-grenade",
+    key: "smoke-grenade",
+    icon: "smoke",
+    targeting: { mode: "area", range: GRENADE_RANGE, radius: GRENADE_RADIUS },
+  }),
   // The demo rules' own orders: never in a chain match.
   spec("Overwatch", {
     order: "overwatch",
@@ -205,6 +219,14 @@ export const actionSpec = (id: string) => BY_ID.get(id);
 
 /** The spec behind an engine order. */
 export const specOf = (order: UnitOrder) => BY_ORDER.get(order)!;
+
+/** The orders that throw: the frag grenade, the flashbang, the smoke grenade. All share range and radius. */
+export type ThrowOrder = "grenade" | "flashbang" | "smoke-grenade";
+export const THROW_ORDERS: readonly ThrowOrder[] = ["grenade", "flashbang", "smoke-grenade"];
+export const isThrowOrder = (order: string): order is ThrowOrder => (THROW_ORDERS as readonly string[]).includes(order);
+
+/** The effect each non-damaging grenade leaves on every unit in its burst. */
+export const THROW_EFFECT: Partial<Record<ThrowOrder, string>> = { flashbang: "Daze", "smoke-grenade": "Smoke" };
 
 /** The catalog id for a chain tag; `"#<tag>"` for one this client doesn't know. */
 export function kindOfTag(tag: number): string {

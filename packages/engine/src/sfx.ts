@@ -8,7 +8,8 @@
  * recordings fall back to the synthesized tones in `audio.ts`.
  */
 
-export type EffectKind = "rifle" | "sniper" | "pistol" | "grenade" | "pin" | "click" | "reload" | "aim";
+/** `smoke`: the smoke grenade's hiss, synthesized (no recording). */
+export type EffectKind = "rifle" | "sniper" | "pistol" | "grenade" | "pin" | "click" | "reload" | "aim" | "smoke";
 export type EffectWeapon = "rifle" | "sniper" | "pistol";
 
 /**

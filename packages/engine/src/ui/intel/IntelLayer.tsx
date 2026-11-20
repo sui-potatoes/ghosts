@@ -3,6 +3,7 @@
 
 import { itemById } from "@ghosts/squad/catalog";
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { GRENADE_RADIUS, isThrowOrder } from "../../action-registry";
 import { audio } from "../../audio";
 import { distance } from "../../game";
 import { baseIntel, threatArea, threatSignature, type UnitIntel } from "../../intel";
@@ -66,7 +67,8 @@ export function IntelLayer() {
     unit && selected && unit.enemy !== selected.enemy && unit.id !== selected.id && intel?.weapon
       ? { against: selected.name, chance: s.game.chance(unit, selected) }
       : null;
-  const inBlast = !!unit && s.mode === "grenade" && !!s.grenadeTarget && distance(unit.pos, s.grenadeTarget) <= 2;
+  // Any throw being aimed: the frag, the flashbang and the smoke grenade share the radius.
+  const inBlast = !!unit && isThrowOrder(s.mode) && !!s.grenadeTarget && distance(unit.pos, s.grenadeTarget) <= GRENADE_RADIUS;
 
   const layer = useRef<HTMLDivElement>(null);
   const card = useRef<HTMLDivElement>(null);

@@ -26,8 +26,26 @@ export type Tile =
     | { kind: "empty" | "unwalkable" | "wall" }
     | { kind: "cover"; left: number; top: number; right: number; bottom: number };
 
-/** What a unit may be ordered to do: `ghosts::action::Action`, as the `kind` of the order. */
-export type UnitAction = "move" | "attack" | "reload" | "grenade";
+/**
+ * What a unit may be ordered to do: `ghosts::action::ActionKind`, as the `kind` of the order.
+ * `grenade` is the frag grenade; the flashbang and the smoke grenade have actions of their own.
+ */
+export type UnitAction =
+    | "move"
+    | "attack"
+    | "reload"
+    | "grenade"
+    | "flashbang"
+    | "smoke_grenade";
+
+/** `ghosts::effect`: `daze` takes all the aim; `smoke` takes 30 aim and gives 30 defense. */
+export type EffectKind = "daze" | "smoke";
+
+/** A status effect on a unit (`ghosts::effect::Effect`): its kind and the turn changes left. */
+export interface UnitEffect {
+    kind: EffectKind;
+    turns: number;
+}
 
 /**
  * An action a unit has (`ghosts::action::Action`): its kind and how many times it may still be
@@ -60,6 +78,11 @@ export interface Unit {
      * entries with their own counts.
      */
     actions: UnitActionEntry[];
+    /**
+     * Status effects, at most one of each kind, in the order the unit got them. `stats` stay the
+     * base: `effectiveStats` has what counts in a shot.
+     */
+    effects: UnitEffect[];
 }
 
 /**
@@ -146,7 +169,13 @@ export type GameRecord =
     | { kind: "critical_hit"; amount: number }
     | { kind: "grenade"; from: number[]; to: number[] }
     | { kind: "kia"; recruit: string; x: number; y: number }
-    | { kind: "dodged" };
+    | { kind: "dodged" }
+    | { kind: "flashbang"; from: number[]; to: number[] }
+    | { kind: "smoke_grenade"; from: number[]; to: number[] }
+    /** The unit on `(x, y)` has `effect`, with `turns` left: new, or refreshed to the longer. */
+    | { kind: "effect_start"; x: number; y: number; effect: EffectKind; turns: number }
+    /** The effect ran out on the unit on `(x, y)`. A dead unit's effects end without one. */
+    | { kind: "effect_end"; x: number; y: number; effect: EffectKind };
 
 export interface Receipt {
     digest: string;
@@ -169,6 +198,8 @@ export type Action =
     | { kind: "reload"; x: number; y: number }
     | { kind: "attack"; x: number; y: number; tx: number; ty: number }
     | { kind: "grenade"; x: number; y: number; tx: number; ty: number }
+    | { kind: "flashbang"; x: number; y: number; tx: number; ty: number }
+    | { kind: "smoke_grenade"; x: number; y: number; tx: number; ty: number }
     | { kind: "next_turn" }
     /** Wrap up a finished game. Anyone can, so the opponent may get there first. */
     | { kind: "complete" }

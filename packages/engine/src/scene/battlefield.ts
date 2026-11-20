@@ -11,6 +11,8 @@ import type { PropDamage } from "../environment";
 import { FramePacer } from "../frame-pacer";
 import { key, type Encounter, type Unit } from "../game";
 import type { Cell } from "../map";
+import type { ThrowOrder } from "../action-registry";
+import { burstUnits } from "../targeting";
 import { aimHuman, holdHuman, play } from "../humans";
 import { createPortraitStudio } from "../portrait-studio";
 import { renderCadence, renderPixelRatio, type RenderMode } from "../render-policy";
@@ -519,12 +521,14 @@ export class Battlefield {
     this.overlays.showRange(this.game, u, show);
   }
 
-  showGrenadeRange(u: Unit) {
-    this.overlays.showGrenadeRange(u);
+  /** Tiles within throwing distance of `u`, for the grenade of `kind` (all share the range). */
+  showGrenadeRange(u: Unit, kind: ThrowOrder = "grenade") {
+    this.overlays.showGrenadeRange(u, kind);
   }
 
+  /** The planned route, or a throw's arc and burst with every unit it would catch marked when `grenade`. */
   showPath(path: Cell[] | undefined, grenade = false) {
-    this.overlays.showPath(path, grenade);
+    this.overlays.showPath(path, grenade, grenade && path?.length ? burstUnits(this.game, path[path.length - 1]).map((u) => u.pos) : []);
   }
 
   previewPath(p: Cell) {
@@ -808,6 +812,9 @@ export class Battlefield {
         return this.units.reload(unit(event.unit));
       case "grenade":
         return this.throwAt(unit(event.unit), event.at, event.environment ?? []);
+      case "flashbang":
+      case "smoke-grenade":
+        return this.throwAt(unit(event.unit), event.at, [], undefined, event.type);
       case "hunker":
         return this.units.hunker(unit(event.unit));
       case "overwatch":
@@ -820,8 +827,8 @@ export class Battlefield {
     return this.shot(a, b, hit, []);
   }
 
-  /** A grenade thrown and gone off; whoever it hurt reacts once `settled`. */
-  throwAt(u: Unit, at: Cell, environment: PropDamage[], settled?: Promise<unknown>) {
+  /** A grenade of `kind` thrown and gone off; whoever it hurt reacts once `settled`. */
+  throwAt(u: Unit, at: Cell, environment: PropDamage[], settled?: Promise<unknown>, kind: ThrowOrder = "grenade") {
     return this.units.grenade(
       u,
       at,
@@ -830,6 +837,7 @@ export class Battlefield {
         this.invalidate();
       },
       settled,
+      kind,
     );
   }
 
@@ -871,7 +879,8 @@ export class Battlefield {
 
   /** Bring rigs and markers in line with the encounter after the rules changed it. */
   sync() {
-    this.units.sync(this.selected, !!this.aimKey);
+    if (this.units.sync(this.selected, !!this.aimKey)) this.invalidate();
+    this.host.dataset.smoke = this.effects.lingeringIds.join(",");
   }
 
   /** Hit odds and the predicted hp cut on the aimed hostile's plate; null clears. */

@@ -1,7 +1,7 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
-import { GRENADE_RANGE, usesLeft } from "../action-registry.ts";
+import { GRENADE_RADIUS, GRENADE_RANGE, specOf, usesLeft, type ThrowOrder } from "../action-registry.ts";
 import * as T from "three";
 import { Line2 } from "three/addons/lines/Line2.js";
 import { LineGeometry } from "three/addons/lines/LineGeometry.js";
@@ -28,6 +28,8 @@ const glow = (color: number, opacity: number) => {
 const REACH = 0x2c7f8a;
 const ROUTE = 0x5fd0dd;
 const THROW = 0xd99a62;
+/** The ring under a unit a throw would catch, friend or foe. */
+const THROW_MARK = 0xffc47e;
 const MARK = 0x8feaf5;
 const MARK_RIM = 0xe6fdff;
 
@@ -173,10 +175,10 @@ export class Overlays {
     return this.movementPaths.get(key(p));
   }
 
-  /** Tiles within throwing distance of `u`. */
-  showGrenadeRange(u: Unit) {
+  /** Tiles within throwing distance of `u`, for the grenade of `kind` (all three share the range). */
+  showGrenadeRange(u: Unit, kind: ThrowOrder = "grenade") {
     clearGroup(this.range);
-    if (u.ap <= 0 || usesLeft(u, "Grenade") === 0) return;
+    if (u.ap <= 0 || usesLeft(u, specOf(kind).id) === 0) return;
     const points: Cell[] = [];
     const b = this.space.map.bounds;
     for (let x = b.minX; x <= b.maxX; x++)
@@ -197,22 +199,49 @@ export class Overlays {
     this.range.add(tiles);
   }
 
-  /** The planned route just over the tiles, or a throw arc with its blast ring when `grenade`. */
-  showPath(path: Cell[] | undefined, grenade = false) {
+  /**
+   * The planned route just over the tiles, or, when `grenade`, a throw arc
+   * with its burst: every tile within `GRENADE_RADIUS` of the landing tile
+   * (Manhattan, as the rules count it) and a ring under each unit in `caught`,
+   * whichever side it is on, the thrower too.
+   */
+  showPath(path: Cell[] | undefined, grenade = false, caught: readonly Cell[] = []) {
     clearGroup(this.route);
     this.showTargets(grenade ? undefined : path?.[path.length - 1] ?? this.targeting?.unit.pos);
     if (!path || path.length < 2) return;
     const pts = grenade ? this.throwArc(path[0], path[path.length - 1]) : this.routeLine(path);
     this.route.add(screenLine(pts, grenade ? THROW : ROUTE));
-    if (grenade) {
-      const ring = new T.Mesh(
-        new T.RingGeometry(CELL * 1.9, CELL * 2, 64),
-        new T.MeshBasicMaterial({ color: 0xf4a275, transparent: true, opacity: 0.45, side: T.DoubleSide }),
-      );
+    if (grenade) this.route.add(this.burst(path[path.length - 1], caught));
+  }
+
+  /** The burst around `at`: its tiles washed, and a ring under every unit it catches. */
+  private burst(at: Cell, caught: readonly Cell[]) {
+    const group = new T.Group();
+    group.name = "Burst";
+    const cells: Cell[] = [];
+    for (let dx = -GRENADE_RADIUS; dx <= GRENADE_RADIUS; dx++)
+      for (let dz = -GRENADE_RADIUS; dz <= GRENADE_RADIUS; dz++)
+        if (Math.abs(dx) + Math.abs(dz) <= GRENADE_RADIUS && this.space.map.inBounds([at[0] + dx, at[1] + dz]))
+          cells.push([at[0] + dx, at[1] + dz]);
+    const tiles = new T.InstancedMesh(new T.PlaneGeometry(CELL * 0.93, CELL * 0.93), glow(THROW, 0.22), cells.length);
+    const d = new T.Object3D();
+    cells.forEach((cell, i) => {
+      d.position.copy(this.space.vec(cell, 0.085));
+      d.rotation.x = -Math.PI / 2;
+      d.updateMatrix();
+      tiles.setMatrixAt(i, d.matrix);
+    });
+    group.add(tiles);
+    for (const cell of caught) {
+      const ring = new T.Mesh(new T.RingGeometry(0.5, 0.6, 48), flat(THROW_MARK, 0.95));
+      ring.name = `caught:${key(cell)}`;
+      ring.material.fog = false;
       ring.rotation.x = -Math.PI / 2;
-      ring.position.copy(pts[pts.length - 1]);
-      this.route.add(ring);
+      ring.position.copy(this.space.vec(cell, 0.095));
+      ring.renderOrder = 3;
+      group.add(ring);
     }
+    return group;
   }
 
   /** Red rings show weapon range and line of sight from the current or proposed position. */

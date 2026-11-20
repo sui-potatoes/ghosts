@@ -227,13 +227,18 @@ export const IntelCard = forwardRef<HTMLDivElement, ReadoutProps>(function Intel
           </b>
         </div>
       )}
-      {/* Status effects: the game has none yet; their line goes here when it does. */}
+      {/* Status effects: "Dazed: aim 0, 1 turn left". */}
       {intel.effects.length > 0 && (
         <div className="intel-line intel-effects">
           {intel.effects.map((e) => (
-            <span key={e.id} className="intel-tag">
+            <span key={e.id} className="intel-tag is-alert" data-effect={e.id}>
               {e.label}
-              {e.turns !== undefined && <b>{e.turns}</b>}
+              {e.detail && `: ${e.detail}`}
+              {e.turns !== undefined && (
+                <b>
+                  , {e.turns} turn{e.turns === 1 ? "" : "s"} left
+                </b>
+              )}
             </span>
           ))}
         </div>

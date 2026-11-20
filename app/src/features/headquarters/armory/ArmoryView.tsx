@@ -79,7 +79,6 @@ import { Offstage, Portrait, StatChanges } from "../squad/parts";
 import { weaponName } from "../squad/rules";
 import { MAX_UTILITIES, utilityModifiers } from "../utilities";
 import { GearCanvas } from "./GearCanvas";
-import { requisitionDeny, type PlannedModel } from "./planned";
 import {
     describe,
     grants,
@@ -87,7 +86,6 @@ import {
     modEntries,
     stageModel,
     SUPPLY,
-    supplyStageModel,
     TABS,
     utilityGrants,
     type Entry,
@@ -548,7 +546,7 @@ function Workspace(props: WorkspaceProps) {
               ? current.attachment
               : undefined;
 
-    let gear: { model?: Equipment["model"] | PlannedModel; fit?: Fit; skin?: string } | null = null;
+    let gear: { model?: Equipment["model"]; fit?: Fit; skin?: string } | null = null;
     if (weapon) gear = { model: stageModel(weapon.model), fit: shownFit, skin: shownSkin };
     else if (modAttachment) {
         if (tryOn) {
@@ -561,8 +559,7 @@ function Workspace(props: WorkspaceProps) {
         } else gear = { model: "rifle", fit: { [modAttachment.slot]: modAttachment.tier } };
     } else if (current && !wearer && current.kind !== "mod")
         gear = {
-            model:
-                current.kind === "supply" ? supplyStageModel(current) : stageModel(current.model),
+            model: stageModel(current.model),
         };
     const gearFit = gear?.fit;
     const gearAttachments = useMemo(
@@ -669,18 +666,8 @@ function Workspace(props: WorkspaceProps) {
                     kind={e.attachment ? modifierSummary(unpack(e.attachment.packed)) : undefined}
                     selected={id === currentRow}
                     title={e.name}
-                    hint={requisitionDeny(e) ?? "Into storage, free"}
-                    commands={[
-                        e.order
-                            ? write("Requisition", () => ops.requisition(e.order!))
-                            : {
-                                  action: "confirm",
-                                  label: "Requisition",
-                                  tone: "primary",
-                                  deny: requisitionDeny(e),
-                              },
-                        toStorage,
-                    ]}
+                    hint="Into storage, free"
+                    commands={[write("Requisition", () => ops.requisition(e.order)), toStorage]}
                 />
             );
         if (e.kind === "mod")
@@ -935,16 +922,7 @@ function Workspace(props: WorkspaceProps) {
                                 {g}
                             </ReadoutLine>
                         ))}
-                    {current.planned?.lines.map((l) => (
-                        <ReadoutLine key={l.label} label={l.label}>
-                            {l.value}
-                        </ReadoutLine>
-                    ))}
-                    {current.planned ? (
-                        <p className="gui-note hqa-note">{current.planned.description}</p>
-                    ) : (
-                        description(current.name)
-                    )}
+                    {description(current.name)}
                 </div>
             );
         }

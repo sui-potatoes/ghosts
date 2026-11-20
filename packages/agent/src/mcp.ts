@@ -36,9 +36,18 @@ SHOTS: distance is |dx|+|dy|. Base chance is aim, +5 per tile inside weapon rang
 it, up to range+3. Cover at the target facing the shooter subtracts 25 (low) or 50 (high), plus
 the target's defense. Walls and high cover in between block the line of sight.
 DAMAGE: weapon damage ± spread, reduced by armor to at least 1. Dodge can avoid it entirely.
-GRENADES: only a unit carrying a grenade utility can throw one (setup equips a frag grenade), once
-per match: range ${GRENADE_RANGE}, ${GRENADE_DAMAGE} damage in a diamond of radius ${GRENADE_RADIUS}, friend or foe.
-They can't be dodged, only walls block the throw, and they destroy cover.
+GRENADES: a unit has a throw only if it carries the utility for it (one utility slot, setup equips a
+frag grenade), once per match. All three have range ${GRENADE_RANGE} and reach a diamond of radius ${GRENADE_RADIUS} around
+the target tile, friend or foe, the thrower included. Only walls block a throw. The frag grenade
+(grenade) deals ${GRENADE_DAMAGE} damage that can't be dodged and destroys cover. The flashbang
+(flashbang) dazes everyone it reaches and the smoke grenade (smoke_grenade) puts them in smoke;
+neither deals damage or touches cover, and nothing rolls.
+EFFECTS: a dazed unit's aim is 0. A unit in smoke has 30 less aim and 30 more defense, which
+holds against single-target shots, not blasts. Both last through the rest of the turn they land
+in and the next one: every next_turn, by either side, takes one turn off each effect. The same
+effect again refreshes it to its full length and does not stack; a daze and smoke can be on one
+unit. Moves, reloads and throws still work under an effect. The effects field of a unit and the
+aim and defense shown for it include them.
 WINNING: eliminate the enemy squad. A game still going at turn ${MAX_TURNS} is a draw. Fallen recruits
 are gone for good.
 CLOCK: squads deploy within ${DEPLOY_LIMIT_MS / 1000}s and each turn lasts ${TURN_LIMIT_MS / 1000}s${FIRST_TURN_MS !== TURN_LIMIT_MS ? ` (the first, ${FIRST_TURN_MS / 1000}s)` : ""}. Think fast. Once your turn runs out only
@@ -57,7 +66,8 @@ ghosts_act until every unit is spent, then send next_turn. When the game is over
 The recent field of ghosts_observe shows what just happened, including the opponent's moves.
 
 Moves are annotated: threat is the best chance an enemy has of hitting you on that tile, bestShot
-your best chance from it. A dice roll (attack, grenade) must be the last action in a ghosts_act call.`;
+your best chance from it. A dice roll (attack, grenade) must be the last action in a ghosts_act call; flashbang and smoke_grenade
+roll nothing, so orders can follow them.`;
 
 const INSTRUCTIONS = `${RULES}
 
@@ -195,7 +205,15 @@ export function createMcpServer(agent: GhostsAgent): McpServer {
                     .optional()
                     .describe("Only this unit's orders, as [x, y]."),
                 kind: z
-                    .enum(["move", "attack", "grenade", "reload", "next_turn"])
+                    .enum([
+                        "move",
+                        "attack",
+                        "grenade",
+                        "flashbang",
+                        "smoke_grenade",
+                        "reload",
+                        "next_turn",
+                    ])
                     .optional()
                     .describe("Only this kind of order."),
                 limit: z

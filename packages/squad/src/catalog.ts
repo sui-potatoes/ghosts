@@ -218,6 +218,28 @@ export const EQUIPMENT: Equipment[] = [
     model: "grenade",
   },
   {
+    id: "smoke",
+    name: "Smoke Grenade",
+    type: "THROWABLE",
+    slot: "utility",
+    description:
+      "Thrown up to 5 tiles; every unit within 2 tiles of the target, friend or foe, is smoked: +30 defense and −30 aim for the rest of this turn and the enemy's turn. No damage, and cover stays. One per match.",
+    weight: 0.6,
+    stat: "+30 defense · −30 aim",
+    model: "smoke",
+  },
+  {
+    id: "flash",
+    name: "Flashbang",
+    type: "THROWABLE",
+    slot: "utility",
+    description:
+      "Thrown up to 5 tiles; every unit within 2 tiles of the target, friend or foe, is dazed: aim 0 for the rest of this turn and the enemy's turn. No damage, and cover stays. One per match.",
+    weight: 0.4,
+    stat: "Aim 0 · 2-tile burst",
+    model: "flash",
+  },
+  {
     id: "trauma",
     name: "Field Trauma Kit",
     type: "MEDICAL",
@@ -241,6 +263,8 @@ export const INITIAL_STOCK: Record<string, number> = {
   "nyx-mid": 4,
   "nyx-heavy": 4,
   frag: 4,
+  smoke: 4,
+  flash: 4,
   trauma: 3,
   // Preview inventory: one of each attachment per operative.
   ...Object.fromEntries(ATTACHMENTS.map((item) => [item.id, 4])),

@@ -420,7 +420,12 @@ test("a unit can do what its actions list, and nothing else", () => {
 test("chain actions reach the engine as they are: kind, uses and order", () => {
     const action = (kind: string, uses: number | null) => ({ uses, kind: { $kind: kind } });
     assert.deepEqual(
-        unitActions([action("Move", null), action("Attack", null), action("Reload", null), action("Grenade", 1)]),
+        unitActions([
+            action("Move", null),
+            action("Attack", null),
+            action("Reload", null),
+            action("Grenade", 1),
+        ]),
         [
             { kind: "Move", uses: null },
             { kind: "Attack", uses: null },
@@ -443,4 +448,60 @@ test("a grenade is available while an action of its kind has a use left", () => 
     assert.ok(!hasUsesLeft(of(action("Grenade", 0)), "Grenade"), "spent");
     assert.ok(hasUsesLeft(of(action("Grenade", 0), action("Grenade", 2)), "Grenade"));
     assert.ok(hasUsesLeft(of(action("Grenade", null)), "Grenade"), "unlimited");
+});
+
+test("a flashbang reads as its throw, then one effect start per unit in the burst, in map order", () => {
+    const { rules, play } = fixture();
+    // a1 (0,2) throws at (0,1): b1 (0,0) and a1 are 1 tile from it, a2 (1,2) is 2, b2 (4,2) is out;
+    // `Map.units` order is by row (the scene's z), then column (x)
+    const throwAt = { origin: at([0, 2]), target: at([0, 1]) };
+    const events = play([
+        record("Flashbang", throwAt),
+        record("EffectStart", [...at([0, 0]), 0x02]),
+        record("EffectStart", [...at([0, 2]), 0x02]),
+        record("EffectStart", [...at([1, 2]), 0x02]),
+    ]);
+    assert.deepEqual(
+        events.map((e) => [e.type, "unit" in e ? e.unit : undefined]),
+        [
+            ["flashbang", "a1"],
+            ["effect-start", "b1"],
+            ["effect-start", "a1"],
+            ["effect-start", "a2"],
+        ],
+    );
+    assert.deepEqual(events[0].type === "flashbang" && events[0].at, [0, 1]);
+    for (const id of ["b1", "a1", "a2"])
+        assert.deepEqual(rules.unit(id)!.effects, [{ kind: "Daze", turns: 2 }], id);
+    assert.deepEqual(rules.unit("b2")!.effects, []);
+    // the thrower spent its AP
+    assert.equal(rules.unit("a1")!.ap, 1);
+});
+
+test("a smoke grenade is its own record; a refresh carries the new turns", () => {
+    const { rules, play } = fixture();
+    play([
+        record("SmokeGrenade", { origin: at([4, 2]), target: at([4, 2]) }),
+        record("EffectStart", [...at([4, 2]), 0x12]),
+    ]);
+    assert.deepEqual(rules.unit("b2")!.effects, [{ kind: "Smoke", turns: 2 }]);
+    const [, again] = play([record("NextTurn", 1), record("EffectStart", [...at([4, 2]), 0x12])]);
+    assert.equal(again.type, "effect-start");
+    assert.deepEqual(rules.unit("b2")!.effects, [{ kind: "Smoke", turns: 2 }]);
+});
+
+test("effects run out over two turn changes, each end named after the turn that took the last turn", () => {
+    const { rules, play } = fixture();
+    play([
+        record("Flashbang", { origin: at([0, 2]), target: at([0, 2]) }),
+        record("EffectStart", [...at([0, 2]), 0x02]),
+    ]);
+    play([record("NextTurn", 1)]);
+    assert.deepEqual(rules.unit("a1")!.effects, [{ kind: "Daze", turns: 1 }]);
+    const events = play([record("NextTurn", 2), record("EffectEnd", [...at([0, 2]), 0])]);
+    assert.deepEqual(
+        events.map((e) => e.type),
+        ["turn", "effect-end"],
+    );
+    assert.deepEqual(rules.unit("a1")!.effects, []);
 });

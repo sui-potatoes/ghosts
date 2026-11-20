@@ -563,7 +563,7 @@ export function moveUtilityTx(
 }
 
 /** The utility kinds of `ghosts::items`. */
-export const UTILITY_KINDS = { fragGrenade: 0 } as const;
+export const UTILITY_KINDS = { fragGrenade: 0, flashbang: 1, smokeGrenade: 2 } as const;
 
 /** Requisition a utility into the armory: sent to the `Account`. */
 export function requisitionUtilityTx(

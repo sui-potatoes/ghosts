@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { action, cancelTargeting, deselect, endTurn, fire, pick, select, throwGrenade } from "./actions";
-import { GRENADE_RANGE } from "./action-registry";
+import { GRENADE_RANGE, hasKind, isThrowOrder, specOf, THROW_ORDERS, type ThrowOrder } from "./action-registry";
 import { allows, distance } from "./game";
 import { isCameraCommand } from "./camera-input";
 import { combatActionOf, isEditable as typing, type CombatAction } from "./keys";
@@ -18,8 +18,28 @@ export interface ControlOptions {
   reverse?: boolean;
 }
 
-const ORDERS = new Set(["move", "fire", "grenade", "reload", "overwatch", "hunker", "secure"]);
+const ORDERS = new Set([
+  "move",
+  "fire",
+  "grenade",
+  "flashbang",
+  "smoke-grenade",
+  "reload",
+  "overwatch",
+  "hunker",
+  "secure",
+]);
 
+
+/**
+ * The grenade the selected operator carries: one utility slot, so the frag's
+ * binding (key and pad button) arms whichever of the three it has. The
+ * flashbang and smoke grenade keep their own keys as well.
+ */
+export function carriedThrow(): ThrowOrder | undefined {
+  const u = session.selectedUnit();
+  return u ? THROW_ORDERS.find((order) => hasKind(u, specOf(order).id)) : undefined;
+}
 
 /**
  * One executor for every combat action. The keyboard, the controller and the
@@ -60,10 +80,11 @@ export function runCombatAction(command: CombatAction, { onPause, reverse }: Con
     if (n) select(living[i < 0 ? (reverse ? n - 1 : 0) : (i + (reverse ? -1 : 1) + n) % n].id);
     return;
   }
-  if (ORDERS.has(command)) void action(command);
+  if (command === "grenade") void action(carriedThrow() ?? "grenade");
+  else if (ORDERS.has(command)) void action(command);
   else if (command === "confirm") {
     if (s.mode === "fire") void fire();
-    else if (s.mode === "grenade") void throwGrenade();
+    else if (isThrowOrder(s.mode)) void throwGrenade();
     else void endTurn();
   } else if (command === "grid") toggleGrid();
   else if (command === "cancel") cancelTargeting();
@@ -164,7 +185,7 @@ function bindField() {
       const path = battlefield.previewPath(p);
       battlefield.setHover(!!path);
       battlefield.showPath(path);
-    } else if (s.mode === "grenade" && distance(u.pos, p) <= GRENADE_RANGE && !s.grenadeTarget) {
+    } else if (isThrowOrder(s.mode) && distance(u.pos, p) <= GRENADE_RANGE && !s.grenadeTarget) {
       battlefield.setHover(true);
       battlefield.showPath([u.pos, p], true);
     }
@@ -173,6 +194,6 @@ function bindField() {
   battlefield.onLeave = () => {
     const s = session;
     const u = s.selectedUnit();
-    if (u && s.mode === "grenade" && s.grenadeTarget) battlefield.showPath([u.pos, s.grenadeTarget], true);
+    if (u && isThrowOrder(s.mode) && s.grenadeTarget) battlefield.showPath([u.pos, s.grenadeTarget], true);
   };
 }

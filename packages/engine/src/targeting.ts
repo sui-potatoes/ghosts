@@ -1,7 +1,16 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
-import { GRENADE_RADIUS, GRENADE_RANGE, MAX_RANGE_OFFSET, REFUSAL_TEXT, refusalOf } from "./action-registry.ts";
+import {
+  GRENADE_RADIUS,
+  GRENADE_RANGE,
+  MAX_RANGE_OFFSET,
+  REFUSAL_TEXT,
+  THROW_EFFECT,
+  refusalOf,
+  specOf,
+  type ThrowOrder,
+} from "./action-registry.ts";
 import {
   distance,
   shotDamage,
@@ -49,12 +58,17 @@ export function shootingTargets(game: Encounter, unit: Unit, from: Cell = unit.p
   return game.units.filter((target) => target.hp > 0 && target.enemy !== unit.enemy &&
     distance(from, target.pos) <= unit.range + MAX_RANGE_OFFSET && !game.shotBlocked(from, target.pos));
 }
+/**
+ * Why a throw of `order` (any grenade: they share range, radius and the
+ * checks) can't land on `point`, or null when it can.
+ */
 export function grenadeBlockReason(
   game: Encounter,
   unit: Unit,
   point: Cell | null,
+  order: ThrowOrder = "grenade",
 ): string | null {
-  const refusal = refusalOf(game, unit, "Grenade");
+  const refusal = refusalOf(game, unit, specOf(order).id);
   if (refusal) return REFUSAL_TEXT[refusal].toUpperCase();
   if (!point) return "NO LANDING TILE";
   if (!game.map.inBounds(point)) return "OUTSIDE THE DISTRICT";
@@ -64,21 +78,37 @@ export function grenadeBlockReason(
   if (game.throwBlocked(unit.pos, point)) return "WALL BLOCKS THROW";
   return null;
 }
-export function defaultGrenadeTarget(game: Encounter, unit: Unit): Cell {
+/**
+ * Every living unit a throw landing on `at` catches, either side, the thrower
+ * too (friendly fire is on), in `Map.units` order: what the preview marks.
+ */
+export function burstUnits(game: Encounter, at: Cell | null): Unit[] {
+  return at ? game.unitsInMapOrder().filter((u) => distance(u.pos, at) <= GRENADE_RADIUS) : [];
+}
+
+/**
+ * Where a throw of `order` starts aimed: the frag and the flashbang on the
+ * most hostiles and fewest of the squad; the smoke grenade, which shields
+ * whoever it covers, on the most of the squad and fewest hostiles.
+ */
+export function defaultGrenadeTarget(game: Encounter, unit: Unit, order: ThrowOrder = "grenade"): Cell {
+  const shield = THROW_EFFECT[order] === "Smoke";
+  const [friends, foes] = unit.enemy ? [game.enemies, game.allies] : [game.allies, game.enemies];
   const candidates: Cell[] = [];
   const { minX, maxX, minZ, maxZ } = game.map.bounds;
   for (let x = minX; x <= maxX; x++)
     for (let z = minZ; z <= maxZ; z++) {
       const point: Cell = [x, z];
       if (
-        distance(unit.pos, point) >= 3 &&
-        !grenadeBlockReason(game, unit, point)
+        (shield || distance(unit.pos, point) >= 3) &&
+        !grenadeBlockReason(game, unit, point, order)
       )
         candidates.push(point);
     }
+  const near = (side: Unit[], p: Cell) => side.filter((e) => distance(e.pos, p) <= GRENADE_RADIUS).length;
   const score = (p: Cell) =>
-    game.enemies.filter((e) => distance(e.pos, p) <= GRENADE_RADIUS).length * 100 -
-    game.allies.filter((a) => distance(a.pos, p) <= GRENADE_RADIUS).length * 200 -
-    Math.min(...game.enemies.map((e) => distance(e.pos, p)), 100);
+    shield
+      ? near(friends, p) * 100 - near(foes, p) * 200 - Math.min(...friends.map((a) => distance(a.pos, p)), 100)
+      : near(foes, p) * 100 - near(friends, p) * 200 - Math.min(...foes.map((e) => distance(e.pos, p)), 100);
   return candidates.sort((a, b) => score(b) - score(a))[0] ?? [...unit.pos];
 }

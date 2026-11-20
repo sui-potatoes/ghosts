@@ -90,7 +90,17 @@ function ArmoryQa() {
         storage: {
             weapons: [gear("0xqs0", "Standard Rifle"), gear("0xqs1", "Standard Rifle")],
             armors: [gear("0xqa0armor", "Medium Armor")],
-            utilities: [gear("0xqu0", "Frag Grenade")],
+            utilities: [
+                gear("0xqu0", "Frag Grenade", {
+                    actions: [{ uses: 1, kind: { $kind: "Grenade" } }],
+                }),
+                gear("0xqu1", "Smoke Grenade", {
+                    actions: [{ uses: 1, kind: { $kind: "SmokeGrenade" } }],
+                }),
+                gear("0xqu2", "Flashbang", {
+                    actions: [{ uses: 1, kind: { $kind: "Flashbang" } }],
+                }),
+            ],
             upgrades: ["Basic Scope", "Advanced Scope", "Basic Stock", "Basic Laser Sight"].map(
                 (name, i) => gear(`0xqm${i}`, name),
             ),

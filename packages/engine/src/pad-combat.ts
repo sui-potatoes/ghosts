@@ -4,7 +4,7 @@
 import { action, endTurn, pick, select } from "./actions";
 import { audio } from "./audio";
 import { runCombatAction, type ControlOptions } from "./controls";
-import { actionName, actionSpec, REFUSAL_TEXT, unitKinds } from "./action-registry";
+import { actionName, actionSpec, isThrowOrder, REFUSAL_TEXT, unitKinds } from "./action-registry";
 import { allows, type Cell, type UnitOrder } from "./game";
 import type { IconName } from "./ui/icons";
 import { cancelDialog, onPad, padActive, type PadDir, type PadInput } from "./gamepad";
@@ -288,6 +288,7 @@ export function bindPadCombat({ onPause }: ControlOptions = {}): () => void {
       runCombatAction("fire");
       return true;
     }
+    // The grenade button arms whichever grenade the operator carries (`runCombatAction`).
     if (bound("grenade")) {
       runCombatAction("grenade");
       return true;
@@ -309,7 +310,7 @@ export function bindPadCombat({ onPause }: ControlOptions = {}): () => void {
       else if (pad.pressed("a")) runCombatAction("confirm");
       return true;
     }
-    if (s.mode === "grenade") {
+    if (isThrowOrder(s.mode)) {
       const from = s.grenadeTarget ?? u.pos;
       const d = navDelta(pad);
       if (d) {

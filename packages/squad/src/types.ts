@@ -110,5 +110,7 @@ export interface Equipment {
         | "assassin-mid"
         | "assassin-heavy"
         | "grenade"
+        | "smoke"
+        | "flash"
         | "medkit";
 }

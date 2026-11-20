@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { decodeStats, decodeTiles, encodeStats, gridSize, MapBcs } from "../src/bcs.ts";
+import { decodeStats, decodeTiles, encodeStats, gridSize, MapPresetBcs } from "../src/bcs.ts";
 import { BLACK_RAIN, BLACK_RAIN_POSITIONS, DEMO_1, DEMO_2 } from "../src/maps.ts";
 import {
     applyDeterministic,
@@ -36,7 +36,7 @@ import {
 const bytes = (hex: string) => Uint8Array.from(Buffer.from(hex, "hex"));
 
 function board(hex: string): GameState {
-    const map = MapBcs.parse(bytes(hex));
+    const map = MapPresetBcs.parse(bytes(hex));
     return {
         id: "0x1",
         version: "1",
@@ -91,6 +91,7 @@ function place(state: GameState, side: number, x: number, y: number, ap = 2) {
         ammoMax: 3,
         stats: OPERATIVE,
         actions: acts("move", "attack", "reload", "grenade:1"),
+        effects: [],
     });
 }
 

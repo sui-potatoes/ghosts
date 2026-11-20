@@ -111,8 +111,9 @@ To play by hand, use `situation`, `wait`, `observe`, `legal` and `act`.
 `createSuiBackend` replaces the sandbox on a real network, and the same code runs.
 
 Action ids are plain text: `move:6,5:uull`, `attack:3,1:0,3`, `grenade:3,1:0,3`,
-`reload:3,1`, `next_turn`, `deploy`, `complete`, `abandon`. `x` is the row and `y` the
-column. Moves and reloads chain in one call; a dice roll or `next_turn` goes last.
+`flashbang:3,1:0,3`, `smoke_grenade:3,1:0,3`, `reload:3,1`, `next_turn`, `deploy`, `complete`,
+`abandon`. `x` is the row and `y` the column. Moves, reloads and the flashbang and smoke grenade
+chain in one call; a dice roll (`attack`, `grenade`) or `next_turn` goes last.
 
 ## The game loop
 
@@ -130,7 +131,15 @@ column. Moves and reloads chain in one call; a dice roll or `next_turn` goes las
   lacks one and equips them, in one transaction. What a unit may do is the `actions` on
   its `Unit`, which the legal actions follow: each entry is a kind and the `uses` left of it
   (`null`: unlimited), and a grenade from a utility has one use. A grenade's range, radius and
-  damage are the grenade action's own constants, not an item's.
+  damage are the grenade action's own constants, not an item's. The flashbang (`Flashbang`) and
+  the smoke grenade (`SmokeGrenade`) are utilities of their own with an action each; the slot
+  takes one utility, so a recruit carries one of the three grenades.
+- **Effects:** a flashbang dazes (aim 0) and a smoke grenade smokes (-30 aim, +30 defense) every
+  unit within 2 of the target, either side's, the thrower's too, for the rest of the turn and
+  the next. Every `next_turn` takes a turn off every effect; the same kind again refreshes it.
+  `Unit.effects` has them, `effectiveStats` the stats as a shot counts them, and
+  `replayEffects(history)` rebuilds each unit's effects from the history alone: `EffectStart`
+  and `EffectEnd` records, with `UnitKIA` ending everything a dead unit had.
 - **Deploying:** `deploy` receives as many recruits from the `Account` as the map has
   spawn positions, three on Black Rain, armed ones first, and places them. They leave
   the `Account` until the game ends. Squads are not a field of the `Game`: a side's

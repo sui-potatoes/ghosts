@@ -515,29 +515,53 @@
             ]
         },
         {
-            "id": "smoke-grenade",
+            "id": "flashbang",
             "type": "utility",
-            "status": "planned",
-            "name": "Smoke Grenade",
-            "description": "Thrown up to 5 tiles; every unit within 2 tiles of the target, friend or foe, is smoked until the end of the next turn: it shoots at −20 aim and no shot at it hits better than 40%. Grenades ignore smoke. One per match.",
-            "stats": null,
-            "actions": [],
-            "chain": null,
+            "status": "chain",
+            "name": "Flashbang",
+            "description": "Thrown up to 5 tiles; every unit within 2 tiles of the target, friend or foe, is dazed: aim 0 for the rest of this turn and the enemy's turn. No damage, and cover stays. One per match.",
+            "kind": 1,
+            "stats": {},
+            "actions": [
+                {
+                    "kind": "Flashbang",
+                    "uses": 1
+                }
+            ],
+            "chain": {
+                "requisition": "requisition_utility",
+                "args": {
+                    "kind": 1
+                },
+                "equip": "equip_utility"
+            },
             "clientIds": [
-                "smoke"
+                "flash"
             ]
         },
         {
-            "id": "flashbang",
+            "id": "smoke-grenade",
             "type": "utility",
-            "status": "planned",
-            "name": "Flashbang",
-            "description": "Stun grenade. Thrown up to 5 tiles; every unit within 1 tile of the target, friend or foe, is stunned unless it dodges: it can't act until its side's next turn is over. No damage. One per match.",
-            "stats": null,
-            "actions": [],
-            "chain": null,
+            "status": "chain",
+            "name": "Smoke Grenade",
+            "description": "Thrown up to 5 tiles; every unit within 2 tiles of the target, friend or foe, is smoked: +30 defense and −30 aim for the rest of this turn and the enemy's turn. No damage, and cover stays. One per match.",
+            "kind": 2,
+            "stats": {},
+            "actions": [
+                {
+                    "kind": "SmokeGrenade",
+                    "uses": 1
+                }
+            ],
+            "chain": {
+                "requisition": "requisition_utility",
+                "args": {
+                    "kind": 2
+                },
+                "equip": "equip_utility"
+            },
             "clientIds": [
-                "flash"
+                "smoke"
             ]
         },
         {

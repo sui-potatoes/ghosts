@@ -8,6 +8,7 @@ place the UI text for each entry lives.
 | --- | --- |
 | `actions.json` | In-match actions |
 | `items.json` | Weapons, armor, weapon upgrades and utilities |
+| `effects.json` | Status effects a unit can carry |
 
 Recruit skills get their own file in the same shape when they are added.
 
@@ -42,7 +43,7 @@ One entry per item a recruit can carry. Any recruit can carry any item: nothing 
 | --- | --- |
 | `id` | Stable name of the item in this catalog |
 | `type` | `weapon`, `armor`, `upgrade` (fits a weapon) or `utility` |
-| `status` | `chain`: created by `move/packages/ghosts/sources/recruit/items.move`. `app`: shown in the app's squad screens only, with no on-chain item behind it. `planned`: designed, not in the contract; listed only in the Armory's requisition catalog, where it cannot be requisitioned, and read by nothing that builds transactions, decodes objects, prices or plays a match. It has no `kind` and no `chain` |
+| `status` | `chain`: created by `move/packages/ghosts/sources/recruit/items.move`. `app`: shown in the app's squad screens only, with no on-chain item behind it |
 | `name` | The item's name: for `chain` items, exactly the name the contract gives the object |
 | `description` | One or two sentences for the UI |
 | `tier` | Tier 1 to 3 where the item has tiers |
@@ -53,3 +54,19 @@ One entry per item a recruit can carry. Any recruit can carry any item: nothing 
 | `clientIds` | Ids of the looks and models that stand for the item in `packages/squad/src/catalog.ts` |
 
 Stat fields and how modifiers combine are described in `docs/design/mechanics.md`, section 8.
+
+## `effects.json`
+
+One entry per status effect (`ghosts::effect`). On chain an effect is one byte on the unit, `kind << 4 | turns`.
+
+| Field | Meaning |
+| --- | --- |
+| `id` | Stable name of the effect |
+| `kind` | The kind id, the high nibble of the effect byte. Kinds are only appended |
+| `status` | `chain`: in the contract and every client |
+| `name` | The label shown on a unit while it has the effect |
+| `description` | One or two sentences for the UI |
+| `turns` | How many `next_turn` calls a fresh effect lasts: the rest of the turn it lands in, and the other side's |
+| `stats` | What it does to the unit's stats while it lasts: `"0"` sets the stat to 0, a number is added |
+| `source` | The catalog id of the item that applies it |
+| `records` | History records the effect writes on chain |

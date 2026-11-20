@@ -107,13 +107,22 @@ export const PRICES: Readonly<Record<string, number>> = {
     "armor-2": 25,
     "armor-3": 45,
     "frag-grenade": 10,
+    flashbang: 10,
+    "smoke-grenade": 10,
 };
 
 const SLOT_OF: Record<string, Slot> = { weapon: "weapon", armor: "armor", utility: "utility" };
 
 // === Tiers ===
 
-const ROOKIE_ITEMS = ["rifle-1", "armor-1", "armor-2", "frag-grenade"];
+const ROOKIE_ITEMS = [
+    "rifle-1",
+    "armor-1",
+    "armor-2",
+    "frag-grenade",
+    "flashbang",
+    "smoke-grenade",
+];
 
 type TierSpec = Omit<Tier, "items">;
 
@@ -125,7 +134,7 @@ const TIER_SPECS: TierSpec[] = [
         max: 1400,
         budget: { "3x3": 125, "4x4": 165 },
         unlocks: ROOKIE_ITEMS,
-        summary: "Standard rifles, light and medium armor, grenades.",
+        summary: "Standard rifles, light and medium armor, frag, flash and smoke grenades.",
     },
     {
         id: "contractor",
@@ -447,6 +456,9 @@ export function fieldUnit(loadout: Loadout): { stats: Stats; actions: FieldActio
     return { stats, actions };
 }
 
+/** The actions that throw a grenade: the frag grenade, the flashbang and the smoke grenade. */
+const GRENADE_KINDS = ["Grenade", "Flashbang", "SmokeGrenade"];
+
 export function unitStats(loadout: Loadout): UnitStats {
     const { stats: s, actions } = fieldUnit(loadout);
     return {
@@ -461,7 +473,7 @@ export function unitStats(loadout: Loadout): UnitStats {
         critChance: s.critChance,
         ammo: s.ammo,
         grenades: actions
-            .filter((a) => a.kind === "Grenade")
+            .filter((a) => GRENADE_KINDS.includes(a.kind))
             .reduce((sum, a) => sum + (a.uses ?? 0), 0),
     };
 }

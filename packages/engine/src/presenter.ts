@@ -1,6 +1,7 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
+import type { ThrowOrder } from "./action-registry";
 import { audio } from "./audio";
 import type { PropDamage } from "./environment";
 import { pad2 } from "./html";
@@ -27,15 +28,33 @@ export async function presentShot(
   else if (shot?.hit) audio.speak("hit", b);
 }
 
-/** A throw whose casualties are still on their way: it flies and goes off now, they react when the answer comes. */
-export async function presentThrow(u: Unit, at: Cell, environment: PropDamage[], answer: Promise<unknown>) {
+/** What the status line says as each grenade goes off. */
+const THROW_LINE: Record<ThrowOrder, string> = {
+  grenade: "FRAGMENTATION / AREA IMPACT",
+  flashbang: "FLASHBANG / BURST DAZED",
+  "smoke-grenade": "SMOKE / BURST COVERED",
+};
+
+/** The pin, the throw and the burst of any grenade, voiced and announced. */
+async function playThrow(u: Unit, at: Cell, kind: ThrowOrder, go: () => Promise<void>) {
   const { battlefield } = session;
   await battlefield.aimAt(u, at, "grenade");
-  audio.speak("grenade", u);
+  audio.speak(kind === "grenade" ? "grenade" : "utility", u);
   audio.tone("pin");
-  await battlefield.throwAt(u, at, environment, answer);
-  audio.tone("grenade");
-  session.notify("FRAGMENTATION / AREA IMPACT");
+  await go();
+  audio.tone(kind === "smoke-grenade" ? "smoke" : "grenade");
+  session.notify(THROW_LINE[kind]);
+}
+
+/** A throw whose outcome is still on its way: it flies and goes off now, whoever it caught reacts when the answer comes. */
+export async function presentThrow(
+  u: Unit,
+  at: Cell,
+  environment: PropDamage[],
+  answer: Promise<unknown>,
+  kind: ThrowOrder = "grenade",
+) {
+  await playThrow(u, at, kind, () => session.battlefield.throwAt(u, at, environment, answer, kind));
 }
 
 /**
@@ -73,12 +92,13 @@ export async function present(event: GameEvent) {
       if (!unit!.enemy) notify(`${unit!.name} / MAGAZINE READY`);
       return;
     case "grenade":
-      await battlefield.aimAt(unit!, event.at, "grenade");
-      audio.speak("grenade", unit!);
-      audio.tone("pin");
-      await battlefield.play(event);
-      audio.tone("grenade");
-      notify("FRAGMENTATION / AREA IMPACT");
+    case "flashbang":
+    case "smoke-grenade":
+      await playThrow(unit!, event.at, event.type, () => battlefield.play(event));
+      return;
+    case "effect-start":
+    case "effect-end":
+      // The marker over the unit and the lingering smoke follow on the sync after each event.
       return;
     case "hunker":
       audio.speak("hunker", unit!);

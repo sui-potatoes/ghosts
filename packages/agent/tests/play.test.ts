@@ -511,6 +511,19 @@ test("the orders compile to the calls and argument kinds of the package's entry 
     assert.deepEqual(build([{ kind: "grenade", x: 1, y: 1, tx: 2, ty: 2 }]), [
         "ghosts::perform_grenade(object, object, random, clock, pure, pure, pure, pure)",
     ]);
+    // the flashbang and the smoke grenade roll nothing: no `Random`, and a roll can follow them
+    assert.deepEqual(
+        build([
+            { kind: "flashbang", x: 1, y: 1, tx: 2, ty: 2 },
+            { kind: "smoke_grenade", x: 1, y: 2, tx: 2, ty: 2 },
+            { kind: "attack", x: 5, y: 4, tx: 0, ty: 3 },
+        ]),
+        [
+            "ghosts::perform_flashbang(object, object, clock, pure, pure, pure, pure)",
+            "ghosts::perform_smoke_grenade(object, object, clock, pure, pure, pure, pure)",
+            "ghosts::perform_attack(object, object, random, clock, pure, pure, pure, pure)",
+        ],
+    );
     assert.deepEqual(build([{ kind: "next_turn" }]), ["ghosts::next_turn(object, object, clock)"]);
 
     // `deploy_squad` takes the recruits as `Receiving` tickets, taken off the `Account`.
