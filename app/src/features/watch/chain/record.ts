@@ -17,11 +17,14 @@ import type { EncounterRules, GameEvent, Scenario, WatchOutcome, WatchSide } fro
 import type { GameArchive, GameTx } from "../../../chain/archive.ts";
 import { Game, type ChainGame, type Recruit } from "../../../chain/bcs.ts";
 import { endingOf, type GameEnding } from "../../../chain/ending.ts";
+import type { Recruit as LocalRecruit } from "@ghosts/squad/types";
+
 import {
     activeSide,
     gameEvents,
     isDeploying,
     isOver,
+    unitsOnMap,
     terrainAt,
     toTile,
     type Bounds,
@@ -34,7 +37,8 @@ import {
     syncUnits,
     type UnitLook,
 } from "../../../chain/match-scene.ts";
-import { CALLS, RecruitField } from "../../../chain/watch-layout.ts";
+import { CALLS, PLACEMENT_CALLS, RecruitField } from "../../../chain/watch-layout.ts";
+import { hash, rankedSide, sideLooks, virtualRecruits } from "../../play/ranked/kit.ts";
 
 /** A recruit deployed in a game, as its table entry held it. */
 export type GameRecruit = typeof Recruit.$inferType & { objectId: string };
@@ -129,10 +133,11 @@ export async function readStory(
         decode(await readAt(archive, gameId, endTx?.before ?? txs[txs.length - 1].after));
     if (!last) return { kind: "unavailable" };
 
-    // Play starts with the second squad deployed: the version that deployment left.
+    // Play starts with the second squad placed: the version that placement left (a
+    // ranked game's squads are placed by `find_ranked` and `reveal_squad`).
     let deployed = -1;
     txs.forEach((tx, i) => {
-        if (tx.calls.includes(CALLS.deploy)) deployed = i;
+        if (tx.calls.some((call) => PLACEMENT_CALLS.includes(call))) deployed = i;
     });
     let first: ChainGame | null = null;
     for (const tx of txs.slice(Math.max(0, deployed), Math.max(0, deployed) + START_READS)) {
@@ -177,6 +182,38 @@ function deletion(txs: readonly GameTx[]): GameTx | null {
 
 const readAt = (archive: GameArchive, id: string, version: string | undefined) =>
     version ? archive.objectAt(id, version).catch(() => null) : Promise.resolve(null);
+
+/** A ranked game's two sides dressed for the viewer: names by unit, side 0's figures, side 1's looks. */
+export interface RankedDress {
+    names: Map<string, string>;
+    /** Side 0's units as the recruits the field deploys. */
+    squad: LocalRecruit[];
+    /** Side 1's units' looks, by unit id. */
+    looks: Map<string, UnitLook>;
+}
+
+/**
+ * A ranked game's units as the viewer shows them: a ranked unit has no recruit behind
+ * it (the game's recruit table stays empty), so each side's units are named by the
+ * preset their loadout is (read off the unit's stats and actions, "Assault",
+ * "Assault-2"), side 0's dressed as the match dresses virtual units and side 1's in
+ * faces side 0 does not wear. Seeded by the game id: the same game dresses the same
+ * every time it is opened.
+ */
+export function rankedDress(game: ChainGame, gameId: string): RankedDress {
+    const seed = hash(gameId);
+    const onMap = unitsOnMap(game).map(({ unit }) => unit);
+    const sideUnits = (side: number) =>
+        onMap
+            .filter((unit) => unit.owner === game.players[side])
+            .sort((a, b) => a.recruit.localeCompare(b.recruit));
+    const [first, second] = [rankedSide(sideUnits(0), null), rankedSide(sideUnits(1), null)];
+    const names = new Map<string, string>();
+    for (const side of [first, second]) side.ids.forEach((id, i) => names.set(id, side.names[i]));
+    const looks = new Map<string, UnitLook>();
+    sideLooks(second, seed).forEach((look, i) => looks.set(second.ids[i], look));
+    return { names, squad: virtualRecruits(first, seed), looks };
+}
 
 /** Where the viewer starts: the scene with every unit the game started play with, and the rules as they stood. */
 export interface WatchStart {
@@ -290,7 +327,7 @@ export function watchOutcome(
             return { winner: null, reason: "No winner by the turn limit" };
         case "Abandoned": {
             const side = sideOf(ending.Abandoned);
-            return { winner: other(side), reason: `${name(side)} left the game` };
+            return { winner: other(side), reason: `${name(side)} left the match` };
         }
         case "Forfeited": {
             const side = sideOf(ending.Forfeited);

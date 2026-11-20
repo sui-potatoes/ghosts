@@ -17,10 +17,9 @@ import { useCurrentAccount } from "@mysten/dapp-kit-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { SEARCH_TIMEOUT_MS, useMatchSearch } from "../chain";
+import { TICKET_TTL_MS, useExpired, useMatchSearch } from "../chain";
 import { NETWORK } from "../constants";
 import { TitleScreen, type TitleData, type TitleOps } from "../features/main-menu/TitleScreen";
-import { requestFind } from "../features/find-match/model";
 import type { RowId } from "../features/main-menu/model";
 import { usePlayerName } from "../hooks/usePlayerName";
 import { useInstall } from "../install";
@@ -37,6 +36,7 @@ function Title() {
     const navigate = useNavigate();
     const account = useCurrentAccount();
     const match = useMatchSearch();
+    const expired = useExpired();
     const install = useInstall();
     const { name } = usePlayerName();
 
@@ -56,6 +56,8 @@ function Title() {
             match: {
                 playing: !!match.playing,
                 searching: !!match.searching,
+                searchKind: match.searching?.kind === "stakes" ? "contract" : "ranked",
+                expired: !!expired,
                 lobby: !!match.lobby,
                 hiring: match.hiring,
                 busy: match.busy,
@@ -64,7 +66,7 @@ function Title() {
             install: install.kind,
         },
         searchingSinceMs: match.searching ? Number(match.searching.sinceMs) : null,
-        searchTimeoutMs: SEARCH_TIMEOUT_MS,
+        searchTimeoutMs: TICKET_TTL_MS,
         playerName: name,
         error: match.error || null,
         network: NETWORK,
@@ -76,21 +78,15 @@ function Title() {
         run: (id: RowId) => {
             switch (id) {
                 case "play":
-                    return navigate(match.lobby ? "/play/friendly" : "/play");
-                case "demo-black-rain":
-                    return navigate("/demo");
-                case "demo-paper-trail":
-                    return navigate("/demo-2");
-                case "sign-in":
-                    return requestSignIn();
-                case "match":
                     if (match.playing) return navigate("/match");
                     if (match.lobby) return navigate("/play/friendly");
-                    if (match.searching) return match.cancel();
-                    if (!account) return requestSignIn();
-                    // The screen does the slow part (lookups, the queue transaction).
-                    requestFind();
-                    return navigate("/find");
+                    if (match.searching)
+                        return navigate(
+                            match.searching.kind === "stakes" ? "/play/contract" : "/play/ranked",
+                        );
+                    return navigate("/play");
+                case "sign-in":
+                    return requestSignIn();
                 case "headquarters":
                     return navigate("/headquarters");
                 case "watch":

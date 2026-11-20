@@ -62,6 +62,7 @@ import {
     restoreBlasts as restoreSceneBlasts,
     scenarioFor,
     syncUnits as syncSceneUnits,
+    type UnitLook,
 } from "./match-scene";
 import { prepareOrders, sendOrder } from "./sender";
 
@@ -75,10 +76,16 @@ export const MATCH_BOUNDS: Bounds = blackRain.map.bounds;
 
 /**
  * The encounter a game starts as for `side`: Black Rain's scene with the units
- * the map holds right now, so it also picks a game up after a reload.
+ * the map holds right now, so it also picks a game up after a reload. `looks`
+ * dress the opponent's units (a ranked squad has no recruits to read them from).
  */
-export function matchScenario(game: ChainGame, side: number, names: Map<string, string>): Scenario {
-    return scenarioFor(blackRain, game, side, names);
+export function matchScenario(
+    game: ChainGame,
+    side: number,
+    names: Map<string, string>,
+    looks?: ReadonlyMap<string, UnitLook>,
+): Scenario {
+    return scenarioFor(blackRain, game, side, names, looks);
 }
 
 const restoreBlasts = (rules: EncounterRules, game: ChainGame) =>

@@ -76,7 +76,7 @@ export function pipTitle(pip: Pip, sides: readonly [WatchSide, WatchSide]) {
 
 export function pipHint(pip: Pip) {
     const fell = pip.kills ? `${pip.kills} unit${pip.kills === 1 ? "" : "s"} fell` : "Nobody fell";
-    return pip.edge ? `${fell} so far · the turn being played` : fell;
+    return pip.edge ? `${fell} so far · Turn in play` : fell;
 }
 
 /** How many sides' goes the scrubber shows at once: ten turns of both sides. */
@@ -106,9 +106,8 @@ export function jumpTarget(turns: PlaybackState["turns"], turn: number, dir: 1 |
     return dir > 0 ? (at < 0 ? turns.length - 1 : at) : Math.max(0, at);
 }
 
-/** The Live chip: absent on a finished game, lit while following, the way back when behind. */
-export type LiveChip =
-    { following: true; label: string } | { following: false; label: string; hint: string } | null;
+/** The Live chip: absent on a finished match, lit while following, the way back when behind. */
+export type LiveChip = { following: boolean; label: string } | null;
 
 export function liveChip(
     state: Pick<PlaybackState, "growing" | "live" | "behind" | "playing">,
@@ -119,9 +118,6 @@ export function liveChip(
     return {
         following: false,
         label: behind > 0 ? `Live · ${behind} turn${behind === 1 ? "" : "s"} behind` : "Live",
-        hint: state.playing
-            ? "Catching up; back to the newest event at 1x"
-            : "Back to the newest event at 1x",
     };
 }
 

@@ -141,16 +141,27 @@ export const Rating = bcs.struct("Rating", {
     lastPlayedMs: bcs.u64(),
 });
 
-/** `ghosts::account::State`: where an `Account` stands. */
+/**
+ * `ghosts::account::State`: where an `Account` stands. A search names its `queue`: the
+ * `Matchmaker` it waits in (stakes, or the ranked queue of a size) or `Lobbies`; a ranked
+ * search holds the `commitment` to its squad.
+ */
 export const AccountState = bcs.enum("State", {
     Idle: null,
-    Searching: bcs.struct("Searching", { order: bcs.Address, sinceMs: bcs.u64() }),
+    Searching: bcs.struct("Searching", {
+        order: bcs.Address,
+        sinceMs: bcs.u64(),
+        queue: bcs.Address,
+        commitment: bcs.option(bcs.Address),
+    }),
     Playing: bcs.Address,
-    Suspended: bcs.struct("Suspended", { untilMs: bcs.u64() }),
 });
 
-/** `ghosts::ghosts::Seat`: a place in `game`, sent to the `Account` a match found waiting. */
-export const Seat = bcs.struct("Seat", { id: bcs.Address, game: bcs.Address });
+/**
+ * `ghosts::ghosts::Seat`: a place in `game`, sent to the `Account` a match found waiting;
+ * no game is a notice that the queue dropped the search.
+ */
+export const Seat = bcs.struct("Seat", { id: bcs.Address, game: bcs.option(bcs.Address) });
 
 /** `ghosts::account::Score`: how a player's games ended. */
 export const Score = bcs.struct("Score", {
@@ -167,7 +178,14 @@ export const Account = bcs.struct("Account", {
     /** How many recruits are at home; they, the armory, the stock and dog tags are owned by the `Account`. */
     recruits: bcs.u64(),
     rating: Rating,
+    /** Ranked games only. */
     score: Score,
+    /** Until when the player cannot search; 0 when never suspended. */
+    suspendedUntil: bcs.u64(),
+    /** How many times the rating was reset. */
+    resets: bcs.u16(),
+    /** When the rating was last reset; 0 when never. */
+    lastResetMs: bcs.u64(),
 });
 
 /**
@@ -286,12 +304,15 @@ export const GameState = bcs.enum("State", {
 });
 
 /**
- * `ghosts::ghosts::Mode`: what a game is played for. `Rated` (tag 0) came from the queue;
- * `Friendly` (tag 1) from a lobby, each side deploying up to `size` recruits.
+ * `ghosts::ghosts::Mode`: what a game is played for. `Stakes` (tag 0) came from the queue for
+ * owned recruits, unrated; `Friendly` (tag 1) from a lobby, each side deploying up to `size`
+ * recruits; `Ranked` (tag 2) from the ranked queue of `size`, between players of `tier`, with
+ * squads built for the game.
  */
 export const GameMode = bcs.enum("Mode", {
-    Rated: null,
+    Stakes: null,
     Friendly: bcs.struct("Friendly", { size: bcs.u8() }),
+    Ranked: bcs.struct("Ranked", { size: bcs.u8(), tier: bcs.u8() }),
 });
 
 /** `ghosts::ghosts::Game`. */
@@ -337,6 +358,55 @@ export const LobbyField = bcs.struct("Field", {
 });
 
 export type ChainGame = typeof Game.$inferType;
+export type ChainMode = ChainGame["mode"];
+
+/** `ghosts::rules::Item`: an item's price and the lowest tier it is unlocked at. */
+export const RulesItem = bcs.struct("Item", { price: bcs.u16(), minTier: bcs.u8() });
+
+/** `ghosts::rules::Tier`: its lowest rating and the budget of each size, in `Rules.sizes` order. */
+export const RulesTier = bcs.struct("Tier", {
+    minRating: bcs.u64(),
+    budgets: bcs.vector(bcs.u16()),
+});
+
+/** `ghosts::rules::Size`: units a side, the ranked queue, the level; none and it is closed. */
+export const RulesSize = bcs.struct("Size", {
+    units: bcs.u8(),
+    queue: bcs.Address,
+    level: bcs.option(bcs.Address),
+});
+
+/** `ghosts::rules::Rules`: the shared rules of ranked games. */
+export const Rules = bcs.struct("Rules", {
+    id: bcs.Address,
+    version: bcs.u32(),
+    /** Index `i` is the rifle of tier `i + 1`. */
+    weapons: bcs.vector(RulesItem),
+    /** Index `i` is the armor of tier `i + 1`. */
+    armor: bcs.vector(RulesItem),
+    /** Index `i` is the utility of kind `i`: frag, flashbang, smoke. */
+    utilities: bcs.vector(RulesItem),
+    tiers: bcs.vector(RulesTier),
+    sizes: bcs.vector(RulesSize),
+    placementGames: bcs.u8(),
+    placementTier: bcs.u8(),
+    revealLimitMs: bcs.u64(),
+    resetCooldownMs: bcs.u64(),
+});
+
+export type ChainRules = typeof Rules.$inferType;
+
+/** `ghosts::ghosts::GameStarted`: emitted once, as a game is created. */
+export const GameStarted = bcs.struct("GameStarted", {
+    game: bcs.Address,
+    players: bcs.vector(bcs.Address),
+    mode: GameMode,
+    /** False only for a game from an invite code. */
+    listed: bcs.bool(),
+});
+
+/** `ghosts::ghosts::GameEnded`: emitted once, as a game is wrapped up and deleted. */
+export const GameEnded = bcs.struct("GameEnded", { game: bcs.Address, ending: Ending });
 export type ChainRecord = ChainGame["history"][number];
 
 /** `sui::clock::Clock`: the time the contract goes by. */

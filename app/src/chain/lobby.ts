@@ -336,7 +336,7 @@ export function openLobbyTx(accountId: string, size: number, hash: string | null
     return tx;
 }
 
-/** Bring the code to the host's invite-only lobby: the game starts there and then. */
+/** Bring the code to the host's invite-only lobby: the game starts there and then, who goes first drawn. */
 export function joinLobbyTx(hostId: string, accountId: string, code: Uint8Array): Transaction {
     const tx = new Transaction();
     tx.moveCall({
@@ -346,6 +346,7 @@ export function joinLobbyTx(hostId: string, accountId: string, code: Uint8Array)
             tx.object(GHOSTS.preset),
             tx.object(hostId),
             tx.object(accountId),
+            tx.object.random(),
             tx.object.clock(),
             tx.pure.vector("u8", Array.from(code)),
         ],
@@ -393,7 +394,7 @@ export function kickGuestTx(hostId: string, guestId: string): Transaction {
     return tx;
 }
 
-/** The host starts the listed lobby's game with its guest. */
+/** The host starts the listed lobby's game with its guest; who goes first is drawn. */
 export function startFriendlyTx(hostId: string, guestId: string): Transaction {
     const tx = new Transaction();
     tx.moveCall({
@@ -403,6 +404,7 @@ export function startFriendlyTx(hostId: string, guestId: string): Transaction {
             tx.object(GHOSTS.preset),
             tx.object(hostId),
             tx.object(guestId),
+            tx.object.random(),
             tx.object.clock(),
         ],
     });

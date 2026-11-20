@@ -68,6 +68,6 @@ test("the shell's go-back stands aside on the bus while a screen owns Back", () 
 test("the encounter routes answer Back themselves, so the shell's go-up lists them", async () => {
     const { readFileSync } = await import("node:fs");
     const source = readFileSync(new URL("../src/EscapeBack.tsx", import.meta.url), "utf8");
-    for (const path of ["/demo", "/match", "/play/match"])
-        assert.ok(source.includes(`"${path}"`), path);
+    for (const path of ["/demo", "/match"]) assert.ok(source.includes(`"${path}"`), path);
+    assert.ok(!source.includes('"/play/match"'), "the mock match is gone");
 });

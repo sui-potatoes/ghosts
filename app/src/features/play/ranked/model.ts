@@ -538,28 +538,6 @@ export function unitIssues(
     return byUnit;
 }
 
-const OPPONENTS = [
-    "Marrow",
-    "Quill",
-    "Sable Run",
-    "Halcyon",
-    "Ninefold",
-    "Vesper",
-    "Kestrel",
-    "Dross",
-    "Lowlight",
-    "Tern",
-];
-
-/** A made-up opponent a little either side of the player's rating. `roll` is in [0, 1). */
-export function opponentFor(
-    rating: number,
-    roll: () => number = Math.random,
-): { name: string; rating: number } {
-    const name = OPPONENTS[Math.floor(roll() * OPPONENTS.length) % OPPONENTS.length];
-    return { name, rating: Math.max(0, rating + Math.round((roll() - 0.5) * 120)) };
-}
-
 /* === What the device remembers ======================================== */
 
 const isLoadout = (x: unknown): x is Loadout => {

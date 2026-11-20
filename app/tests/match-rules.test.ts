@@ -361,7 +361,9 @@ test("the blasts of a game, replayed in order, leave the scene as they did in pl
 });
 
 test("what a game earns the squad coming home, as the contract works it out", () => {
-    const earned = (overrides: object, side: number) => experienceFor(game(overrides), side);
+    const stakes = { mode: { $kind: "Stakes", Stakes: true } };
+    const earned = (overrides: object, side: number) =>
+        experienceFor(game({ ...stakes, ...overrides }), side);
 
     // a fight to the end, for the winner and the loser
     const won = { state: over("Won", "a"), turn: 8 };
@@ -382,6 +384,12 @@ test("what a game earns the squad coming home, as the contract works it out", ()
     const absent = { state: over("NoShow", "b"), turn: 0 };
     assert.equal(earned(absent, 0), 0);
     assert.equal(earned(absent, 1), 0);
+
+    // only a contract game pays: ranked and friendly squads earn nothing
+    const ranked = { mode: { $kind: "Ranked", Ranked: { size: 3, tier: 1 } }, ...won };
+    assert.equal(experienceFor(game(ranked), 0), 0);
+    const friendly = { mode: { $kind: "Friendly", Friendly: { size: 3 } }, ...won };
+    assert.equal(experienceFor(game(friendly), 0), 0);
 });
 
 test("experience reaches the same ranks as the contract", () => {

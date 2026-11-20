@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import {
-    blackRain,
     closeEncounterDebrief,
     deployedIntel,
     Encounter,
@@ -18,7 +17,6 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { editorPath, isSlot, slotLevel } from "../editorDrafts";
 import { DemoDebrief } from "../features/debrief/DemoDebrief";
-import { useJournalRecorder } from "../features/watch/recorder";
 import { engineSettings } from "../engineSettings";
 import { useBack } from "../hooks/useBack";
 import { PauseMenu } from "../PauseMenu";
@@ -59,7 +57,8 @@ export default function Demo({ office = false }: { office?: boolean }) {
     const slot = params.get("level");
     // Built once per mount: the draft as it was saved when the playtest opened.
     const [playtest] = useState(() => playtestOf(slot));
-    const quit = () => navigate(slot !== null ? editorPath(isSlot(slot) ? slot : "scratch") : "/");
+    const quit = () =>
+        navigate(slot !== null ? editorPath(isSlot(slot) ? slot : "scratch") : "/play/demo");
     const [paused, setPaused] = useState(false);
     // The podium debrief, up from the encounter's end until the field or a redeploy.
     const [debrief, setDebrief] = useState<EncounterDebrief | null>(null);
@@ -71,12 +70,6 @@ export default function Demo({ office = false }: { office?: boolean }) {
             return null;
         }
     });
-
-    // Recorded on the device to be watched again (`/watch/local`); an editor playtest is not.
-    const record = useJournalRecorder(
-        slot === null ? (office ? paperTrail : blackRain).id : null,
-        squad,
-    );
 
     // A back key the engine did not take (still loading, focus elsewhere) pauses too.
     useBack(() => (playtest?.error ? quit() : setPaused(true)));
@@ -110,7 +103,6 @@ export default function Demo({ office = false }: { office?: boolean }) {
                 onDebrief={PODIUM_DEBRIEF ? setDebrief : undefined}
                 onPause={() => setPaused(true)}
                 onQuit={quit}
-                onJournal={record}
             />
             {debrief && (
                 <div className="fixed inset-0 z-10 bg-surface">

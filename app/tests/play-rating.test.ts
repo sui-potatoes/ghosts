@@ -1,205 +1,140 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
+/**
+ * The ranked standing as the app reads it from the `Account` (`features/play/rating.ts`)
+ * and the rating reset's gate (`chain/ranked-core.ts`, `account::reset_rating`'s checks in
+ * its order). No rating is stored on the device any more.
+ */
+
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
+import { availableIn, resetDeny } from "../src/chain/ranked-core.ts";
 import {
-    applyResult,
-    canReset,
-    currentDeviation,
-    DEFAULT_DEVIATION,
+    applyRules,
+    DEFAULT_RULES,
+    economyRules,
+    standingRating,
+} from "../src/features/play/economy/index.ts";
+import {
     DEFAULT_RATING,
-    glickoStep,
-    HISTORY_MAX,
-    parseRating,
-    resetDeny,
-    resetState,
-    type RatingState,
+    NEW_PLAYER,
+    ratingChange,
+    standingOf,
 } from "../src/features/play/rating.ts";
 
 const DAY = 86_400_000;
-const start = (): RatingState => parseRating(null);
-const at = (rating: number): RatingState => ({ ...start(), rating, peak: rating });
 
-// Reference table of move/packages glicko tests (glicko_tests.move, compute_matches_reference):
-// (rating, rd, opponent rating, opponent rd, score 2 win / 1 draw / 0 loss, rating', rd').
-const CASES = [
-    [1500, 350, 1500, 350, 2, 1662, 290],
-    [1500, 350, 1500, 350, 0, 1338, 290],
-    [1500, 350, 1500, 350, 1, 1500, 290],
-    [1500, 200, 1400, 30, 2, 1563, 175],
-    [1500, 200, 1550, 100, 0, 1427, 176],
-    [1500, 200, 1700, 300, 0, 1456, 187],
-    [1500, 50, 1500, 50, 2, 1507, 50],
-    [2000, 50, 1500, 350, 2, 2001, 50],
-    [2000, 50, 1500, 350, 0, 1992, 50],
-    [1500, 350, 2000, 50, 2, 2046, 319],
-    [1500, 350, 2000, 50, 0, 1468, 319],
-    [1200, 80, 1800, 60, 1, 1217, 80],
-];
-
-test("the step follows the contract's reference cases (within a point, as the contract's own test)", () => {
-    for (const [r, rd, o, ord, s, wantR, wantRd] of CASES) {
-        const [rating, deviation] = glickoStep(r, rd, o, ord, (s / 2) as 0 | 0.5 | 1);
-        assert.ok(Math.abs(rating - wantR) <= 1, `${r}/${rd} v ${o}/${ord} s${s}: ${rating}`);
-        assert.ok(Math.abs(deviation - wantRd) <= 1, `${r}/${rd} v ${o}/${ord}: rd ${deviation}`);
-    }
+const account = (rating: number, wins = 0, losses = 0, draws = 0, resets = 0, lastResetMs = 0) => ({
+    ...NEW_PLAYER,
+    rating: { rating: String(rating), deviation: "120" },
+    score: { wins: String(wins), losses: String(losses), draws: String(draws) },
+    resets,
+    lastResetMs: String(lastResetMs),
 });
 
-test("a newcomer beating an established 1500 gains by hand-computed amounts", () => {
-    const next = applyResult(start(), 1500, true, 350, DAY);
-    assert.equal(next.rating, 1662);
-    assert.equal(next.deviation, 290);
-    assert.equal(applyResult(start(), 1500, false, 350, DAY).rating, 1338);
+test("the standing reads the account: rating, ranked games, tier, budgets, resets", () => {
+    applyRules(DEFAULT_RULES);
+    const s = standingOf(account(1720, 7, 4, 1, 2, 5 * DAY));
+    assert.equal(s.rating, 1720);
+    assert.equal(s.deviation, 120);
+    assert.equal(s.games, 12);
+    assert.deepEqual([s.wins, s.losses, s.draws], [7, 4, 1]);
+    assert.equal(s.tier.name, "Operative");
+    assert.deepEqual(s.budgets, { "3x3": 190, "4x4": 255 });
+    assert.equal(s.placementLeft, 0);
+    assert.equal(s.resets, 2);
+    assert.equal(s.lastResetMs, 5 * DAY);
 });
 
-test("the deviation grows with idle days like the contract and is capped", () => {
-    assert.equal(currentDeviation(50, 1000, 1000 + DAY - 1), 50);
-    assert.equal(currentDeviation(50, 1000, 1000 + 50 * DAY), 250);
-    assert.equal(currentDeviation(50, 1000, 1000 + 100 * DAY), 350);
-    assert.equal(currentDeviation(50, null, 5 * DAY), 50);
-    assert.equal(currentDeviation(50, 1000, 10), 50);
+test("the placement floor: fewer than 5 ranked games stand at Contractor at least", () => {
+    applyRules(DEFAULT_RULES);
+    const fresh = standingOf(NEW_PLAYER);
+    assert.equal(fresh.rating, DEFAULT_RATING);
+    assert.equal(fresh.tier.name, "Contractor");
+    assert.equal(fresh.placementLeft, 5);
+    // A placing player below Contractor's floor still builds to Contractor's budget.
+    const low = standingOf(account(1340, 1, 2));
+    assert.equal(low.tier.name, "Contractor");
+    assert.equal(low.budgets["3x3"], 150);
+    assert.equal(low.placementLeft, 2);
+    // Placed, the rating alone decides.
+    assert.equal(standingOf(account(1340, 3, 2)).tier.name, "Rookie");
+    assert.equal(standingRating(1340, 5), 1340);
+    assert.equal(standingRating(1340, 4), 1400);
+    assert.equal(standingRating(1800, 0), 1800);
 });
 
-test("the rating saturates at zero", () => {
-    assert.equal(glickoStep(0, 350, 1500, 350, 0)[0], 0);
+test("the live rules move the standing without a new app", () => {
+    applyRules({
+        ...DEFAULT_RULES,
+        version: 3,
+        placement: { games: 2, tier: 0 },
+        tiers: DEFAULT_RULES.tiers.map((t, i) => (i === 2 ? { ...t, min: 1700 } : t)),
+    });
+    assert.equal(standingOf(account(1680, 5, 5)).tier.name, "Contractor");
+    assert.equal(standingOf(NEW_PLAYER).tier.name, "Contractor");
+    assert.equal(standingOf(account(1300, 1, 0)).tier.name, "Rookie");
+    applyRules(DEFAULT_RULES);
+    assert.equal(economyRules().version, 0);
 });
 
-test("results keep the record, peak, streak and history", () => {
-    let s = start();
-    s = applyResult(s, 1500, true, undefined, 1);
-    s = applyResult(s, 1500, true, undefined, 2);
-    assert.equal(s.streak, 2);
-    assert.equal(s.peak, s.rating);
-    const peak = s.peak;
-    s = applyResult(s, 1500, false, undefined, 3);
-    assert.equal(s.streak, -1);
-    s = applyResult(s, 1500, false, undefined, 4);
-    assert.equal(s.streak, -2);
-    assert.equal(s.peak, peak);
-    assert.deepEqual([s.games, s.wins, s.losses], [4, 2, 2]);
-    assert.equal(s.history.length, 4);
-    assert.equal(s.history[0].kind === "game" && s.history[0].won, false);
-    assert.equal(s.lastPlayedAt, 4);
+test("a ranked game's change: the rating and the tier, the placement floor at each end", () => {
+    applyRules(DEFAULT_RULES);
+    assert.deepEqual(ratingChange({ rating: 1640, games: 10 }, { rating: 1656, games: 11 }), {
+        before: 1640,
+        after: 1656,
+        delta: 16,
+        tier: { before: "Contractor", after: "Operative" },
+    });
+    assert.equal(ratingChange({ rating: 1500, games: 3 }, { rating: 1484, games: 4 }).tier, null);
+    // The fifth game lifts the floor: the tier falls with it.
+    assert.deepEqual(ratingChange({ rating: 1380, games: 4 }, { rating: 1370, games: 5 }).tier, {
+        before: "Contractor",
+        after: "Rookie",
+    });
 });
 
-test("the history keeps the last 20, newest first", () => {
-    let s = start();
-    for (let i = 0; i < 30; i++) s = applyResult(s, 1500, i % 2 === 0, undefined, i + 1);
-    assert.equal(s.history.length, HISTORY_MAX);
-    assert.equal(s.history[0].at, 30);
-    assert.equal(s.history[HISTORY_MAX - 1].at, 11);
-    assert.equal(s.games, 30);
-});
+const gate = (patch: Partial<Parameters<typeof resetDeny>[0]>) =>
+    resetDeny({
+        rating: 1720,
+        busy: null,
+        resets: 0,
+        lastResetMs: 0,
+        cooldownMs: 7 * DAY,
+        now: 100 * DAY,
+        ...patch,
+    });
 
-test("reset works only from above the default and lands exactly on it", () => {
-    assert.equal(canReset(at(1501)), true);
-    assert.equal(canReset(at(DEFAULT_RATING)), false);
-    assert.equal(canReset(at(1499)), false);
-
-    const high = { ...at(1720), games: 9, wins: 6, losses: 3, streak: 2, deviation: 80 };
-    const next = resetState(high, 77);
-    assert.equal(next.rating, DEFAULT_RATING);
-    assert.equal(next.deviation, DEFAULT_DEVIATION);
-    assert.equal(next.peak, 1720);
-    assert.deepEqual([next.games, next.wins, next.losses, next.streak], [9, 6, 3, 2]);
-    assert.equal(next.resets, 1);
-    assert.equal(next.lastResetAt, 77);
-    assert.deepEqual(next.history[0], { kind: "reset", at: 77, from: 1720, to: DEFAULT_RATING });
-});
-
-test("reset never lowers a rating at or below the default and changes nothing there", () => {
-    for (const r of [0, 1000, 1499, 1500]) {
-        const s = at(r);
-        assert.equal(resetState(s, 5), s);
-    }
-    // after a reset it is at the default, so a second one does nothing
-    const once = resetState(at(1600), 1);
-    assert.equal(resetState(once, 2), once);
-});
-
-test("a reset entry counts against the history cap", () => {
-    let s = at(1700);
-    for (let i = 0; i < HISTORY_MAX; i++)
-        s = {
-            ...s,
-            history: [
-                ...s.history,
-                ...applyResult(s, 1500, true, undefined, i).history.slice(0, 1),
-            ],
-        };
-    s = { ...s, rating: 1700, history: s.history.slice(0, HISTORY_MAX) };
-    assert.equal(resetState(s, 9).history.length, HISTORY_MAX);
-});
-
-test("corrupt storage falls back to the default", () => {
-    const def = start();
-    for (const raw of [
-        null,
-        "",
-        "{",
-        "null",
-        "[]",
-        "42",
-        '"x"',
-        '{"rating":"high"}',
-        '{"rating":null}',
-        '{"rating":-5}',
-        '{"rating":1e999}',
-    ]) {
-        assert.deepEqual(parseRating(raw), def, String(raw));
-    }
-});
-
-test("missing or broken fields fall back one by one", () => {
-    const s = parseRating(
-        JSON.stringify({
-            rating: 1612.4,
-            games: "many",
-            wins: -3,
-            deviation: 9999,
-            peak: null,
-            streak: "x",
-            history: [
-                { kind: "game", at: 1 },
-                null,
-                { kind: "reset", at: 2, from: 1700, to: 1500 },
-                7,
-            ],
-        }),
-    );
-    assert.equal(s.rating, 1612);
-    assert.equal(s.peak, 1612);
-    assert.equal(s.deviation, DEFAULT_DEVIATION);
-    assert.deepEqual([s.games, s.wins, s.losses, s.streak, s.resets], [0, 0, 0, 0, 0]);
-    assert.equal(s.lastResetAt, null);
-    assert.equal(s.history.length, 1);
-    assert.equal(Number.isNaN(s.rating), false);
-});
-
-test("a stored history longer than the cap is cut", () => {
-    const entry = { kind: "reset", at: 1, from: 1600, to: 1500 };
-    const s = parseRating(JSON.stringify({ rating: 1500, history: Array(50).fill(entry) }));
-    assert.equal(s.history.length, HISTORY_MAX);
-});
-
-test("an old record without the new fields still loads", () => {
-    const s = parseRating(
-        JSON.stringify({ rating: 1580, peak: 1600, games: 4, wins: 3, losses: 1 }),
-    );
-    assert.equal(s.rating, 1580);
-    assert.equal(s.peak, 1600);
-    assert.equal(s.deviation, DEFAULT_DEVIATION);
-    assert.deepEqual(s.history, []);
-});
-
-test("the reset row is active only above the default and outside a match", () => {
-    assert.equal(resetDeny(at(1720), false), undefined);
-    assert.equal(resetDeny(at(1720), true), "Not during a match");
+test("the reset: from above 1500 only, never in a match or a search, once a week", () => {
+    assert.equal(gate({}), undefined);
+    assert.equal(gate({ rating: 1500 }), "Only a rating above 1500 can be reset");
+    assert.equal(gate({ rating: 1320 }), "Only a rating above 1500 can be reset");
+    assert.equal(gate({ busy: "match" }), "Not during a match");
+    assert.equal(gate({ busy: "search" }), "Not during a search");
+    // The first reset has no cooldown; the next waits for it.
+    assert.equal(gate({ resets: 0, lastResetMs: 99 * DAY }), undefined);
+    assert.equal(gate({ resets: 1, lastResetMs: 96 * DAY }), "Available in 3 days");
+    assert.equal(gate({ resets: 1, lastResetMs: 93 * DAY }), undefined);
+    assert.equal(gate({ resets: 1, lastResetMs: 100 * DAY - 7 * DAY + 1 }), "Available in 1 min");
+    // At or below the default wins over every other reason, as the contract checks it first.
     assert.equal(
-        resetDeny(at(DEFAULT_RATING), false),
-        `Only a rating above ${DEFAULT_RATING} can be reset`,
+        gate({ rating: 1500, busy: "match", resets: 1, lastResetMs: 99 * DAY }),
+        "Only a rating above 1500 can be reset",
     );
-    assert.equal(resetDeny(at(1400), true), "Not during a match");
+});
+
+test("available-in lines carry their unit", () => {
+    assert.equal(availableIn(3 * DAY), "Available in 3 days");
+    assert.equal(availableIn(DAY), "Available in 1 day");
+    assert.equal(availableIn(DAY - 1), "Available in 24 hours");
+    assert.equal(availableIn(5 * 3_600_000 + 1), "Available in 6 hours");
+    assert.equal(availableIn(90_000), "Available in 2 min");
+});
+
+test("no rating is kept on the device any more", () => {
+    const source = readFileSync(new URL("../src/features/play/rating.ts", import.meta.url), "utf8");
+    assert.doesNotMatch(source, /localStorage|sessionStorage/);
 });

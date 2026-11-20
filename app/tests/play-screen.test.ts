@@ -5,24 +5,48 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { budgetOf, tierOf } from "../src/features/play/economy/index.ts";
-import { cardOf, modeCards, rankedFacts, routeOf } from "../src/features/play/model.ts";
+import { applyRules, DEFAULT_RULES } from "../src/features/play/economy/index.ts";
+import {
+    cardOf,
+    CONTRACT_NAME,
+    DEMO_SCENARIOS,
+    modeCards,
+    rankedFacts,
+    routeOf,
+} from "../src/features/play/model.ts";
+import { NEW_PLAYER, standingOf } from "../src/features/play/rating.ts";
 import { parentOf } from "../src/routes.ts";
 
-test("three cards in order: ranked, friendly, faction wars", () => {
+test("the cards in order: ranked, friendly, contract, demo, faction wars, spectate", () => {
     assert.deepEqual(
         modeCards().map((c) => c.id),
-        ["ranked", "friendly", "factions", "watch"],
+        ["ranked", "friendly", "contract", "demo", "factions", "watch"],
     );
+    assert.equal(cardOf("watch").name, "Spectate");
+    assert.deepEqual(cardOf("watch").lines, ["Live matches and replays."]);
+    assert.equal(cardOf("contract").name, CONTRACT_NAME);
+    assert.deepEqual(cardOf("contract").lines, [
+        "Your own recruits. They earn experience and can be lost.",
+        "Rating does not change.",
+    ]);
     for (const card of modeCards()) {
         assert.ok(card.name && card.verb && card.hint && card.tag);
         assert.ok(card.lines.length >= 1 && card.lines.length <= 3);
     }
 });
 
-test("ranked and friendly open their screens", () => {
+test("ranked, friendly, contract and demo open their screens", () => {
     assert.equal(routeOf("ranked"), "/play/ranked");
     assert.equal(routeOf("friendly"), "/play/friendly");
+    assert.equal(routeOf("contract"), "/play/contract");
+    assert.equal(routeOf("demo"), "/play/demo");
+    assert.deepEqual(
+        DEMO_SCENARIOS.map((d) => [d.name, d.route]),
+        [
+            ["Black Rain", "/demo"],
+            ["Paper Trail", "/demo-2"],
+        ],
+    );
     assert.equal(cardOf("ranked").locked, undefined);
     assert.equal(cardOf("friendly").locked, undefined);
 });
@@ -42,8 +66,31 @@ test("no card names the chain or a key", () => {
     for (const card of modeCards())
         assert.doesNotMatch(
             [card.name, card.hint, card.locked ?? "", ...card.lines].join(" "),
-            /chain|wallet|enter|esc/i,
+            /chain|wallet|enter|esc|pause|rewind|at any time|turn by turn/i,
         );
+});
+
+test("a search, a lobby or a match leads its own card back and holds the others", () => {
+    const ranked = modeCards({ kind: "searching", mode: "ranked" });
+    const by = (cards: ReturnType<typeof modeCards>, id: string) => cards.find((c) => c.id === id)!;
+    assert.equal(by(ranked, "ranked").tag, "Searching");
+    assert.equal(by(ranked, "ranked").locked, undefined);
+    assert.equal(by(ranked, "friendly").locked, "Cancel your ranked search first");
+    assert.equal(by(ranked, "contract").locked, "Cancel your ranked search first");
+    const contract = modeCards({ kind: "searching", mode: "contract" });
+    assert.equal(by(contract, "ranked").locked, "Cancel your contract search first");
+    const lobby = modeCards({ kind: "lobby" });
+    assert.equal(by(lobby, "friendly").tag, "In lobby");
+    assert.equal(by(lobby, "ranked").locked, "Leave your friendly game first");
+    const playing = modeCards({ kind: "playing", mode: "ranked" });
+    assert.equal(by(playing, "ranked").route, "/match");
+    assert.equal(by(playing, "ranked").verb, "Resume");
+    assert.equal(by(playing, "contract").locked, "Finish your match first");
+    // Demo, faction wars and spectate are never held.
+    for (const cards of [ranked, contract, lobby, playing]) {
+        assert.equal(by(cards, "demo").locked, undefined);
+        assert.equal(by(cards, "watch").locked, undefined);
+    }
 });
 
 test("the screen reads as a finished product: no preview or this-device disclaimers", () => {
@@ -72,22 +119,35 @@ test("the screen reads as a finished product: no preview or this-device disclaim
     for (const text of [screen, rating]) assert.doesNotMatch(text, /Preview:|this device|for now/i);
 });
 
-test("the ranked facts are whatever the economy returns", () => {
-    for (const rating of [0, 1500, 99_999]) {
-        const facts = rankedFacts(rating);
-        assert.equal(facts.tier, tierOf(rating).name);
-        assert.equal(facts.rating, rating);
-        assert.deepEqual(facts.budgets, [
-            { mode: "3x3", budget: budgetOf(rating, "3x3") },
-            { mode: "4x4", budget: budgetOf(rating, "4x4") },
-        ]);
-    }
+test("the ranked facts are the player's standing, the sizes without a level left out", () => {
+    applyRules(DEFAULT_RULES);
+    const placed = standingOf({
+        ...NEW_PLAYER,
+        rating: { rating: 1720, deviation: 90 },
+        score: { wins: 8, losses: 4, draws: 0 },
+    });
+    assert.deepEqual(rankedFacts(placed), {
+        tier: "Operative",
+        rating: 1720,
+        budgets: [{ mode: "3x3", budget: 190 }],
+        placementLeft: 0,
+    });
+    applyRules({ ...DEFAULT_RULES, open: { "3x3": true, "4x4": true } });
+    assert.deepEqual(rankedFacts(standingOf(NEW_PLAYER)).budgets, [
+        { mode: "3x3", budget: 150 },
+        { mode: "4x4", budget: 200 },
+    ]);
+    assert.equal(rankedFacts(standingOf(NEW_PLAYER)).placementLeft, 5);
+    applyRules(DEFAULT_RULES);
 });
 
 test("Back from a mode screen goes up to Play; Play's parent is the menu", () => {
     assert.equal(parentOf("/play"), "/");
-    for (const p of ["/play/ranked", "/play/friendly", "/play/match"])
+    for (const p of ["/play/ranked", "/play/friendly", "/play/contract", "/play/demo"])
         assert.equal(parentOf(p), "/play");
+    // A demo operation goes back to the demo's list.
+    assert.equal(parentOf("/demo"), "/play/demo");
+    assert.equal(parentOf("/demo-2"), "/play/demo");
 });
 
 test("the numbers on the Play screen carry their unit or label", () => {
@@ -103,6 +163,6 @@ test("the numbers on the Play screen carry their unit or label", () => {
         new URL("../src/features/settings/panels.tsx", import.meta.url),
         "utf8",
     );
-    assert.match(panels, /budgetOf\(r\.rating, "3x3"\)\} cr/);
-    assert.match(panels, /budgetOf\(r\.rating, "4x4"\)\} cr/);
+    assert.match(panels, /r\.budgets\["3x3"\]\} cr/);
+    assert.match(panels, /r\.budgets\["4x4"\]\} cr/);
 });

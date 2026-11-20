@@ -19,8 +19,9 @@ export const NAMES = {
 
 /**
  * Testnet IDs for the published ghosts Move package and what its initializer
- * creates: the Registry, the matchmaking queue, the frozen map preset games
- * start on and the shared friendly-lobbies object.
+ * creates: the Registry, the queue for owned recruits (`Matchmaker<Ghosts>`), the
+ * frozen map preset games start on, the shared friendly-lobbies object and the
+ * shared ranked `Rules` (which name the ranked queues and their levels).
  */
 export const GHOSTS: {
     package: string;
@@ -28,12 +29,15 @@ export const GHOSTS: {
     matchmaker: string;
     preset: string;
     lobbies: string;
+    rules: string;
 } = {
     package: "0xdbd205dbe67b44f721933e20b95010b8e01c7c1316ff32540d7af4cb46b4246e",
     registry: "0xaa4e35823c515cf91bbcb53311f10d6fccc2d4e4bc148fa8bb7d43f250d79589",
     matchmaker: "0x93791ca35a785341beff57c4d59647e26da06d923c8666e67d204e401dbd017e",
     preset: "0x5e37e87da2aca8ce31b0a2ac918ea76fa376ba9d8c02e61e976d5c9c7c2ebff1",
     lobbies: "0x81afce11aa84fc75c08ebee3565670961002122986396444c32333f7fb72185f",
+    // Set by the publish agent: the `Rules` object the package's `init` shares. All zeros until then.
+    rules: "0x0000000000000000000000000000000000000000000000000000000000000000",
 };
 
 /** Same Google OAuth client as `app/`; both origins are registered on it. */

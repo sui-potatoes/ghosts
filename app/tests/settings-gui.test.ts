@@ -181,3 +181,70 @@ test("probe results: ok in the hint, a failure (CSP, wrong chain) on the amber l
     assert.equal(busy.testDeny, "Testing");
     assert.equal(busy.saveDeny, "Testing");
 });
+
+test("the Player panel shows the rating from the account and sends the reset to the contract", async () => {
+    const { readFileSync } = await import("node:fs");
+    const panels = readFileSync(
+        new URL("../src/features/settings/panels.tsx", import.meta.url),
+        "utf8",
+    );
+    const record = readFileSync(
+        new URL("../src/features/settings/rating-qa.ts", import.meta.url),
+        "utf8",
+    );
+    const block = panels.slice(
+        panels.indexOf("export function PlayerPanel"),
+        panels.indexOf("function NamePrompt"),
+    );
+    // The contract keeps no peak: no peak line, no mock store, one confirmation.
+    assert.doesNotMatch(block, /Peak|useRating\(|localStorage/);
+    for (const label of [
+        "Tier",
+        "Rating",
+        "Ranked games",
+        "Record",
+        "Budget 3x3",
+        "Budget 4x4",
+        "Placement left",
+        "Resets",
+    ])
+        assert.ok(block.includes(`label="${label}"`), label);
+    assert.equal(block.split("<Prompt").length - 1, 1);
+    assert.match(record, /resetRatingTx\(/);
+    assert.match(record, /resetDeny\(/);
+    assert.doesNotMatch(block, /testnet|on chain|preview|for now/i);
+});
+
+test("the ranked record's labels sit in a column sized to the longest, wrapping inside it", async () => {
+    const { readFileSync } = await import("node:fs");
+    const css = readFileSync(
+        new URL("../src/features/settings/settings-gui.css", import.meta.url),
+        "utf8",
+    );
+    const rule = css.slice(
+        css.indexOf(".gset-readouts {"),
+        css.indexOf("/* === Controller diagram"),
+    );
+    assert.match(rule, /grid-template-columns: fit-content\(60%\) minmax\(0, 1fr\)/);
+    assert.match(rule, /grid-template-columns: subgrid/);
+    assert.match(rule, /white-space: normal/);
+    // No pixel width tuned to today's strings.
+    assert.doesNotMatch(rule, /var\(--u\) \* \d+\) minmax/);
+});
+
+test("the panels and the view share their context through a module neither imports the other from", async () => {
+    const { readFileSync } = await import("node:fs");
+    const read = (f: string) =>
+        readFileSync(new URL(`../src/features/settings/${f}`, import.meta.url), "utf8");
+    // A cycle between the view and the panels let a hot reload pair a panel with a stale context.
+    assert.doesNotMatch(read("panels.tsx"), /from "\.\/SettingsView"/);
+    assert.doesNotMatch(read("frame.tsx"), /from "\.\/(SettingsView|panels)"/);
+    assert.match(read("SettingsView.tsx"), /<SettingsProvider value=\{ctx\}>/);
+    // The reset prompt and its row are mounted by the Player panel alone, inside the frame.
+    for (const f of [
+        "../play/PlayScreen.tsx",
+        "../play/ranked/RankedView.tsx",
+        "../../PauseMenu.tsx",
+    ])
+        assert.doesNotMatch(read(f), /ResetPrompt|RatingResetRow|RankedBlock|useSettingsContext/);
+});

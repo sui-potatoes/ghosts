@@ -143,11 +143,22 @@
     }
 }
 
-.gset-rank .gui-readout {
-    grid-template-columns: calc(var(--u) * 28) minmax(0, 1fr);
+/* The ranked record: the label column fits its longest label (up to most of the
+   panel), every row on the same column; a label that still cannot fit wraps
+   within its cell, never over its value. */
+.gset-readouts {
+    display: grid;
+    grid-template-columns: fit-content(60%) minmax(0, 1fr);
+    column-gap: calc(var(--u) * 4);
 }
-.gset-rank .gui-readout-label {
-    white-space: nowrap;
+.gset-readouts > .gui-readout {
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+}
+.gset-readouts .gui-readout-label {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.3;
 }
 
 /* === Controller diagram ============================================= */

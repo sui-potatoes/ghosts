@@ -44,6 +44,7 @@ import {
 } from "./bcs";
 import { movedOn, noteOwned, type ExecutedOrder } from "./fast-lane";
 import { lobbyRefusal } from "./lobby-core";
+import { rankedRefusal } from "./ranked-core";
 import { ensureGas } from "./funds";
 import { absorbWrites, current, useBcsObject } from "./objects";
 import { trackSaving } from "./saving";
@@ -370,7 +371,32 @@ export function useGhostsAction() {
         }
     }
 
-    return { busy, error, clearError: () => setError(""), run, client };
+    /**
+     * `run` for a caller that decides what a refusal means (a ranked search choosing
+     * its branch again): the raw failure comes back instead of becoming `error`.
+     */
+    async function attempt(list: Step[]): Promise<{ ok: true } | { ok: false; message: string }> {
+        setBusy(true);
+        try {
+            if (owner) await trackSaving(ensureGas(owner));
+            await trackSaving(steps(list));
+            return { ok: true };
+        } catch (e) {
+            return { ok: false, message: e instanceof Error ? e.message : String(e) };
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    return {
+        busy,
+        error,
+        setError,
+        clearError: () => setError(""),
+        run,
+        attempt,
+        client,
+    };
 }
 
 /** A failed save in the player's terms; the raw message when nothing matches. */
@@ -385,9 +411,9 @@ export function friendlyError(e: unknown): string {
     if (/reject|cancel|abort(ed)? by user|NotAllowedError/i.test(message)) return "Cancelled.";
     if (/Failed to fetch|NetworkError|timed? ?out/i.test(message))
         return "Connection lost. Try again.";
-    if (/function_name: Some\("cancel_search"\).*, 25\)/.test(message))
+    if (/function_name: Some\("cancel_(search|ranked)"\).*, 25\)/.test(message))
         return "A match was just found: joining it.";
-    return lobbyRefusal(message) ?? message;
+    return lobbyRefusal(message) ?? rankedRefusal(message) ?? message;
 }
 
 const target = (fn: string) => `${GHOSTS.package}::account::${fn}`;

@@ -72,7 +72,6 @@
     letter-spacing: var(--track);
     text-transform: uppercase;
     white-space: nowrap;
-    transition: color 60ms linear;
 }
 .watch-button[data-focused] {
     color: var(--on-band);
@@ -268,22 +267,27 @@
     min-width: 0;
 }
 
-/* --- The watch screen: live games, your games, this device --- */
+/* --- The Spectate screen: live, recent and my matches --- */
 
 .watch-hub {
     display: grid;
     grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
-    grid-auto-rows: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+        "live own"
+        "recent own";
     gap: calc(var(--u) * 3);
     min-height: 0;
     height: 100%;
 }
 .watch-hub-live {
-    grid-row: span 2;
+    grid-area: live;
 }
-.watch-hub > .gui-panel:only-child,
-.watch-hub-live:nth-last-child(2) {
-    grid-row: auto;
+.watch-hub-recent {
+    grid-area: recent;
+}
+.watch-hub-own {
+    grid-area: own;
 }
 
 /* --- Phone width: the scrubber gets a row of its own --- */
@@ -315,9 +319,15 @@
     }
     .watch-hub {
         grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: none;
+        grid-template-areas: none;
+        /* the panels stacked: each keeps room for a few rows, the column scrolls inside itself */
+        grid-auto-rows: minmax(180px, 1fr);
+        overflow-y: auto;
+        overscroll-behavior: contain;
     }
-    .watch-hub-live {
-        grid-row: auto;
+    .watch-hub > .gui-panel {
+        grid-area: auto;
     }
 }
 

@@ -2,14 +2,20 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * The Play screen's pure rules, tested in `tests/play-screen.test.ts`: the three
- * mode cards and the way to watch games, what each opens, which are open, and the ranked card's facts read
- * from the economy. Nothing about tiers or budgets is written here.
+ * The Play screen's pure rules, tested in `tests/play-screen.test.ts`: the mode
+ * cards (ranked, friendly, contract, demo, faction wars) and Spectate,
+ * what each opens, which are open, what a search or a game in progress does to
+ * them, and the ranked card's facts read from the player's standing. Nothing about
+ * tiers or budgets is written here.
  */
 
-import { budgetOf, tierOf, type Mode } from "./economy/index.ts";
+import { sizeOpen, type Mode } from "./economy/index.ts";
+import type { Standing } from "./rating.ts";
 
-export type ModeId = "ranked" | "friendly" | "factions" | "watch";
+export type ModeId = "ranked" | "friendly" | "contract" | "demo" | "factions" | "watch";
+
+/** The modes a player can be busy in: searching, in a lobby, or in a game. */
+export type PlayMode = "ranked" | "friendly" | "contract";
 
 export type ModeCard = {
     id: ModeId;
@@ -28,7 +34,10 @@ export type ModeCard = {
     locked?: string;
 };
 
-export const MODE_ORDER: ModeId[] = ["ranked", "friendly", "factions", "watch"];
+export const MODE_ORDER: ModeId[] = ["ranked", "friendly", "contract", "demo", "factions", "watch"];
+
+/** The name the owned-recruits mode goes by, everywhere it is shown. */
+export const CONTRACT_NAME = "Contract";
 
 const CARDS: Record<ModeId, ModeCard> = {
     ranked: {
@@ -36,11 +45,11 @@ const CARDS: Record<ModeId, ModeCard> = {
         name: "Ranked match",
         route: "/play/ranked",
         lines: [
-            "Build a squad within your rank's credit budget and fight another squad.",
+            "Build a squad for each match within your tier's credit budget.",
             "Wins raise your rating, losses lower it.",
         ],
         tag: "Open",
-        hint: "3x3 or 4x4, a squad built to your rank's budget",
+        hint: "A squad built for the match, your rating at stake",
         verb: "Open",
     },
     friendly: {
@@ -53,6 +62,27 @@ const CARDS: Record<ModeId, ModeCard> = {
         ],
         tag: "Open",
         hint: "Invite a friend with a code, or open a game to anyone",
+        verb: "Open",
+    },
+    contract: {
+        id: "contract",
+        name: CONTRACT_NAME,
+        route: "/play/contract",
+        lines: [
+            "Your own recruits. They earn experience and can be lost.",
+            "Rating does not change.",
+        ],
+        tag: "Open",
+        hint: "Your own squad against another player's",
+        verb: "Open",
+    },
+    demo: {
+        id: "demo",
+        name: "Demo",
+        route: "/play/demo",
+        lines: ["Two single-player operations against the AI."],
+        tag: "Open",
+        hint: "Black Rain and Paper Trail",
         verb: "Open",
     },
     factions: {
@@ -70,28 +100,66 @@ const CARDS: Record<ModeId, ModeCard> = {
     },
     watch: {
         id: "watch",
-        name: "Watch",
+        name: "Spectate",
         route: "/watch",
-        lines: [
-            "Follow a game being played, turn by turn, or replay a finished one.",
-            "Pause, rewind and change the speed at any time.",
-        ],
+        lines: ["Live matches and replays."],
         tag: "Open",
-        hint: "Live games and replays",
+        hint: "Live matches and replays",
         verb: "Open",
     },
 };
 
+/** What the player is busy with right now, if anything. */
+export type Busy =
+    | { kind: "searching"; mode: "ranked" | "contract" }
+    | { kind: "lobby" }
+    /** In a game; `mode` once the game is read. */
+    | { kind: "playing"; mode: PlayMode | null }
+    | null;
+
+const MODE_NAMES: Record<PlayMode, string> = {
+    ranked: "ranked",
+    friendly: "friendly",
+    contract: "contract",
+};
+
+/** Why the other play modes wait while the player is busy, in plain words. */
+function busyReason(busy: NonNullable<Busy>): string {
+    if (busy.kind === "lobby") return "Leave your friendly game first";
+    if (busy.kind === "playing") return "Finish your match first";
+    return `Cancel your ${MODE_NAMES[busy.mode]} search first`;
+}
+
+const PLAY_MODES: PlayMode[] = ["ranked", "friendly", "contract"];
+
 /**
- * The cards, top to bottom. `lobby`: the player hosts or waits in a friendly
- * game, and the friendly card leads back to it.
+ * The cards, top to bottom. While the player searches, waits in a lobby or plays,
+ * the card of that mode leads back to it and the other play modes say why they wait.
  */
-export const modeCards = (lobby = false): ModeCard[] =>
-    MODE_ORDER.map((id) =>
-        id === "friendly" && lobby
-            ? { ...CARDS[id], tag: "In lobby", hint: "Back to your friendly game" }
-            : CARDS[id],
-    );
+export function modeCards(busy: Busy = null): ModeCard[] {
+    return MODE_ORDER.map((id) => {
+        const card = CARDS[id];
+        if (!busy || !PLAY_MODES.includes(id as PlayMode)) return card;
+        const mine =
+            (busy.kind === "lobby" && id === "friendly") ||
+            (busy.kind === "searching" && busy.mode === id) ||
+            (busy.kind === "playing" && busy.mode === id);
+        if (busy.kind === "playing" && mine)
+            return {
+                ...card,
+                route: "/match",
+                tag: "In match",
+                hint: "Back to the field",
+                verb: "Resume",
+            };
+        if (busy.kind === "playing" && busy.mode === null)
+            return { ...card, locked: busyReason(busy) };
+        if (mine && busy.kind === "lobby")
+            return { ...card, tag: "In lobby", hint: "Back to your friendly game" };
+        if (mine) return { ...card, tag: "Searching", hint: "Back to your search" };
+        return { ...card, locked: busyReason(busy) };
+    });
+}
 
 export const cardOf = (id: ModeId): ModeCard => CARDS[id];
 
@@ -103,14 +171,27 @@ const SIZES: Mode[] = ["3x3", "4x4"];
 export type RankedFacts = {
     tier: string;
     rating: number;
+    /** The sizes with a level, and what each builds to. */
     budgets: { mode: Mode; budget: number }[];
+    /** Ranked games left before the placement floor lifts; 0 once placed. */
+    placementLeft: number;
 };
 
-/** What the ranked card shows of the player: whatever the economy returns. */
-export function rankedFacts(rating: number): RankedFacts {
+/** What the ranked card shows of the player: their standing on chain, on the live rules. */
+export function rankedFacts(standing: Standing): RankedFacts {
     return {
-        tier: tierOf(rating).name,
-        rating,
-        budgets: SIZES.map((mode) => ({ mode, budget: budgetOf(rating, mode) })),
+        tier: standing.tier.name,
+        rating: standing.rating,
+        budgets: SIZES.filter(sizeOpen).map((mode) => ({ mode, budget: standing.budgets[mode] })),
+        placementLeft: standing.placementLeft,
     };
 }
+
+/** A single-player operation the Demo card lists, with the route it deploys to. */
+export type DemoScenario = { id: string; name: string; place: string; route: string };
+
+/** The demo's operations: what the title menu offered before, under Play. */
+export const DEMO_SCENARIOS: DemoScenario[] = [
+    { id: "black-rain", name: "Black Rain", place: "Tokyo / Sector 09", route: "/demo" },
+    { id: "paper-trail", name: "Paper Trail", place: "Kōra HQ / Floor 07", route: "/demo-2" },
+];

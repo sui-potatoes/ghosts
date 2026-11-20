@@ -2,13 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Ranked: pick 3x3 or 4x4, build the squad within the tier's credit budget
- * (`SquadBuilder`), find an opponent. The search and the opponent are a mock
- * for now; every preset, item, price and number comes from the economy.
+ * Ranked: pick 3x3 or 4x4, build the squad within the budget of the player's
+ * tier (`SquadBuilder`), find an opponent. The tier, the budget, the prices and
+ * the unlocks are the contract's (`Rules`, read live, and the player's
+ * `Account`); the search is the real queue. This draws; `index.tsx` feeds it
+ * from the chain and `qa.tsx` from fixtures.
  */
 
 import { useEffect, useLayoutEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 
 import {
     ActionRow,
@@ -23,16 +24,13 @@ import {
     useGlyphSet,
     type Command,
 } from "../../../ui";
-import { budgetOf, squadSize, tierOf, type Issue, type Loadout, type Mode } from "../economy";
-import { stageMockMatch } from "../match";
-import { useRating } from "../rating";
+import { sizeOpen, squadSize, type Issue, type Loadout, type Mode } from "../economy";
+import type { Standing } from "../rating";
 import {
     cr,
     emptySaved,
     issueText,
-    opponentFor,
     parseSaved,
-    seenNow,
     serializeSaved,
     SIZES,
     squadCost,
@@ -40,15 +38,12 @@ import {
     tierNotice,
     type Saved,
 } from "./model";
+import { clock, findAction, searchCard, type RankedSearchState, type SearchCard } from "./search";
 import { SquadBuilder } from "./SquadBuilder";
 import "./ranked.css";
 
-const SEARCH_MS = 2800;
-const FOUND_MS = 1300;
 /** The screen's own memory: the size last played and the tier last seen. */
 const SCREEN_KEY = `${STORE_KEY}:screen`;
-
-type Search = { phase: "searching" } | { phase: "found"; name: string; rating: number };
 
 function load(): Saved {
     try {
@@ -68,29 +63,70 @@ function save(saved: Saved) {
     }
 }
 
-export function RankedView() {
+/** The squad as the builder reports it. */
+export type BuiltSquad = { units: Loadout[]; issues: Issue[]; labels: string[] };
+
+/** The state the screen draws, less what it works out itself (the size, the squad, the clock). */
+export type RankedViewState = Omit<
+    RankedSearchState,
+    "mode" | "open" | "tier" | "units" | "spent" | "now"
+>;
+
+export type RankedOps = {
+    find: (mode: Mode, squad: BuiltSquad) => void;
+    cancel: () => void;
+    /** Close a refusal or a search that ran out. */
+    close: () => void;
+    signIn: () => void;
+    resume: () => void;
+    leave: () => void;
+};
+
+/** Ticks once a second while `on`. */
+function useNow(on: boolean): number {
+    const [now, setNow] = useState(() => Date.now());
+    useEffect(() => {
+        if (!on) return;
+        setNow(Date.now());
+        const timer = window.setInterval(() => setNow(Date.now()), 1000);
+        return () => window.clearInterval(timer);
+    }, [on]);
+    return now;
+}
+
+export function RankedView({
+    standing,
+    state,
+    ops,
+    searchMode,
+}: {
+    standing: Standing;
+    state: RankedViewState;
+    ops: RankedOps;
+    /** The size of a ranked search in progress: the builder shows it. */
+    searchMode?: Mode | null;
+}) {
     const glyphs = useGlyphSet();
-    const navigate = useNavigate();
-    const { rating } = useRating();
-    const tier = tierOf(rating);
+    const tier = standing.tier;
+    const rating = standing.standing;
 
     const [screen, setScreen] = useState<Saved>(load);
-    const mode = screen.mode;
-    const budget = budgetOf(rating, mode);
-    const [squad, setSquad] = useState<{
-        units: Loadout[];
-        issues: Issue[];
-        labels: string[];
-    } | null>(null);
-    const [search, setSearch] = useState<Search | null>(null);
+    // A size with no level is not offered: the builder opens on one that has.
+    const chosen = searchMode ?? screen.mode;
+    const mode: Mode = sizeOpen(chosen) || searchMode ? chosen : "3x3";
+    const budget = standing.budgets[mode];
+    const [squad, setSquad] = useState<BuiltSquad | null>(null);
+    const seen = { tier: tier.id, name: tier.name, budget };
     // Said once, on arrival, when the tier changed since the last visit.
     const [notice, setNotice] = useState<string | null | undefined>(undefined);
     useEffect(() => {
-        if (notice !== undefined || !squad) return;
+        if (notice !== undefined || !squad || !state.signedIn || state.loading) return;
         setNotice(tierNotice(screen, rating, mode, squad.units));
-        save({ ...screen, seen: seenNow(rating, mode) });
-    }, [squad]);
-    useEffect(() => save({ ...screen, seen: seenNow(rating, mode) }), [mode]);
+        save({ ...screen, seen });
+    }, [squad, state.loading]);
+    useEffect(() => {
+        if (state.signedIn && !state.loading) save({ ...screen, seen });
+    }, [mode]);
 
     const pickMode = (to: Mode) => {
         if (to !== mode) setScreen((s) => ({ ...s, mode: to }));
@@ -99,100 +135,112 @@ export function RankedView() {
     const issues = squad?.issues ?? [];
     const gate = !squad ? "Building the squad" : issues.length === 0 ? null : issueText(issues[0]);
     const spent = squad ? squadCost(squad.units) : 0;
+    const now = useNow(state.phase === "searching");
+    const full: RankedSearchState = {
+        ...state,
+        mode,
+        open: sizeOpen(mode),
+        tier: tier.name,
+        units: squad?.units.length ?? squadSize(mode),
+        spent,
+        now,
+    };
+    const action = findAction(full, gate);
+    const card = searchCard(full);
 
-    // The search: a few seconds, then an opponent, then the match.
-    useEffect(() => {
-        if (!search) return;
-        if (search.phase === "searching") {
-            const timer = window.setTimeout(
-                () => setSearch({ phase: "found", ...opponentFor(rating) }),
-                SEARCH_MS,
-            );
-            return () => window.clearTimeout(timer);
-        }
-        const timer = window.setTimeout(() => {
-            const route = stageMockMatch({
-                kind: "ranked",
-                mode,
-                squad: squad?.units ?? [],
-                labels: squad?.labels,
-                opponent: { name: search.name, rating: search.rating },
-                returnTo: "/play/ranked",
-            });
-            navigate(route);
-        }, FOUND_MS);
-        return () => window.clearTimeout(timer);
-        // The squad and mode cannot change while the search holds the screen.
-    }, [search?.phase]);
-
-    const leave = () => navigate("/play", { replace: true });
-    const back: Command = { action: "back", label: "Back", run: leave };
+    const back: Command = { action: "back", label: "Back", run: ops.leave };
 
     const sizes = (
         <div className="grk-sizes">
-            {SIZES.map((size) => (
-                <ListRow
-                    key={size}
-                    id={`size-${size}`}
-                    group="side"
-                    instant
-                    name={`Ranked ${size}`}
-                    kind={`${squadSize(size)} units a side`}
-                    tag={`${cr(budgetOf(rating, size))} budget`}
-                    tagTone={size === mode ? "accent" : "default"}
-                    selected={size === mode}
-                    title={`Ranked ${size}`}
-                    hint={`${squadSize(size)} units a side, ${cr(budgetOf(rating, size))} to spend at ${tier.name}`}
-                    commands={[
-                        {
-                            action: "confirm",
-                            label: size === mode ? "Selected" : `Build ${size}`,
-                            tone: "primary",
-                            run: () => pickMode(size),
-                        },
-                    ]}
-                />
-            ))}
+            {SIZES.map((size) => {
+                const open = sizeOpen(size);
+                return (
+                    <ListRow
+                        key={size}
+                        id={`size-${size}`}
+                        group="side"
+                        instant={open}
+                        name={`Ranked ${size}`}
+                        kind={`${squadSize(size)} units a side`}
+                        tag={open ? `${cr(standing.budgets[size])} budget` : "No level"}
+                        tagTone={!open ? "dim" : size === mode ? "accent" : "default"}
+                        selected={size === mode}
+                        title={`Ranked ${size}`}
+                        hint={
+                            open
+                                ? `${squadSize(size)} units a side, ${cr(standing.budgets[size])} to spend at ${tier.name}`
+                                : `No ${size} level yet`
+                        }
+                        commands={[
+                            {
+                                action: "confirm",
+                                label: size === mode ? "Selected" : `Build ${size}`,
+                                tone: "primary",
+                                deny: open
+                                    ? card
+                                        ? "Searching for an opponent"
+                                        : undefined
+                                    : `No ${size} level yet`,
+                                run: () => pickMode(size),
+                            },
+                        ]}
+                    />
+                );
+            })}
             {notice && <p className="gui-note grk-notice">{notice}</p>}
         </div>
     );
 
+    const run = () => {
+        if (action.id === "sign-in") return ops.signIn();
+        if (action.id === "resume") return ops.resume();
+        if (squad) ops.find(mode, squad);
+    };
     const find = (
         <ActionRow
             id="start"
             group="start"
-            label="Find ranked match"
-            title="Find ranked match"
-            hint={gate ?? "Search for an opponent near your rating"}
+            label={action.label}
+            title={action.label}
+            hint={action.hint}
             instant
             commands={[
                 {
                     action: "confirm",
-                    label: "Find ranked match",
+                    label: action.label,
                     tone: "primary",
-                    deny: gate ?? undefined,
-                    run: () => setSearch({ phase: "searching" }),
+                    deny: action.deny,
+                    run,
                 },
             ]}
         />
     );
 
+    const searchingChip =
+        full.phase === "searching" && full.sinceMs !== null
+            ? clock(now - full.sinceMs)
+            : card?.pending
+              ? "Joining"
+              : null;
+
     return (
         <FocusRoot back={back}>
             <ScreenFrame
                 location={["Play", "Ranked"]}
-                onLocation={leave}
+                onLocation={ops.leave}
                 status={
                     <>
-                        {search && (
+                        {searchingChip && (
+                            <StatusChip label="Match" value={searchingChip} state="live" />
+                        )}
+                        <StatusChip label="Rating" value={String(standing.rating)} />
+                        <StatusChip label="Tier" value={tier.name} />
+                        {standing.placementLeft > 0 && state.signedIn && (
                             <StatusChip
-                                label="Match"
-                                value={search.phase === "searching" ? "Searching" : "Found"}
-                                state="live"
+                                label="Placement"
+                                value={`${standing.placementLeft} left`}
                             />
                         )}
-                        <StatusChip label="Rating" value={String(rating)} />
-                        <StatusChip label="Tier" value={tier.name} />
                     </>
                 }
                 columns="minmax(0, 1fr)"
@@ -206,16 +254,22 @@ export function RankedView() {
                     onChange={(units, found, labels) => setSquad({ units, issues: found, labels })}
                     aside={sizes}
                     action={find}
-                    searching={!!search}
+                    // A search on arrival (a reload, back from the menu) takes the cursor.
+                    autoFocus={!card}
+                    searching={!!card && card.phase !== "refused" && card.phase !== "expired"}
                     stageOverlay={
-                        search && (
-                            <SearchCard
-                                search={search}
-                                mode={mode}
-                                rating={rating}
-                                units={squad?.units.length ?? 0}
-                                spent={spent}
-                                onCancel={() => setSearch(null)}
+                        card && (
+                            <SearchOverlay
+                                card={card}
+                                onBack={() =>
+                                    card.phase === "searching" || card.phase === "timeout"
+                                        ? ops.cancel()
+                                        : ops.close()
+                                }
+                                onPrimary={() => {
+                                    ops.close();
+                                    if (squad && !action.deny) ops.find(mode, squad);
+                                }}
                             />
                         )
                     }
@@ -225,97 +279,65 @@ export function RankedView() {
     );
 }
 
-/** The search over the stage: who is looking, then who was found. Back cancels it. */
-function SearchCard({
-    search,
-    mode,
-    rating,
-    units,
-    spent,
-    onCancel,
+/** The search over the stage. Back cancels it, or closes a card that is only news. */
+function SearchOverlay({
+    card,
+    onBack,
+    onPrimary,
 }: {
-    search: Search;
-    mode: Mode;
-    rating: number;
-    units: number;
-    spent: number;
-    onCancel: () => void;
+    card: SearchCard;
+    onBack: () => void;
+    onPrimary: () => void;
 }) {
-    const back: Command = { action: "back", label: "Cancel search", run: onCancel };
+    const back: Command = {
+        action: "back",
+        label: card.back.label,
+        deny: card.back.deny,
+        run: onBack,
+    };
     return (
         <FocusScope id="search" back={back} modal>
-            <SearchBlock
-                search={search}
-                mode={mode}
-                rating={rating}
-                units={units}
-                spent={spent}
-                back={back}
-            />
+            <SearchBlock card={card} back={back} onPrimary={onPrimary} />
         </FocusScope>
     );
 }
 
 function SearchBlock({
-    search,
-    mode,
-    rating,
-    units,
-    spent,
+    card,
     back,
+    onPrimary,
 }: {
-    search: Search;
-    mode: Mode;
-    rating: number;
-    units: number;
-    spent: number;
+    card: SearchCard;
     back: Command;
+    onPrimary: () => void;
 }) {
     const store = useFocusState();
-    const searching = search.phase === "searching";
     const { props } = useFocusable<HTMLDivElement>({
         id: "search-card",
         group: "search",
-        title: searching ? "Looking for an opponent" : "Opponent found",
-        hint: searching ? "A player near your rating" : "Taking you to the field",
-        // Back is the one thing to do: the bar names it, nothing else is on offer.
-        commands: [back],
+        title: card.title,
+        hint: back.deny ?? card.hint,
+        commands: card.primary
+            ? [
+                  { action: "confirm", label: card.primary.label, tone: "primary", run: onPrimary },
+                  back,
+              ]
+            : [back],
     });
     useLayoutEffect(() => {
         store.focus("search-card", false);
-    }, [store]);
+    }, [store, card.phase]);
     return (
-        <div className="grk-search" role="status" data-phase={search.phase} {...props}>
-            <span className="gui-stage-eyebrow">Ranked {mode}</span>
-            <span className="grk-search-title">
-                {searching ? "Looking for an opponent" : `Opponent found · ${search.name}`}
-            </span>
+        <div className="grk-search" role="status" data-phase={card.phase} {...props}>
+            <span className="gui-stage-eyebrow">{card.eyebrow}</span>
+            <span className="grk-search-title">{card.title}</span>
             <dl className="grk-search-lines">
-                {searching ? (
-                    <>
-                        <div>
-                            <dt>Your rating</dt>
-                            <dd>{rating}</dd>
-                        </div>
-                        <div>
-                            <dt>Squad</dt>
-                            <dd>
-                                {units} units · {cr(spent)}
-                            </dd>
-                        </div>
-                    </>
-                ) : (
-                    <>
-                        <div>
-                            <dt>Opponent</dt>
-                            <dd>{search.name}</dd>
-                        </div>
-                        <div>
-                            <dt>Their rating</dt>
-                            <dd>{search.rating}</dd>
-                        </div>
-                    </>
-                )}
+                {card.lines.map(([label, value]) => (
+                    <div key={label}>
+                        <dt>{label}</dt>
+                        <dd>{value}</dd>
+                    </div>
+                ))}
             </dl>
         </div>
     );

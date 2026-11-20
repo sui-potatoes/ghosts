@@ -44,12 +44,19 @@ export {
     type Step,
 } from "./ghosts";
 export {
+    acknowledgeExpired,
     fetchPendingSeats,
     SEARCH_TIMEOUT_MS,
+    TICKET_TTL_MS,
     useCurrentGame,
+    useExpired,
     useMatchmakingDriver,
     useMatchSearch,
+    useReveal,
     type ChainSeat,
+    type Expired,
+    type QueueSearch,
+    type Reveal,
 } from "./matchmaking";
 export {
     closeLobbyTx,

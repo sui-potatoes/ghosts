@@ -4,7 +4,14 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
-import { SEARCH_TIMEOUT_MS, useMatchmakingDriver, useMatchSearch } from "../chain";
+import {
+    acknowledgeExpired,
+    TICKET_TTL_MS,
+    useExpired,
+    useMatchmakingDriver,
+    useMatchSearch,
+    type QueueSearch,
+} from "../chain";
 import { CLASSIC_TITLE } from "../classicTitle";
 import { usePadActive } from "./PadHints";
 
@@ -20,7 +27,7 @@ function useElapsed(sinceMs: number): number {
 
 /** How long a search has been running, as `m:ss`; stops at the timeout. */
 export function SearchClock({ sinceMs }: { sinceMs: number }) {
-    const seconds = Math.floor(Math.min(useElapsed(sinceMs), SEARCH_TIMEOUT_MS) / 1000);
+    const seconds = Math.floor(Math.min(useElapsed(sinceMs), TICKET_TTL_MS) / 1000);
     return (
         <span className="tabular-nums">
             {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}
@@ -40,8 +47,21 @@ function NoMatch(props: { busy: boolean; onDismiss: () => void }) {
     );
 }
 
-function Searching(props: { sinceMs: number; busy: boolean; onCancel: () => void }) {
-    if (useElapsed(props.sinceMs) > SEARCH_TIMEOUT_MS)
+/** What a search is for: `Ranked 3x3`, `Contract`. */
+const searchName = (search: QueueSearch) =>
+    search.kind === "stakes"
+        ? "Contract"
+        : search.size
+          ? `Ranked ${search.size}x${search.size}`
+          : "Ranked";
+
+function Searching(props: {
+    search: QueueSearch;
+    sinceMs: number;
+    busy: boolean;
+    onCancel: () => void;
+}) {
+    if (useElapsed(props.sinceMs) > TICKET_TTL_MS)
         return <NoMatch busy={props.busy} onDismiss={props.onCancel} />;
     return (
         <>
@@ -49,7 +69,7 @@ function Searching(props: { sinceMs: number; busy: boolean; onCancel: () => void
                 <circle className="save-indicator-track" cx="16" cy="16" r="12" />
                 <circle className="save-indicator-arc" cx="16" cy="16" r="12" />
             </svg>
-            <span className="label">Finding match</span>
+            <span className="label">{searchName(props.search)}</span>
             <span className="label text-secondary">
                 <SearchClock sinceMs={props.sinceMs} />
             </span>
@@ -72,16 +92,23 @@ export function MatchStatus() {
     const pad = usePadActive();
     const navigate = useNavigate();
     const { searching, playing, lobby, busy, error, cancel } = useMatchSearch();
+    const expired = useExpired();
     useMatchmakingDriver();
 
-    if (["/demo", "/editor", "/match", "/play/match"].some((path) => pathname.startsWith(path)))
-        return null;
+    if (["/demo", "/editor", "/match"].some((path) => pathname.startsWith(path))) return null;
     // Headquarters and the title show the search in their own header.
-    if (pathname === "/headquarters" || pathname === "/find") return null;
+    if (pathname === "/headquarters" || pathname === "/play/contract") return null;
     if (pathname === "/" && !CLASSIC_TITLE) return null;
     // The friendly screen is the lobby itself.
     if (lobby && pathname === "/play/friendly") return null;
-    if (!searching && !playing && !lobby) return null;
+    // The ranked and contract screens tell their own search.
+    if (searching?.kind === "ranked" && pathname === "/play/ranked") return null;
+    if (searching?.kind === "stakes" && pathname === "/play/contract") return null;
+    const expiredHere =
+        (expired?.kind === "ranked" && pathname === "/play/ranked") ||
+        (expired?.kind === "stakes" && pathname === "/play/contract");
+    const told = expired && !expiredHere && !searching && !playing && !lobby ? expired : null;
+    if (!searching && !playing && !lobby && !told) return null;
 
     return (
         <div
@@ -90,7 +117,27 @@ export function MatchStatus() {
             aria-live="polite"
         >
             {searching ? (
-                <Searching sinceMs={Number(searching.sinceMs)} busy={busy} onCancel={cancel} />
+                <Searching
+                    search={searching}
+                    sinceMs={Number(searching.sinceMs)}
+                    busy={busy}
+                    onCancel={cancel}
+                />
+            ) : told ? (
+                <>
+                    <span className="label text-warn">No match found</span>
+                    <button
+                        className="btn"
+                        onClick={() =>
+                            navigate(told.kind === "ranked" ? "/play/ranked" : "/play/contract")
+                        }
+                    >
+                        Search again
+                    </button>
+                    <button className="btn" onClick={acknowledgeExpired}>
+                        OK
+                    </button>
+                </>
             ) : !playing && lobby ? (
                 <>
                     <span className="label text-accent">Friendly lobby</span>

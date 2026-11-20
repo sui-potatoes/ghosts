@@ -11,8 +11,7 @@
  *   result, or `"ended"` when nothing is left to read;
  * - `earned`: `experienceFor(game, side)`, what each survivor gains, null when
  *   the game was deleted before the app saw it end;
- * - `rating`: `Account.rating.rating` before the game (kept at its start) and
- *   after the wrap-up;
+ * - `rating`: unused outside ranked (only ranked games move the rating; see `ranked`);
  * - `squad`: the side's recruits as the game took them in (`Game.recruits`):
  *   name, rank and experience before the match;
  * - `fallen`: the ids `fallenOf(game, side, …)` returns, from `UnitKIA` records;
@@ -65,6 +64,22 @@ export type MatchResult = {
     recruitsHome: number | null;
     /** The opposing player's name, when known. */
     opponent?: string | null;
+    /**
+     * A ranked game (`Game.mode` is `Ranked`): squads built for the match, no
+     * recruit in them, so no experience and nobody lost for good; the rating moves.
+     * `squad` holds the side's units, `rank` their type. `change` is null until the
+     * `Account` is read after the wrap-up.
+     */
+    ranked?: {
+        size: number;
+        /** The tier the game was played at. */
+        tier: string;
+        change: {
+            before: number;
+            after: number;
+            tier: { before: string; after: string } | null;
+        } | null;
+    };
 };
 
 export type HeadlineTone = "win" | "loss" | "draw" | "blame";
@@ -301,12 +316,78 @@ function friendlyDebrief(result: MatchResult, podiums: number): Debrief {
     };
 }
 
+/** The notes a ranked game keeps: how it ended, and the suspension where there is one. */
+const RANKED_NOTES: Partial<Record<ResultOutcome, string>> = {
+    stalemate: "Turn limit reached",
+    abandoned: SUSPENDED,
+    forfeited: `Missed ${MAX_MISSED_TURNS} turns in a row · ${SUSPENDED}`,
+    "no-show": `Squad not shown in time · ${SUSPENDED}`,
+    "opponent-abandoned": "Opponent abandoned the match",
+    "opponent-forfeited": "Opponent stopped playing",
+    "opponent-no-show": "Opponent never showed their squad",
+};
+
+/**
+ * A ranked game's result: each unit standing or fallen on its podium, no
+ * experience and no one lost for good (the squad was built for the match), and
+ * the rating and tier as the `Account` reads after the wrap-up.
+ */
+function rankedDebrief(result: MatchResult, podiums: number): Debrief {
+    const ranked = result.ranked!;
+    const [title, tone] = HEADLINES[result.outcome];
+    const fallen = new Set(result.fallen);
+    const turns = fallTurns(result.history);
+    const plates: Plate[] = Array.from({ length: podiums }, (_, i) => {
+        const r = result.squad[i];
+        if (!r) return { kind: "vacant" };
+        const turn = turns.get(r.objectId);
+        return {
+            kind: "home",
+            id: r.objectId,
+            name: r.name,
+            rankBefore: r.rank,
+            rankAfter: r.rank,
+            promoted: false,
+            xpBefore: 0,
+            xpAfter: 0,
+            gained: null,
+            band: null,
+            hint: fallen.has(r.objectId)
+                ? turn
+                    ? `Fell on turn ${turn}`
+                    : "Fell"
+                : "Standing at the end",
+        };
+    });
+    const change = ranked.change;
+    const lines = [`Ranked ${ranked.size}x${ranked.size} · ${ranked.tier}`];
+    if (change?.tier) lines.push(`New tier: ${change.tier.after}`);
+    return {
+        title,
+        tone,
+        note: RANKED_NOTES[result.outcome] ?? null,
+        lines,
+        opponent: result.opponent ?? null,
+        rating:
+            change && change.after !== change.before
+                ? {
+                      before: change.before,
+                      after: change.after,
+                      delta: change.after - change.before,
+                  }
+                : null,
+        plates,
+        replacement: null,
+    };
+}
+
 /** A match result as the debrief shows it: one plate per podium, left to right. */
 export function debriefOf(
     result: MatchResult,
     podiums = Math.max(3, result.squad.length),
 ): Debrief {
     if (result.friendly) return friendlyDebrief(result, podiums);
+    if (result.ranked) return rankedDebrief(result, podiums);
     const [title, tone, note] = HEADLINES[result.outcome];
     const fallen = new Set(result.fallen);
     const turns = fallTurns(result.history);
@@ -335,17 +416,13 @@ export function debriefOf(
             band: after.gained === null ? null : xpBand(r.rank, r.xp, after.xp),
         };
     });
-    const rating = result.rating && {
-        before: result.rating[0],
-        after: result.rating[1],
-        delta: result.rating[1] - result.rating[0],
-    };
     return {
         title,
         tone,
         note: note ?? null,
         opponent: result.opponent ?? null,
-        rating: rating && rating.delta !== 0 ? rating : null,
+        // A contract game is unrated: its debrief never shows a rating.
+        rating: null,
         plates,
         replacement: fallen.size ? replacementFor(result.recruitsHome) : null,
     };

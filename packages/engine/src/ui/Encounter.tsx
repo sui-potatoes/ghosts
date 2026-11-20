@@ -7,7 +7,6 @@ import { boot } from "../boot";
 import type { Recruit } from "@ghosts/squad/types";
 import type { DriverFactory } from "../driver";
 import type { Scenario } from "../scenario";
-import type { Encounter as EncounterRules } from "../game";
 import { Playback } from "../replay/playback";
 import { sceneStage } from "../replay/stage";
 import type { RecordSource } from "../replay/timeline";
@@ -57,12 +56,6 @@ export interface EncounterProps {
    * are not used.
    */
   observer?: ObserverOptions;
-  /**
-   * The encounter's journal as it grows: called with the rules after each
-   * change to their events, and with the new rules after a restart. A host
-   * records a game from it.
-   */
-  onJournal?: (game: EncounterRules) => void;
 }
 
 export interface ObserverOptions {
@@ -112,7 +105,6 @@ export function Encounter({
   intel,
   opponent = null,
   observer,
-  onJournal,
 }: EncounterProps) {
   const refs: FieldRefs = {
     viewport: useRef<HTMLDivElement>(null),
@@ -125,26 +117,14 @@ export function Encounter({
       ? newSession(observer.source.scenario, undefined, { sides: observer.source.sides, turn: 1 })
       : newSession(scenario, driver),
   );
-  const hooks = useRef({ onPause, onQuit, onDebrief, onJournal });
-  hooks.current = { onPause, onQuit, onDebrief, onJournal };
+  const hooks = useRef({ onPause, onQuit, onDebrief });
+  hooks.current = { onPause, onQuit, onDebrief };
   const watching = useRef(observer);
   inspect.source = intel;
   useEffect(() => {
     inspect.opponent = opponent;
     inspect.changed();
   }, [opponent]);
-
-  // The journal: every change to the rules' events, a restart's fresh rules included.
-  useEffect(() => {
-    let game: EncounterRules | null = null,
-      length = -1;
-    return session.subscribe(() => {
-      if (session.game === game && session.game.events.length === length) return;
-      game = session.game;
-      length = game.events.length;
-      hooks.current.onJournal?.(game);
-    });
-  }, [session]);
 
   useEffect(() => {
     let stop: (() => void) | undefined;

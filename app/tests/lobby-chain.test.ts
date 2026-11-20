@@ -160,10 +160,12 @@ test("Field<Open, Lobby>: the field's id, the host's Account id, the lobby", () 
     assert.deepEqual(field.value, { size: 3, guest: `0x${id("cc")}`, kicked: [] });
 });
 
-test("Mode: Rated is tag 0, Friendly { size } is tag 1 then the size", () => {
-    assert.equal(GameMode.parse(unhex("00")).$kind, "Rated");
+test("Mode: Stakes is tag 0, Friendly { size } tag 1, Ranked { size, tier } tag 2", () => {
+    assert.equal(GameMode.parse(unhex("00")).$kind, "Stakes");
     const friendly = GameMode.parse(unhex("0104"));
     assert.ok(friendly.$kind === "Friendly" && friendly.Friendly.size === 4);
+    const ranked = GameMode.parse(unhex("020302"));
+    assert.ok(ranked.$kind === "Ranked" && ranked.Ranked.size === 3 && ranked.Ranked.tier === 2);
 });
 
 /** A `Game` of an empty map, by hand, in field order, ending with `mode`. */
@@ -194,7 +196,7 @@ function gameBytes(mode: string, positions = "00") {
 
 test("Game: mode is the last field", () => {
     const rated = Game.parse(gameBytes("00"));
-    assert.equal(rated.mode.$kind, "Rated");
+    assert.equal(rated.mode.$kind, "Stakes");
     assert.equal(isFriendly(rated), false);
     assert.equal(friendlySize(rated), null);
     const friendly = Game.parse(gameBytes("0104"));

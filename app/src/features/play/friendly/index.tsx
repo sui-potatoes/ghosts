@@ -184,10 +184,7 @@ export function FriendlyScreen() {
             });
     }, [place, id, state, otherSince, sinceMs, client]);
 
-    const suspendedMs =
-        state?.$kind === "Suspended"
-            ? Math.max(0, Number(state.Suspended.untilMs) - Date.now())
-            : 0;
+    const suspendedMs = Math.max(0, match.suspendedUntilMs - Date.now());
     const gate = gateOf({
         signedIn: !!wallet,
         loading: accountId.isLoading || (!!id && account.isLoading),
@@ -302,7 +299,9 @@ export function FriendlyScreen() {
                 case "resume":
                     return navigate("/match");
                 case "queue":
-                    return navigate("/find");
+                    return navigate(
+                        match.searching?.kind === "stakes" ? "/play/contract" : "/play/ranked",
+                    );
                 case "headquarters":
                     return navigate("/headquarters");
             }

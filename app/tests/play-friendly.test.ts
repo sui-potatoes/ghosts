@@ -14,7 +14,7 @@ import { test } from "node:test";
 
 import { debriefOf, type MatchResult } from "../src/features/debrief/result.ts";
 import { findView, type FindState } from "../src/features/find-match/model.ts";
-import { matchChip, matchRow, menuRows, type MenuState } from "../src/features/main-menu/model.ts";
+import { matchChip, menuRows, playRow, type MenuState } from "../src/features/main-menu/model.ts";
 import {
     CODE_ALPHABET,
     CODE_LENGTH,
@@ -110,7 +110,7 @@ test("the gate: signed out, no squad, in a match, queued, suspended, free", () =
     assert.equal(gateOf({ ...FREE, hasAccount: false, recruits: 0 })?.reason, "Hire a squad first");
     assert.equal(gateOf({ ...FREE, recruits: 0 })?.action?.id, "headquarters");
     assert.equal(gateOf({ ...FREE, playing: true })?.action?.id, "resume");
-    assert.equal(gateOf({ ...FREE, queued: true })?.reason, "You are in the match queue");
+    assert.equal(gateOf({ ...FREE, queued: true })?.reason, "Cancel your search first");
     assert.equal(gateOf({ ...FREE, suspendedMin: 2 })?.reason, "Suspended for 2 min");
     assert.equal(gateOf(FREE), null);
 });
@@ -245,22 +245,19 @@ const menu = (match: Partial<MenuState["match"]>): MenuState => ({
     install: "none",
 });
 
-test("the title: Find Match is inactive in a lobby, Play leads back to it", () => {
-    const row = matchRow(menu({ lobby: true }));
-    assert.equal(row.label, "Find Match");
-    assert.equal(row.locked, "Leave your friendly game first");
+test("the title: Play leads back to the lobby; the match chip names it", () => {
     const play = menuRows(menu({ lobby: true })).find((r) => r.id === "play")!;
     assert.equal(play.hint, "Back to your friendly game");
     assert.equal(
         menuRows(menu({})).find((r) => r.id === "play")!.hint,
-        "Ranked, friendly, faction wars",
+        "Ranked, friendly, contract, demo",
     );
     assert.deepEqual(matchChip({ playing: false, searchingSinceMs: null, lobby: true }, 0, 1), {
         value: "Friendly lobby",
         state: "live",
     });
     // A game in progress still wins.
-    assert.equal(matchRow(menu({ lobby: true, playing: true })).label, "Resume Match");
+    assert.equal(playRow(menu({ lobby: true, playing: true })).label, "Resume Match");
 });
 
 test("Find Match sends a player in a lobby back to it, never into the queue", () => {
@@ -283,7 +280,7 @@ test("Find Match sends a player in a lobby back to it, never into the queue", ()
 });
 
 test("the Play cards: the friendly card leads back to the lobby", () => {
-    const friendly = modeCards(true).find((c) => c.id === "friendly")!;
+    const friendly = modeCards({ kind: "lobby" }).find((c) => c.id === "friendly")!;
     assert.equal(friendly.tag, "In lobby");
     assert.equal(friendly.route, "/play/friendly");
     assert.equal(modeCards().find((c) => c.id === "friendly")!.tag, "Open");

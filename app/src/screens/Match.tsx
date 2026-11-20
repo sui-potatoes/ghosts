@@ -16,6 +16,7 @@ import {
     hireRecruitsTx,
     useCurrentGame,
     useGhostsAction,
+    useReveal,
     type ChainAccount,
     type ChainRecruit,
     type ChainSeat,
@@ -41,6 +42,8 @@ import {
     isDeploying,
     isFriendly,
     isOver,
+    isRanked,
+    rankedOf,
     MAX_MISSED_TURNS,
     missedTurns,
     outcomeFor,
@@ -66,6 +69,13 @@ import { SquadSelect } from "../features/squad-view/SquadSelect";
 import { useBack } from "../hooks/useBack";
 import { useMenuNav } from "../hooks/useMenuNav";
 import { PauseMenu } from "../PauseMenu";
+import { economyRules, TIERS } from "../features/play/economy";
+import { keptNames } from "../chain/ranked";
+import { mapUnits, rankedField, sideUnits } from "../features/play/ranked/field";
+import type { ChainUnitLike } from "../features/play/ranked/kit";
+import { RankedWaiting } from "../features/play/ranked/RankedWaiting";
+import type { WaitingPhase } from "../features/play/ranked/waiting";
+import { ratingChange } from "../features/play/rating";
 import "../features/squad/squad.css";
 import "../features/headquarters/headquarters.css";
 
@@ -335,10 +345,14 @@ function Field({
 
     // The encounter is built once, from the game as it stands when the field opens.
     const [setup] = useState(() => {
-        const names = new Map(recruits.map((r) => [r.objectId, r.metadata.name]));
+        // A ranked squad has no recruits: its units are named and dressed from their gear.
+        const ranked = isRanked(game)
+            ? rankedField(game, gameId, side, mapUnits(game), keptNames(accountId))
+            : null;
+        const names = ranked?.names ?? new Map(recruits.map((r) => [r.objectId, r.metadata.name]));
         const mine = squadOf(game, side).flatMap((id) => recruits.filter((r) => r.objectId === id));
         return {
-            scenario: matchScenario(game, side, names),
+            scenario: matchScenario(game, side, names, ranked?.looks),
             driver: chainDriver({
                 client,
                 gameId,
@@ -348,7 +362,7 @@ function Field({
                 // Fresher than any poll: the clock and the result go by this.
                 onGame: (fresh) => queryClient.setQueryData(["object", gameId], fresh),
             }),
-            squad: toLocalRecruits(mine),
+            squad: ranked?.squad ?? toLocalRecruits(mine),
         };
     });
 
@@ -450,12 +464,15 @@ function useWrapUp({
     gameId,
     players,
     action,
+    ranked = false,
 }: {
     gone: boolean;
     wins: boolean;
     gameId: string;
     players: string[];
     action: Action;
+    /** A ranked game: a seat never taken is taken without a squad. */
+    ranked?: boolean;
 }): () => void {
     const { run } = action;
     const send = () =>
@@ -465,6 +482,7 @@ function useWrapUp({
                     gameId,
                     players,
                     await fetchPendingSeats(action.client, gameId, players),
+                    ranked,
                 ),
         ]);
     const sent = useRef(false);
@@ -572,6 +590,7 @@ function ResultScreen({
     seen,
     home,
     rating,
+    ranked,
     action,
     onHire,
 }: {
@@ -585,15 +604,60 @@ function ResultScreen({
     /** The `Account`'s recruits as read now. */
     home: ChainRecruit[];
     rating: [number, number] | null;
+    /** A ranked game: the units seen in it, and the rating and tier it moved. */
+    ranked: {
+        units: (ChainUnitLike & { owner: string })[];
+        change: ReturnType<typeof ratingChange> | null;
+        own: ReturnType<typeof keptNames>;
+    } | null;
     action: Action;
     onHire: () => void;
 }) {
     const opponent = useOpponentName(game, side);
     const navigate = useNavigate();
     const wins = WINS.includes(outcome);
-    const wrapUp = useWrapUp({ gone, wins, gameId, players: game.players, action });
+    const wrapUp = useWrapUp({
+        gone,
+        wins,
+        gameId,
+        players: game.players,
+        action,
+        ranked: isRanked(game),
+    });
 
     const { result, figures } = useMemo(() => {
+        const mode = rankedOf(game);
+        if (mode && ranked) {
+            const field = rankedField(game, gameId, side, ranked.units, ranked.own);
+            const mine = field.mine;
+            const deployed = new Set(
+                sideUnits(ranked.units, game.players[side]).map((u) => u.recruit),
+            );
+            const fallen = game.history.flatMap((r) =>
+                r.$kind === "UnitKIA" && deployed.has(r.UnitKIA[0]) ? [r.UnitKIA[0]] : [],
+            );
+            const result: MatchResult = {
+                outcome,
+                earned: null,
+                rating: null,
+                squad: mine.ids.map((id, i) => ({
+                    objectId: id,
+                    name: mine.names[i],
+                    rank: mine.types[i].split(" · ")[0],
+                    xp: 0,
+                })),
+                fallen,
+                history: game.history,
+                recruitsHome: null,
+                opponent,
+                ranked: {
+                    size: mode.size,
+                    tier: TIERS[mode.tier]?.name ?? `Tier ${mode.tier + 1}`,
+                    change: ranked.change,
+                },
+            };
+            return { result, figures: field.squad };
+        }
         const alive = squadOf(game, side);
         const fallen = fallenOf(game, side, seen).map((r) => r.objectId);
         const squad = deployedOf(seen, game.players[side], alive, fallen);
@@ -627,7 +691,20 @@ function ResultScreen({
         };
         return { result, figures: figs };
         // `rating` is a new pair on every render: its numbers stand for it.
-    }, [game, side, seen, home, gone, outcome, over, rating?.[0], rating?.[1], opponent]);
+    }, [
+        game,
+        side,
+        seen,
+        home,
+        gone,
+        outcome,
+        over,
+        rating?.[0],
+        rating?.[1],
+        opponent,
+        ranked?.units.length,
+        ranked?.change?.after,
+    ]);
 
     return (
         <MatchDebrief
@@ -673,6 +750,12 @@ export default function Match() {
     const [confirming, setConfirming] = useState(false);
     const [abandoned, setAbandoned] = useState(false);
     const [played, setPlayed] = useState(false);
+    // A ranked game's units, every one seen in it: the fallen leave the map.
+    const seenUnits = useRef(new Map<string, ChainUnitLike & { owner: string }>());
+    if (game.data && isRanked(game.data))
+        for (const unit of [...mapUnits(game.data), ...game.data.map.fallen])
+            seenUnits.current.set(unit.recruit, unit);
+    const reveal = useReveal(gameId);
     // The `Account` going in, for what the game did to it once it is wrapped up.
     const atStart = useRef<{ rating: number; score: Score } | null>(null);
     if (playing && account.data && atStart.current === null)
@@ -681,9 +764,9 @@ export default function Match() {
             score: account.data.score,
         };
     const ended = !!game.data && (isOver(game.data) || gone);
-    // A friendly game wrapped up between two polls moves no score: what ended it is the
-    // transaction that freed the `Account`.
-    const vanished = gone && !!game.data && isFriendly(game.data) && !isOver(game.data);
+    // Only a ranked game moves the score: any other wrapped up between two polls is told by
+    // the transaction that freed the `Account`.
+    const vanished = gone && !!game.data && !isRanked(game.data) && !isOver(game.data);
     const endingTx = useQuery({
         queryKey: ["ghosts", "ending", gameId],
         enabled: vanished && !!accountId.data,
@@ -720,7 +803,9 @@ export default function Match() {
         : over
           ? outcomeFor(game.data, side)
           : (settled ?? vanishedAs ?? "ended");
-    const fieldReady = (inGame.data?.length ?? 0) >= unitsOnMap(game.data).length;
+    const ranked = isRanked(game.data);
+    // A ranked squad has no recruits to read: the field is ready with the game.
+    const fieldReady = ranked || (inGame.data?.length ?? 0) >= unitsOnMap(game.data).length;
     const abandon = () => setConfirming(true);
     /** Abandon without asking (the caller asked): the opponent wins, the squad comes home. */
     const abandonNow = () => {
@@ -734,6 +819,7 @@ export default function Match() {
                         accountId.data!,
                         players,
                         await fetchPendingSeats(action.client, gameId, players),
+                        ranked,
                     ),
             ])
             .then((done) => setAbandoned(done));
@@ -793,6 +879,33 @@ export default function Match() {
 
     const podiumResult = PODIUM_RESULT && showResult;
 
+    const games = (score: Score) => Number(score.wins) + Number(score.losses) + Number(score.draws);
+    const rankedResult = ranked
+        ? {
+              units: [...seenUnits.current.values()],
+              own: keptNames(accountId.data),
+              change:
+                  gone && start && account.data
+                      ? ratingChange(
+                            { rating: start.rating, games: games(start.score) },
+                            { rating: ratingNow, games: games(account.data.score) },
+                        )
+                      : null,
+          }
+        : null;
+    // Before a ranked game's first turn: one squad shown, the other on its way.
+    const mineShown = mine.length > 0;
+    const waitingPhase: WaitingPhase = mineShown
+        ? "waiting"
+        : reveal?.phase === "lost"
+          ? "lost"
+          : reveal?.phase === "late"
+            ? "late"
+            : reveal?.phase === "failed"
+              ? "failed"
+              : "revealing";
+    const rankedMode = rankedOf(game.data);
+
     return (
         <>
             {podiumResult && (
@@ -806,11 +919,29 @@ export default function Match() {
                     seen={seenList}
                     home={recruits.data ?? []}
                     rating={rating}
+                    ranked={rankedResult}
                     action={action}
                     onHire={() => void action.run([() => hireRecruitsTx(accountId.data!)])}
                 />
             )}
-            {podiumResult ? null : deploying ? (
+            {podiumResult ? null : deploying && ranked ? (
+                !finished && (
+                    <RankedWaiting
+                        phase={waitingPhase}
+                        line={reveal?.phase === "failed" ? reveal.line : undefined}
+                        deadline={deployUntil(game.data)}
+                        limitMs={economyRules().revealLimitMs}
+                        title={`Ranked ${rankedMode?.size}x${rankedMode?.size}`}
+                        busy={action.busy}
+                        error={action.error}
+                        clearError={action.clearError}
+                        onContinue={() =>
+                            void action.run([() => nextTurnTx(gameId, accountId.data!)])
+                        }
+                        onAbandon={abandon}
+                    />
+                )
+            ) : deploying ? (
                 !finished &&
                 (PODIUM_SQUAD_SELECT ? (
                     <SquadSelect
@@ -886,7 +1017,9 @@ export default function Match() {
             >
                 {isFriendly(game.data)
                     ? "Your opponent wins and your squad comes home."
-                    : "Your opponent wins and your squad comes home, but you can't search for a match for a minute."}
+                    : ranked
+                      ? "Your opponent wins, your rating drops, and you can't search for a match for a minute."
+                      : "Your opponent wins and your squad comes home, but you can't search for a match for a minute."}
             </ConfirmDialog>
         </>
     );

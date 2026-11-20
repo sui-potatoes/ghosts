@@ -15,12 +15,8 @@ import type { ChainGame, ChainRecord } from "./bcs";
 /** `TURN_LIMIT_MS` in `ghosts::ghosts`: past it, a turn only takes `next_turn`. */
 export const TURN_LIMIT_MS = 90_000;
 
-/**
- * `FIRST_TURN_MS` in `ghosts::ghosts`: the first turn lasts longer, as the scene is
- * still loading. The deployed package has no such constant yet and gives the first
- * turn `TURN_LIMIT_MS` too: set this to 120_000 only once a package with it is live.
- */
-export const FIRST_TURN_MS = TURN_LIMIT_MS;
+/** `FIRST_TURN_MS` in `ghosts::ghosts`: the first turn lasts longer, as the scene is still loading. */
+export const FIRST_TURN_MS = 120_000;
 
 /** How long turn number `turn` lasts; `turn_limit` in `ghosts::ghosts`. */
 export const turnLimitMs = (turn: number) => (turn === 0 ? FIRST_TURN_MS : TURN_LIMIT_MS);
@@ -35,7 +31,17 @@ export const squadSize = (game: ChainGame, side: number) => game.positions[side]
 export const isFriendly = (game: Pick<ChainGame, "mode">): boolean =>
     game.mode?.$kind === "Friendly";
 
-/** The most recruits each side deploys in a friendly game; null in a rated one. */
+/** A ranked game: squads built for it, no recruit in it; it moves both ratings. */
+export const isRanked = (game: Pick<ChainGame, "mode">): boolean => game.mode?.$kind === "Ranked";
+
+/** A game for owned recruits from the queue: unrated, experience and losses for real. */
+export const isStakes = (game: Pick<ChainGame, "mode">): boolean => game.mode?.$kind === "Stakes";
+
+/** A ranked game's size and tier; null in any other mode. */
+export const rankedOf = (game: Pick<ChainGame, "mode">): { size: number; tier: number } | null =>
+    game.mode?.$kind === "Ranked" ? game.mode.Ranked : null;
+
+/** The most recruits each side deploys in a friendly game; null in any other mode. */
 export const friendlySize = (game: Pick<ChainGame, "mode">): number | null =>
     game.mode?.$kind === "Friendly" ? game.mode.Friendly.size : null;
 
@@ -44,7 +50,7 @@ export const friendlySize = (game: Pick<ChainGame, "mode">): number | null =>
  * positions it has left, and in a friendly game no more than the lobby's size.
  */
 export function deployCap(game: ChainGame, side: number): number {
-    const size = friendlySize(game);
+    const size = friendlySize(game) ?? rankedOf(game)?.size ?? null;
     const positions = squadSize(game, side);
     return size === null ? positions : Math.min(positions, size);
 }
@@ -471,8 +477,8 @@ const MIN_TURNS_TO_EARN = 2;
  * `experience` in `ghosts::ghosts`.
  */
 export function experienceFor(game: ChainGame, side: number): number {
-    // `experience` gives none at all in a friendly game.
-    if (isFriendly(game)) return 0;
+    // `experience` gives none outside a game for owned recruits.
+    if (!isStakes(game)) return 0;
     const other = 1 - side;
     const ending = game.state.$kind === "Over" ? game.state.Over : null;
     // who is to blame for how it ended: `misbehaved` in the contract

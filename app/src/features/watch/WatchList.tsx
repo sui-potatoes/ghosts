@@ -2,24 +2,25 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * `/watch`: the games to watch. Live games, being played now by anyone (rated
- * games and friendly games from a listed lobby; a game started from an invite
- * code is watched by its link only), with both players, the mode, the turn and
- * whose it is, read again every few seconds and when the window comes back.
- * Your games: the signed-in player's finished games, each opening its replay.
- * On this device: the demo games recorded here. Confirm opens a game in the
- * viewer. QA builds (`VITE_WATCH_QA=1`) add Reset on a recorded game: the same
- * game released as if it were being played now.
+ * `/watch`, the Spectate screen: matches to watch. Live matches, being played
+ * now by anyone (ranked and contract matches and friendly ones from a listed
+ * lobby; one started from an invite code is watched by its link only), with
+ * both players, the mode, the turn and whose it is, read again every few
+ * seconds and when the window comes back. Recent matches: the latest finished
+ * matches of anyone, 25 and then up to 50 with More. My matches: the
+ * signed-in player's own finished matches. Confirm opens a match in the
+ * viewer, live or as its replay. QA builds (`VITE_WATCH_QA=1`) can fill
+ * Recent matches with fixture rows (`?recent=rows|few|empty|error`, `qa.ts`).
  */
 
-import { scenarioById } from "@ghosts/engine";
 import { useCurrentAccount } from "@mysten/dapp-kit-react";
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import { useAccountId } from "../../chain";
 import { useGoUp } from "../../hooks/useGoUp";
 import {
+    ActionRow,
     EmptyState,
     FocusCommandBar,
     FocusRoot,
@@ -32,31 +33,20 @@ import {
     useGlyphSet,
     type Command,
 } from "../../ui";
-import { useLiveGames, useRecentGames } from "./chain/data";
-import {
-    deviceStorage,
-    journalKills,
-    journalTurns,
-    readJournals,
-    type LocalJournal,
-} from "./journal";
+import { useLiveGames, useRecentFinished, useYourGames, type RecentRows } from "./chain/data";
+import { RECENT_CAP, RECENT_FIRST } from "./chain/recent";
+import { offlineLine, useReportError } from "./failure";
+import { forgetDeviceRecordings } from "./forget";
+import { recentQaRows, recentQaState } from "./qa";
 import "./watch.css";
 
-/** The growing test source is reachable only in QA builds. */
+/** QA builds only: the Recent matches fixture rows. */
 export const WATCH_QA = import.meta.env.VITE_WATCH_QA === "1";
 
+// Matches are no longer recorded on the device: what older builds kept there goes.
+forgetDeviceRecordings();
+
 const NAV: Command = { action: "nav", label: "Move", glyph: "ud" };
-
-const when = (ms: number) =>
-    new Date(ms).toLocaleString(undefined, {
-        month: "short",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-    });
-
-const resultOf = (j: LocalJournal) =>
-    j.result === "victory" ? "Won" : j.result === "defeat" ? "Lost" : "Unfinished";
 
 export default function WatchList() {
     const leave = useGoUp();
@@ -73,12 +63,12 @@ function Screen({ leave }: { leave: () => void }) {
     const count = live.data?.length ?? 0;
     return (
         <ScreenFrame
-            location={["Menu", "Watch"]}
+            location={["Menu", "Spectate"]}
             onLocation={leave}
             status={
                 live.data ? (
                     <StatusChip
-                        label="Live games"
+                        label="Live matches"
                         value={String(count)}
                         state={count ? "live" : "idle"}
                     />
@@ -89,17 +79,18 @@ function Screen({ leave }: { leave: () => void }) {
         >
             <div className="watch-hub">
                 <LivePanel live={live} />
-                <YourGames />
-                <DeviceGames />
+                <RecentPanel />
+                <MyMatches />
             </div>
         </ScreenFrame>
     );
 }
 
 function LivePanel({ live }: { live: ReturnType<typeof useLiveGames> }) {
+    useReportError(live.error, "could not load live matches");
     const navigate = useNavigate();
     const rows = live.data ?? [];
-    // The cursor starts on the live games, once they are read.
+    // The cursor starts on the live matches, once they are read.
     const store = useFocusStore();
     const placed = useRef(false);
     const first = live.isPending ? null : rows[0] ? `live-${rows[0].id}` : "live-empty";
@@ -110,14 +101,14 @@ function LivePanel({ live }: { live: ReturnType<typeof useLiveGames> }) {
     }, [first, store]);
     return (
         <Panel
-            label="Live games"
-            meta={live.data ? `${rows.length} on` : undefined}
+            label="Live matches"
+            meta={live.data ? `${rows.length} live` : undefined}
             className="watch-hub-live"
         >
             {live.isPending ? (
-                <p className="gui-note">Looking for games</p>
+                <p className="gui-note">Reading live matches</p>
             ) : rows.length ? (
-                <List label="Live games">
+                <List label="Live matches">
                     {rows.map((row) => (
                         <ListRow
                             key={row.id}
@@ -145,46 +136,46 @@ function LivePanel({ live }: { live: ReturnType<typeof useLiveGames> }) {
             ) : (
                 <EmptyState
                     id="live-empty"
+                    instant
                     group="live"
-                    headline={
-                        live.isError ? "The games could not be read" : "No games being played now"
-                    }
-                    action="Look again"
+                    headline={live.isError ? "Could not load live matches" : "No live matches"}
+                    action="Refresh"
                     commands={[
                         {
                             action: "confirm",
-                            label: "Look again",
+                            label: "Refresh",
                             tone: "primary",
                             run: () => void live.refetch(),
                         },
                     ]}
                 >
-                    {live.isError
-                        ? "The network did not answer."
-                        : "Rated games and open friendly games show here while they are played."}
+                    {live.isError ? offlineLine() : "Matches being played show here."}
                 </EmptyState>
             )}
         </Panel>
     );
 }
 
-function YourGames() {
+/** The signed-in player's own finished matches; signed out, the reason there are none. */
+function MyMatches() {
     const navigate = useNavigate();
     const owner = useCurrentAccount()?.address;
     const accountId = useAccountId().data;
-    const recent = useRecentGames(accountId, owner);
-    if (!owner || !accountId) return null;
-    const rows = recent.data ?? [];
+    const mine = useYourGames(accountId, owner);
+    useReportError(mine.error, "could not load your matches");
+    const rows = mine.data ?? [];
     return (
         <Panel
-            label="Your games"
-            meta={recent.data ? `${rows.length} recent` : undefined}
+            label="My matches"
+            meta={owner && accountId && mine.data ? `${rows.length} finished` : undefined}
             className="watch-hub-own"
         >
-            {recent.isPending ? (
-                <p className="gui-note">Reading your games</p>
+            {!owner || !accountId ? (
+                <p className="gui-note">Sign in to see your matches</p>
+            ) : mine.isPending ? (
+                <p className="gui-note">Reading my matches</p>
             ) : rows.length ? (
-                <List label="Your games">
+                <List label="My matches">
                     {rows.map((row) => (
                         <ListRow
                             key={row.gameId}
@@ -209,13 +200,30 @@ function YourGames() {
                         />
                     ))}
                 </List>
+            ) : mine.isError ? (
+                <EmptyState
+                    id="own-empty"
+                    instant
+                    group="own"
+                    headline="Could not load your matches"
+                    action="Refresh"
+                    commands={[
+                        {
+                            action: "confirm",
+                            label: "Refresh",
+                            tone: "primary",
+                            run: () => void mine.refetch(),
+                        },
+                    ]}
+                >
+                    {offlineLine()}
+                </EmptyState>
             ) : (
                 <EmptyState
                     id="own-empty"
+                    instant
                     group="own"
-                    headline={
-                        recent.isError ? "Your games could not be read" : "No finished games yet"
-                    }
+                    headline="No matches yet"
                     action="Play"
                     commands={[
                         {
@@ -226,78 +234,127 @@ function YourGames() {
                         },
                     ]}
                 >
-                    Games you finish are kept here to watch again.
+                    Your finished matches show here.
                 </EmptyState>
             )}
         </Panel>
     );
 }
 
-function DeviceGames() {
+/** The recent matches as the panel reads them: the network's, or a QA build's fixture rows. */
+function useRecentPanel(limit: number): {
+    data: RecentRows | undefined;
+    isPending: boolean;
+    isError: boolean;
+    error: unknown;
+    isFetching: boolean;
+    refetch: () => void;
+} {
+    const { search } = useLocation();
+    const qa = WATCH_QA ? recentQaState(search) : null;
+    const query = useRecentFinished(limit, !qa);
+    const [now] = useState(() => Date.now());
+    if (!qa) return { ...query, refetch: () => void query.refetch() };
+    return {
+        data: qa === "error" ? undefined : recentQaRows(qa, limit, now),
+        isPending: false,
+        isError: qa === "error",
+        error: null,
+        isFetching: false,
+        refetch: () => {},
+    };
+}
+
+/** The latest finished matches of anyone, newest first; each opens its replay. */
+function RecentPanel() {
     const navigate = useNavigate();
-    const [journals] = useState(() => readJournals(deviceStorage()));
+    const store = useFocusStore();
+    const [limit, setLimit] = useState(RECENT_FIRST);
+    const recent = useRecentPanel(limit);
+    useReportError(recent.error, "could not load recent matches");
+    const rows = recent.data?.rows ?? [];
+    // More stays, as a quiet line, until the rows it asked for are in.
+    const loadingMore = limit === RECENT_CAP && recent.isFetching && rows.length <= RECENT_FIRST;
+    const canMore = (limit < RECENT_CAP && !!recent.data?.more) || loadingMore;
+    // After More, the cursor goes on to the first of the rows it added.
+    const moved = useRef(false);
+    const next = rows[RECENT_FIRST];
+    useEffect(() => {
+        if (limit === RECENT_FIRST || moved.current || !next) return;
+        moved.current = true;
+        store.focus(`recent-${next.id}`, false);
+    }, [limit, next, store]);
     return (
         <Panel
-            label="On this device"
-            meta={journals.length ? `${journals.length} kept` : undefined}
-            className="watch-hub-device"
+            label="Recent matches"
+            meta={recent.data ? `${rows.length} finished` : undefined}
+            className="watch-hub-recent"
         >
-            {journals.length ? (
-                <List label="Recorded games">
-                    {journals.map((j) => {
-                        const name =
-                            scenarioById(j.scenario)?.briefing.title ?? "Unknown operation";
-                        const turns = journalTurns(j.events);
-                        const fell = journalKills(j.events);
-                        const commands: Command[] = [
-                            NAV,
-                            {
-                                action: "confirm",
-                                label: "Watch",
-                                tone: "primary",
-                                run: () => navigate(`/watch/local/${j.id}`),
-                            },
-                        ];
-                        if (WATCH_QA)
-                            commands.splice(1, 0, {
-                                action: "reset",
-                                label: "Watch as live",
-                                short: "Live",
-                                run: () => navigate(`/watch/qa/${j.id}`),
-                            });
-                        return (
-                            <ListRow
-                                key={j.id}
-                                id={`journal-${j.id}`}
-                                group="journals"
-                                name={name}
-                                kind={`${when(j.updatedAt)} · ${turns} turns · ${fell} fell`}
-                                tag={resultOf(j)}
-                                tagTone={j.result === "victory" ? "accent" : "dim"}
-                                title={name}
-                                hint={`${resultOf(j)} · ${turns} turns · ${fell} unit${fell === 1 ? "" : "s"} fell`}
-                                instant
-                                commands={commands}
-                            />
-                        );
-                    })}
+            {recent.isPending ? (
+                <p className="gui-note">Reading recent matches</p>
+            ) : rows.length ? (
+                <List label="Recent matches">
+                    {rows.map((row) => (
+                        <ListRow
+                            key={row.id}
+                            id={`recent-${row.id}`}
+                            group="recent"
+                            name={row.name}
+                            kind={row.kind}
+                            tag={row.tag}
+                            tagTone="dim"
+                            title={row.name}
+                            hint={row.hint}
+                            instant
+                            commands={[
+                                NAV,
+                                {
+                                    action: "confirm",
+                                    label: "Watch replay",
+                                    tone: "primary",
+                                    run: () => navigate(`/watch/${row.id}`),
+                                },
+                            ]}
+                        />
+                    ))}
+                    {canMore && (
+                        <ActionRow
+                            id="recent-more"
+                            group="recent"
+                            label={loadingMore ? "Reading more matches" : "More"}
+                            title="More matches"
+                            hint={`Up to ${RECENT_CAP} finished matches`}
+                            commands={[
+                                NAV,
+                                {
+                                    action: "confirm",
+                                    label: "More",
+                                    tone: "primary",
+                                    run: () => setLimit(RECENT_CAP),
+                                },
+                            ]}
+                        />
+                    )}
                 </List>
             ) : (
                 <EmptyState
-                    id="journals-empty"
-                    group="journals"
-                    headline="No recorded games"
-                    action="Play the demo"
+                    id="recent-empty"
+                    instant
+                    group="recent"
+                    headline={
+                        recent.isError ? "Could not load recent matches" : "No recent matches"
+                    }
+                    action="Refresh"
                     commands={[
                         {
                             action: "confirm",
-                            label: "Play the demo",
+                            label: "Refresh",
                             tone: "primary",
-                            run: () => navigate("/demo"),
+                            run: recent.refetch,
                         },
                     ]}
                 >
-                    Games played in the demo are kept here to watch again.
+                    {recent.isError ? offlineLine() : "Finished matches show here."}
                 </EmptyState>
             )}
         </Panel>

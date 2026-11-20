@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * The find-match screen's rules, apart from the screen: which phase the search
- * is in and what the one action on it is, and whether it can run yet. The screen (`FindMatch.tsx`) feeds
- * it from the account and the queue and draws what it says.
+ * The contract screen's rules (the queue for owned recruits), apart from the
+ * screen: which phase the search is in and what the one action on it is, and
+ * whether it can run yet. The screen (`FindMatch.tsx`) feeds it from the account
+ * and the queue and draws what it says.
  */
 
 export type FindState = {
@@ -15,6 +16,10 @@ export type FindState = {
     searching: boolean;
     /** Hosting or waiting in a friendly game's lobby: the queue refuses until it is left. */
     lobby?: boolean;
+    /** Searching the ranked queue: one search at a time. */
+    ranked?: boolean;
+    /** The last contract search ran out of time without a match; not yet read. */
+    expired?: boolean;
     /** Free recruits are being hired on the way into the queue. */
     hiring: boolean;
     /** Whole minutes of a matchmaking suspension left; 0 when none. */
@@ -36,6 +41,8 @@ export type FindPhase =
     | "signed-out"
     | "playing"
     | "lobby"
+    | "ranked"
+    | "expired"
     | "suspended"
     | "failed"
     | "timeout"
@@ -45,7 +52,8 @@ export type FindPhase =
     | "starting"
     | "idle";
 
-export type FindAction = "sign-in" | "resume" | "lobby" | "find" | "retry" | "cancel" | "menu";
+export type FindAction =
+    "sign-in" | "resume" | "lobby" | "ranked" | "find" | "retry" | "cancel" | "menu";
 
 export type FindView = {
     phase: FindPhase;
@@ -67,7 +75,7 @@ export function findView(s: FindState): FindView {
         return {
             phase: "signed-out",
             headline: "Sign in",
-            note: "A contract needs a player on file.",
+            note: "A contract match needs a player on file.",
             action: { id: "sign-in", label: "Sign in" },
             pending: false,
         };
@@ -83,8 +91,16 @@ export function findView(s: FindState): FindView {
         return {
             phase: "lobby",
             headline: "Friendly game open",
-            note: "Leave or close your friendly game to queue for a rated match.",
+            note: "Leave or close your friendly game to search for a contract match.",
             action: { id: "lobby", label: "Open friendly game" },
+            pending: false,
+        };
+    if (s.ranked)
+        return {
+            phase: "ranked",
+            headline: "Ranked search on",
+            note: "Cancel your ranked search to search for a contract match.",
+            action: { id: "ranked", label: "Open ranked search" },
             pending: false,
         };
     if (s.suspendedMin > 0)
@@ -99,7 +115,7 @@ export function findView(s: FindState): FindView {
         return {
             phase: "timeout",
             headline: "No match found",
-            note: "No opponent came in time. The squad leaves the queue.",
+            note: "No opponent came in time. Leave the queue and search again later.",
             action: {
                 id: "cancel",
                 label: "Leave the queue",
@@ -111,7 +127,7 @@ export function findView(s: FindState): FindView {
         return {
             phase: "searching",
             headline: "Finding match",
-            note: "Looking for an opponent. The search carries on while you use the menus.",
+            note: "Looking for an opponent for your recruits. The search carries on while you use the menus.",
             action: {
                 id: "cancel",
                 label: "Cancel search",
@@ -151,11 +167,19 @@ export function findView(s: FindState): FindView {
             action: { id: "cancel", label: "Cancel search", inactive: "Joining the queue" },
             pending: true,
         };
-    // Here without having asked for a search (a typed address, a reload): nothing is sent.
+    if (s.expired)
+        return {
+            phase: "expired",
+            headline: "No match found",
+            note: "The search ran out of time without an opponent.",
+            action: { id: "find", label: "Search again" },
+            pending: false,
+        };
+    // Here without having asked for a search (a card, a reload): nothing is sent yet.
     return {
         phase: "idle",
-        headline: "Find match",
-        note: "Queue your squad for a rated match.",
+        headline: "Contract",
+        note: "Your own recruits. They earn experience and can be lost. Rating does not change.",
         action: { id: "find", label: "Find match" },
         pending: false,
     };

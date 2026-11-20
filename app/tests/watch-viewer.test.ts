@@ -7,16 +7,6 @@ import { test } from "node:test";
 
 import type { GameEvent, PlaybackState } from "../../packages/engine/src/index.ts";
 import { COMBAT_ACTIONS, DEFAULT_COMBAT_BINDINGS } from "../../packages/engine/src/keys.ts";
-import { delayBefore, DEFAULT_PACE, initialRelease, paceOf } from "../src/features/watch/drip.ts";
-import {
-    journalKills,
-    journalTurns,
-    KEEP,
-    readJournals,
-    saveJournal,
-    type JournalStorage,
-    type LocalJournal,
-} from "../src/features/watch/journal.ts";
 import {
     banner,
     cycleSpeed,
@@ -95,84 +85,6 @@ function state(patch: Partial<PlaybackState> = {}): PlaybackState {
     };
 }
 
-function memory(): JournalStorage & { data: Map<string, string>; limit: number } {
-    const data = new Map<string, string>();
-    return {
-        data,
-        limit: Infinity,
-        getItem: (k) => data.get(k) ?? null,
-        setItem(k, v) {
-            if (v.length > this.limit) throw new Error("QuotaExceededError");
-            data.set(k, v);
-        },
-    };
-}
-
-const journal = (id: string, updatedAt: number, events = EVENTS): LocalJournal => ({
-    v: 1,
-    id,
-    scenario: "black-rain",
-    squad: null,
-    events,
-    startedAt: updatedAt - 1000,
-    updatedAt,
-    result: null,
-});
-
-// === Recorded games ===
-
-test("recorded games are kept newest first, replaced by id, at most KEEP", () => {
-    const store = memory();
-    for (let i = 0; i < KEEP + 2; i++) assert.ok(saveJournal(store, journal(`g${i}`, 1000 + i)));
-    let list = readJournals(store);
-    assert.equal(list.length, KEEP);
-    assert.equal(list[0].id, `g${KEEP + 1}`, "the newest first");
-    assert.ok(!list.some((j) => j.id === "g0" || j.id === "g1"), "the oldest went");
-    saveJournal(store, { ...journal("g3", 5000), result: "victory" });
-    list = readJournals(store);
-    assert.equal(list.filter((j) => j.id === "g3").length, 1, "the same game is one entry");
-    assert.equal(list[0].id, "g3");
-    assert.equal(list[0].result, "victory");
-});
-
-test("a full store drops the oldest recordings until the new one fits; junk reads as nothing", () => {
-    const store = memory();
-    saveJournal(store, journal("old", 1));
-    saveJournal(store, journal("older", 0));
-    store.limit = store.data.get("ghosts:watch:journals")!.length;
-    assert.ok(saveJournal(store, journal("new", 2)));
-    const ids = readJournals(store).map((j) => j.id);
-    assert.equal(ids[0], "new");
-    assert.ok(ids.length < 3);
-    store.data.set("ghosts:watch:journals", "{not json");
-    assert.deepEqual(readJournals(store), []);
-    store.data.set("ghosts:watch:journals", JSON.stringify([{ v: 2 }, journal("ok", 3)]));
-    assert.deepEqual(
-        readJournals(store).map((j) => j.id),
-        ["ok"],
-    );
-    assert.deepEqual(readJournals(null), []);
-});
-
-test("a recording's turns and the units that fell in it", () => {
-    assert.equal(journalTurns(EVENTS), 4);
-    assert.equal(journalKills(EVENTS), 2);
-    assert.equal(journalTurns([]), 1);
-});
-
-// === The growing test source's pace ===
-
-test("the growing source opens with its first turns out, then turns open slower than moves", () => {
-    assert.equal(initialRelease(EVENTS, 3), 5, "everything before the third turn opening");
-    assert.equal(initialRelease(EVENTS, 1), 1);
-    assert.equal(initialRelease(EVENTS, 9), EVENTS.length, "a short game is out at once");
-    assert.equal(delayBefore({ type: "turn", turn: 3 }, DEFAULT_PACE), DEFAULT_PACE.turn);
-    assert.equal(delayBefore(move("a"), DEFAULT_PACE), DEFAULT_PACE.step);
-    assert.ok(DEFAULT_PACE.turn > DEFAULT_PACE.step);
-    assert.ok(paceOf("fast").step < DEFAULT_PACE.step);
-    assert.deepEqual(paceOf(null), DEFAULT_PACE);
-});
-
 // === The viewer model ===
 
 test("speeds read as 0.5x to 4x and the control cycles through them", () => {
@@ -210,7 +122,7 @@ test("the scrubber: a pip per turn with its side, the viewer's place, the kills 
     assert.equal(pipTitle(pips[1], SIDES), "Turn 01 · Hostiles");
     assert.equal(pipHint(pips[1]), "1 unit fell");
     assert.equal(pipHint(pips[0]), "Nobody fell");
-    assert.match(pipHint(pips[3]), /being played/);
+    assert.match(pipHint(pips[3]), /Turn in play/);
     assert.equal(
         pipsOf(state()).some((p) => p.edge),
         false,
@@ -238,10 +150,10 @@ test("the banner names the winner, or why there is none, with the record in labe
     });
     assert.deepEqual(
         banner(
-            state({ finished: true, outcome: { winner: 0, reason: "Hostiles left the game" } }),
+            state({ finished: true, outcome: { winner: 0, reason: "Hostiles left the match" } }),
             SIDES,
         ),
-        { title: "Ghosts won", line: "Hostiles left the game · 2 turns · 2 units fell" },
+        { title: "Ghosts won", line: "Hostiles left the match · 2 turns · 2 units fell" },
         "a game won off the field says why",
     );
     assert.equal(
@@ -260,7 +172,7 @@ test("player-facing copy reads as finished: no preview, beta or soon", () => {
         ...pipsOf(state({ growing: true })).flatMap((p) => [pipTitle(p, SIDES), pipHint(p)]),
         JSON.stringify(liveChip(state({ growing: true, behind: 2 }))),
         JSON.stringify(banner(state({ finished: true, outcome: { winner: 0 } }), SIDES)),
-        readFileSync(new URL("../src/features/watch/WatchScreen.tsx", import.meta.url), "utf8"),
+        readFileSync(new URL("../src/features/watch/Viewer.tsx", import.meta.url), "utf8"),
         readFileSync(new URL("../src/features/watch/WatchList.tsx", import.meta.url), "utf8"),
     ].join(" ");
     assert.doesNotMatch(copy, /preview|beta|\bsoon\b|for now|mock/i);
@@ -413,8 +325,6 @@ test("a finished game puts its banner first: Watch again, then Leave, above the 
 });
 
 test("Back from a game in the viewer goes to the watch screen, and from there to the menu", () => {
-    assert.equal(parentOf("/watch/local/abc"), "/watch");
-    assert.equal(parentOf("/watch/qa/abc"), "/watch");
     assert.equal(parentOf(`/watch/0x${"a".repeat(64)}`), "/watch");
     assert.equal(parentOf("/watch"), "/");
 });

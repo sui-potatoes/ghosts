@@ -78,7 +78,8 @@ test("survivors gain the earned experience; a promotion is named", () => {
     const d = debriefOf(result({}));
     assert.equal(d.title, "Victory");
     assert.equal(d.tone, "win");
-    assert.deepEqual(d.rating, { before: 1500, after: 1516, delta: 16 });
+    // A contract game is unrated: its debrief shows no rating.
+    assert.equal(d.rating, null);
     assert.equal(d.replacement, null);
     const [vex, , kite] = d.plates;
     assert.ok(vex.kind === "home" && kite.kind === "home");
@@ -357,4 +358,87 @@ test("a won demo is a fulfilled contract with the fourth podium vacant", () => {
         d.plates.map((p) => p.kind),
         ["home", "vacant", "vacant", "vacant"],
     );
+});
+
+// === Ranked =================================================================
+
+const ranked = (over: Partial<MatchResult> = {}): MatchResult => ({
+    outcome: "victory",
+    earned: null,
+    rating: null,
+    squad: [
+        { objectId: "0x1", name: "Assault", rank: "Assault", xp: 0 },
+        { objectId: "0x2", name: "Sniper", rank: "Sniper", xp: 0 },
+        { objectId: "0x3", name: "Runner", rank: "Runner", xp: 0 },
+    ],
+    fallen: ["0x2"],
+    history: [
+        { $kind: "NextTurn", NextTurn: 3 },
+        { $kind: "UnitKIA", UnitKIA: ["0x2", 1, 1] },
+    ],
+    recruitsHome: null,
+    ranked: { size: 3, tier: "Contractor", change: { before: 1512, after: 1529, tier: null } },
+    ...over,
+});
+
+test("a ranked debrief: the rating from the account, no experience, nobody lost for good", () => {
+    const d = debriefOf(ranked());
+    assert.equal(d.title, "Victory");
+    assert.deepEqual(d.rating, { before: 1512, after: 1529, delta: 17 });
+    assert.deepEqual(d.lines, ["Ranked 3x3 · Contractor"]);
+    assert.equal(d.replacement, null);
+    for (const plate of d.plates) {
+        assert.equal(plate.kind, "home");
+        if (plate.kind !== "home") continue;
+        assert.equal(plate.gained, null);
+        assert.equal(plate.band, null);
+        assert.equal(plate.promoted, false);
+    }
+    const [, sniper, runner] = d.plates;
+    assert.ok(sniper.kind === "home" && runner.kind === "home");
+    assert.equal(sniper.hint, "Fell on turn 4");
+    assert.equal(runner.hint, "Standing at the end");
+    assert.equal(runner.rankAfter, "Runner");
+});
+
+test("a ranked loss and a new tier are said; an unread rating is not guessed", () => {
+    const down = debriefOf(
+        ranked({
+            outcome: "defeat",
+            ranked: {
+                size: 3,
+                tier: "Contractor",
+                change: { before: 1512, after: 1494, tier: null },
+            },
+        }),
+    );
+    assert.deepEqual(down.rating, { before: 1512, after: 1494, delta: -18 });
+    const up = debriefOf(
+        ranked({
+            ranked: {
+                size: 3,
+                tier: "Contractor",
+                change: {
+                    before: 1638,
+                    after: 1655,
+                    tier: { before: "Contractor", after: "Operative" },
+                },
+            },
+        }),
+    );
+    assert.deepEqual(up.lines, ["Ranked 3x3 · Contractor", "New tier: Operative"]);
+    assert.equal(
+        debriefOf(ranked({ ranked: { size: 3, tier: "Rookie", change: null } })).rating,
+        null,
+    );
+    const noShow = debriefOf(ranked({ outcome: "no-show", squad: [], fallen: [] }));
+    assert.match(noShow.note!, /Squad not shown in time/);
+    const d = debriefOf(ranked());
+    const copy = [
+        d.title,
+        d.note ?? "",
+        ...(d.lines ?? []),
+        ...d.plates.map((p) => ("hint" in p ? (p.hint ?? "") : "")),
+    ];
+    assert.doesNotMatch(copy.join(" "), /XP|experience|dog tag|Hire|recruit/i);
 });

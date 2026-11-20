@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * The find-match screen at `/find`, in the shared interface language. The
- * title opens it on the first press; the lookups and the queue transaction
- * happen here, with their state on screen. Back leaves it and the search
- * carries on (the title and the squad show it in their header).
+ * The contract screen at `/play/contract`, in the shared interface language: the
+ * queue for the player's own recruits, who earn experience and can be lost, with
+ * no rating at stake. The lookups and the queue transaction happen here, with
+ * their state on screen. Back leaves it and the search carries on (the title and
+ * the squad show it in their header).
  */
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -35,6 +36,8 @@ export type FindOps = {
     resume: () => void;
     /** To the friendly game the player is in. */
     lobby?: () => void;
+    /** To the ranked search the player is in. */
+    ranked?: () => void;
     leave: () => void;
 };
 
@@ -76,6 +79,7 @@ export function FindMatch({ ops }: { ops: FindOps }) {
         !state.hiring &&
         !state.playing &&
         !state.lobby &&
+        !state.ranked &&
         !state.error;
     const view = findView({ ...state, elapsedMs, starting });
 
@@ -83,6 +87,7 @@ export function FindMatch({ ops }: { ops: FindOps }) {
         "sign-in": ops.signIn,
         resume: ops.resume,
         lobby: ops.lobby ?? ops.leave,
+        ranked: ops.ranked ?? ops.leave,
         find: () => {
             setStarted(true);
             ops.find();
@@ -99,12 +104,12 @@ export function FindMatch({ ops }: { ops: FindOps }) {
     };
     const run = act[view.action.id];
 
-    const back: Command = { action: "back", label: "Menu", run: ops.leave };
+    const back: Command = { action: "back", label: "Back", run: ops.leave };
     const searching = state.searching;
     return (
         <FocusRoot back={back}>
             <ScreenFrame
-                location={["Menu", "Find match"]}
+                location={["Play", "Contract"]}
                 onLocation={ops.leave}
                 status={
                     <StatusChip
@@ -116,7 +121,7 @@ export function FindMatch({ ops }: { ops: FindOps }) {
                 columns="minmax(0, 480px)"
                 commands={<FocusCommandBar glyphs={glyphs} />}
             >
-                <Panel label="Matchmaking" className="gui-find-panel">
+                <Panel label="Contract" className="gui-find-panel">
                     <div className="gui-find-mark" data-pending={view.pending ? "" : undefined} />
                     <EmptyState
                         id="find-action"

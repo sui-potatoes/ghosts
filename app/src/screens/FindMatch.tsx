@@ -2,17 +2,23 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * `/find`: where Find Match lands at once. The lookups and the queue
- * transaction run here (`useMatchSearch().find`), their state drawn by
- * `src/features/find-match/`. A match found is entered by the shell's
- * matchmaking driver, from any screen.
+ * `/play/contract`: the queue for owned recruits (`useMatchSearch().find`), its
+ * state drawn by `src/features/find-match/`. A match found is entered by the
+ * shell's matchmaking driver, from any screen; a search the queue let go of is
+ * told here and never queued again without the player.
  */
 
 import { useCurrentAccount } from "@mysten/dapp-kit-react";
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { SEARCH_TIMEOUT_MS, useFundsWaiting, useMatchSearch } from "../chain";
+import {
+    acknowledgeExpired,
+    TICKET_TTL_MS,
+    useExpired,
+    useFundsWaiting,
+    useMatchSearch,
+} from "../chain";
 import { FindMatch } from "../features/find-match/FindMatch";
 import { useGoUp } from "../hooks/useGoUp";
 import { requestSignIn } from "../signIn";
@@ -20,6 +26,7 @@ import { requestSignIn } from "../signIn";
 export default function FindMatchScreen() {
     const account = useCurrentAccount();
     const match = useMatchSearch();
+    const expired = useExpired();
     const preparing = useFundsWaiting();
     const navigate = useNavigate();
     const leave = useGoUp();
@@ -35,8 +42,10 @@ export default function FindMatchScreen() {
                 state: {
                     signedIn: !!account,
                     playing: !!match.playing,
-                    searching: !!match.searching,
+                    searching: match.searching?.kind === "stakes",
                     lobby: !!match.lobby,
+                    ranked: match.searching?.kind === "ranked",
+                    expired: expired?.kind === "stakes",
                     hiring: match.hiring,
                     funding: preparing,
                     suspendedMin:
@@ -45,14 +54,19 @@ export default function FindMatchScreen() {
                             : 0,
                     busy: match.busy,
                     error: match.error || null,
-                    timeoutMs: SEARCH_TIMEOUT_MS,
+                    timeoutMs: TICKET_TTL_MS,
                 },
-                sinceMs: match.searching ? Number(match.searching.sinceMs) : null,
-                find: match.find,
+                sinceMs:
+                    match.searching?.kind === "stakes" ? Number(match.searching.sinceMs) : null,
+                find: () => {
+                    acknowledgeExpired();
+                    match.find();
+                },
                 cancel: match.cancel,
                 signIn: requestSignIn,
                 resume: () => navigate("/match"),
                 lobby: () => navigate("/play/friendly"),
+                ranked: () => navigate("/play/ranked"),
                 leave,
             }}
         />

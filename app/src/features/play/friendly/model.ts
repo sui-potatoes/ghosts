@@ -66,7 +66,7 @@ export type GateInput = {
     recruits: number;
     /** In a game (or a seat waits in one). */
     playing: boolean;
-    /** In the rated match queue. */
+    /** Searching a queue: ranked, or the contract queue. */
     queued: boolean;
     /** Whole minutes of a suspension left; 0 when none. */
     suspendedMin: number;
@@ -81,8 +81,8 @@ export function gateOf(s: GateInput): Gate | null {
         return { reason: "You are in a match", action: { id: "resume", label: "Resume match" } };
     if (s.queued)
         return {
-            reason: "You are in the match queue",
-            action: { id: "queue", label: "Match queue" },
+            reason: "Cancel your search first",
+            action: { id: "queue", label: "Open search" },
         };
     if (s.suspendedMin > 0) return { reason: `Suspended for ${s.suspendedMin} min` };
     if (!s.hasAccount || s.recruits === 0)

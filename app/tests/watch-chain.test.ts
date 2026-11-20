@@ -79,7 +79,7 @@ function game({
     history = [],
     turn = 0,
     state = { Playing: { startedMs: 1_000n, missed: [0, 0] } },
-    mode = { Rated: true },
+    mode = { Stakes: true },
 }: {
     units: Placed[];
     history?: unknown[];
@@ -378,7 +378,7 @@ test("every ending reads with who won and why", () => {
     assert.deepEqual(watchOutcome({ $kind: "Won", Won: B }, players, SIDES), { winner: 1 });
     assert.deepEqual(watchOutcome({ $kind: "Abandoned", Abandoned: A }, players, SIDES), {
         winner: 1,
-        reason: "Alpha left the game",
+        reason: "Alpha left the match",
     });
     assert.deepEqual(watchOutcome({ $kind: "Forfeited", Forfeited: B }, players, SIDES), {
         winner: 0,
@@ -407,7 +407,7 @@ test("a game deleted in the transaction that ended it: the calls and the sender 
         storyOutcome(playing, { calls, sender }, owners, SIDES);
     assert.deepEqual(end([CALLS.abandon, CALLS.complete], OWNER_B), {
         winner: 0,
-        reason: "Bravo left the game",
+        reason: "Bravo left the match",
     });
     // turn 2 is the first player's: their clock ran out three times
     assert.deepEqual(end([CALLS.nextTurn, CALLS.complete], OWNER_B), {
@@ -514,7 +514,7 @@ test("live: a game gone between two reads ends with its last version's records a
         ["shot:miss", "turn"],
         "the records the last poll missed",
     );
-    assert.deepEqual(source.outcome?.(), { winner: 1, reason: "Alpha left the game" });
+    assert.deepEqual(source.outcome?.(), { winner: 1, reason: "Alpha left the match" });
 });
 
 test("live: a game gone with nothing left to read still ends, plainly", async () => {
@@ -523,7 +523,7 @@ test("live: a game gone with nothing left to read still ends, plainly", async ()
     source.subscribe(() => {});
     await tick();
     assert.equal(source.ended(), true);
-    assert.deepEqual(source.outcome?.(), { winner: null, reason: "The game ended" });
+    assert.deepEqual(source.outcome?.(), { winner: null, reason: "The match ended" });
 });
 
 test("live: nobody reads while nobody follows, and a game already over opens ended", async () => {
@@ -729,8 +729,10 @@ test("the live list drops games that are over, deserted at the table, or past th
     assert.equal(offTheList(parse("2"), 5_000 + 90_001), true);
 });
 
-test("a friendly game from an invite code is not listed; rated and listed-lobby games are", () => {
+test("a friendly game from an invite code is not listed; queue games and listed-lobby games are", () => {
     assert.equal(listedBy([CALLS.findGame]), true);
+    assert.equal(listedBy([CALLS.findRanked]), true);
+    assert.equal(listedBy(["move_unit", CALLS.nextTurn]), false, "creates nothing");
     assert.equal(listedBy([CALLS.startListed]), true);
     assert.equal(listedBy([CALLS.joinProtected]), false);
     assert.equal(listedBy([]), false, "unknown: kept off the list");
@@ -747,12 +749,12 @@ test("a live row: both players with ratings, the mode, the turn a player sees an
     assert.deepEqual(row, {
         id: GAME,
         name: "Alpha vs Bravo",
-        kind: "Friendly · 3 a side · Turn 02 · Bravo to move",
+        kind: "Friendly 3x3 · Turn 02 · Bravo to move",
         hint: "Alpha rating 1512 · Bravo, no rating",
         tag: "Live",
     });
     assert.equal(roundOf({ turn: 0 }), 0);
-    assert.equal(modeText(parse("3")), "Rated");
+    assert.equal(modeText(parse("3")), "Contract");
     assert.equal(
         liveRow(
             GAME,

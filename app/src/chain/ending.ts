@@ -16,7 +16,7 @@ import type { ClientWithCoreApi } from "@mysten/sui/client";
 
 import type { ChainGame, Ending } from "./bcs.ts";
 import { activeSide, isDeploying, isOver, squadOf, type Outcome } from "./match-rules.ts";
-import { CALLS, MAX_TURNS } from "./watch-layout.ts";
+import { CALLS, ENDED_EVENT, GAME_ENDED_TYPE, MAX_TURNS } from "./watch-layout.ts";
 
 /** The transaction that wrapped a game up: who sent it and which `ghosts` calls it made, in order. */
 export type EndingTx = { sender: string; calls: readonly string[] };
@@ -138,4 +138,54 @@ export function endingOf(
     }
     if (calls.length === 0 || senderSide === null) return null;
     return { $kind: "Won", Won: player(senderSide) };
+}
+
+/** An event as a transaction carries it: its type and its BCS. */
+type TxEvent = { eventType: string; bcs: Uint8Array };
+
+const sameType = (a: string, b: string) => {
+    const [pa, ...rest] = a.split("::");
+    const [pb, ...restB] = b.split("::");
+    try {
+        return sameAddress(pa, pb) && rest.join("::") === restB.join("::");
+    } catch {
+        return false;
+    }
+};
+
+/**
+ * How a game ended, as `complete_game` announced it: the `GameEnded` of `gameId` among a
+ * transaction's events (`complete_game` emits it as it deletes the game). Null when the
+ * transaction has none for that game. This is the ending itself, not worked out.
+ */
+export function endingFromEvents(
+    events: readonly TxEvent[],
+    gameId: string,
+    type: string = GAME_ENDED_TYPE,
+): GameEnding | null {
+    for (const event of events) {
+        if (!sameType(event.eventType, type)) continue;
+        try {
+            const ended = ENDED_EVENT.parse(event.bcs);
+            if (sameAddress(ended.game, gameId)) return ended.ending;
+        } catch {
+            // not this layout: keep looking
+        }
+    }
+    return null;
+}
+
+/** The `GameEnded` of a game in the transaction that wrapped it up (`digest`); null when not there or not read. */
+export async function fetchGameEnded(
+    client: EndingClient,
+    digest: string,
+    gameId: string,
+): Promise<GameEnding | null> {
+    try {
+        const result = await client.core.getTransaction({ digest, include: { events: true } });
+        const events = (result.Transaction ?? result.FailedTransaction)?.events ?? [];
+        return endingFromEvents(events, gameId);
+    } catch {
+        return null;
+    }
 }

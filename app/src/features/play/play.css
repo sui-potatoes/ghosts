@@ -1,7 +1,7 @@
 /* Copyright (c) Sui Potatoes */
 /* SPDX-License-Identifier: MIT */
 
-/* The Play screen: three mode cards and Watch. Scoped by the gui-play prefix. */
+/* The Play screen: the mode cards, Demo and Spectate. Scoped by the gui-play prefix. */
 
 /* The body is a grid item of the frame: let it shrink below its content's width. */
 .gui-body:has(> .gui-play) {
@@ -21,11 +21,13 @@
 
 .gui-play-cards {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-auto-rows: minmax(0, 1fr);
     gap: calc(var(--u) * 4);
     min-height: 0;
     align-items: stretch;
-    max-height: 560px;
+    max-height: 640px;
+    height: 100%;
     align-self: center;
     width: 100%;
 }
@@ -44,10 +46,8 @@
     white-space: normal;
     text-align: left;
     overflow: hidden;
-    transition:
-        border-color 90ms linear,
-        background 90ms linear,
-        transform 90ms ease-out;
+    /* The fill and the colours switch in one frame with the cursor; only motion eases. */
+    transition: transform 90ms ease-out;
 }
 
 .gui-play-card[data-focused] {
@@ -59,7 +59,7 @@
     display: grid;
     place-items: center;
     flex: 0 1 auto;
-    height: clamp(96px, 30vh, 190px);
+    height: clamp(48px, 11vh, 110px);
     min-height: 0;
     color: var(--accent-color);
 }

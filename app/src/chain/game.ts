@@ -18,6 +18,7 @@ import { Game, Recruit, type ChainGame } from "./bcs";
 import type { Order } from "./fast-lane";
 import type { ChainRecruit } from "./ghosts";
 import { acceptSeat, type ChainSeat } from "./matchmaking";
+import { takeSeat } from "./ranked";
 import { useBcsObject } from "./objects";
 
 type Client = ReturnType<typeof useCurrentClient>;
@@ -248,14 +249,27 @@ export function nextTurnTx(gameId: string, accountId: string): Transaction {
 /** A seat in the game its player never accepted, and whose `Account` it is in. */
 export type PendingSeat = { accountId: string; seat: ChainSeat["ref"] };
 
+/** How a seat of the game is taken by someone wrapping it up: accepted, or in ranked taken without a squad. */
+function takePending(tx: Transaction, gameId: string, ranked: boolean, pending: PendingSeat) {
+    if (ranked) takeSeat(tx, gameId, pending.accountId, pending.seat);
+    else acceptSeat(tx, pending.accountId, pending.seat);
+}
+
 /**
- * Wrap up a game that is over: survivors go home, the result goes on
- * both scores, both `Account`s are `Idle` again, whoever misbehaved is suspended
- * and the `Game` is deleted. Anyone can send this; `players` are in the game's order.
- * A seat its player never accepted is accepted first: wrapping up needs both in.
+ * Wrap up a game that is over: survivors go home, a ranked result goes on both
+ * scores and ratings, both `Account`s are `Idle` again, whoever misbehaved is
+ * suspended and the `Game` is deleted. Anyone can send this; `players` are in the
+ * game's order, as drawn. A seat its player never took is taken first: wrapping up
+ * needs both in (a ranked seat with `take_seat`, past the reveal limit).
  */
-function completeGame(tx: Transaction, gameId: string, players: string[], pending: PendingSeat[]) {
-    for (const { accountId, seat } of pending) acceptSeat(tx, accountId, seat);
+function completeGame(
+    tx: Transaction,
+    gameId: string,
+    players: string[],
+    pending: PendingSeat[],
+    ranked: boolean,
+) {
+    for (const seat of pending) takePending(tx, gameId, ranked, seat);
     tx.moveCall({
         target: target("complete_game"),
         arguments: [
@@ -271,9 +285,10 @@ export function completeGameTx(
     gameId: string,
     players: string[],
     pending: PendingSeat[] = [],
+    ranked = false,
 ): Transaction {
     const tx = new Transaction();
-    completeGame(tx, gameId, players, pending);
+    completeGame(tx, gameId, players, pending, ranked);
     return tx;
 }
 
@@ -286,10 +301,11 @@ export function abandonGameTx(
     accountId: string,
     players: string[],
     pending: PendingSeat[] = [],
+    ranked = false,
 ): Transaction {
     const tx = new Transaction();
     const own = pending.filter((p) => p.accountId === accountId);
-    for (const { seat } of own) acceptSeat(tx, accountId, seat);
+    for (const seat of own) takePending(tx, gameId, ranked, seat);
     tx.moveCall({
         target: target("abandon_game"),
         arguments: [tx.object(gameId), tx.object(accountId)],
@@ -299,6 +315,7 @@ export function abandonGameTx(
         gameId,
         players,
         pending.filter((p) => p.accountId !== accountId),
+        ranked,
     );
     return tx;
 }

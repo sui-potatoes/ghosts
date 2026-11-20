@@ -6,10 +6,8 @@
  * observer>`), and over it the transport in the shared interface language.
  * The field plays a record source; the controls drive its playback: play and
  * pause, four speeds, previous and next turn, the scrubber's turns, restart,
- * and Live for a game still being played. `/watch/local/:id` replays a game
- * recorded on the device; `/watch/qa/:id` (QA builds) plays one as if live;
- * `/watch/<game>` (`ChainWatch.tsx`) a game on chain, live or finished, in the
- * same `Viewer`.
+ * and Live for a match still being played. `/watch/<game>` (`ChainWatch.tsx`)
+ * opens a match on chain, live or finished, in this `Viewer`.
  *
  * Input: the cursor runs over the transport (arrows, d-pad, mouse, touch);
  * the bumpers step turns and the triggers the speed; the keyboard's own keys
@@ -17,28 +15,18 @@
  * a game: the engine takes those keys first.
  */
 
-import {
-    deployedIntel,
-    Encounter,
-    type IntelSource,
-    type Playback,
-    type RecordSource,
-} from "@ghosts/engine";
+import { Encounter, type IntelSource, type Playback, type RecordSource } from "@ghosts/engine";
 import type { Recruit } from "@ghosts/squad/types";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { useParams } from "react-router-dom";
 
 import { engineSettings } from "../../engineSettings";
-import { useGoUp } from "../../hooks/useGoUp";
 import { onKeys } from "../../input";
 import {
     ContextMenu,
-    EmptyState,
     FocusCommandBar,
     FocusCursor,
     FocusRoot,
     Glyph,
-    ScreenFrame,
     useFocusable,
     useFocusStore,
     useGlyphSet,
@@ -46,8 +34,6 @@ import {
     type GlyphSet,
 } from "../../ui";
 import type { Action } from "../../settings/keys";
-import { paceOf } from "./drip";
-import { deviceStorage, journalById, type LocalJournal } from "./journal";
 import {
     banner,
     cycleSpeed,
@@ -65,44 +51,9 @@ import {
     type Pip,
     type WatchKey,
 } from "./model";
-import { growingSource, localSource, type GrowingSource } from "./sources";
 import "./watch.css";
 
-type Opened = { journal: LocalJournal; source: RecordSource | GrowingSource };
-
-function open(id: string | undefined, live: boolean): Opened | null {
-    const journal = id ? journalById(deviceStorage(), id) : null;
-    if (!journal) return null;
-    const pace = paceOf(new URLSearchParams(window.location.search).get("pace"));
-    const source = live ? growingSource(journal, pace) : localSource(journal);
-    return source && { journal, source };
-}
-
-export default function WatchScreen({ live = false }: { live?: boolean }) {
-    const { id } = useParams();
-    // Read once per mount: the recording as it was when the viewer opened.
-    const [opened] = useState(() => open(id, live));
-    const leave = useGoUp();
-
-    // A growing source starts with the viewer's playback; it stops when the viewer goes.
-    useEffect(() => {
-        const source = opened?.source;
-        if (source && "stop" in source) return () => source.stop();
-    }, [opened]);
-
-    if (!opened) return <Missing leave={leave} />;
-    return (
-        <Viewer
-            source={opened.source}
-            start={live ? "live" : "start"}
-            squad={opened.journal.squad}
-            intel={deployedIntel}
-            leave={leave}
-        />
-    );
-}
-
-/** What the viewer can do besides playing: share the game, open its replay once it is over. */
+/** What the viewer can do besides playing: share the match, open its replay once it is over. */
 export interface ViewerExtras {
     /** The link to share (`/watch/<game>`): a Copy link control. */
     link?: string;
@@ -305,7 +256,7 @@ function Controls({
         [playback],
     );
 
-    // The game over: the cursor goes to the banner's first choice.
+    // The match over: the cursor goes to the banner's first choice.
     const firstChoice = extras.onReplay ? "watch-replay" : "watch-again";
     useEffect(() => {
         if (state.finished) store.focus(firstChoice, false);
@@ -316,7 +267,7 @@ function Controls({
         <main ref={root} className="gui ui-zoom watch-hud">
             {end && (
                 <section className="watch-banner" aria-live="polite">
-                    <span className="watch-banner-eyebrow">Game over</span>
+                    <span className="watch-banner-eyebrow">Match over</span>
                     <strong className="watch-banner-title">{end.title}</strong>
                     <span className="watch-banner-line">{end.line}</span>
                     <div className="watch-banner-actions">
@@ -325,7 +276,6 @@ function Controls({
                                 id="watch-replay"
                                 group="banner"
                                 title="Watch replay"
-                                hint="The whole game from its first turn"
                                 commands={[
                                     {
                                         action: "confirm",
@@ -343,7 +293,6 @@ function Controls({
                             id="watch-again"
                             group="banner"
                             title="Watch again"
-                            hint="From the first turn"
                             commands={[
                                 {
                                     action: "confirm",
@@ -373,7 +322,6 @@ function Controls({
                         id="watch-prev"
                         group="transport"
                         title="Previous turn"
-                        hint="The start of the turn before"
                         commands={[
                             {
                                 action: "confirm",
@@ -389,11 +337,6 @@ function Controls({
                         id="watch-play"
                         group="transport"
                         title={state.playing ? "Pause" : "Play"}
-                        hint={
-                            state.playing
-                                ? "Holds the field; the camera stays free"
-                                : "Plays from here"
-                        }
                         commands={[
                             restart,
                             {
@@ -411,7 +354,6 @@ function Controls({
                         id="watch-next"
                         group="transport"
                         title="Next turn"
-                        hint="The start of the turn after"
                         commands={[
                             {
                                 action: "confirm",
@@ -427,7 +369,6 @@ function Controls({
                         id="watch-speed"
                         group="transport"
                         title={`Speed ${speedLabel(state.speed)}`}
-                        hint={state.speed > 1 ? "Voices are off above 1x" : "0.5x, 1x, 2x or 4x"}
                         commands={[
                             { action: "reset", label: "1x", run: () => playback.setSpeed(1) },
                             {
@@ -451,7 +392,6 @@ function Controls({
                             id="watch-back"
                             group="scrubber"
                             title={`Back ${JUMP_TURNS} turns`}
-                            hint={`${strip.earlier} earlier goes off the strip`}
                             commands={[
                                 {
                                     action: "confirm",
@@ -478,7 +418,6 @@ function Controls({
                             id="watch-ahead"
                             group="scrubber"
                             title={`Ahead ${JUMP_TURNS} turns`}
-                            hint={`${strip.later} later goes off the strip`}
                             commands={[
                                 {
                                     action: "confirm",
@@ -496,15 +435,14 @@ function Controls({
                     <TransportButton
                         id="watch-live"
                         group="live"
-                        title={chip.following ? "Following the game" : "Back to live"}
-                        hint={chip.following ? "New events play as they happen" : chip.hint}
+                        title={chip.following ? "Following the match" : "Back to live"}
                         tone={chip.following ? "following" : "live"}
                         commands={[
                             chip.following
                                 ? {
                                       action: "confirm",
                                       label: "Live",
-                                      deny: "Already following the game",
+                                      deny: "Already following the match",
                                   }
                                 : {
                                       action: "confirm",
@@ -524,11 +462,7 @@ function Controls({
                         id="watch-link"
                         group="share"
                         title={copied === "copied" ? "Link copied" : "Copy link"}
-                        hint={
-                            copied === "refused"
-                                ? link
-                                : "A link that opens this game, live or as a replay"
-                        }
+                        hint={copied === "refused" ? link : undefined}
                         tone={copied === "copied" ? "following" : undefined}
                         commands={[{ action: "confirm", label: "Copy link", run: copy }]}
                     >
@@ -562,36 +496,4 @@ function copyByHand(text: string): boolean {
     } finally {
         field.remove();
     }
-}
-
-/** The recording asked for is not on this device (cleared, or a link from elsewhere). */
-function Missing({ leave }: { leave: () => void }) {
-    return (
-        <FocusRoot back={{ action: "back", label: "Leave", run: leave }}>
-            <MissingFrame leave={leave} />
-        </FocusRoot>
-    );
-}
-
-function MissingFrame({ leave }: { leave: () => void }) {
-    const glyphs = useGlyphSet();
-    return (
-        <ScreenFrame
-            location={["Watch", "Recording"]}
-            onLocation={leave}
-            commands={<FocusCommandBar glyphs={glyphs} />}
-        >
-            <EmptyState
-                id="watch-missing"
-                group="missing"
-                headline="This recording is not on this device"
-                action="Recorded games"
-                commands={[
-                    { action: "confirm", label: "Recorded games", tone: "primary", run: leave },
-                ]}
-            >
-                Recordings stay on the device they were played on.
-            </EmptyState>
-        </ScreenFrame>
-    );
 }

@@ -26,7 +26,8 @@ import {
     type Command,
 } from "../../ui";
 import { openChainGame, readGameNow, type ChainOpened } from "./chain/data";
-import { Viewer } from "./WatchScreen";
+import { offlineLine, useReportError } from "./failure";
+import { Viewer } from "./Viewer";
 import "./watch.css";
 
 /** How often a game still picking squads is read. */
@@ -47,15 +48,17 @@ export default function ChainWatch() {
         retry: 1,
     });
 
+    useReportError(opened.error, "could not load the match");
+
     if (opened.isPending) return <LoadingSpinner />;
     if (opened.isError)
         return (
             <Notice
                 leave={leave}
-                headline="This game could not be read"
-                line="The network did not answer."
+                headline="Could not load this match"
+                line={offlineLine()}
                 action={{
-                    label: "Try again",
+                    label: "Refresh",
                     run: () =>
                         void queryClient.resetQueries({ queryKey: ["watch", "open", gameId] }),
                 }}
@@ -95,14 +98,14 @@ export default function ChainWatch() {
                 <Notice
                     leave={leave}
                     headline="This replay is no longer available"
-                    line="The network no longer keeps this game's history."
+                    line="Its history is no longer kept."
                 />
             );
         case "missing":
             return (
                 <Notice
                     leave={leave}
-                    headline="There is no game at this link"
+                    headline="There is no match at this link"
                     line="Check the link and try again."
                 />
             );
@@ -162,7 +165,7 @@ function Notice({
 }: {
     leave: () => void;
     headline: string;
-    line: string;
+    line: string | null;
     action?: { label: string; run: () => void };
 }) {
     return (
@@ -180,7 +183,7 @@ function NoticeFrame({
 }: {
     leave: () => void;
     headline: string;
-    line: string;
+    line: string | null;
     action?: { label: string; run: () => void };
 }) {
     const glyphs = useGlyphSet();
@@ -188,21 +191,22 @@ function NoticeFrame({
     const commands: Command[] = action
         ? [
               { action: "confirm", label: action.label, tone: "primary", run: action.run },
-              { action: "reset", label: "Watch screen", run: () => navigate("/watch") },
+              { action: "reset", label: "Spectate", run: () => navigate("/watch") },
           ]
-        : [{ action: "confirm", label: "Watch screen", tone: "primary", run: leave }];
+        : [{ action: "confirm", label: "Spectate", tone: "primary", run: leave }];
     return (
         <ScreenFrame
-            location={["Watch", "Game"]}
+            location={["Spectate", "Match"]}
             onLocation={leave}
             columns="minmax(0, 560px)"
             commands={<FocusCommandBar glyphs={glyphs} />}
         >
             <EmptyState
                 id="watch-notice"
+                instant
                 group="notice"
                 headline={headline}
-                action={action?.label ?? "Watch screen"}
+                action={action?.label ?? "Spectate"}
                 commands={commands}
             >
                 {line}

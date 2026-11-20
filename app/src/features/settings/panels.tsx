@@ -33,8 +33,9 @@ import {
     type PadCombatAction,
 } from "@ghosts/engine/keys";
 
-import { budgetOf, tierOf } from "../play/economy";
-import { DEFAULT_RATING, resetDeny, resetRating, useRating } from "../play/rating";
+import { economyRules as economyRulesNow, sizeOpen } from "../play/economy";
+import { DEFAULT_RATING } from "../play/rating";
+import { useRatingRecord, type RatingRecord } from "./rating-qa";
 import { previewDialogue, previewEffect } from "../../audio";
 import type { SessionTermination } from "../../chain";
 import { usePad } from "../../components/PadHints";
@@ -75,7 +76,7 @@ import {
     type PANEL_KEYS,
 } from "./model";
 import { KeyCaps, PadCaps, ValueRow } from "./parts";
-import { SettingsFrame, useSettingsContext, type Line } from "./SettingsView";
+import { SettingsFrame, useSettingsContext, type Line } from "./frame";
 
 /** One column from the left edge; the rest of the page stays free. */
 const ONE = "minmax(0, 640px) minmax(0, 1fr)";
@@ -192,27 +193,32 @@ export function PlayerPanel() {
     const { account, inMatch } = useSettingsContext();
     const [renaming, setRenaming] = useState(false);
     const [resetting, setResetting] = useState(false);
-    const rating = useRating();
-    const signedIn = !!account.address;
+    const record = useRatingRecord(!!inMatch);
+    const signedIn = record.signedIn;
     const label = signedIn ? "Player" : "Rating";
     return (
         <SettingsFrame
             columns={TWO}
-            status={account.namePending && <StatusChip label="Name" value="Saving" state="busy" />}
+            status={
+                <>
+                    {account.namePending && <StatusChip label="Name" value="Saving" state="busy" />}
+                    {record.busy && <StatusChip label="Rating" value="Resetting" state="busy" />}
+                </>
+            }
             overlay={
                 renaming ? (
                     <NamePrompt close={() => setRenaming(false)} />
                 ) : (
                     resetting &&
-                    !resetDeny(rating, !!inMatch) && (
-                        <ResetPrompt rating={rating.rating} close={() => setResetting(false)} />
+                    !record.deny && (
+                        <ResetPrompt record={record} close={() => setResetting(false)} />
                     )
                 )
             }
         >
             <Panel label={label} className="gset-c2 gset-fit gset-rank">
                 <List label={label}>
-                    {signedIn && (
+                    {signedIn && account.address && (
                         <ValueRow
                             id="player-name"
                             group="rows"
@@ -239,17 +245,21 @@ export function PlayerPanel() {
                             ]}
                         />
                     )}
-                    <RatingResetRow inMatch={!!inMatch} open={() => setResetting(true)} />
+                    {signedIn && (
+                        <RatingResetRow deny={record.deny} open={() => setResetting(true)} />
+                    )}
                 </List>
             </Panel>
-            <RankedBlock />
+            <RankedBlock record={record} />
         </SettingsFrame>
     );
 }
 
-/** A one-press row that opens the reset prompt; inactive from the default down and during a match. */
-function RatingResetRow({ inMatch, open }: { inMatch: boolean; open: () => void }) {
-    const deny = resetDeny(useRating(), inMatch);
+/**
+ * A one-press row that opens the reset prompt; inactive at or below the default,
+ * during a match or a search, and inside the cooldown, with the reason.
+ */
+function RatingResetRow({ deny, open }: { deny: string | undefined; open: () => void }) {
     return (
         <ActionRow
             id="rating-reset"
@@ -257,88 +267,77 @@ function RatingResetRow({ inMatch, open }: { inMatch: boolean; open: () => void 
             label={`Reset rating to ${DEFAULT_RATING}`}
             tone="danger"
             title={`Reset rating to ${DEFAULT_RATING}`}
-            hint={`Your rating goes back to ${DEFAULT_RATING}; peak and record stay`}
+            hint={deny ?? `Your rating goes back to ${DEFAULT_RATING}; your record stays`}
             instant
             commands={[{ action: "confirm", label: "Reset", tone: "danger", deny, run: open }]}
         />
     );
 }
 
-/** The reset question; Reset writes the rating and closes. */
-function ResetPrompt({ rating, close }: { rating: number; close: () => void }) {
+/** The reset question; Reset sends it and closes once it is taken. */
+function ResetPrompt({ record, close }: { record: RatingRecord; close: () => void }) {
     const { glyphs } = useSettingsContext();
+    const days = Math.round(economyDays());
     return (
         <Prompt
             id="prompt-rating-reset"
             tone="danger"
             eyebrow="Rating"
             title="Reset your rating?"
-            hint={`Rating ${rating} returns to ${DEFAULT_RATING}`}
+            hint={`Rating ${record.standing.rating} returns to ${DEFAULT_RATING}`}
+            lines={
+                record.error
+                    ? [["Refused", <span className="gset-warn">{record.error}</span>]]
+                    : undefined
+            }
             confirm={{
                 label: "Reset",
+                deny: record.busy ? "Saving" : undefined,
                 run: () => {
-                    resetRating();
-                    close();
+                    void record.reset().then((done) => done && close());
                 },
             }}
             cancel={{ label: "Keep rating", run: close }}
             glyphs={glyphs}
         >
-            {`Your rating returns to ${DEFAULT_RATING}. Peak and record stay.`}
+            {`Your rating returns to ${DEFAULT_RATING}. Your record stays. The next reset is possible in ${days} ${days === 1 ? "day" : "days"}.`}
         </Prompt>
     );
 }
 
-const signed = (n: number) => (n > 0 ? `+${n}` : String(n));
+/** Days between rating resets, as the rules have it. */
+const economyDays = () => economyRulesNow().resetCooldownMs / 86_400_000;
 
 /**
- * The mock ranked rating on this device: tier, rating, record and what the tier
- * buys. Not the on-chain rating: that one would be read from the account
- * (`useMatchSearch` / `acc.rating()`) and shown beside this, never merged in.
+ * The ranked record from the player's `Account`: tier, rating, ranked games, what
+ * each size builds to, placement and resets. The contract keeps no peak.
  */
-function RankedBlock() {
-    const r = useRating();
-    const tier = tierOf(r.rating);
+function RankedBlock({ record }: { record: RatingRecord }) {
+    const r = record.standing;
     const rate = r.games ? `${Math.round((r.wins / r.games) * 100)}%` : "-";
-    const streak = r.streak > 0 ? `W${r.streak}` : r.streak < 0 ? `L${-r.streak}` : "-";
-    const recent = r.history.slice(0, 5);
     return (
         <Panel variant="ghost" label="Ranked" className="gset-c3 gset-fit gset-rank">
-            <ReadoutLine label="Tier">{tier.name}</ReadoutLine>
-            <ReadoutLine label="Rating">{r.rating}</ReadoutLine>
-            <ReadoutLine label="Peak">{r.peak}</ReadoutLine>
-            <ReadoutLine label="Games">{r.games}</ReadoutLine>
-            <ReadoutLine label="Won / lost">
-                {r.wins} / {r.losses}
-            </ReadoutLine>
-            <ReadoutLine label="Win rate" empty={!r.games}>
-                {rate}
-            </ReadoutLine>
-            <ReadoutLine label="Streak" empty={!r.streak}>
-                {streak}
-            </ReadoutLine>
-            <ReadoutLine label="Budget 3x3">{`${budgetOf(r.rating, "3x3")} cr`}</ReadoutLine>
-            <ReadoutLine label="Budget 4x4">{`${budgetOf(r.rating, "4x4")} cr`}</ReadoutLine>
-            {r.resets > 0 && <ReadoutLine label="Resets">{r.resets}</ReadoutLine>}
-            {recent.length > 0 && (
-                <>
-                    <Eyebrow>Recent</Eyebrow>
-                    {recent.map((e) =>
-                        e.kind === "game" ? (
-                            <ReadoutLine
-                                key={`${e.at}-${e.rating}`}
-                                label={`${e.won ? "Won" : "Lost"} vs ${e.opponent}`}
-                            >
-                                {`${signed(e.delta)} rating`}
-                            </ReadoutLine>
-                        ) : (
-                            <ReadoutLine key={`${e.at}-reset`} label="Reset">
-                                {e.from} to {e.to}
-                            </ReadoutLine>
-                        ),
-                    )}
-                </>
-            )}
+            <div className="gset-readouts">
+                <ReadoutLine label="Tier">{r.tier.name}</ReadoutLine>
+                <ReadoutLine label="Rating">{r.rating}</ReadoutLine>
+                <ReadoutLine label="Ranked games">{r.games}</ReadoutLine>
+                <ReadoutLine label="Record" empty={!r.games}>
+                    {`${r.wins} won · ${r.losses} lost · ${r.draws} drawn`}
+                </ReadoutLine>
+                <ReadoutLine label="Win rate" empty={!r.games}>
+                    {rate}
+                </ReadoutLine>
+                <ReadoutLine label="Budget 3x3">{`${r.budgets["3x3"]} cr`}</ReadoutLine>
+                <ReadoutLine label="Budget 4x4" empty={!sizeOpen("4x4")}>
+                    {sizeOpen("4x4") ? `${r.budgets["4x4"]} cr` : "No level yet"}
+                </ReadoutLine>
+                {r.placementLeft > 0 && (
+                    <ReadoutLine label="Placement left">
+                        {`${r.placementLeft} ${r.placementLeft === 1 ? "game" : "games"}`}
+                    </ReadoutLine>
+                )}
+                <ReadoutLine label="Resets">{r.resets}</ReadoutLine>
+            </div>
         </Panel>
     );
 }

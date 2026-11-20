@@ -26,7 +26,6 @@ import {
     choosePreset,
     emptySaved,
     fitSquad,
-    opponentFor,
     parseSaved,
     pickSections,
     serializeSaved,
@@ -209,15 +208,6 @@ test("tier notice appears only when the tier changed", () => {
     assert.ok(text && text.includes(String(budgetOf(RATING, "3x3"))));
 });
 
-test("an opponent is near the player's rating", () => {
-    for (const roll of [0, 0.5, 0.999]) {
-        const o = opponentFor(RATING, () => roll);
-        assert.ok(o.name.length > 0);
-        assert.ok(Math.abs(o.rating - RATING) <= 60);
-    }
-    assert.ok(opponentFor(10, () => 0).rating >= 0);
-});
-
 test("what the tier has not unlocked is listed after the rest, with its reason, and cannot be chosen", () => {
     const rookie = TIERS[0];
     const rating = rookie.min;
@@ -386,4 +376,158 @@ test("the builder brings its own styles, so any screen that mounts it is laid ou
         bar,
         /\.gui-bar-commands \.gui-cmd\[data-action="confirm"\] \{\s+flex: none;\s+width:/,
     );
+});
+
+// === The search and the wait (search.ts, waiting.ts, field.ts) ==============
+
+import { FIXTURES as F } from "./ranked-fixtures.ts";
+import { Game } from "../src/chain/bcs.ts";
+import { encodeSquad, hexOf } from "../src/chain/ranked-core.ts";
+import { applyRules, DEFAULT_RULES, sizeOpen } from "../src/features/play/economy/index.ts";
+import { mapUnits, rankedField } from "../src/features/play/ranked/field.ts";
+import {
+    findAction,
+    searchCard,
+    type RankedSearchState,
+} from "../src/features/play/ranked/search.ts";
+import { waitingView } from "../src/features/play/ranked/waiting.ts";
+
+const SEARCH: RankedSearchState = {
+    signedIn: true,
+    loading: false,
+    playing: false,
+    lobby: false,
+    contract: false,
+    suspendedMin: 0,
+    open: true,
+    mode: "3x3",
+    phase: "idle",
+    sinceMs: null,
+    now: 1_000_000,
+    ttlMs: 300_000,
+    busy: false,
+    tier: "Contractor",
+    units: 3,
+    spent: 145,
+};
+const search = (patch: Partial<RankedSearchState> = {}) => ({ ...SEARCH, ...patch });
+
+test("Find ranked match: sign in, resume, or why it waits, in the order that matters", () => {
+    assert.equal(findAction(search({ signedIn: false }), null).id, "sign-in");
+    assert.equal(findAction(search({ playing: true }), null).id, "resume");
+    assert.equal(findAction(search(), null).deny, undefined);
+    assert.equal(findAction(search(), "Unit 2: needs a weapon.").deny, "Unit 2: needs a weapon.");
+    assert.equal(findAction(search({ lobby: true }), null).deny, "Leave your friendly game first");
+    assert.equal(
+        findAction(search({ contract: true }), null).deny,
+        "Cancel your contract search first",
+    );
+    assert.equal(findAction(search({ suspendedMin: 2 }), null).deny, "Suspended for 2 min");
+    assert.equal(findAction(search({ open: false, mode: "4x4" }), null).deny, "No 4x4 level yet");
+    assert.equal(
+        findAction(search({ phase: "searching" }), null).deny,
+        "Searching for an opponent",
+    );
+    // A refusal or a search that ran out leaves the way open to try again.
+    assert.equal(findAction(search({ phase: "refused" }), null).deny, undefined);
+    assert.equal(findAction(search({ phase: "expired" }), null).deny, undefined);
+});
+
+test("the search card: joining, waiting with its clock, past the ticket, ran out, refused", () => {
+    assert.equal(searchCard(search()), null);
+    const checking = searchCard(search({ phase: "checking" }))!;
+    assert.equal(checking.back.deny, "Checking the queue");
+    const joining = searchCard(search({ phase: "sending-wait" }))!;
+    assert.equal(joining.title, "Joining the queue");
+    assert.equal(joining.pending, true);
+    assert.equal(searchCard(search({ phase: "sending-match" }))!.title, "Opponent found");
+    const waiting = searchCard(search({ phase: "searching", sinceMs: 1_000_000 - 84_000 }))!;
+    assert.equal(waiting.title, "Looking for an opponent");
+    assert.deepEqual(waiting.lines[0], ["Searching", "1:24"]);
+    assert.deepEqual(waiting.lines[2], ["Squad", "3 units · 145 cr"]);
+    // Cancel works as soon as the account shows the search; only another write holds it.
+    assert.equal(waiting.back.label, "Cancel search");
+    assert.equal(waiting.back.deny, undefined);
+    assert.equal(
+        searchCard(search({ phase: "searching", sinceMs: 0, busy: true }))!.back.deny,
+        "Saving a change",
+    );
+    const out = searchCard(search({ phase: "searching", sinceMs: 1_000_000 - 301_000 }))!;
+    assert.equal(out.phase, "timeout");
+    assert.equal(out.back.label, "Leave the queue");
+    const expired = searchCard(search({ phase: "expired" }))!;
+    assert.equal(expired.title, "No match found");
+    assert.equal(expired.primary?.label, "Search again");
+    assert.equal(expired.back.label, "Close");
+    const refused = searchCard(
+        search({ phase: "refused", line: "The squad costs more than your budget" }),
+    )!;
+    assert.deepEqual(refused.lines, [["Reason", "The squad costs more than your budget"]]);
+    for (const phase of ["checking", "sending-wait", "searching", "expired", "refused"] as const) {
+        const card = searchCard(search({ phase, sinceMs: 0 }))!;
+        assert.doesNotMatch(
+            [card.title, card.hint, ...card.lines.flat()].join(" "),
+            /chain|testnet|mock|preview|!/i,
+        );
+    }
+});
+
+test("4x4 is offered only once the rules give it a level", () => {
+    applyRules(DEFAULT_RULES);
+    assert.equal(sizeOpen("3x3"), true);
+    assert.equal(sizeOpen("4x4"), false);
+    applyRules({ ...DEFAULT_RULES, open: { "3x3": true, "4x4": true } });
+    assert.equal(sizeOpen("4x4"), true);
+    applyRules(DEFAULT_RULES);
+});
+
+test("the wait before a ranked match: showing the squad, lost, late, the finder's wait", () => {
+    const at = { deadline: 60_000, now: 15_000, title: "Ranked 3x3", busy: false };
+    const revealing = waitingView({ ...at, phase: "revealing" });
+    assert.equal(revealing.headline, "Opponent found");
+    assert.equal(revealing.left, "0:45");
+    assert.equal(revealing.pending, true);
+    assert.equal(
+        waitingView({ ...at, phase: "lost" }).note,
+        "This squad can no longer be shown; the match is forfeit.",
+    );
+    assert.equal(waitingView({ ...at, phase: "late" }).left, null);
+    assert.match(
+        waitingView({ ...at, phase: "failed", line: "The time to show the squad is over" }).note,
+        /time to show/,
+    );
+    const waiting = waitingView({ ...at, phase: "waiting" });
+    assert.match(waiting.note, /Waiting for your opponent/);
+    const called = waitingView({ ...at, now: 61_000, phase: "called" });
+    assert.equal(called.action?.label, "Continue");
+    assert.equal(
+        waitingView({ ...at, phase: "called", busy: true }).action?.deny,
+        "Saving a change",
+    );
+});
+
+test("a ranked field: the player's names from the builder, the opponent's by role, both dressed", () => {
+    const game = Game.parse(Buffer.from(F.gameRankedPlaying, "hex"));
+    const side = game.players.indexOf(`0x${F.aliceId}`);
+    const alice = encodeSquad([
+        { weapon: "rifle-1", armor: "armor-2", utility: "frag-grenade" },
+        { weapon: "rifle-2", armor: "armor-1", utility: null },
+        { weapon: "rifle-1", armor: "armor-1", utility: "flashbang" },
+    ]);
+    const field = rankedField(game, game.id, side, mapUnits(game), {
+        squad: hexOf(alice),
+        labels: ["Breacher", "Sniper · modified", "Scout"],
+    });
+    assert.deepEqual([...field.mine.names].sort(), ["Breacher", "Scout", "Sniper"]);
+    assert.deepEqual([...field.theirs.names].sort(), ["Assault", "Assault-2", "Runner"]);
+    assert.equal(field.squad.length, 3);
+    assert.deepEqual(
+        field.squad.map((r) => r.id),
+        field.mine.ids,
+    );
+    assert.equal(field.looks.size, 3);
+    for (const id of field.theirs.ids) assert.ok(field.names.get(id));
+    // Without the builder's names (another device), its own units go by role too.
+    const bare = rankedField(game, game.id, side, mapUnits(game), null);
+    assert.deepEqual([...bare.mine.names].sort(), ["Assault", "Recruit", "Sniper"]);
 });

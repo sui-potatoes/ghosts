@@ -3,9 +3,10 @@
 
 /**
  * The watch screen's lists as plain data: which shared games count as live
- * (not over, not abandoned at the table, not from an invite), what a live row
- * and a finished-game row say, and whether a game is watched live or as a
- * replay. No React, no client: tested in `tests/watch-chain.test.ts`.
+ * (not over, not abandoned at the table, not from an invite), what a live row,
+ * a finished game of anyone's and one of the player's own say, and whether a
+ * game is watched live or as a replay. No React, no client: tested in
+ * `tests/watch-chain.test.ts` and `tests/watch-recent.test.ts`.
  */
 
 import type { ChainGame } from "../../../chain/bcs.ts";
@@ -15,9 +16,16 @@ import {
     deployUntil,
     friendlySize,
     isOver,
+    rankedOf,
     turnStartedAt,
 } from "../../../chain/match-rules.ts";
-import { CALLS, STALE_DEPLOYING_MS, STALE_PLAYING_MS } from "../../../chain/watch-layout.ts";
+import {
+    CREATION_CALLS,
+    STALE_DEPLOYING_MS,
+    STALE_PLAYING_MS,
+} from "../../../chain/watch-layout.ts";
+import { TIERS } from "../../play/economy/index.ts";
+import type { RecentGame } from "./recent.ts";
 
 /** A game nobody is playing any more, or one waiting only to be wrapped up: off the live list. */
 export function offTheList(game: ChainGame, now: number): boolean {
@@ -27,12 +35,16 @@ export function offTheList(game: ChainGame, now: number): boolean {
 }
 
 /** A friendly game is listed only when it came from a listed lobby; which one, its creating transaction says. */
-export const needsCreationCheck = (game: ChainGame) => friendlySize(game) !== null;
+export const needsCreationCheck = (game: Pick<ChainGame, "mode">) => friendlySize(game) !== null;
 
-/** Whether a game's creating transaction makes it public: a rated game, or a friendly one from a listed lobby. */
+/**
+ * Whether a game's creating transaction makes it public: a queue game (contract or
+ * ranked), or a friendly one from a listed lobby; one from an invite code is not, and
+ * neither is a transaction that creates nothing the viewer knows.
+ */
 export function listedBy(calls: readonly string[]): boolean {
-    if (calls.includes(CALLS.joinProtected)) return false;
-    return calls.includes(CALLS.startListed) || calls.includes(CALLS.findGame);
+    const created = calls.filter((call) => call in CREATION_CALLS);
+    return created.length > 0 && created.every((call) => CREATION_CALLS[call]);
 }
 
 /** A player as a row shows them. */
@@ -46,10 +58,18 @@ export const roundOf = (game: Pick<ChainGame, "turn">) => Math.floor(game.turn /
 
 const two = (n: number) => String(n).padStart(2, "0");
 
-/** A game's mode in words: rated, or friendly with its squad size. */
+/** A tier's name by its index in the rules; a tier this build does not know by its number. */
+export const tierName = (tier: number) => TIERS[tier]?.name ?? `Tier ${tier + 1}`;
+
+/**
+ * A game's mode in words: "Ranked 3x3 · Contractor" (squad size a side, and the tier
+ * it was played at), "Friendly 3x3", or "Contract" (owned recruits from the queue).
+ */
 export function modeText(game: Pick<ChainGame, "mode">): string {
+    const ranked = rankedOf(game);
+    if (ranked) return `Ranked ${ranked.size}x${ranked.size} · ${tierName(ranked.tier)}`;
     const size = friendlySize(game);
-    return size === null ? "Rated" : `Friendly · ${size} a side`;
+    return size === null ? "Contract" : `Friendly ${size}x${size}`;
 }
 
 export interface LiveRow {
@@ -105,6 +125,97 @@ export function resultFor(
         case "NobodyShowed":
             return "No show";
     }
+}
+
+/** Who is named in an ending, by side: null for an account that is neither player. */
+const sideIn = (players: readonly string[], account: string) => {
+    const at = players.indexOf(account);
+    return at === 0 || at === 1 ? at : null;
+};
+
+/**
+ * How a finished game ended, for anyone: a short tag (who won, or "Draw") and the line
+ * that says how, in plain words, with the players' names (`names` by side).
+ */
+export function endingText(
+    ending: GameEnding | null,
+    players: readonly string[],
+    names: readonly [string, string],
+): { tag: string; line: string } {
+    if (!ending) return { tag: "Ended", line: "The match ended" };
+    const name = (account: string) => {
+        const side = sideIn(players, account);
+        return side === null ? "A player" : names[side];
+    };
+    const other = (account: string) => {
+        const side = sideIn(players, account);
+        return side === null ? "The other player" : names[1 - side];
+    };
+    switch (ending.$kind) {
+        case "Won":
+            return { tag: `${name(ending.Won)} won`, line: "Won on the field" };
+        case "Draw":
+            return { tag: "Draw", line: "Both squads fell" };
+        case "Stalemate":
+            return { tag: "Draw", line: "No winner by the turn limit" };
+        case "Abandoned":
+            return {
+                tag: `${other(ending.Abandoned)} won`,
+                line: `${name(ending.Abandoned)} left the match`,
+            };
+        case "Forfeited":
+            return {
+                tag: `${other(ending.Forfeited)} won`,
+                line: `${name(ending.Forfeited)} missed 3 turns in a row`,
+            };
+        case "NoShow":
+            return {
+                tag: `${other(ending.NoShow)} won`,
+                line: `${name(ending.NoShow)} did not deploy a squad`,
+            };
+        case "NobodyShowed":
+            return { tag: "No match", line: "Neither side deployed a squad" };
+    }
+}
+
+/** How long ago something happened, in words: "Just now", "12 min ago", "3 h ago", "2 days ago". */
+export function agoText(at: number, now: number): string {
+    const minutes = Math.floor(Math.max(0, now - at) / 60_000);
+    if (minutes < 1) return "Just now";
+    if (minutes < 60) return `${minutes} min ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours} h ago`;
+    const days = Math.floor(hours / 24);
+    return days === 1 ? "1 day ago" : `${days} days ago`;
+}
+
+/** A recent game as a row: both players, the mode, how it ended and how long ago. */
+export interface RecentRow {
+    id: string;
+    name: string;
+    kind: string;
+    tag: string;
+    hint: string;
+}
+
+/** A recent game as its row says it, with the players' names and when it ended. */
+export function recentRow(
+    game: Pick<RecentGame, "gameId" | "players" | "mode" | "ending">,
+    names: readonly [string, string],
+    endedAt: number | undefined,
+    now: number,
+): RecentRow {
+    const ended = endingText(game.ending, game.players, names);
+    const mode = modeText(game);
+    const ago = endedAt === undefined ? null : agoText(endedAt, now);
+    const how = game.ending.$kind === "Won" ? ended.tag : ended.line;
+    return {
+        id: game.gameId,
+        name: `${names[0]} vs ${names[1]}`,
+        kind: `${mode} · ${how}`,
+        tag: ago ?? ended.tag,
+        hint: [ended.tag, ended.line, ago].filter(Boolean).join(" · "),
+    };
 }
 
 /** Whether a game is opened live (it still exists) or as a replay. */

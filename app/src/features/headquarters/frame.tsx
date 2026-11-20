@@ -11,7 +11,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { SEARCH_TIMEOUT_MS } from "../../chain";
+import { TICKET_TTL_MS } from "../../chain";
 import { useGoUp } from "../../hooks/useGoUp";
 import {
     barOf,
@@ -241,9 +241,9 @@ export function MatchChip({ match, onSearch }: { match: MatchState; onSearch: ()
 function MatchChipBody({ match, onClick }: { match: MatchState; onClick: () => void }) {
     const now = useNow();
     const elapsed = match.searchingSince === null ? 0 : now - match.searchingSince;
-    const seconds = Math.floor(Math.min(Math.max(0, elapsed), SEARCH_TIMEOUT_MS) / 1000);
+    const seconds = Math.floor(Math.min(Math.max(0, elapsed), TICKET_TTL_MS) / 1000);
     const clock = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
-    const timedOut = elapsed > SEARCH_TIMEOUT_MS;
+    const timedOut = elapsed > TICKET_TTL_MS;
     return (
         <button
             type="button"

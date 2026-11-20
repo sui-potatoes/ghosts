@@ -4,8 +4,11 @@
 /**
  * The viewer's reads, in the app: the archive (gRPC, then GraphQL), the
  * players of a game (their `Account`s and assigned names), the live games
- * list and the signed-in player's finished games, and opening one game as a
- * record source the viewer plays. No wallet is needed for any of it.
+ * list (the latest `GameStarted` events and a read of each game; the shared
+ * `Game` objects by type over GraphQL when the events cannot be read), the
+ * recent games of anyone (`GameEnded` joined with `GameStarted`), the
+ * signed-in player's finished games, and opening one game as a record source
+ * the viewer plays. No wallet is needed for any of it.
  */
 
 import {
@@ -20,24 +23,25 @@ import type { Recruit as LocalRecruit } from "@ghosts/squad/types";
 import { useCurrentClient } from "@mysten/dapp-kit-react";
 import { ObjectError } from "@mysten/sui/client";
 import { fromBase64 } from "@mysten/sui/utils";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 
 import {
     archive,
     grpcArchive,
     graphArchive,
     type GameArchive,
+    type GameTx,
     type LedgerReader,
 } from "../../../chain/archive";
 import { Account, Game, type ChainGame } from "../../../chain/bcs";
-import { endingOf } from "../../../chain/ending";
+import { endingOf, fetchGameEnded, type GameEnding } from "../../../chain/ending";
 import { fetchGameRecruits } from "../../../chain/game";
 import { graphql, sharedOfType } from "../../../chain/graphql";
 import { chainUnitIntel } from "../../../chain/intel";
-import { deployUntil, unitsOnMap } from "../../../chain/match-rules";
+import { deployUntil, isRanked, unitsOnMap } from "../../../chain/match-rules";
 import type { UnitLook } from "../../../chain/match-scene";
 import { assignedName } from "../../../chain/names";
-import { GAME_TYPE } from "../../../chain/watch-layout";
+import { GAME_ENDED_TYPE, GAME_STARTED_TYPE, GAME_TYPE } from "../../../chain/watch-layout";
 import { defaultName } from "../../../player/name";
 import { toLocalRecruits } from "../../headquarters/mapping";
 import {
@@ -47,12 +51,34 @@ import {
     modeText,
     needsCreationCheck,
     offTheList,
+    recentRow,
     resultFor,
     type LiveRow,
+    type RecentRow,
     type PlayerLine,
 } from "./list";
 import { liveSource } from "./live";
-import { EventFeed, readStory, storyOutcome, watchStart, type GameRecruit } from "./record";
+import {
+    decodeEnded,
+    decodeStarted,
+    latestStarts,
+    recentGames,
+    RECENT_FIRST,
+    type EndedEvent,
+    type EventPage,
+    type GameOrigin,
+    type RawEvent,
+    type StartedEvent,
+} from "./recent";
+import {
+    EventFeed,
+    rankedDress,
+    readStory,
+    storyOutcome,
+    watchOutcome,
+    watchStart,
+    type GameRecruit,
+} from "./record";
 
 type Client = ReturnType<typeof useCurrentClient>;
 
@@ -118,10 +144,41 @@ export async function readGameNow(client: Client, gameId: string): Promise<Chain
     }
 }
 
+// === Events ===
+
+/** Events of one type, newest first, a page from `cursor` (gRPC `ListEvents`, filtered by event type). */
+async function eventPage<T>(
+    client: Client,
+    type: string,
+    cursor: string | null,
+    decode: (raw: RawEvent) => T | null,
+): Promise<EventPage<T>> {
+    const page = await client.core.listEvents({
+        filter: { eventType: type },
+        order: "descending",
+        limit: 50,
+        ...(cursor ? { before: cursor } : {}),
+    });
+    return {
+        items: page.events.flatMap((event) => {
+            const decoded = decode(event);
+            return decoded ? [decoded] : [];
+        }),
+        next: page.hasNextPage ? page.endCursor : null,
+    };
+}
+
+const startedPage = (client: Client, cursor: string | null): Promise<EventPage<StartedEvent>> =>
+    eventPage(client, GAME_STARTED_TYPE, cursor, decodeStarted);
+const endedPage = (client: Client, cursor: string | null): Promise<EventPage<EndedEvent>> =>
+    eventPage(client, GAME_ENDED_TYPE, cursor, decodeEnded);
+
 // === The live list ===
 
 /** How often the live list is read again while it is open. */
 const LIST_REFRESH_MS = 15_000;
+/** How many of the latest started games are read for whether they are still played. */
+const LIVE_STARTS = 150;
 
 /** Whether a friendly game came from a listed lobby: its creating transaction, read once. */
 const listedCache = new Map<string, Promise<boolean>>();
@@ -138,6 +195,53 @@ function listed(arch: GameArchive, gameId: string): Promise<boolean> {
     return known;
 }
 
+type Shown = { id: string; game: ChainGame };
+
+/**
+ * The live games by their start events: the latest listed starts, each game read now;
+ * one deleted (wrapped up) or off the list is not live. Throws when the events cannot
+ * be read.
+ */
+async function liveByEvents(client: Client, now: number): Promise<Shown[]> {
+    const starts = await latestStarts((cursor) => startedPage(client, cursor), LIVE_STARTS);
+    if (!starts.length) return [];
+    const { objects } = await client.core.getObjects({
+        objectIds: starts.map((s) => s.gameId),
+        include: { content: true },
+    });
+    return starts.flatMap((start, i) => {
+        const object = objects[i];
+        if (!object || object instanceof Error) return [];
+        try {
+            const game = Game.parse(object.content);
+            return offTheList(game, now) ? [] : [{ id: start.gameId, game }];
+        } catch {
+            return [];
+        }
+    });
+}
+
+/** The live games by type over GraphQL, the shared `Game`s: a friendly one's listing from its creating call. */
+async function liveByType(client: Client, now: number): Promise<Shown[]> {
+    const arch = archiveOf(client);
+    const shared = await sharedOfType(graphql(), GAME_TYPE);
+    const games = shared.flatMap(({ address, bcs }) => {
+        try {
+            const game = Game.parse(fromBase64(bcs));
+            return offTheList(game, now) ? [] : [{ id: address, game }];
+        } catch {
+            return [];
+        }
+    });
+    return (
+        await Promise.all(
+            games.map(async (g) =>
+                !needsCreationCheck(g.game) || (await listed(arch, g.id)) ? g : null,
+            ),
+        )
+    ).filter((g) => g !== null);
+}
+
 /** The games being played now that anyone may watch, newest turn first. */
 export function useLiveGames() {
     const client = useCurrentClient();
@@ -147,23 +251,7 @@ export function useLiveGames() {
         refetchOnWindowFocus: true,
         queryFn: async (): Promise<LiveRow[]> => {
             const now = Date.now();
-            const arch = archiveOf(client);
-            const shared = await sharedOfType(graphql(), GAME_TYPE);
-            const games = shared.flatMap(({ address, bcs }) => {
-                try {
-                    const game = Game.parse(fromBase64(bcs));
-                    return offTheList(game, now) ? [] : [{ id: address, game }];
-                } catch {
-                    return [];
-                }
-            });
-            const shown = (
-                await Promise.all(
-                    games.map(async (g) =>
-                        !needsCreationCheck(g.game) || (await listed(arch, g.id)) ? g : null,
-                    ),
-                )
-            ).filter((g) => g !== null);
+            const shown = await liveByEvents(client, now).catch(() => liveByType(client, now));
             const players = await fetchPlayers(client, [
                 ...new Set(shown.flatMap((g) => g.game.players)),
             ]);
@@ -175,6 +263,125 @@ export function useLiveGames() {
                 .map(({ id, game }) =>
                     liveRow(id, game, [line(game.players[0]), line(game.players[1])]),
                 );
+        },
+    });
+}
+
+// === Recent games of anyone ===
+
+/** How often the recent games are read again while the list is open. */
+const RECENT_REFRESH_MS = 60_000;
+
+export type { RecentRow };
+
+export interface RecentRows {
+    rows: RecentRow[];
+    /** More finished games are there past the last row. */
+    more: boolean;
+}
+
+/** A game's players and mode from its creating transaction: its first version, and its calls for the listing. */
+async function originOf(arch: GameArchive, gameId: string): Promise<GameOrigin | null> {
+    const txs = await arch.transactions(gameId, 1);
+    const created = txs?.[0];
+    if (!created || created.before !== undefined || !created.after) return null;
+    const bytes = await arch.objectAt(gameId, created.after);
+    if (!bytes) return null;
+    const game = Game.parse(bytes);
+    return { players: game.players, mode: game.mode, listed: listedBy(created.calls) };
+}
+
+/** When transactions ran, by digest: one batch read; a digest not served is left out. */
+async function timesOf(client: Client, digests: string[]): Promise<Map<string, number>> {
+    const out = new Map<string, number>();
+    const ledger = (client as unknown as BatchReader).ledgerService;
+    for (let i = 0; i < digests.length; i += 50) {
+        const batch = digests.slice(i, i + 50);
+        try {
+            const { response } = await ledger.batchGetTransactions({
+                digests: batch,
+                readMask: { paths: ["digest", "timestamp"] },
+            });
+            response.transactions.forEach((result, j) => {
+                const tx =
+                    result.result.oneofKind === "transaction" ? result.result.transaction : null;
+                const seconds = tx?.timestamp?.seconds;
+                if (seconds !== undefined)
+                    out.set(
+                        batch[j],
+                        Number(seconds) * 1000 + Math.floor((tx?.timestamp?.nanos ?? 0) / 1e6),
+                    );
+            });
+        } catch {
+            // no times for this batch: the rows show without them
+        }
+    }
+    return out;
+}
+
+/** The part of `SuiGrpcClient` the times are read through. */
+interface BatchReader {
+    ledgerService: {
+        batchGetTransactions(input: { digests: string[]; readMask: { paths: string[] } }): Promise<{
+            response: {
+                transactions: {
+                    result:
+                        | {
+                              oneofKind: "transaction";
+                              transaction: { timestamp?: { seconds?: bigint; nanos?: number } };
+                          }
+                        | { oneofKind: "error" | undefined };
+                }[];
+            };
+        }>;
+    };
+}
+
+/**
+ * The latest finished games anyone may watch, newest first: `limit` rows (25 at first,
+ * 50 with More), refreshed while the list is open and when the window comes back.
+ */
+export function useRecentFinished(limit: number = RECENT_FIRST, enabled = true) {
+    const client = useCurrentClient();
+    return useQuery({
+        queryKey: ["watch", "recent-all", limit],
+        enabled,
+        refetchInterval: RECENT_REFRESH_MS,
+        refetchOnWindowFocus: true,
+        placeholderData: keepPreviousData,
+        queryFn: async (): Promise<RecentRows> => {
+            const arch = archiveOf(client);
+            const { games, more } = await recentGames(
+                {
+                    ended: (cursor) => endedPage(client, cursor),
+                    started: (cursor) => startedPage(client, cursor),
+                    origin: (gameId) => originOf(arch, gameId),
+                },
+                limit,
+            );
+            const [players, times] = await Promise.all([
+                fetchPlayers(client, [...new Set(games.flatMap((g) => g.players))]),
+                timesOf(
+                    client,
+                    games.map((g) => g.digest),
+                ),
+            ]);
+            const nameOf = new Map(players.map((p) => [p.accountId, p.name]));
+            const now = Date.now();
+            return {
+                rows: games.map((game) =>
+                    recentRow(
+                        game,
+                        [
+                            nameOf.get(game.players[0]) ?? "A player",
+                            nameOf.get(game.players[1]) ?? "A player",
+                        ],
+                        times.get(game.digest),
+                        now,
+                    ),
+                ),
+                more,
+            };
         },
     });
 }
@@ -201,7 +408,7 @@ const when = (ms: number) =>
 const RECENT = 8;
 
 /** The signed-in player's finished games, newest first: each one's opponent and how it ended for them. */
-export function useRecentGames(accountId: string | null | undefined, owner: string | undefined) {
+export function useYourGames(accountId: string | null | undefined, owner: string | undefined) {
     const client = useCurrentClient();
     return useQuery({
         queryKey: ["watch", "recent", accountId],
@@ -212,9 +419,12 @@ export function useRecentGames(accountId: string | null | undefined, owner: stri
             const finished = (await arch.finished(accountId!, RECENT)) ?? [];
             const games = await Promise.all(
                 finished.map(async (f) => {
-                    const bytes = await arch.objectAt(f.gameId, f.version).catch(() => null);
+                    const [bytes, announced] = await Promise.all([
+                        arch.objectAt(f.gameId, f.version).catch(() => null),
+                        fetchGameEnded(client, f.digest, f.gameId),
+                    ]);
                     try {
-                        return bytes ? { f, game: Game.parse(bytes) } : null;
+                        return bytes ? { f, game: Game.parse(bytes), announced } : null;
                     } catch {
                         return null;
                     }
@@ -227,11 +437,13 @@ export function useRecentGames(accountId: string | null | undefined, owner: stri
                 ),
             ]);
             const nameOfAccount = new Map(opponents.map((p) => [p.accountId, p.name]));
-            return known.map(({ f, game }) => {
+            return known.map(({ f, game, announced }) => {
                 const side = game.players.indexOf(accountId!);
                 const sender =
                     owner && f.sender.toLowerCase() === owner.toLowerCase() ? side : 1 - side;
-                const result = resultFor(endingOf(game, f, sender), game.players, side);
+                // The ending `complete_game` announced; worked out from its calls when unread.
+                const ending = announced ?? endingOf(game, f, sender);
+                const result = resultFor(ending, game.players, side);
                 const opponent = nameOfAccount.get(game.players[1 - side]) ?? "A player";
                 return {
                     gameId: f.gameId,
@@ -288,23 +500,38 @@ export async function openChainGame(
     })) as unknown as readonly [WatchSide, WatchSide];
     const owners = players.map((p) => p.owner);
 
+    // How a deleted game ended, as its `GameEnded` says, by the deleting transaction;
+    // worked out from that transaction's calls when the event cannot be read.
+    const announced = new Map<string, GameEnding | null>();
+    const readEnding = async (tx: GameTx | null) => {
+        if (tx && !announced.has(tx.digest))
+            announced.set(tx.digest, await fetchGameEnded(client, tx.digest, gameId));
+    };
+    const outcome = (last: ChainGame, tx: GameTx | null) => {
+        const ending = tx ? announced.get(tx.digest) : null;
+        return ending
+            ? watchOutcome(ending, last.players, sides)
+            : storyOutcome(last, tx, owners, sides);
+    };
+
     if (story.kind === "deploying")
         return { kind: "deploying", gameId, until: deployUntil(game), sides };
     if (story.kind === "unplayed") {
-        const outcome = storyOutcome(game, story.endTx, owners, sides);
+        await readEnding(story.endTx);
+        const ended = outcome(game, story.endTx);
         return {
             kind: "unplayed",
             gameId,
             title:
-                outcome?.winner != null
-                    ? `${sides[outcome.winner].name} won`
-                    : "No game was played",
-            line: outcome?.reason ?? "The game ended before play started",
+                ended?.winner != null ? `${sides[ended.winner].name} won` : "No match was played",
+            line: ended?.reason ?? "The match ended before play started",
         };
     }
 
+    // A ranked game has no recruits: its units are named and dressed from their loadouts.
+    const ranked = isRanked(story.first);
     let recruits: GameRecruit[] = story.recruits;
-    if (!recruits.length && current)
+    if (!ranked && !recruits.length && current)
         recruits = await fetchGameRecruits(
             client,
             current.recruits.id,
@@ -312,25 +539,24 @@ export async function openChainGame(
         ).catch(() => []);
     const recruitById = new Map(recruits.map((r) => [r.objectId, r]));
     const leaderOf = (side: number) => recruits.filter((r) => r.leader === game.players[side]);
-    const squad = toLocalRecruits(leaderOf(0));
-    const looks = new Map<string, UnitLook>(
-        toLocalRecruits(leaderOf(1)).map((r) => [
-            r.id,
-            { appearance: r.appearance, armor: r.equipment.armor },
-        ]),
-    );
-    const start = watchStart(
-        blackRain,
-        story.first,
-        new Map(recruits.map((r) => [r.objectId, r.metadata.name])),
-        looks,
-    );
+    const dress = ranked
+        ? rankedDress(story.first, gameId)
+        : {
+              names: new Map(recruits.map((r) => [r.objectId, r.metadata.name])),
+              squad: toLocalRecruits(leaderOf(0)),
+              looks: new Map<string, UnitLook>(
+                  toLocalRecruits(leaderOf(1)).map((r) => [
+                      r.id,
+                      { appearance: r.appearance, armor: r.equipment.armor },
+                  ]),
+              ),
+          };
+    const squad = dress.squad;
+    const start = watchStart(blackRain, story.first, dress.names, dress.looks);
     const feed = new EventFeed(start, story.first, (scenario) => replayEncounter(scenario, []));
     const startUnits = new Map(unitsOnMap(story.first).map(({ unit }) => [unit.recruit, unit]));
     const intel: IntelSource = (unit, base) =>
         chainUnitIntel(base, recruitById.get(unit.id), startUnits.get(unit.id));
-    const outcome = (last: ChainGame, tx: Parameters<typeof storyOutcome>[1]) =>
-        storyOutcome(last, tx, owners, sides);
 
     if (!story.finished && current) {
         const source = liveSource(
@@ -342,8 +568,10 @@ export async function openChainGame(
                     for (let attempt = 0; attempt < 4; attempt++) {
                         const gone = await readStory(arch, gameId, null);
                         const done = gone.kind === "played" || gone.kind === "unplayed";
-                        if (done && (gone.endTx || attempt === 3))
+                        if (done && (gone.endTx || attempt === 3)) {
+                            await readEnding(gone.endTx);
                             return { last: gone.last, tx: gone.endTx };
+                        }
                         await new Promise((resolve) => setTimeout(resolve, 1000));
                     }
                     return null;
@@ -365,6 +593,7 @@ export async function openChainGame(
     }
 
     feed.take(story.last);
+    await readEnding(story.endTx);
     const end = outcome(story.last, story.endTx);
     const source = recordedSource({
         scenario: start.scenario,

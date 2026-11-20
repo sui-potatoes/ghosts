@@ -12,7 +12,7 @@
  * (the survivors are not home yet), then Continue to the menu; Watch replay
  * opens the game in the viewer. Back leaves for
  * the menu too (`useGoUp`: hierarchical, see `routes.ts`). There is no
- * "play again" here: a new match starts from the menu's Find Match.
+ * "play again" here: a new match starts from Play.
  */
 
 import { useMemo, useState } from "react";

@@ -28,17 +28,16 @@ const Demo = lazy(() => import("./screens/Demo"));
 const Match = lazy(() => import("./screens/Match"));
 // The level editor brings three.js and the full asset catalog.
 const Editor = lazy(() => import("./screens/Editor"));
-// Play modes: the cards are light; the squad builder and the mock match load with their routes.
+// Play modes: the cards are light; the squad builder loads with its route.
 const PlayScreen = lazy(() => import("./features/play/PlayScreen"));
 const RankedScreen = lazy(() =>
     import("./features/play/ranked").then((m) => ({ default: m.RankedScreen })),
 );
+const DemoScreen = lazy(() =>
+    import("./features/play/demo").then((m) => ({ default: m.DemoScreen })),
+);
 const FriendlyScreen = lazy(() =>
     import("./features/play/friendly").then((m) => ({ default: m.FriendlyScreen })),
-);
-// The mock match is an encounter too: three.js and the combat assets come with it.
-const MockMatchScreen = lazy(() =>
-    import("./features/play/match").then((m) => ({ default: m.MockMatchScreen })),
 );
 // A design sample of the shared menu language; no menu entry, no account.
 const UiSample = lazy(() => import("./features/ui-sample/UiSample"));
@@ -56,17 +55,23 @@ const FindQa = import.meta.env.VITE_FIND_QA ? lazy(() => import("./features/find
 const FriendlyQa = import.meta.env.VITE_FRIENDLY_QA
     ? lazy(() => import("./features/play/friendly/qa"))
     : null;
-// The match viewer: `/watch` lists live games, the player's own and those recorded on this device;
-// `/watch/<game>` a game on chain, live or as a replay; `/watch/local/:id` a recorded demo game;
-// `/watch/qa` plays one as if live (`VITE_WATCH_QA=1`).
+// QA only: ranked over fixtures (builder, search, reveal), registered in `VITE_RANKED_QA=1` builds.
+const RankedQa = import.meta.env.VITE_RANKED_QA
+    ? lazy(() => import("./features/play/ranked/qa"))
+    : null;
+// The match viewer: `/watch` lists live matches, recent ones and the player's own;
+// `/watch/<game>` a match on chain, live or as a replay.
 const WatchList = lazy(() => import("./features/watch/WatchList"));
-const WatchScreen = lazy(() => import("./features/watch/WatchScreen"));
 const ChainWatch = lazy(() => import("./features/watch/ChainWatch"));
-const WATCH_QA = import.meta.env.VITE_WATCH_QA === "1";
 import { FundsOnSignIn, SquadPreload, TransactionSender } from "./chain";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { LoadingSpinner } from "./components/LoadingSpinner";
 import { MatchStatus } from "./components/MatchStatus";
+import { RulesPreload } from "./features/play/economy/useEconomy";
+import { forgetDeviceRecordings } from "./features/watch/forget";
+
+// Older builds kept demo games on the device: cleared once per load.
+forgetDeviceRecordings();
 import { SaveIndicator } from "./components/SaveIndicator";
 import { EscapeBack } from "./EscapeBack";
 import { bindInput } from "./input";
@@ -80,10 +85,9 @@ function MenuMusic() {
     const menu =
         pathname === "/" ||
         pathname === "/menu-classic" ||
-        pathname === "/find" ||
         pathname === "/play" ||
         pathname === "/watch" ||
-        (pathname.startsWith("/play/") && pathname !== "/play/match") ||
+        pathname.startsWith("/play/") ||
         pathname.startsWith("/settings") ||
         pathname.startsWith("/headquarters");
     useEffect(() => {
@@ -151,7 +155,7 @@ export function App() {
                         </Suspense>
                     }
                 />
-                <Route path="/find" element={<FindMatch />} />
+                <Route path="/find" element={<Navigate to="/play" replace />} />
                 <Route
                     path="/play"
                     element={
@@ -176,14 +180,13 @@ export function App() {
                         </Suspense>
                     }
                 />
+                <Route path="/play/contract" element={<FindMatch />} />
                 <Route
-                    path="/play/match"
+                    path="/play/demo"
                     element={
-                        <ErrorBoundary scope="match" fullScreen={false}>
-                            <Suspense fallback={<LoadingSpinner />}>
-                                <MockMatchScreen />
-                            </Suspense>
-                        </ErrorBoundary>
+                        <Suspense fallback={<LoadingSpinner />}>
+                            <DemoScreen />
+                        </Suspense>
                     }
                 />
                 <Route
@@ -276,6 +279,16 @@ export function App() {
                         }
                     />
                 )}
+                {RankedQa && (
+                    <Route
+                        path="/qa/ranked"
+                        element={
+                            <Suspense fallback={<LoadingSpinner />}>
+                                <RankedQa />
+                            </Suspense>
+                        }
+                    />
+                )}
                 {FriendlyQa && (
                     <Route
                         path="/qa/friendly"
@@ -294,7 +307,6 @@ export function App() {
                         </Suspense>
                     }
                 />
-                <Route path="/watch/local" element={<Navigate to="/watch" replace />} />
                 <Route
                     path="/watch/:gameId"
                     element={
@@ -303,24 +315,6 @@ export function App() {
                         </Suspense>
                     }
                 />
-                <Route
-                    path="/watch/local/:id"
-                    element={
-                        <Suspense fallback={<LoadingSpinner />}>
-                            <WatchScreen />
-                        </Suspense>
-                    }
-                />
-                {WATCH_QA && (
-                    <Route
-                        path="/watch/qa/:id"
-                        element={
-                            <Suspense fallback={<LoadingSpinner />}>
-                                <WatchScreen live />
-                            </Suspense>
-                        }
-                    />
-                )}
                 <Route path="/squad" element={<Navigate to="/headquarters" replace />} />
                 <Route path="/barracks" element={<Navigate to="/headquarters" replace />} />
             </Routes>
@@ -328,6 +322,7 @@ export function App() {
             <TransactionSender />
             <FundsOnSignIn />
             <SquadPreload />
+            <RulesPreload />
             <SaveIndicator />
             <MatchStatus />
             <EscapeBack />

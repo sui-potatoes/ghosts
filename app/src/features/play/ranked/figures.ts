@@ -9,7 +9,7 @@
 
 import type { Recruit } from "@ghosts/squad/types";
 
-import { fieldKit, fieldRole, virtualRecruits, type Side } from "../match/model.ts";
+import { fieldKit, fieldRole, virtualRecruits, type Side } from "./kit.ts";
 import type { Loadout } from "../economy/index.ts";
 import type { Stand } from "./model.ts";
 

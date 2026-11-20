@@ -2,17 +2,19 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * `/play`: the three ways to play as cards. Ranked and friendly open their
- * screens; faction wars is shown inactive with its reason. Everything here is
- * the shared interface language (`src/ui/`): the cards are cursor targets, the
- * bar names the focused card's command, Back returns to the title. No wallet is
- * needed to open it.
+ * `/play`: the ways to play as cards. Ranked, friendly and contract open their
+ * screens; faction wars is shown inactive with its reason. A search, a lobby or a
+ * game in progress leads its own card back to it and holds the others with a
+ * reason. Everything here is the shared interface language (`src/ui/`): the
+ * cards are cursor targets, the bar names the focused card's command, Back
+ * returns to the title. No wallet is needed to open it.
  */
 
 import { useLayoutEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { useMatchSearch } from "../../chain";
+import { useGame } from "../../chain/game";
 import { useGoUp } from "../../hooks/useGoUp";
 import { usePlayerName } from "../../hooks/usePlayerName";
 import {
@@ -26,16 +28,51 @@ import {
     type Command,
 } from "../../ui";
 import { ModeArt } from "./icons";
-import { modeCards, rankedFacts, type ModeCard } from "./model";
-import { useRating } from "./rating";
+import { modeCards, rankedFacts, type Busy, type ModeCard, type PlayMode } from "./model";
+import type { Standing } from "./rating";
+import { useStanding } from "./useStanding";
 import "./play.css";
+
+/** In `VITE_RANKED_QA=1` builds, `?busy=ranked|contract|lobby|playing` stands in for the account. */
+function qaBusy(): Busy | undefined {
+    if (!import.meta.env.VITE_RANKED_QA) return undefined;
+    const busy = new URLSearchParams(window.location.search).get("busy");
+    if (busy === "ranked" || busy === "contract") return { kind: "searching", mode: busy };
+    if (busy === "lobby") return { kind: "lobby" };
+    if (busy === "playing") return { kind: "playing", mode: "ranked" };
+    return undefined;
+}
+
+/** What the player is busy with, from the search and the game they are in. */
+function useBusy(): Busy {
+    const { searching, lobby, playing } = useMatchSearch();
+    const game = useGame(playing).data;
+    const qa = qaBusy();
+    if (qa !== undefined) return qa;
+    if (playing) {
+        const kind = game?.mode.$kind;
+        const mode: PlayMode | null =
+            kind === "Ranked"
+                ? "ranked"
+                : kind === "Friendly"
+                  ? "friendly"
+                  : kind === "Stakes"
+                    ? "contract"
+                    : null;
+        return { kind: "playing", mode };
+    }
+    if (lobby) return { kind: "lobby" };
+    if (searching)
+        return { kind: "searching", mode: searching.kind === "ranked" ? "ranked" : "contract" };
+    return null;
+}
 
 export default function PlayScreen() {
     const leave = useGoUp();
     const glyphs = useGlyphSet();
-    const rating = useRating();
+    const { standing } = useStanding();
     const { name } = usePlayerName();
-    const { lobby } = useMatchSearch();
+    const busy = useBusy();
     const back: Command = { action: "back", label: "Menu", run: leave };
     return (
         <FocusRoot back={back}>
@@ -47,14 +84,14 @@ export default function PlayScreen() {
                         {name && <StatusChip label="Player" value={name} />}
                         <StatusChip
                             label="Rating"
-                            value={`${rating.rating} · ${rankedFacts(rating.rating).tier}`}
+                            value={`${standing.rating} · ${standing.tier.name}`}
                         />
                     </>
                 }
                 columns="minmax(0, 1fr)"
                 commands={<FocusCommandBar glyphs={glyphs} />}
             >
-                <Cards rating={rating.rating} lobby={!!lobby} />
+                <Cards standing={standing} busy={busy} />
             </ScreenFrame>
         </FocusRoot>
     );
@@ -62,24 +99,32 @@ export default function PlayScreen() {
 
 const NAV: Command = { action: "nav", label: "Move", glyph: "lr" };
 
-function Cards({ rating, lobby }: { rating: number; lobby: boolean }) {
+/** The card the cursor starts on: the mode the player is busy in, else ranked. */
+function startCard(busy: Busy): string {
+    if (busy?.kind === "lobby") return "play-friendly";
+    if (busy?.kind === "searching") return `play-${busy.mode}`;
+    if (busy?.kind === "playing" && busy.mode) return `play-${busy.mode}`;
+    return "play-ranked";
+}
+
+function Cards({ standing, busy }: { standing: Standing; busy: Busy }) {
     const store = useFocusStore();
     useLayoutEffect(() => {
-        store.focus(lobby ? "play-friendly" : "play-ranked", false);
+        store.focus(startCard(busy), false);
         // Once, on arrival.
     }, [store]);
     return (
         <div className="gui-play">
             <div className="gui-play-cards" role="list">
-                {modeCards(lobby).map((card) => (
-                    <Card key={card.id} card={card} rating={rating} />
+                {modeCards(busy).map((card) => (
+                    <Card key={card.id} card={card} standing={standing} />
                 ))}
             </div>
         </div>
     );
 }
 
-function Card({ card, rating }: { card: ModeCard; rating: number }) {
+function Card({ card, standing }: { card: ModeCard; standing: Standing }) {
     const navigate = useNavigate();
     const { props } = useFocusable<HTMLButtonElement>({
         id: `play-${card.id}`,
@@ -98,7 +143,7 @@ function Card({ card, rating }: { card: ModeCard; rating: number }) {
         ],
         instant: !card.locked,
     });
-    const facts = card.id === "ranked" ? rankedFacts(rating) : null;
+    const facts = card.id === "ranked" ? rankedFacts(standing) : null;
     return (
         <button
             type="button"
@@ -128,7 +173,7 @@ function Card({ card, rating }: { card: ModeCard; rating: number }) {
             {facts && (
                 <span className="gui-play-facts">
                     <span className="gui-play-fact">
-                        <span className="gui-play-fact-label">Rank</span>
+                        <span className="gui-play-fact-label">Tier</span>
                         <span className="gui-play-fact-value">{facts.tier}</span>
                     </span>
                     <span className="gui-play-fact">
@@ -141,6 +186,12 @@ function Card({ card, rating }: { card: ModeCard; rating: number }) {
                             <span className="gui-play-fact-value">{b.budget} cr</span>
                         </span>
                     ))}
+                    {facts.placementLeft > 0 && (
+                        <span className="gui-play-fact">
+                            <span className="gui-play-fact-label">Placement games left</span>
+                            <span className="gui-play-fact-value">{facts.placementLeft}</span>
+                        </span>
+                    )}
                 </span>
             )}
         </button>

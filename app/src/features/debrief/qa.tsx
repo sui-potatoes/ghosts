@@ -5,7 +5,9 @@
  * QA harness for the match result, in builds made with `VITE_RESULT_QA=1`
  * only (the route is not registered otherwise, see `App.tsx`): the real
  * `MatchDebrief` over fixture `MatchResult`s and the sample roster, no chain.
- * `?case=win|costly|loss|wipe|walkover|abandoned|forfeited|stalemate|noshow|four`,
+ * `?case=win|costly|loss|wipe|walkover|abandoned|forfeited|stalemate|noshow|four`
+ * (a contract game, owned recruits), `ranked-up|ranked-down|ranked-tier|ranked-noshow`
+ * (a ranked game: virtual units in preset figures, the rating and the tier),
  * `&gone=1` for a wrapped-up game, `&opponent=NAME`.
  */
 
@@ -14,6 +16,8 @@ import { useMemo } from "react";
 
 import { rankWith } from "../../chain/match-rules";
 import type { EncounterDebrief } from "@ghosts/engine";
+import { PRESETS } from "../play/economy";
+import { fieldKit, fieldRole, virtualRecruits } from "../play/ranked/kit";
 import { DemoDebrief } from "./DemoDebrief";
 import { MatchDebrief } from "./MatchDebrief";
 import type { MatchResult } from "./result";
@@ -78,7 +82,107 @@ function DemoQa({ win }: { win: boolean }) {
 export default function ResultQa() {
     const kind = new URLSearchParams(window.location.search).get("case");
     if (kind === "demo-win" || kind === "demo-loss") return <DemoQa win={kind === "demo-win"} />;
+    if (kind?.startsWith("ranked")) return <RankedQa kind={kind} />;
     return <MatchQa />;
+}
+
+/** A ranked squad as the builder sends it: an Assault, a Sniper and a Runner in preset figures. */
+const RANKED_IDS = ["0xa1", "0xa2", "0xa3"];
+const RANKED_TYPES = ["Assault", "Sniper", "Runner"];
+
+function RankedQa({ kind }: { kind: string }) {
+    const params = new URLSearchParams(window.location.search);
+    const gone = params.get("gone") === "1";
+    const opponent = params.get("opponent") ?? "NOVA";
+    const ids = RANKED_IDS;
+    const figures = useMemo(() => {
+        const loadouts = ["assault", "sniper", "runner"].map(
+            (id) => PRESETS.find((p) => p.id === id)!.loadout,
+        );
+        const kits = loadouts.map(fieldKit);
+        return virtualRecruits(
+            {
+                ids,
+                loadouts,
+                kits,
+                roles: kits.map(fieldRole),
+                callsigns: RANKED_TYPES.map((n) => n.toUpperCase()),
+                names: RANKED_TYPES,
+                types: RANKED_TYPES,
+            },
+            7,
+        );
+    }, []);
+    const result: MatchResult = useMemo(() => {
+        const squad = figures.map((r, i) => ({
+            objectId: ids[i],
+            name: r.name,
+            rank: RANKED_TYPES[i],
+            xp: 0,
+        }));
+        const change = (before: number, after: number, tier: [string, string] | null) =>
+            gone
+                ? { before, after, tier: tier ? { before: tier[0], after: tier[1] } : null }
+                : null;
+        const base = {
+            rating: null,
+            earned: null,
+            recruitsHome: null,
+            opponent,
+            squad,
+            history: turns(9),
+        };
+        switch (kind) {
+            case "ranked-down":
+                return {
+                    ...base,
+                    outcome: "defeat",
+                    fallen: ids,
+                    history: [...kia(ids[2], 3), ...kia(ids[0], 5), ...kia(ids[1], 8)],
+                    ranked: { size: 3, tier: "Contractor", change: change(1512, 1494, null) },
+                };
+            case "ranked-tier":
+                return {
+                    ...base,
+                    outcome: "victory",
+                    fallen: ids.slice(2),
+                    history: kia(ids[2], 6),
+                    ranked: {
+                        size: 3,
+                        tier: "Contractor",
+                        change: change(1638, 1655, ["Contractor", "Operative"]),
+                    },
+                };
+            case "ranked-noshow":
+                return {
+                    ...base,
+                    outcome: "no-show",
+                    squad: [],
+                    fallen: [],
+                    ranked: { size: 3, tier: "Contractor", change: change(1512, 1490, null) },
+                };
+            default:
+                return {
+                    ...base,
+                    outcome: "victory",
+                    fallen: ids.slice(1, 2),
+                    history: kia(ids[1], 4),
+                    ranked: { size: 3, tier: "Contractor", change: change(1512, 1529, null) },
+                };
+        }
+    }, [kind, gone, figures]);
+    return (
+        <MatchDebrief
+            result={result}
+            figures={kind === "ranked-noshow" ? [] : figures}
+            gone={gone}
+            busy={false}
+            error=""
+            clearError={() => {}}
+            onWrapUp={() => {}}
+            onHire={() => {}}
+        />
+    );
 }
 
 function MatchQa() {

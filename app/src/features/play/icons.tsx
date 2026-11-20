@@ -78,6 +78,35 @@ function FactionsArt() {
     );
 }
 
+/** Contract: a dog tag on its chain, a dossier behind it. */
+function ContractArt() {
+    return (
+        <svg {...SVG}>
+            <path d="M30 12h44v60H30z" opacity=".5" />
+            <path d="M38 24h28M38 32h20M38 40h24" opacity=".5" />
+            <path className="gui-play-ink" d="M18 40h30v40H18z" opacity=".35" />
+            <path d="M18 44a6 6 0 0 1 6-6h18a6 6 0 0 1 6 6v32a6 6 0 0 1-6 6H24a6 6 0 0 1-6-6z" />
+            <circle cx="33" cy="46" r="2" />
+            <path d="M24 58h18M24 64h12M24 70h16" />
+            <path d="M33 44c0-10 8-18 16-22" strokeDasharray="2 3" />
+        </svg>
+    );
+}
+
+/** Demo: a target reticle over a city block. */
+function DemoArt() {
+    return (
+        <svg {...SVG}>
+            <path d="M8 84h80" opacity=".5" />
+            <path d="M14 84V52h14v32M32 84V36h16v48M52 84V46h12v38M68 84V58h14v26" opacity=".5" />
+            <circle cx="48" cy="40" r="20" />
+            <circle className="gui-play-ink" cx="48" cy="40" r="14" opacity=".35" />
+            <path d="M48 14v12M48 54v12M22 40h12M62 40h12" />
+            <circle cx="48" cy="40" r="2" />
+        </svg>
+    );
+}
+
 /** Watch: a monitor showing the field, a play mark and a strip of turns beneath. */
 function WatchArt() {
     return (
@@ -94,5 +123,7 @@ function WatchArt() {
 
 export function ModeArt({ id }: { id: ModeId }) {
     if (id === "watch") return <WatchArt />;
+    if (id === "contract") return <ContractArt />;
+    if (id === "demo") return <DemoArt />;
     return id === "ranked" ? <RankedArt /> : id === "friendly" ? <FriendlyArt /> : <FactionsArt />;
 }

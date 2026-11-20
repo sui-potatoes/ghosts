@@ -2,16 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * The ranked economy: tiers from the rating, the credit budget per mode, presets,
+ * The ranked economy: tiers from the rating, the credit budget per size, presets,
  * item prices and the checks on a squad. Pure data and functions; no React, no
- * chain. The signatures here are the contract with the Play screens: extend them,
- * do not break them.
- *
- * Built to be enforced by a contract later with three checks and no preset logic:
- * the squad has the mode's size, every item is unlocked at the tier, and the
- * prices add up to no more than the budget. Presets are a starting point for the
- * builder; any slot can be swapped. The numbers were tuned with the balance
- * simulation in `app/scripts/play-sim/` (see `docs/plans/play-modes-economy.md`).
+ * network. The numbers are the contract's `Rules` (`ghosts::rules`): the published
+ * values are built in (`DEFAULT_RULES`), and the live object replaces them once
+ * read (`applyRules`), so the admin's retuning reaches the builder without a new
+ * app. The checks are the contract's `check_squad`: the squad has the size, every
+ * item is unlocked at the tier, and the prices add up to no more than the budget.
+ * Presets are a starting point for the builder; any slot can be swapped.
  */
 
 import { fieldStats, type Stats } from "@ghosts/squad/stats";
@@ -52,8 +50,8 @@ export type Item = {
     price: number;
     /** One or two sentences from the catalog. */
     description: string;
-    /** The lowest tier that unlocks it. */
-    tier: string;
+    /** The lowest tier that unlocks it; null when no tier does. */
+    tier: string | null;
 };
 
 export type Preset = {
@@ -96,93 +94,251 @@ export type UnitStats = {
     grenades: number;
 };
 
-// === Items ===
+// === The rules ===
 
-/** Item prices in credits, by catalog id. Only these can be carried in ranked. */
-export const PRICES: Readonly<Record<string, number>> = {
-    "rifle-1": 20,
-    "rifle-2": 40,
-    "rifle-3": 60,
-    "armor-1": 10,
-    "armor-2": 25,
-    "armor-3": 45,
-    "frag-grenade": 10,
-    flashbang: 10,
-    "smoke-grenade": 10,
+/**
+ * The economy as the contract's `Rules` set it: prices, the tier each item unlocks
+ * at, the four tiers with their budgets, which sizes have a level, the placement
+ * floor and the two clocks of ranked play. Read live from the shared `Rules`
+ * object (`rulesFromChain`, applied by `applyRules`), so a balance change by the
+ * holder of the `RulesCap` needs no new app. `DEFAULT_RULES` is what the contract
+ * publishes with: the offline and fixture value, tested equal to a Move-printed
+ * `Rules` in `tests/ranked-chain.test.ts`.
+ */
+export type EconomyRules = {
+    /** `Rules.version`: 0 for the built-in default. */
+    version: number;
+    /** Price in credits, by catalog id. */
+    prices: Record<string, number>;
+    /** The lowest tier index an item is unlocked at; past the last tier, locked for everyone. */
+    unlock: Record<string, number>;
+    /** Lowest first: where each tier starts and its budget per size. */
+    tiers: { min: number; budget: Record<Mode, number> }[];
+    /** Whether a size has a level: one without cannot be queued for. */
+    open: Record<Mode, boolean>;
+    /** While fewer ranked games are finished, the tier is at least `tier`. */
+    placement: { games: number; tier: number };
+    /** How long the player a match found waiting has to show their squad. */
+    revealLimitMs: number;
+    /** How long after a rating reset the next one can be. */
+    resetCooldownMs: number;
 };
+
+/** The catalog ids the contract's item lists name, index for index. */
+const RULE_ITEMS = {
+    weapons: ["rifle-1", "rifle-2", "rifle-3"],
+    armor: ["armor-1", "armor-2", "armor-3"],
+    utilities: ["frag-grenade", "flashbang", "smoke-grenade"],
+} as const;
+
+/** `rules::new` in `move/packages/ghosts/sources/rules.move`. */
+export const DEFAULT_RULES: EconomyRules = {
+    version: 0,
+    prices: {
+        "rifle-1": 20,
+        "rifle-2": 40,
+        "rifle-3": 60,
+        "armor-1": 10,
+        "armor-2": 25,
+        "armor-3": 45,
+        "frag-grenade": 10,
+        flashbang: 10,
+        "smoke-grenade": 10,
+    },
+    unlock: {
+        "rifle-1": 0,
+        "rifle-2": 1,
+        "rifle-3": 2,
+        "armor-1": 0,
+        "armor-2": 0,
+        "armor-3": 2,
+        "frag-grenade": 0,
+        flashbang: 0,
+        "smoke-grenade": 0,
+    },
+    tiers: [
+        { min: 0, budget: { "3x3": 125, "4x4": 165 } },
+        { min: 1400, budget: { "3x3": 150, "4x4": 200 } },
+        { min: 1650, budget: { "3x3": 190, "4x4": 255 } },
+        { min: 1900, budget: { "3x3": 240, "4x4": 320 } },
+    ],
+    open: { "3x3": true, "4x4": false },
+    placement: { games: 5, tier: 1 },
+    revealLimitMs: 60_000,
+    resetCooldownMs: 7 * 86_400_000,
+};
+
+/** The `Rules` fields the economy reads, as `ghosts::rules::Rules` decodes (`Rules` in `src/chain/bcs.ts`). */
+export type ChainRulesLike = {
+    version: number;
+    weapons: readonly { price: number; minTier: number }[];
+    armor: readonly { price: number; minTier: number }[];
+    utilities: readonly { price: number; minTier: number }[];
+    tiers: readonly { minRating: string | number | bigint; budgets: readonly number[] }[];
+    sizes: readonly { units: number; level?: string | null }[];
+    placementGames: number;
+    placementTier: number;
+    revealLimitMs: string | number | bigint;
+    resetCooldownMs: string | number | bigint;
+};
+
+const MODE_OF_UNITS: Record<number, Mode> = { 3: "3x3", 4: "4x4" };
+
+/** The economy a decoded `Rules` object sets. */
+export function rulesFromChain(rules: ChainRulesLike): EconomyRules {
+    const prices: Record<string, number> = {};
+    const unlock: Record<string, number> = {};
+    for (const list of ["weapons", "armor", "utilities"] as const)
+        RULE_ITEMS[list].forEach((id, i) => {
+            const item = rules[list][i];
+            if (!item) return;
+            prices[id] = item.price;
+            unlock[id] = item.minTier;
+        });
+    const open: Record<Mode, boolean> = { "3x3": false, "4x4": false };
+    const column: Partial<Record<Mode, number>> = {};
+    rules.sizes.forEach((size, j) => {
+        const mode = MODE_OF_UNITS[size.units];
+        if (!mode) return;
+        open[mode] = !!size.level;
+        column[mode] = j;
+    });
+    const budgetOfColumn = (budgets: readonly number[], mode: Mode) =>
+        column[mode] === undefined ? 0 : (budgets[column[mode]!] ?? 0);
+    return {
+        version: rules.version,
+        prices,
+        unlock,
+        tiers: rules.tiers.map((tier) => ({
+            min: Number(tier.minRating),
+            budget: {
+                "3x3": budgetOfColumn(tier.budgets, "3x3"),
+                "4x4": budgetOfColumn(tier.budgets, "4x4"),
+            },
+        })),
+        open,
+        placement: { games: rules.placementGames, tier: rules.placementTier },
+        revealLimitMs: Number(rules.revealLimitMs),
+        resetCooldownMs: Number(rules.resetCooldownMs),
+    };
+}
 
 const SLOT_OF: Record<string, Slot> = { weapon: "weapon", armor: "armor", utility: "utility" };
 
-// === Tiers ===
+/** What each tier is called, lowest first; the contract numbers them. */
+const TIER_NAMES = [
+    { id: "rookie", name: "Rookie" },
+    { id: "contractor", name: "Contractor" },
+    { id: "operative", name: "Operative" },
+    { id: "elite", name: "Elite" },
+];
 
-const ROOKIE_ITEMS = [
+/** The lines the published tiers carry; a tier whose unlocks differ gets one built from them. */
+const TIER_SUMMARIES: Record<string, string> = {
+    "rifle-1,armor-1,armor-2,frag-grenade,flashbang,smoke-grenade":
+        "Standard rifles, light and medium armor, frag, flash and smoke grenades.",
+    "rifle-2": "Adds the sharpshooter rifle.",
+    "armor-3,rifle-3": "Adds heavy armor and the plasma rifle.",
+    "": "Everything, with the largest budget.",
+};
+
+/** The catalog's name for an item, lowercased mid-sentence. */
+const catalogName = (id: string) => catalog.items.find((item) => item.id === id)?.name ?? id;
+
+function summaryOf(unlocks: string[], first: boolean): string {
+    const known = TIER_SUMMARIES[unlocks.join(",")];
+    if (known) return known;
+    const names = unlocks.map(catalogName);
+    const list =
+        names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : names[0];
+    return first ? `${list}.` : `Adds ${list}.`;
+}
+
+/** The order unlocks are listed in, as the published tiers list them. */
+const UNLOCK_ORDER = [
     "rifle-1",
     "armor-1",
     "armor-2",
+    "armor-3",
+    "rifle-2",
+    "rifle-3",
     "frag-grenade",
     "flashbang",
     "smoke-grenade",
 ];
 
-type TierSpec = Omit<Tier, "items">;
+let rules: EconomyRules = DEFAULT_RULES;
 
-const TIER_SPECS: TierSpec[] = [
-    {
-        id: "rookie",
-        name: "Rookie",
-        min: 0,
-        max: 1400,
-        budget: { "3x3": 125, "4x4": 165 },
-        unlocks: ROOKIE_ITEMS,
-        summary: "Standard rifles, light and medium armor, frag, flash and smoke grenades.",
-    },
-    {
-        id: "contractor",
-        name: "Contractor",
-        min: 1400,
-        max: 1650,
-        budget: { "3x3": 150, "4x4": 200 },
-        unlocks: ["rifle-2"],
-        summary: "Adds the sharpshooter rifle.",
-    },
-    {
-        id: "operative",
-        name: "Operative",
-        min: 1650,
-        max: 1900,
-        budget: { "3x3": 190, "4x4": 255 },
-        unlocks: ["armor-3", "rifle-3"],
-        summary: "Adds heavy armor and the plasma rifle.",
-    },
-    {
-        id: "elite",
-        name: "Elite",
-        min: 1900,
-        max: null,
-        budget: { "3x3": 240, "4x4": 320 },
-        unlocks: [],
-        summary: "Everything, with the largest budget.",
-    },
-];
-
+/** Item prices in credits, by catalog id. Only these can be carried in ranked. */
+export let PRICES: Readonly<Record<string, number>> = {};
 /** Every tier, lowest first. */
-export const TIERS: readonly Tier[] = TIER_SPECS.map((spec, i) => ({
-    ...spec,
-    items: TIER_SPECS.slice(0, i + 1).flatMap((t) => t.unlocks),
-}));
+export let TIERS: readonly Tier[] = [];
+let ITEMS: Item[] = [];
 
-const ITEMS: Item[] = Object.entries(PRICES).map(([id, price]) => {
-    const entry = catalog.items.find((item) => item.id === id);
-    if (!entry || !SLOT_OF[entry.type]) throw new Error(`Not a ranked item: ${id}`);
-    return {
-        id,
-        slot: SLOT_OF[entry.type],
-        name: entry.name,
-        price,
-        description: entry.description,
-        tier: TIERS.find((t) => t.unlocks.includes(id))!.id,
-    };
-});
+function build(next: EconomyRules) {
+    rules = next;
+    PRICES = { ...next.prices };
+    const ids = UNLOCK_ORDER.filter((id) => id in next.prices);
+    TIERS = next.tiers.map((tier, i) => {
+        const named = TIER_NAMES[i] ?? { id: `tier-${i}`, name: `Tier ${i + 1}` };
+        const unlocks = ids.filter((id) => next.unlock[id] === i);
+        return {
+            ...named,
+            min: tier.min,
+            max: next.tiers[i + 1]?.min ?? null,
+            budget: { ...tier.budget },
+            unlocks,
+            items: ids.filter((id) => next.unlock[id] <= i),
+            summary: summaryOf(unlocks, i === 0),
+        };
+    });
+    ITEMS = ids.map((id) => {
+        const entry = catalog.items.find((item) => item.id === id);
+        if (!entry || !SLOT_OF[entry.type]) throw new Error(`Not a ranked item: ${id}`);
+        return {
+            id,
+            slot: SLOT_OF[entry.type],
+            name: entry.name,
+            price: next.prices[id],
+            description: entry.description,
+            tier: TIERS[next.unlock[id]]?.id ?? null,
+        };
+    });
+}
+
+build(DEFAULT_RULES);
+
+const listeners = new Set<() => void>();
+
+/** Run the economy on these rules: the live `Rules` once read. Screens re-render through `useEconomy`. */
+export function applyRules(next: EconomyRules) {
+    if (JSON.stringify(next) === JSON.stringify(rules)) return;
+    build(next);
+    listeners.forEach((listener) => listener());
+}
+
+/** The rules the economy runs on now. */
+export const economyRules = (): EconomyRules => rules;
+
+/** For `useSyncExternalStore`: a change of rules. */
+export function subscribeEconomy(listener: () => void): () => void {
+    listeners.add(listener);
+    return () => listeners.delete(listener);
+}
+
+/** Whether a size has a level, so it can be queued for. */
+export const sizeOpen = (mode: Mode): boolean => rules.open[mode];
+
+/**
+ * A rating that falls in the tier a player stands at: their own, raised to the
+ * placement tier's floor while they have finished fewer than the placement games.
+ * Every function here that takes a rating gives the contract's `tier_of` for it.
+ */
+export function standingRating(rating: number, games: number): number {
+    if (games >= rules.placement.games) return rating;
+    const floor = TIERS[rules.placement.tier]?.min ?? 0;
+    return Math.max(rating, floor);
+}
 
 // === Presets ===
 
@@ -390,7 +546,9 @@ export function validateSquad(
                     unit: i,
                     slot,
                     item: id,
-                    message: `${item.name} unlocks at ${TIERS.find((t) => t.id === item.tier)!.name}.`,
+                    message: item.tier
+                        ? `${item.name} unlocks at ${TIERS.find((t) => t.id === item.tier)!.name}.`
+                        : `${item.name} is not offered.`,
                 });
         }
     });

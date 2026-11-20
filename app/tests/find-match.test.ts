@@ -123,3 +123,44 @@ test("other phases have nothing inactive", () => {
     ])
         assert.equal(view(patch).action.inactive, undefined);
 });
+
+// === The contract screen in the three-mode world ===
+
+test("a direct visit introduces the contract mode in plain words", () => {
+    const v = view();
+    assert.equal(v.headline, "Contract");
+    assert.match(v.note, /own recruits/);
+    assert.match(v.note, /Rating does not change/);
+    assert.doesNotMatch(v.note, /rated/i);
+});
+
+test("a ranked search holds the contract queue and leads back to it", () => {
+    const v = view({ ranked: true });
+    assert.equal(v.phase, "ranked");
+    assert.equal(v.action.id, "ranked");
+    assert.match(v.note, /Cancel your ranked search/);
+    // A game in progress still wins.
+    assert.equal(view({ ranked: true, playing: true }).phase, "playing");
+});
+
+test("a search the queue let go of is said, with the way to search again; never re-queued", () => {
+    const v = view({ expired: true });
+    assert.equal(v.phase, "expired");
+    assert.equal(v.headline, "No match found");
+    assert.equal(v.action.id, "find");
+    assert.equal(v.action.label, "Search again");
+    assert.equal(v.pending, false);
+    // A new search in flight replaces the notice.
+    assert.equal(view({ expired: true, starting: true }).phase, "starting");
+});
+
+test("the search waits the ticket's lifetime before saying no match came", () => {
+    assert.equal(
+        view({ searching: true, elapsedMs: 299_000, timeoutMs: 300_000 }).phase,
+        "searching",
+    );
+    assert.equal(
+        view({ searching: true, elapsedMs: 301_000, timeoutMs: 300_000 }).phase,
+        "timeout",
+    );
+});

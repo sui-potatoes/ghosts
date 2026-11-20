@@ -8,8 +8,8 @@ import { pauseEntries, signInOptions } from "../src/features/dialogs/model.ts";
 import {
     backTarget,
     matchChip,
-    matchRow,
     menuRows,
+    playRow,
     playerChip,
     startRow,
     type MenuState,
@@ -24,28 +24,31 @@ function state(patch: Partial<MenuState> = {}, match: Partial<MenuState["match"]
 
 const ids = (s: MenuState) => menuRows(s).map((r) => r.id);
 
-test("signed out: a Sign In row after the demos; Find Match asks to sign in first", () => {
-    const s = state({ signedIn: false });
-    assert.deepEqual(ids(s), [
+test("signed out: Play, then Sign In, Spectate and the rest; no Find Match, no demo rows", () => {
+    assert.deepEqual(ids(state({ signedIn: false })), [
         "play",
-        "demo-black-rain",
-        "demo-paper-trail",
         "sign-in",
-        "match",
         "watch",
         "headquarters",
         "editor",
         "leaderboard",
         "settings",
     ]);
-    const match = matchRow(s);
-    assert.equal(match.label, "Find Match");
-    assert.equal(match.verb, "Sign in");
-    assert.equal(match.instant, true);
-    assert.equal(match.locked, undefined);
+    assert.deepEqual(ids(state()), [
+        "play",
+        "watch",
+        "headquarters",
+        "editor",
+        "leaderboard",
+        "settings",
+    ]);
+    const labels = menuRows(state({ signedIn: false })).map((r) => r.label);
+    for (const gone of ["Find Match", "Black Rain", "Paper Trail", "Cancel Search"])
+        assert.ok(!labels.includes(gone), gone);
+    assert.equal(menuRows(state()).find((r) => r.id === "watch")!.label, "Spectate");
 });
 
-test("Play is the first, primary row; Find Match stays below under its own name", () => {
+test("Play is the first, primary row, never refused, and the one way into every mode", () => {
     for (const signedIn of [true, false]) {
         const rows = menuRows(state({ signedIn }));
         assert.equal(rows[0].id, "play");
@@ -53,38 +56,27 @@ test("Play is the first, primary row; Find Match stays below under its own name"
         assert.equal(rows[0].primary, true);
         assert.equal(rows[0].instant, true);
         assert.equal(rows[0].locked, undefined);
-        assert.equal(rows.find((r) => r.id === "match")?.label, "Find Match");
     }
-    // Play stays reachable while searching, hiring or suspended.
     for (const m of [{ searching: true }, { hiring: true }, { suspendedMin: 2 }, { playing: true }])
         assert.equal(menuRows(state({}, m))[0].locked, undefined);
 });
 
-test("signed in: no Sign In row; Find Match opens its screen on the first click", () => {
-    const rows = menuRows(state());
-    assert.ok(!rows.some((r) => r.id === "sign-in"));
-    const match = rows.find((r) => r.id === "match")!;
-    assert.equal(match.verb, "Find match");
-    assert.equal(match.primary, true);
-    assert.equal(match.instant, true);
-});
-
-test("the one match row follows the search", () => {
-    assert.equal(matchRow(state({}, { searching: true })).label, "Cancel Search");
-    assert.equal(matchRow(state({}, { searching: true })).instant, false);
-    assert.equal(matchRow(state({}, { searching: true })).locked, undefined);
-    assert.equal(matchRow(state({}, { searching: true, busy: true })).locked, "Saving a change");
-    assert.equal(matchRow(state({}, { playing: true, searching: true })).label, "Resume Match");
-    const hiring = matchRow(state({}, { hiring: true }));
-    assert.equal(hiring.tag, "Hiring");
-    assert.ok(hiring.locked);
-    const suspended = matchRow(state({}, { suspendedMin: 3 }));
-    assert.equal(suspended.label, "Find Match");
-    assert.equal(suspended.tag, "3m");
-    assert.match(suspended.locked!, /3 min/);
+test("the Play row leads back to a search, a lobby or a match in progress", () => {
+    const searching = playRow(state({}, { searching: true }));
+    assert.equal(searching.tag, "Searching");
+    assert.equal(searching.hint, "Back to your search");
+    const lobby = playRow(state({}, { lobby: true }));
+    assert.equal(lobby.tag, "Lobby");
+    assert.equal(lobby.hint, "Back to your friendly game");
+    const playing = playRow(state({}, { playing: true, searching: true }));
+    assert.equal(playing.label, "Resume Match");
+    assert.equal(playing.verb, "Resume");
+    const expired = playRow(state({}, { expired: true }));
+    assert.equal(expired.tag, "No match");
+    assert.equal(expired.tagTone, "warn");
     // The row keeps its id through every state, so the cursor stays on it.
-    for (const m of [{ searching: true }, { playing: true }, { hiring: true }, { suspendedMin: 1 }])
-        assert.equal(matchRow(state({}, m)).id, "match");
+    for (const m of [{ searching: true }, { playing: true }, { lobby: true }, { expired: true }])
+        assert.equal(playRow(state({}, m)).id, "play");
 });
 
 test("disabled rows stay in place with their reason", () => {
@@ -101,9 +93,9 @@ test("disabled rows stay in place with their reason", () => {
 test("the cursor starts at the top, or on the row the player left from", () => {
     const rows = menuRows(state());
     assert.equal(startRow(rows, null), "play");
-    assert.equal(startRow(rows, { id: "headquarters", index: 3 }), "headquarters");
+    assert.equal(startRow(rows, { id: "headquarters", index: 2 }), "headquarters");
     // Signed in since: Sign In is gone, the row now in its place takes the cursor.
-    assert.equal(startRow(rows, { id: "sign-in", index: 3 }), rows[3].id);
+    assert.equal(startRow(rows, { id: "sign-in", index: 1 }), rows[1].id);
     assert.equal(startRow(rows, { id: "install", index: 99 }), "settings");
 });
 

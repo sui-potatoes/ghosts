@@ -3,18 +3,15 @@
 
 /**
  * The title screen's pure rules, tested in `tests/main-menu.test.ts`: which
- * rows the menu shows in each state (signed out, signed in, hiring, searching,
- * suspended, in a match, installable), what each row's command is called and
+ * rows the menu shows in each state (signed out, signed in, searching, in a
+ * lobby, in a match, installable), what each row's command is called and
  * why a refused one is refused, where the cursor starts, and what the header's
  * status chips read. No React, no chain: the screen passes the state in.
  */
 
 export type RowId =
     | "play"
-    | "demo-black-rain"
-    | "demo-paper-trail"
     | "sign-in"
-    | "match"
     | "watch"
     | "headquarters"
     | "editor"
@@ -28,8 +25,12 @@ export type MenuState = {
     match: {
         /** A game the player has a seat in. */
         playing: boolean;
-        /** In the queue. */
+        /** In a queue: ranked, or the contract queue for owned recruits. */
         searching: boolean;
+        /** Which queue, while searching. */
+        searchKind?: "ranked" | "contract";
+        /** The last search ran out of time without a match, and the player has not been told. */
+        expired?: boolean;
         /** Hosting or waiting in a friendly game's lobby (never the queue as well). */
         lobby?: boolean;
         /** Free recruits being hired on the way into the queue. */
@@ -59,20 +60,22 @@ export type MenuRow = {
     /** The primary weighs heaviest in the bar. */
     primary?: boolean;
     /**
-     * A click runs it at once: opening a screen or a dialog (Find Match opens
-     * its screen, which queues the squad). Off for a row whose confirm sends a
-     * transaction itself (leave the queue): the cursor follows the pointer onto
-     * it, a click arms it and a second click commits.
+     * A click runs it at once: opening a screen or a dialog. Off for a row that
+     * is refused (the cursor follows the pointer onto it, and the bar says why).
      */
     instant: boolean;
 };
 
-/** The one row that follows the search: find a match, leave the queue, get back to the game. */
-export function matchRow(state: MenuState): MenuRow {
-    const { signedIn, match } = state;
+/**
+ * The Play row: the one way into every mode (ranked, friendly, contract, demo,
+ * faction wars). While the player searches, waits in a lobby or plays, it reads
+ * so and leads back there.
+ */
+export function playRow(state: MenuState): MenuRow {
+    const { match } = state;
     if (match.playing)
         return {
-            id: "match",
+            id: "play",
             label: "Resume Match",
             tag: "Live",
             tagTone: "accent",
@@ -83,56 +86,42 @@ export function matchRow(state: MenuState): MenuRow {
         };
     if (match.lobby)
         return {
-            id: "match",
-            label: "Find Match",
+            id: "play",
+            label: "Play",
             tag: "Lobby",
             tagTone: "accent",
-            verb: "Find match",
-            locked: "Leave your friendly game first",
-            instant: false,
-        };
-    if (match.suspendedMin > 0)
-        return {
-            id: "match",
-            label: "Find Match",
-            tag: `${match.suspendedMin}m`,
-            tagTone: "warn",
-            verb: "Find match",
-            locked: `Matchmaking is suspended for ${match.suspendedMin} min`,
-            instant: false,
+            hint: "Back to your friendly game",
+            verb: "Open",
+            primary: true,
+            instant: true,
         };
     if (match.searching)
         return {
-            id: "match",
-            label: "Cancel Search",
-            hint: "The squad leaves the queue",
-            verb: "Cancel search",
-            locked: match.busy ? "Saving a change" : undefined,
-            instant: false,
-        };
-    if (match.hiring)
-        return {
-            id: "match",
-            label: "Find Match",
-            tag: "Hiring",
+            id: "play",
+            label: "Play",
+            tag: "Searching",
             tagTone: "accent",
-            verb: "Find match",
-            locked: "The squad is being hired",
-            instant: false,
+            hint: "Back to your search",
+            verb: "Open",
+            primary: true,
+            instant: true,
         };
-    if (!signedIn)
+    if (match.expired)
         return {
-            id: "match",
-            label: "Find Match",
-            hint: "Sign in to take a contract",
-            verb: "Sign in",
+            id: "play",
+            label: "Play",
+            tag: "No match",
+            tagTone: "warn",
+            hint: "Your last search ran out of time",
+            verb: "Play",
+            primary: true,
             instant: true,
         };
     return {
-        id: "match",
-        label: "Find Match",
-        hint: "Queue the squad against another player",
-        verb: "Find match",
+        id: "play",
+        label: "Play",
+        hint: "Ranked, friendly, contract, demo",
+        verb: "Play",
         primary: true,
         instant: true,
     };
@@ -140,49 +129,7 @@ export function matchRow(state: MenuState): MenuRow {
 
 /** Every row, top to bottom. Disabled entries stay in place, refused with their reason. */
 export function menuRows(state: MenuState): MenuRow[] {
-    const rows: MenuRow[] = [
-        // The way into every mode: three cards on `/play`. Find Match stays
-        // below under its own name; it is the real on-chain queue.
-        state.match.lobby
-            ? {
-                  id: "play",
-                  label: "Play",
-                  tag: "Lobby",
-                  tagTone: "accent",
-                  hint: "Back to your friendly game",
-                  verb: "Play",
-                  primary: true,
-                  instant: true,
-              }
-            : {
-                  id: "play",
-                  label: "Play",
-                  hint: "Ranked, friendly, faction wars",
-                  verb: "Play",
-                  primary: true,
-                  instant: true,
-              },
-        // The playable contracts, named like the briefings name them; the
-        // location is what the bar says about each.
-        {
-            id: "demo-black-rain",
-            label: "Black Rain",
-            tag: "Demo",
-            tagTone: "dim",
-            hint: "Tokyo / Sector 09",
-            verb: "Deploy",
-            instant: true,
-        },
-        {
-            id: "demo-paper-trail",
-            label: "Paper Trail",
-            tag: "Demo",
-            tagTone: "dim",
-            hint: "Kōra HQ / Floor 07",
-            verb: "Deploy",
-            instant: true,
-        },
-    ];
+    const rows: MenuRow[] = [playRow(state)];
     if (!state.signedIn)
         rows.push({
             id: "sign-in",
@@ -193,11 +140,10 @@ export function menuRows(state: MenuState): MenuRow[] {
             instant: true,
         });
     rows.push(
-        matchRow(state),
         {
             id: "watch",
-            label: "Watch",
-            hint: "Live games and replays",
+            label: "Spectate",
+            hint: "Live matches and replays",
             verb: "Open",
             instant: true,
         },

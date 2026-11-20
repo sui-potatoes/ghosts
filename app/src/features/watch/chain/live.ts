@@ -40,7 +40,7 @@ export type LiveSource = RecordSource & {
 };
 
 /** When nothing says how a deleted game ended. */
-const UNTOLD: WatchOutcome = { winner: null, reason: "The game ended" };
+const UNTOLD: WatchOutcome = { winner: null, reason: "The match ended" };
 
 export function liveSource(
     init: {
