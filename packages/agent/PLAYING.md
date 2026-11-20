@@ -32,8 +32,13 @@ gp whoami
 | `faucet`                                      | Testnet only: ask the faucet for SUI when under 1 SUI (up to 2) |
 | `name <name>`                                 | Take a name (needed once, before the first game)                |
 | `setup`                                       | Create the account if missing, hire four recruits, arm them     |
-| `find`                                        | Join the queue (or start a game at once if someone waits)       |
-| `cancel`                                      | Leave the queue                                                 |
+| `ranked [--size 3] [--squad auto\|SQUAD]`     | Ranked search (rated): a squad built for the game, `auto` by default |
+| `ranked-info [--size 3]`                      | Your tier, budgets, item prices and unlocks, presets            |
+| `squad [--size 3] [--seed N]`                 | Show an auto squad for your tier, without sending anything      |
+| `dismiss`                                     | Clear a search the queue dropped (`wait` does it too)           |
+| `reset-rating`                                | Back to 1500: only from above, idle, once per cooldown          |
+| `find`                                        | Stakes: your own recruits, unrated (a game at once if someone waits) |
+| `cancel`                                      | Leave the queue, ranked or stakes                               |
 | `host [--size 3\|4] [--invite]`               | Open a friendly lobby; `--invite` prints `host:code` to share   |
 | `lobbies`                                     | The listed lobbies: host, size, full, time left                 |
 | `join-open HOST`                              | Take the guest slot of a listed lobby                           |
@@ -150,13 +155,18 @@ loop:
   `Stalemate`, three missed turns is `Forfeited`, `abandon` is `Abandoned`, nobody deploying is
   `NoShow`. Then send `complete` (anyone may; the opponent may have done it already, which
   is fine). Fallen recruits are gone; `setup` hires back up to four for free.
-- A queue ticket nobody answers is cancelled by `wait` after 120 s. Whoever finds a waiting
-  player starts the game at once and plays second; the one who waited goes first and the next `wait`
-  accepts their seat.
+- A queue ticket lives 300 s: after that the queue drops it with a notice, which `wait` dismisses
+  (`wait` also leaves a search that old). Whoever finds a waiting player starts the game at once;
+  the next `wait` of the one who waited takes their seat. Who moves first is drawn.
+- Ranked: `ranked` waits holding only a commitment to your squad; when a match finds you, the next
+  `wait` reveals it, within 60 s, or the game is a no-show (a loss and a suspension). Keep a `wait`
+  running while you search. A SQUAD is units by comma: a preset (`recruit runner assault sniper
+  heavy`) or `RIFLE/ARMOR/UTILITY` such as `2/1/-` or `1/2/smoke`; `ranked-info` lists what your
+  tier unlocks and what it costs. Only ranked moves rating and score; stakes are unrated.
 
 Friendly lobbies: `host` (or `host --invite`) then `wait`; the other side runs `join-open HOST`
 or `join CODE` (`join HOST:CODE` also works). A friendly game moves no rating or score, never suspends you, and brings
-every recruit home, the fallen too. The lobby host goes first, each side deploys up to the
+every recruit home, the fallen too. Who goes first is drawn, each side deploys up to the
 lobby's size, and a lobby lasts 10 minutes. `status` shows `lobby_hosting` (actionable once a
 guest waits or the lobby expired) or `lobby_guest` while you are in one; `wait` never cancels it.
 `find` and `cancel` are refused while you are in a lobby.
@@ -168,6 +178,8 @@ guest waits or the lobby expired) or `lobby_guest` while you are in one; `wait` 
 | `bad_action`       | Malformed command or id; the message says how                             |
 | `illegal_action`   | The rules refuse it; the message is why (not your turn, no AP, out of range or sight, wall blocks, weapon empty, path blocked, no grenade left, turn ran out, dice roll not last) |
 | `no_name`          | Run `name <name>` before `find`                                           |
+| `bad_squad`        | The squad breaks the rules for your tier (over budget, locked, wrong size) |
+| `no_rules`         | This deployment has no ranked rules configured (`GHOSTS_RULES`)           |
 | `name_taken`/`bad_name` | Pick another; 3-63 lowercase letters, digits, hyphens                 |
 | `no_account`       | Run `setup`                                                               |
 | `no_game`          | Not in a game (queue first, or it was already completed)                  |

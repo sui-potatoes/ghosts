@@ -21,13 +21,14 @@ import {
     normalizeSuiAddress,
 } from "@mysten/sui/utils";
 
-import type { Backend } from "./backend.ts";
+import type { Backend, SeatView } from "./backend.ts";
 import { requestTestnetSui } from "./faucet.ts";
 import {
     AccountBcs,
     AccountRecord,
     decodeAccount,
     decodeGame,
+    decodeRules,
     LobbyField,
     RecruitBcs,
     RegistryHead,
@@ -38,10 +39,13 @@ import {
     acceptSeatsTx,
     actionsTx,
     armSquadTx,
+    cancelRankedTx,
     cancelSearchTx,
     closeLobbyTx,
     closeLobbyWithGuestTx,
+    dismissSeatTx,
     findGameTx,
+    findRankedTx,
     hireRecruitsTx,
     joinLobbyTx,
     joinOpenTx,
@@ -50,8 +54,11 @@ import {
     nameChangeTx,
     newAccountTx,
     openLobbyTx,
+    resetRatingTx,
+    revealSquadTx,
     setRecoveryTx,
     startFriendlyTx,
+    takeSeatTx,
     type Deployment,
     type PendingSeat,
 } from "./contract.ts";
@@ -63,13 +70,16 @@ import {
     protectedLobbyId,
     type InviteLobbyView,
     type LobbyView,
+    type QueueKind,
     type SearchRole,
 } from "./lobby.ts";
+import { rankedSize, sizeOfQueue, type RankedRules } from "./ranked.ts";
 import { deployLimit, rollsDice } from "./rules.ts";
 import { ActionError, type GameState, type ObjectRef, type Receipt } from "./types.ts";
 
 export interface SuiBackendOptions {
-    network: "testnet" | "mainnet";
+    /** `localnet` is a local node: `rpcUrl` and `faucetUrl` point at it, there is no name service. */
+    network: "testnet" | "mainnet" | "localnet";
     deployment: Deployment;
     signer: Signer;
     /**
@@ -81,9 +91,14 @@ export interface SuiBackendOptions {
     rpcUrl?: string;
     /** Refuse any transaction whose budget exceeds this: the agent's own spend limit. */
     maxGasMist?: bigint;
-    /** The testnet faucet to ask for SUI; Mysten's by default. */
+    /** The testnet faucet to ask for SUI, Mysten's by default; on `localnet`, the local faucet. */
     faucetUrl?: string;
 }
+
+/** How long the `Rules` read is reused: retunes are rare, and every send checks them anyway. */
+const RULES_TTL_MS = 30_000;
+/** The local faucet `sui start --with-faucet` serves by default. */
+const LOCAL_FAUCET = "http://127.0.0.1:9123";
 
 /** Same safety margin the SDK uses in its own budget estimate. */
 const GAS_SAFE_OVERHEAD = 1000n;
@@ -96,6 +111,8 @@ const DEFAULT_MAX_GAS_MIST = 200_000_000n;
 const FIND_GAME_MIN_BUDGET = 20_000_000n;
 /** Starting a friendly game stores the whole `Game`, as a match does: the same floor. */
 const START_GAME_MIN_BUDGET = FIND_GAME_MIN_BUDGET;
+/** A ranked match places the finder's squad too; a reveal places the waiter's. */
+const RANKED_MIN_BUDGET = 30_000_000n;
 /** Dynamic fields read per page when listing lobbies, and objects per `getObjects` call. */
 const LOBBY_PAGE = 100;
 const LOBBY_CHUNK = 50;
@@ -109,6 +126,11 @@ const AddressAliases = bcs.struct("AddressAliases", {
     aliases: bcs.struct("VecSet", { contents: bcs.vector(bcs.Address) }),
 });
 
+/** A fullnode by default: Mysten's for a public network, the local one on its default port. */
+function defaultRpc(network: SuiBackendOptions["network"]): string {
+    return network === "localnet" ? "http://127.0.0.1:9000" : `https://fullnode.${network}.sui.io:443`;
+}
+
 function isNotFound(error: unknown): boolean {
     return error instanceof Error && /not.?found|deleted/i.test(error.message);
 }
@@ -120,9 +142,10 @@ export function createSuiBackend(options: SuiBackendOptions): Backend {
     const maxGas = options.maxGasMist ?? DEFAULT_MAX_GAS_MIST;
     const client = new SuiGrpcClient({
         network,
-        baseUrl: options.rpcUrl ?? `https://fullnode.${network}.sui.io:443`,
+        baseUrl: options.rpcUrl ?? defaultRpc(network),
     });
     let accountId: string | null = null;
+    let rulesRead: { rules: RankedRules; atMs: number } | null = null;
     let aliasConfirmed = address === signerAddress;
 
     async function content(objectId: string) {
@@ -148,13 +171,17 @@ export function createSuiBackend(options: SuiBackendOptions): Backend {
     /** The address the leaf `<name>.<domain>` resolves to; null when free. */
     async function leafTarget(name: string): Promise<string | null> {
         const { address: target } = await client.core.resolveNameServiceAddress({
-            name: `${name}.${deployment.names.domain}`,
+            name: `${name}.${deployment.names!.domain}`,
         });
         return target ?? null;
     }
 
-    /** The name an address gave itself: its default name, if under the game's domain. */
+    /**
+     * The name an address gave itself: its default name, if under the game's domain. Without a
+     * name service (a local network) every player goes by a name made of its address.
+     */
     async function nameOf(owner: string): Promise<string | null> {
+        if (!deployment.names) return `player-${normalizeSuiAddress(owner).slice(2, 8)}`;
         const { data } = await client.core.defaultNameServiceName({ address: owner });
         const suffix = `.${deployment.names.domain}`;
         if (!data.name?.endsWith(suffix)) return null;
@@ -200,9 +227,14 @@ export function createSuiBackend(options: SuiBackendOptions): Backend {
         if (failure?.$kind === "MoveAbort" && failure.MoveAbort) {
             const { abortCode, location } = failure.MoveAbort;
             const taken = location?.module === "commander_names";
+            const abort = location?.module
+                ? { module: location.module, code: Number(abortCode) }
+                : undefined;
             return new ActionError(
                 taken ? "name_taken" : "rejected",
                 abortMessage(location?.module, abortCode),
+                false,
+                abort,
             );
         }
         if (failure?.$kind === "CongestedObjects") {
@@ -351,14 +383,81 @@ export function createSuiBackend(options: SuiBackendOptions): Backend {
         );
     }
 
-    /** The seats waiting on an `Account` that is still on its search, the one a match answered. */
+    /**
+     * The seats waiting on an `Account` that is still on its search: one in the game a match
+     * started, or a notice (`game` null) that the queue dropped it. A seat in a ranked queue's
+     * game is marked `ranked`: it is revealed into, or taken with `take_seat`.
+     */
     async function seatsOf(accountId: string): Promise<PendingSeat[]> {
         const account = AccountBcs.parse((await content(accountId)).content);
         if (account.state.$kind !== "Searching") return [];
+        const queue = await queueKind(account.state.Searching.queue);
         const seats = await listOwned(accountId, `${deployment.package}::ghosts::Seat`, (bytes) =>
             SeatBcs.parse(bytes),
         );
-        return seats.map(({ ref, game }) => ({ account: accountId, seat: ref, game }));
+        return seats.map(({ ref, game }) => ({
+            account: accountId,
+            seat: ref,
+            game: game ?? null,
+            ranked: queue !== "lobby" && queue.mode === "ranked",
+        }));
+    }
+
+    /** The live `Rules`, read again past `RULES_TTL_MS` or when `fresh`. */
+    async function readRules(fresh = false): Promise<RankedRules> {
+        if (!deployment.rules) {
+            throw new ActionError(
+                "no_rules",
+                "This deployment names no Rules object, so ranked play is off: set GHOSTS_RULES " +
+                    "(the package with ranked play must be published).",
+            );
+        }
+        if (!fresh && rulesRead && Date.now() - rulesRead.atMs < RULES_TTL_MS) {
+            return rulesRead.rules;
+        }
+        const rules = decodeRules((await content(deployment.rules)).content);
+        for (const [units, queue] of Object.entries(deployment.rankedQueues ?? {})) {
+            const size = rankedSize(rules, Number(units));
+            if (size && normalizeSuiAddress(size.queue) !== normalizeSuiAddress(queue)) {
+                throw new ActionError(
+                    "no_rules",
+                    `The ranked queue of ${units} configured (${queue}) is not the Rules' ` +
+                        `(${size.queue}).`,
+                );
+            }
+        }
+        rulesRead = { rules, atMs: Date.now() };
+        return rules;
+    }
+
+    /** What a `Searching.queue` names: the lobbies, the stakes queue or a ranked one. */
+    async function queueKind(id: string): Promise<"lobby" | QueueKind> {
+        const same = (a: string, b?: string) =>
+            !!b && normalizeSuiAddress(a) === normalizeSuiAddress(b);
+        if (same(id, deployment.lobbies)) return "lobby";
+        if (same(id, deployment.matchmaker)) return { mode: "stakes" };
+        for (const [units, queue] of Object.entries(deployment.rankedQueues ?? {})) {
+            if (same(id, queue)) return { mode: "ranked", size: Number(units) };
+        }
+        if (!deployment.rules) return { mode: "unknown" };
+        const size = sizeOfQueue(await readRules(), id);
+        return size ? { mode: "ranked", size: size.units } : { mode: "unknown" };
+    }
+
+    /** The ranked size's queue and level, from the live `Rules`; refused while it has no level. */
+    async function rankedTarget(units: number) {
+        const rules = await readRules(true);
+        const size = rankedSize(rules, units);
+        if (!size) throw new ActionError("bad_action", `There are no ranked squads of ${units}.`);
+        if (!size.level) {
+            throw new ActionError(
+                "rejected",
+                `Ranked squads of ${units} have no level yet: that queue is closed.`,
+                false,
+                { module: "rules", code: 5 },
+            );
+        }
+        return { rules: rules.id, queue: size.queue, level: size.level };
     }
 
     /** Where the lobbies of this deployment live. */
@@ -397,14 +496,23 @@ export function createSuiBackend(options: SuiBackendOptions): Backend {
         const { state } = AccountBcs.parse((await content(accountId)).content);
         if (state.$kind !== "Searching") return null;
         const home = lobbyHome();
-        return classifySearch(accountId, state.Searching.order, {
+        const queue = await queueKind(state.Searching.queue);
+        return classifySearch(accountId, state.Searching, {
+            queue: () => queue,
             open: async (order) => {
                 const found = await lobbyAt(openLobbyId(home, order));
                 return found && { guest: found.value.guest };
             },
             protectedExists: async (order) => (await lobbyAt(protectedLobbyId(home, order))) !== null,
-            seatWaiting: async () => (await seatsOf(accountId)).length > 0,
+            seats: async () =>
+                (await seatsOf(accountId)).map(({ game }) => ({ game: game ?? null })),
         });
+    }
+
+    /** The first seat of `accountId` in a game (or a notice, with `notice`). */
+    async function seatOf(accountId: string, notice: boolean): Promise<PendingSeat | undefined> {
+        const seats = await seatsOf(accountId);
+        return seats.find((seat) => (notice ? seat.game === null : seat.game !== null));
     }
 
     /** My own lobby and its host `Account`, for the calls only a host makes. */
@@ -417,10 +525,34 @@ export function createSuiBackend(options: SuiBackendOptions): Backend {
         return { me, lobby: role.kind === "hosting_open" ? await lobbyOf(me) : null, role };
     }
 
+    /** One request to a local network's faucet, resolved once the balance shows it. */
+    async function localFaucet() {
+        const balance = async () =>
+            BigInt((await client.core.getBalance({ owner: address })).balance.balance);
+        const before = await balance();
+        const response = await fetch(`${options.faucetUrl ?? LOCAL_FAUCET}/v2/gas`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ FixedAmountRequest: { recipient: address } }),
+        });
+        if (!response.ok) {
+            const message = `The local faucet answered ${response.status}.`;
+            throw new ActionError("rejected", message, true);
+        }
+        for (let i = 0; i < 40; i++) {
+            const now = await balance();
+            if (now > before) return { digest: null, amount: now - before, arrived: true };
+            await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+        return { digest: null, amount: 0n, arrived: false };
+    }
+
     return {
         network,
         address,
         signer: signerAddress,
+        packageId: deployment.package,
+        nameService: deployment.names !== null,
 
         async balanceMist() {
             const { balance } = await client.core.getBalance({ owner: address });
@@ -428,6 +560,7 @@ export function createSuiBackend(options: SuiBackendOptions): Backend {
         },
 
         async requestFaucet() {
+            if (network === "localnet") return localFaucet();
             if (network !== "testnet") {
                 throw new ActionError("rejected", "The faucet is testnet only.");
             }
@@ -445,6 +578,12 @@ export function createSuiBackend(options: SuiBackendOptions): Backend {
         },
 
         async setName(name) {
+            if (!deployment.names) {
+                throw new ActionError(
+                    "rejected",
+                    "This network has no name service: names are made of addresses.",
+                );
+            }
             const [target, current] = await Promise.all([leafTarget(name), nameOf(address)]);
             if (target && target !== address) {
                 throw new ActionError("name_taken", "That name is taken: pick another.");
@@ -480,7 +619,61 @@ export function createSuiBackend(options: SuiBackendOptions): Backend {
         hireSquad: async () => send(hireRecruitsTx(deployment, await requireAccount()), 200n),
         findGame: async () =>
             send(findGameTx(deployment, await requireAccount()), 200n, FIND_GAME_MIN_BUDGET),
-        cancelSearch: async () => send(cancelSearchTx(deployment, await requireAccount())),
+        async cancelSearch() {
+            const me = await requireAccount();
+            const { state } = AccountBcs.parse((await content(me)).content);
+            if (state.$kind !== "Searching") {
+                throw new ActionError("rejected", "This account is not searching.");
+            }
+            const queue = await queueKind(state.Searching.queue);
+            if (queue === "lobby") {
+                throw new ActionError(
+                    "rejected",
+                    "This account is in a lobby, not a queue: leave or close the lobby.",
+                );
+            }
+            if (queue.mode === "ranked") {
+                return send(cancelRankedTx(deployment, state.Searching.queue, me));
+            }
+            return send(cancelSearchTx(deployment, me));
+        },
+
+        rules: () => readRules(),
+
+        async findRanked(size, squad, commitment) {
+            const target = await rankedTarget(size);
+            const tx = findRankedTx(deployment, await requireAccount(), target, squad, commitment);
+            return send(tx, 200n, RANKED_MIN_BUDGET);
+        },
+
+        async seats(): Promise<SeatView[]> {
+            const seats = await seatsOf(await requireAccount());
+            return seats.map((seat) => ({ id: seat.seat.objectId, game: seat.game ?? null }));
+        },
+
+        async revealSquad(squad, salt) {
+            const me = await requireAccount();
+            const seat = await seatOf(me, false);
+            if (!seat) return null;
+            const rules = await readRules();
+            const tx = revealSquadTx(deployment, rules.id, seat, squad, salt);
+            return send(tx, 200n, RANKED_MIN_BUDGET);
+        },
+
+        async takeSeat() {
+            const seat = await seatOf(await requireAccount(), false);
+            return seat ? send(takeSeatTx(deployment, seat)) : null;
+        },
+
+        async dismissNotice() {
+            const seat = await seatOf(await requireAccount(), true);
+            return seat ? send(dismissSeatTx(deployment, seat)) : null;
+        },
+
+        async resetRating() {
+            const rules = await readRules();
+            return send(resetRatingTx(deployment, rules.id, await requireAccount()));
+        },
 
         async openLobby(size, code) {
             return send(openLobbyTx(deployment, await requireAccount(), size, code), 130n);
@@ -638,7 +831,10 @@ export function createSuiBackend(options: SuiBackendOptions): Backend {
         },
 
         async acceptSeat() {
-            const [seat] = await seatsOf(await requireAccount());
+            // a stakes seat; a ranked one is revealed into, a notice dismissed
+            const seat = (await seatsOf(await requireAccount())).find(
+                (s) => s.game !== null && !s.ranked,
+            );
             return seat ? send(acceptSeatsTx(deployment, [seat])) : null;
         },
 
@@ -662,7 +858,9 @@ export function createSuiBackend(options: SuiBackendOptions): Backend {
             // opponent never did
             const leaving = actions.some((a) => a.kind === "complete" || a.kind === "abandon");
             const seat = leaving
-                ? (await seatsOf(game.players[1 - side])).find((s) => s.game === game.id)
+                ? (await seatsOf(game.players[1 - side])).find(
+                      (s) => s.game && normalizeSuiAddress(s.game) === normalizeSuiAddress(game.id),
+                  )
                 : undefined;
             const tx = actionsTx(deployment, game, me, resolved, seat ? [seat] : []);
             const receipt = await send(tx, actions.some(rollsDice) ? 200n : 130n);

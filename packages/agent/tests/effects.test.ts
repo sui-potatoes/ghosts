@@ -91,7 +91,7 @@ function arena(rows = 10, cols = 10): GameState {
         abandonedBy: null,
         deadlineMs: 1_000_000,
         status: { kind: "active" },
-        mode: { kind: "rated" },
+        mode: { kind: "stakes" },
         tiles,
         units: [],
     };

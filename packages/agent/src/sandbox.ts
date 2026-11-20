@@ -4,14 +4,21 @@
 /**
  * An in-memory `Backend`: a game on the match preset against a scripted opponent,
  * no key or gas needed. It follows `ghosts::ghosts` for the loop (a match starts the
- * game for the player who finds it, the waiting one is seated and goes first, the
- * turn clock only passes a turn, kills wait for `bury_fallen`, `complete` sends
- * everyone home) and `unit::perform_attack`, `apply_damage` and `map::explode` for the
- * dice, so odds match the chain. By default you find the opponent, so you play second;
- * with `seated` you wait and the opponent finds you.
+ * game for the player who finds it, the waiting one is seated, the turn clock only
+ * passes a turn, kills wait for `bury_fallen`, `complete` sends everyone home) and
+ * `unit::perform_attack`, `apply_damage` and `map::explode` for the dice, so odds match
+ * the chain. By default you find the opponent; with `seated` you wait and the opponent
+ * finds you. Who moves first is the chain's draw: `firstMover` sets it, and without it
+ * the player who waited (or the host) goes first.
+ *
+ * Ranked games follow `find_ranked`, `reveal_squad` and the `Rules` (`SANDBOX_RULES` by
+ * default): a squad built from loadouts, a commitment checked at the reveal, the reveal
+ * limit (a scripted waiter reveals at once, unless `opponentNoShow`), and a completion that
+ * moves rating and score and nothing else. A stakes game is unrated. With `empty` a search
+ * waits alone, and past the ticket lifetime the queue drops it with a notice.
  */
 
-import type { Backend } from "./backend.ts";
+import type { Backend, SeatView } from "./backend.ts";
 import { decodeTiles, gridSize, MapPresetBcs, winnerOf } from "./bcs.ts";
 import { referencePolicy, type Policy } from "./bot.ts";
 import {
@@ -23,7 +30,19 @@ import {
     type LobbyView,
     type SearchRole,
 } from "./lobby.ts";
+import { computeRatings, defaultRating, DEFAULT_RATING, type GlickoRating } from "./glicko.ts";
 import { BLACK_RAIN, BLACK_RAIN_POSITIONS } from "./maps.ts";
+import {
+    autoSquad,
+    checkSquad,
+    decodeSquad,
+    rankedSize,
+    squadCommitment,
+    tierOf,
+    unitFromLoadout,
+    type Loadout,
+    type RankedRules,
+} from "./ranked.ts";
 import {
     applyDeterministic,
     blastUnits,
@@ -44,6 +63,7 @@ import {
     spendUse,
     SUSPENSION_MS,
     throwEffect,
+    TICKET_TTL_MS,
     turnLimitMs,
     unitAt,
     type EffectThrowAction,
@@ -110,7 +130,65 @@ export interface SandboxOptions {
     ) => number;
     /** Experiments: called once `next_turn` has passed the turn and reset the AP. */
     afterNextTurn?: (state: GameState) => void;
+    /**
+     * Who moves first, as the chain draws it for every game. Without it the player who waited
+     * goes first, and in a friendly game the host.
+     */
+    firstMover?: "you" | "opponent";
+    /** The ranked rules; `SANDBOX_RULES`, the package's initial ones, by default. */
+    rules?: RankedRules;
+    /** The opponent's ranked squad; an auto squad for its tier by default. */
+    opponentSquad?: Loadout[];
+    /** In a ranked game the scripted opponent waited in, it never reveals: a no-show at the deadline. */
+    opponentNoShow?: boolean;
+    /** Your starting rating; the default otherwise. The opponent always has the default. */
+    rating?: number;
 }
+
+/** The queues and level ids the sandbox's `Rules` name. */
+const sandboxId = (suffix: string) => `0x${suffix.padStart(64, "0")}`;
+export const SANDBOX_STAKES_QUEUE = sandboxId("c0");
+export const SANDBOX_LOBBIES = sandboxId("c1");
+export const SANDBOX_RANKED_QUEUES: Readonly<Record<number, string>> = {
+    3: sandboxId("c3"),
+    4: sandboxId("c4"),
+};
+const SANDBOX_LEVEL = sandboxId("d3");
+
+/** `rules::new` as `ghosts::init` calls it: the app's economy, Black Rain for 3, no level for 4. */
+export const SANDBOX_RULES: RankedRules = {
+    id: sandboxId("c5"),
+    version: 1,
+    weapons: [
+        { price: 20, minTier: 0 },
+        { price: 40, minTier: 1 },
+        { price: 60, minTier: 2 },
+    ],
+    armor: [
+        { price: 10, minTier: 0 },
+        { price: 25, minTier: 0 },
+        { price: 45, minTier: 2 },
+    ],
+    utilities: [
+        { price: 10, minTier: 0 },
+        { price: 10, minTier: 0 },
+        { price: 10, minTier: 0 },
+    ],
+    tiers: [
+        { minRating: 0, budgets: [125, 165] },
+        { minRating: 1400, budgets: [150, 200] },
+        { minRating: 1650, budgets: [190, 255] },
+        { minRating: 1900, budgets: [240, 320] },
+    ],
+    sizes: [
+        { units: 3, queue: SANDBOX_RANKED_QUEUES[3], level: SANDBOX_LEVEL },
+        { units: 4, queue: SANDBOX_RANKED_QUEUES[4], level: null },
+    ],
+    placementGames: 5,
+    placementTier: 1,
+    revealLimitMs: 60_000,
+    resetCooldownMs: 7 * 86_400_000,
+};
 
 /** A unit a side deploys with `SandboxOptions.squads`: its stats and the actions it carries. */
 export interface SquadUnit {
@@ -226,8 +304,15 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
     let current: GameState | null = null;
     /** The game a match started for this account while it waited: the seat's game. */
     let seated: GameState | null = null;
-    /** The waiting player goes first; the one who finds them plays second. A lobby host goes first. */
+    /** A notice the queue sent: the search was dropped. */
+    let notice = false;
+    /** Your side in the current game: the draw, see `sideFor`. */
     let yourSide = options.seated ? 0 : 1;
+    const rules = options.rules ?? SANDBOX_RULES;
+    /** The opponent's rating: ranked games move it as they move yours. */
+    let opponentRating: GlickoRating = defaultRating();
+    /** Your ranked search: its size and commitment, for the reveal. */
+    let rankedSearch: { size: number; commitment: string } | null = null;
     /** My lobby, as a host: `open` is listed, `invite` is keyed by the code. */
     let mine: { kind: "open" | "invite"; size: number; guest: string | null; kicked: string[]; sinceMs: number; key: string } | null = null;
     /** The listed lobby of the scripted opponent, while I am its guest. */
@@ -237,6 +322,32 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
     let [digests, games, version, recruits] = [0, 0, 0, 0];
 
     const theirSide = () => 1 - yourSide;
+
+    /** Your side as the draw has it: `firstMover`, or `legacy` (0 when you waited or host). */
+    const sideFor = (legacy: number) =>
+        options.firstMover === undefined ? legacy : options.firstMover === "you" ? 0 : 1;
+
+    /** The players in turn order, you on `side`. */
+    const ordered = (side: number): [string, string] =>
+        side === 0 ? [ACCOUNT, OPPONENT_ACCOUNT] : [OPPONENT_ACCOUNT, ACCOUNT];
+
+    const searching = (queue: string, commitment: string | null = null) => ({
+        kind: "searching" as const,
+        order: hexId("7", digests + 1),
+        sinceMs: now(),
+        queue,
+        commitment,
+    });
+
+    const rated = (me: AccountView): GlickoRating => ({
+        rating: me.rating,
+        deviation: me.deviation,
+        games: me.ratedGames,
+        lastPlayedMs: me.lastPlayedMs,
+    });
+    const gamesOf = (me: AccountView) => me.score.wins + me.score.losses + me.score.draws;
+    const abortError = (module: string, code: number, message: string) =>
+        new ActionError("rejected", message, false, { module, code });
 
     function receipt(records: GameRecord[], gas = ACTION_GAS_MIST) {
         balance -= gas;
@@ -253,7 +364,11 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
     }
 
     /** `new_game`: the first half of the spawn positions goes to the first player. */
-    function freshGame(waiting: string, finder: string, mode: GameMode = { kind: "rated" }): GameState {
+    function freshGame(
+        first: string,
+        second: string,
+        mode: GameMode = { kind: "stakes" },
+    ): GameState {
         const map = MapPresetBcs.parse(Uint8Array.from(Buffer.from(BLACK_RAIN, "hex")));
         const spawns = options.positions ?? BLACK_RAIN_POSITIONS;
         const half = spawns.length / 2;
@@ -265,7 +380,7 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
                 : gridSize(map)),
             turn: 0,
             active: 0,
-            players: [waiting, finder],
+            players: [first, second],
             squads: [[], []],
             fallen: [],
             positions: [spawns.slice(0, half), spawns.slice(half)],
@@ -366,6 +481,99 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
         refreshSquads(state);
         if (state.squads.every((squad) => squad.length > 0)) beginMatch(state);
         return records;
+    }
+
+    /**
+     * `place_squad`: a ranked squad, a loadout per unit, on the side's spawn positions from the
+     * back, each unit `unit::from_loadout` with a fresh ID and nothing behind it.
+     */
+    function placeSquad(state: GameState, side: number, squad: Loadout[]): GameRecord[] {
+        const records: GameRecord[] = [];
+        for (const loadout of squad) {
+            const unit = unitFromLoadout(loadout)!;
+            const [x, y] = state.positions[side].pop()!;
+            state.units.push({
+                recruit: hexId("6", ++recruits),
+                owner: state.players[side],
+                side,
+                x,
+                y,
+                ap: unit.ap,
+                apMax: unit.ap,
+                hp: unit.hp,
+                hpMax: unit.hp,
+                ammo: unit.ammo,
+                ammoMax: unit.ammo,
+                stats: unit.stats,
+                effects: [],
+                actions: unit.actions,
+            });
+            records.push({ kind: "placed", x, y });
+        }
+        refreshSquads(state);
+        state.history.push(...records);
+        return records;
+    }
+
+    /** The scripted opponent's ranked squad: given, or an auto squad for its tier. */
+    function opponentSquad(size: number, tier: number): Loadout[] {
+        const seed = options.seed ?? 1;
+        return options.opponentSquad ?? autoSquad(rules, tier, size, { seed }).squad;
+    }
+
+    /** `start_ranked`: the finder's squad on the map, the waiter to reveal until the limit. */
+    function startRanked(
+        size: number,
+        tier: number,
+        side: number,
+        finderIsYou: boolean,
+        squad: Loadout[],
+    ) {
+        yourSide = side;
+        const game = freshGame(...ordered(side), { kind: "ranked", size, tier });
+        game.deadlineMs = now() + rules.revealLimitMs;
+        const finderSide = finderIsYou ? side : 1 - side;
+        placeSquad(game, finderSide, finderIsYou ? squad : opponentSquad(size, tier));
+        return game;
+    }
+
+    /**
+     * What the scripted opponent does without being asked: a ranked waiter that never revealed
+     * is wrapped up as a no-show once the limit is out, and a lone search past the ticket
+     * lifetime is dropped by a search walking by, with a notice.
+     */
+    function tick(): void {
+        const me = account;
+        if (!me) return;
+        const waited = seated?.mode.kind === "ranked" && now() > seated.deadlineMs;
+        if (seated && waited && me.search.kind === "searching") {
+            // the finder sends `next_turn` past the limit, takes the seat for you and completes
+            current = seated;
+            seated = null;
+            rankedSearch = null;
+            me.search = { kind: "playing", game: current.id };
+            beginMatch(current);
+            complete(current);
+            return;
+        }
+        const deploying = current?.mode.kind === "ranked" && current.status.kind === "deploying";
+        if (current && deploying && now() > current.deadlineMs) {
+            const mine = current.squads[yourSide]?.length ?? 0;
+            // you gave up on the reveal: the finder ends it and completes
+            if (mine === 0) {
+                beginMatch(current);
+                complete(current);
+            }
+        }
+        if (
+            options.empty &&
+            me.search.kind === "searching" &&
+            me.search.queue !== SANDBOX_LOBBIES &&
+            !notice &&
+            now() - me.search.sinceMs > TICKET_TTL_MS
+        ) {
+            notice = true;
+        }
     }
 
     /** `unit::apply_damage`: a kill takes the unit off its tile, into `fallen` until `bury`. */
@@ -475,7 +683,7 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
      */
     function nextTurn(state: GameState, side: number): GameRecord[] {
         // a friendly game keeps its fallen until `complete`
-        if (state.mode.kind === "rated") state.fallen = [];
+        if (state.mode.kind !== "friendly") state.fallen = [];
         if (state.status.kind === "deploying") {
             beginMatch(state);
             return [];
@@ -514,15 +722,37 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
             current = null;
             return;
         }
-        // nobody showing up isn't a game: it goes on no score
-        if (ending.kind !== "nobody_showed") {
+        // only a ranked game is rated and scored; nobody showing up isn't a game
+        if (state.mode.kind === "ranked" && ending.kind !== "nobody_showed") {
             if (winner === null) me.score.draws += 1;
             else if (winner === me.id) me.score.wins += 1;
             else me.score.losses += 1;
+            const first = state.players[0] === me.id;
+            const mine = rated(me);
+            const score = winner === null ? "draw" : winner === state.players[0] ? "win" : "loss";
+            const [a, b] = computeRatings(
+                first ? mine : opponentRating,
+                first ? opponentRating : mine,
+                score,
+                now(),
+            );
+            const [next, theirs] = first ? [a, b] : [b, a];
+            opponentRating = theirs;
+            me.rating = next.rating;
+            me.deviation = next.deviation;
+            me.ratedGames = next.games;
+            me.lastPlayedMs = next.lastPlayedMs;
         }
         // `misbehaved`
         if (state.abandonedBy === me.id || ending.kind === "nobody_showed") {
             me.suspendedUntilMs = now() + SUSPENSION_MS;
+        }
+        if (state.mode.kind === "ranked") {
+            // a ranked squad has no recruits to send home
+            me.search = { kind: "idle" };
+            current = null;
+            deployed.clear();
+            return;
         }
 
         for (const unit of state.units.filter((unit) => unit.owner === me.id)) {
@@ -540,24 +770,24 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
     }
 
     /** The checks `find_game`, `open_lobby` and the joins share: free to play. */
-    function checkFree(): AccountView {
+    function checkFree(withRecruits = true): AccountView {
         const me = requireAccount();
         if (me.search.kind !== "idle") {
-            throw new ActionError("rejected", "This account is already searching or playing.");
+            throw abortError("ghosts", 6, "This account is already searching or playing.");
         }
         if (now() < me.suspendedUntilMs) {
-            throw new ActionError("rejected", "This account is suspended: it left a game behind.");
+            throw abortError("ghosts", 9, "This account is suspended: it left a game behind.");
         }
-        if (me.recruits === 0) {
-            throw new ActionError("rejected", "This account has no recruits to play with.");
+        if (withRecruits && me.recruits === 0) {
+            throw abortError("ghosts", 22, "This account has no recruits to play with.");
         }
         return me;
     }
 
-    /** `start_friendly_game`: the host goes first; the other side deploys at once. */
+    /** `start_friendly_game`: who goes first is drawn; the other side deploys at once. */
     function startFriendlyGame(host: string, guest: string, size: number): GameRecord[] {
-        yourSide = host === ACCOUNT ? 0 : 1;
-        current = freshGame(host, guest, { kind: "friendly", size });
+        yourSide = sideFor(host === ACCOUNT ? 0 : 1);
+        current = freshGame(...ordered(yourSide), { kind: "friendly", size });
         requireAccount().search = { kind: "playing", game: current.id };
         mine = null;
         guestOf = null;
@@ -678,8 +908,18 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
                 deviation: 350,
                 score: { wins: 0, losses: 0, draws: 0 },
                 recruits: 4,
-                search: { kind: "searching", order: id, sinceMs: now() },
+                search: {
+                    kind: "searching",
+                    order: id,
+                    sinceMs: now(),
+                    queue: SANDBOX_LOBBIES,
+                    commitment: null,
+                },
+                ratedGames: 0,
+                lastPlayedMs: 0,
                 suspendedUntilMs: 0,
+                resets: 0,
+                lastResetMs: 0,
                 recovery: null,
             };
         },
@@ -705,6 +945,7 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
         },
 
         async account() {
+            tick();
             // the scripted host answers a guest between two reads
             if (
                 guestOf &&
@@ -728,12 +969,16 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
             account = {
                 id: ACCOUNT,
                 owner: YOU,
-                rating: 1500,
+                rating: options.rating ?? DEFAULT_RATING,
                 deviation: 350,
                 score: { wins: 0, losses: 0, draws: 0 },
+                ratedGames: 0,
+                lastPlayedMs: 0,
                 recruits: 0,
                 search: { kind: "idle" },
                 suspendedUntilMs: 0,
+                resets: 0,
+                lastResetMs: 0,
                 recovery: null,
             };
             return receipt([]);
@@ -769,23 +1014,134 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
 
         async findGame() {
             const me = checkFree();
-            yourSide = options.seated ? 0 : 1;
-            const order = hexId("7", digests + 1);
+            yourSide = sideFor(options.seated ? 0 : 1);
             if (options.empty) {
-                me.search = { kind: "searching", order, sinceMs: now() };
+                me.search = searching(SANDBOX_STAKES_QUEUE);
                 return receipt([]);
             }
             if (options.seated) {
                 // the opponent found us later: it started the game and has deployed
-                seated = freshGame(ACCOUNT, OPPONENT_ACCOUNT);
+                seated = freshGame(...ordered(yourSide));
                 apply(seated, theirSide(), { kind: "deploy" });
-                me.search = { kind: "searching", order, sinceMs: now() };
+                me.search = searching(SANDBOX_STAKES_QUEUE);
                 return receipt([]);
             }
             // someone was waiting: the game starts in this call, and they are seated
-            current = freshGame(OPPONENT_ACCOUNT, ACCOUNT);
+            current = freshGame(...ordered(yourSide));
             me.search = { kind: "playing", game: current.id };
             return receipt(apply(current, theirSide(), { kind: "deploy" }));
+        },
+
+        rules: async () => structuredClone(rules),
+
+        async findRanked(size, squad, commitment) {
+            const me = checkFree(false);
+            const units = rankedSize(rules, size);
+            if (!units) throw abortError("rules", 7, `There are no ranked squads of ${size}.`);
+            if (!units.level) throw abortError("rules", 5, "That ranked size has no level yet.");
+            const tier = tierOf(rules, me.rating, gamesOf(me));
+            // the scripted opponent waits unless the queue is `empty` or it finds you (`seated`)
+            const waiting = !options.empty && !options.seated;
+            if (!waiting) {
+                if (squad.length > 0) {
+                    throw abortError("ghosts", 32, "Nobody is waiting: queue with the commitment alone.");
+                }
+                me.search = searching(units.queue, commitment);
+                rankedSearch = { size, commitment };
+                if (options.seated) {
+                    // the opponent found us: its squad is on the map, our seat waits for the reveal
+                    seated = startRanked(size, tier, sideFor(0), false, []);
+                }
+                return receipt([]);
+            }
+            const problem = checkSquad(rules, size, tier, squad);
+            if (problem) throw abortError("rules", problem.abort ?? 0, problem.message);
+            current = startRanked(size, tier, sideFor(1), true, decodeSquad(squad));
+            me.search = { kind: "playing", game: current.id };
+            const records = [...current.history];
+            // the scripted waiter reveals at once, unless it is a no-show
+            if (!options.opponentNoShow) {
+                placeSquad(current, theirSide(), opponentSquad(size, tier));
+                beginMatch(current);
+                // the opponent may have drawn the first move
+                await opponentTurn(current);
+            }
+            return receipt(records);
+        },
+
+        async seats(): Promise<SeatView[]> {
+            tick();
+            const list: SeatView[] = [];
+            if (seated) list.push({ id: "sandbox-seat", game: seated.id });
+            if (notice) list.push({ id: "sandbox-notice", game: null });
+            return list;
+        },
+
+        async revealSquad(squad, salt) {
+            const me = requireAccount();
+            tick();
+            if (!seated || seated.mode.kind !== "ranked" || me.search.kind !== "searching") {
+                return null;
+            }
+            if (!rankedSearch) throw abortError("ghosts", 7, "This account is not searching.");
+            if (now() > seated.deadlineMs) {
+                throw abortError("ghosts", 15, "The time to deploy is over.");
+            }
+            if (squadCommitment(squad, salt) !== rankedSearch.commitment) {
+                throw abortError("ghosts", 31, "The squad and salt revealed are not the commitment's.");
+            }
+            const { size, tier } = seated.mode;
+            const problem = checkSquad(rules, size, tier, squad);
+            if (problem) throw abortError("rules", problem.abort ?? 0, problem.message);
+            current = seated;
+            seated = null;
+            rankedSearch = null;
+            me.search = { kind: "playing", game: current.id };
+            const records = placeSquad(current, yourSide, decodeSquad(squad));
+            beginMatch(current);
+            await opponentTurn(current);
+            return receipt(records);
+        },
+
+        async takeSeat() {
+            const me = requireAccount();
+            if (!seated || me.search.kind !== "searching") return null;
+            current = seated;
+            seated = null;
+            rankedSearch = null;
+            me.search = { kind: "playing", game: current.id };
+            return receipt([]);
+        },
+
+        async dismissNotice() {
+            const me = requireAccount();
+            tick();
+            if (!notice || me.search.kind !== "searching") return null;
+            notice = false;
+            rankedSearch = null;
+            me.search = { kind: "idle" };
+            return receipt([]);
+        },
+
+        async resetRating() {
+            const me = requireAccount();
+            if (me.rating <= DEFAULT_RATING) {
+                throw abortError("account", 10, "Only a rating above the default can be reset.");
+            }
+            if (me.search.kind !== "idle") {
+                throw abortError("account", 11, "The account must be idle to reset its rating.");
+            }
+            if (me.resets > 0 && now() - me.lastResetMs < rules.resetCooldownMs) {
+                throw abortError("account", 12, "The rating was reset too recently: wait.");
+            }
+            const fresh = defaultRating();
+            me.rating = fresh.rating;
+            me.deviation = fresh.deviation;
+            me.ratedGames = fresh.games;
+            me.lastPlayedMs = fresh.lastPlayedMs;
+            me.resets += 1;
+            me.lastResetMs = now();
+            return receipt([]);
         },
 
         async openLobby(size, code) {
@@ -794,7 +1150,7 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
                 throw refuse("A lobby has 3 or 4 recruits a side.");
             }
             const key = code ? protectedKey(code) : ACCOUNT;
-            me.search = { kind: "searching", order: key, sinceMs: now() };
+            me.search = { ...searching(SANDBOX_LOBBIES), order: key };
             mine = { kind: code ? "invite" : "open", size, guest: null, kicked: [], sinceMs: now(), key };
             if (options.guest && code) return receipt(startFriendlyGame(ACCOUNT, OPPONENT_ACCOUNT, size));
             if (options.guest) mine.guest = OPPONENT_ACCOUNT;
@@ -813,7 +1169,7 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
             const me = checkFree();
             if (host !== SANDBOX_PEER_HOST) throw refuse("There is no such lobby: check the code and the host.");
             if (!peerOpen()) throw refuse("The host kicked this account out of that lobby.");
-            me.search = { kind: "searching", order: SANDBOX_PEER_HOST, sinceMs: now() };
+            me.search = { ...searching(SANDBOX_LOBBIES), order: SANDBOX_PEER_HOST };
             guestOf = { kicked: false, since: now() };
             return receipt([]);
         },
@@ -888,7 +1244,16 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
             if (me.search.kind !== "searching") return null;
             if (mine) return { kind: mine.kind === "open" ? "hosting_open" : "hosting_invite" };
             if (guestOf) return { kind: "guest", host: SANDBOX_PEER_HOST };
-            return { kind: seated ? "seat_waiting" : "queued" };
+            tick();
+            const ranked = rankedSearch && { mode: "ranked" as const, size: rankedSearch.size };
+            const queue = ranked ?? { mode: "stakes" as const };
+            if (seated) {
+                return ranked
+                    ? { kind: "reveal", queue, game: seated.id }
+                    : { kind: "seat_waiting", queue, game: seated.id };
+            }
+            if (notice) return { kind: "notice", queue };
+            return { kind: "queued", queue };
         },
 
         async cancelSearch() {
@@ -900,18 +1265,20 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
                 throw new ActionError("rejected", "This account is not in the queue: leave or close the lobby.");
             }
             if (seated) {
-                throw new ActionError(
-                    "rejected",
-                    "A match found this search: accept its seat first.",
-                );
+                throw abortError("ghosts", 25, "A match found this search: accept its seat first.");
+            }
+            if (notice) {
+                throw abortError("ghosts", 25, "The queue dropped this search: dismiss its notice.");
             }
             me.search = { kind: "idle" };
+            rankedSearch = null;
             return receipt([]);
         },
 
         async acceptSeat() {
             const me = requireAccount();
-            if (!seated || me.search.kind !== "searching") return null;
+            const ranked = seated?.mode.kind === "ranked";
+            if (!seated || me.search.kind !== "searching" || ranked) return null;
             current = seated;
             seated = null;
             me.search = { kind: "playing", game: current.id };

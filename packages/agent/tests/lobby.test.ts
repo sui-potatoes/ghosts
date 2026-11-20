@@ -74,12 +74,13 @@ const GUEST = `0x${"b".repeat(64)}`;
 
 // === Decoders against Move's bytes ===
 
-test("a game carries its mode last: rated, or friendly with its size", () => {
+test("a game carries its mode last: stakes, friendly with its size, or ranked with size and tier", () => {
     for (const name of ["gameDeploying", "gamePlayingT0", "gameOverWonFallen"] as const) {
-        assert.deepEqual(decodeGame(bytes(FIXTURES[name]), "1").mode, { kind: "rated" });
+        assert.deepEqual(decodeGame(bytes(FIXTURES[name]), "1").mode, { kind: "stakes" });
     }
     const invite = decodeGame(bytes(FIXTURES.gameFriendlyDeploying), "1");
     assert.deepEqual(invite.mode, { kind: "friendly", size: 3 });
+    // the draw is undone by the printer's helper: the host first
     assert.deepEqual(invite.players, [LOBBY.friendly.alice, LOBBY.friendly.bob]);
     assert.equal(invite.status.kind, "deploying");
     assert.deepEqual(
@@ -88,7 +89,11 @@ test("a game carries its mode last: rated, or friendly with its size", () => {
     );
     assert.equal(decodeGame(bytes(FIXTURES.gameFriendlyPlaying), "1").status.kind, "active");
     assert.deepEqual(ModeBcs.serialize({ Friendly: { size: 4 } }).toBytes(), Uint8Array.from([1, 4]));
-    assert.deepEqual(ModeBcs.serialize({ Rated: null }).toBytes(), Uint8Array.from([0]));
+    assert.deepEqual(ModeBcs.serialize({ Stakes: null }).toBytes(), Uint8Array.from([0]));
+    assert.deepEqual(
+        ModeBcs.serialize({ Ranked: { size: 3, tier: 1 } }).toBytes(),
+        Uint8Array.from([2, 3, 1]),
+    );
 });
 
 test("in a friendly game the fallen stay in the map's fallen until completion", () => {
@@ -145,13 +150,16 @@ function bcsField(key: string, value: string): Uint8Array {
     return Uint8Array.from([...bytes(`11`.repeat(32)), ...bytes(key), ...bytes(value)]);
 }
 
-test("an Account's search is read as a lobby's key or a queue ticket by lookup", () => {
+test("an Account in a lobby searches with the Lobbies as its queue, and no commitment", () => {
     const host = decodeAccount(bytes(FIXTURES.accountLobbyOpenHost));
-    assert.deepEqual(host.search, { kind: "searching", order: LOBBY.alice, sinceMs: 7000 });
+    const lobby = { queue: LOBBY.lobbies, commitment: null };
+    assert.deepEqual(host.search, { kind: "searching", order: LOBBY.alice, sinceMs: 7000, ...lobby });
     const invite = decodeAccount(bytes(FIXTURES.accountLobbyProtectedHost));
     assert.equal(invite.search.kind === "searching" && invite.search.order, LOBBY.protectedKey);
     const guest = decodeAccount(bytes(FIXTURES.accountLobbyGuest));
-    assert.deepEqual(guest.search, { kind: "searching", order: LOBBY.alice, sinceMs: 8000 });
+    assert.deepEqual(guest.search, { kind: "searching", order: LOBBY.alice, sinceMs: 8000, ...lobby });
+    const hosting = decodeAccount(bytes(FIXTURES.accountHostingInvite));
+    assert.equal(hosting.search.kind === "searching" && hosting.search.queue, LOBBY.friendly.lobbies);
 });
 
 // === Keys and codes ===
@@ -256,31 +264,49 @@ test("a lobby expires strictly past 600 seconds from the host's search", () => {
 
 // === Telling a search apart ===
 
-test("a search is classified by lookup, in the order the contract's keys allow", async () => {
+test("a search is classified by its queue, then by lookup", async () => {
+    const queues = { "0xl": "lobby", "0xs": { mode: "stakes" }, "0x3": { mode: "ranked", size: 3 } } as const;
     const none = {
+        queue: (id: string) => queues[id as keyof typeof queues] ?? { mode: "unknown" as const },
         open: async () => null,
         protectedExists: async () => false,
-        seatWaiting: async () => false,
+        seats: async () => [],
     };
-    assert.deepEqual(await classifySearch(HOST, HOST, { ...none, open: async () => ({ guest: null }) }), {
-        kind: "hosting_open",
-    });
+    const lobby = (order: string) => ({ order, queue: "0xl" });
     assert.deepEqual(
-        await classifySearch(GUEST, HOST, { ...none, open: async () => ({ guest: GUEST }) }),
+        await classifySearch(HOST, lobby(HOST), { ...none, open: async () => ({ guest: null }) }),
+        { kind: "hosting_open" },
+    );
+    assert.deepEqual(
+        await classifySearch(GUEST, lobby(HOST), { ...none, open: async () => ({ guest: GUEST }) }),
         { kind: "guest", host: HOST },
     );
-    assert.deepEqual(await classifySearch(HOST, "0x77", { ...none, protectedExists: async () => true }), {
-        kind: "hosting_invite",
-    });
-    assert.deepEqual(await classifySearch(HOST, "0x77", none), { kind: "queued" });
-    assert.deepEqual(await classifySearch(HOST, "0x77", { ...none, seatWaiting: async () => true }), {
-        kind: "seat_waiting",
-    });
-    // an open lobby of someone else with another guest says nothing of this Account
     assert.deepEqual(
-        await classifySearch(GUEST, HOST, { ...none, open: async () => ({ guest: `0x${"c".repeat(64)}` }) }),
-        { kind: "queued" },
+        await classifySearch(HOST, lobby("0x77"), { ...none, protectedExists: async () => true }),
+        { kind: "hosting_invite" },
     );
+    // an open lobby of someone else with another guest says nothing of this Account
+    const other = { ...none, open: async () => ({ guest: `0x${"c".repeat(64)}` }) };
+    assert.deepEqual(await classifySearch(GUEST, lobby(HOST), other), {
+        kind: "queued",
+        queue: { mode: "unknown" },
+    });
+
+    // a queue: the seats say the rest, and a lobby lookup is never made
+    const queued = (queue: string, seats: { game: string | null }[]) =>
+        classifySearch(HOST, { order: "0x77", queue }, {
+            ...none,
+            open: async () => assert.fail("not a lobby"),
+            seats: async () => seats,
+        });
+    const stakes = { mode: "stakes" };
+    const three = { mode: "ranked", size: 3 };
+    assert.deepEqual(await queued("0xs", []), { kind: "queued", queue: stakes });
+    assert.deepEqual(await queued("0xs", [{ game: "0xg" }]), { kind: "seat_waiting", queue: stakes, game: "0xg" });
+    assert.deepEqual(await queued("0x3", []), { kind: "queued", queue: three });
+    assert.deepEqual(await queued("0x3", [{ game: "0xg" }]), { kind: "reveal", queue: three, game: "0xg" });
+    assert.deepEqual(await queued("0x3", [{ game: null }]), { kind: "notice", queue: three });
+    assert.deepEqual(await queued("0xs", [{ game: null }]), { kind: "notice", queue: stakes });
 });
 
 // === The seven calls ===
@@ -305,6 +331,8 @@ function calls(tx: Transaction) {
 
 const obj = (id: string) => `obj:${normalizeSuiAddress(id)}`;
 const CLOCK = obj("0x6");
+/** `Random`: who goes first is drawn when a friendly game starts. */
+const RANDOM = obj("0x8");
 
 test("open_lobby: lobbies, account, clock, then the size and the optional code hash", () => {
     const [call] = calls(openLobbyTx(D, HOST, 3));
@@ -321,11 +349,11 @@ test("open_lobby: lobbies, account, clock, then the size and the optional code h
     assert.equal(Buffer.from(listed[1].Pure!.bytes, "base64").toString("hex"), "00");
 });
 
-test("join_lobby: lobbies, preset, host, account, clock, then the raw code", () => {
+test("join_lobby: lobbies, preset, host, account, random, clock, then the raw code", () => {
     const tx = joinLobbyTx(D, GUEST, HOST, bytes(LOBBY.code));
     const [call] = calls(tx);
     assert.equal(call.target, "ghosts::join_lobby");
-    assert.deepEqual(call.args, [obj("0x5"), obj("0x4"), obj(HOST), obj(GUEST), CLOCK, "pure"]);
+    assert.deepEqual(call.args, [obj("0x5"), obj("0x4"), obj(HOST), obj(GUEST), RANDOM, CLOCK, "pure"]);
     const [code] = tx.getData().inputs.filter((input) => input.$kind === "Pure");
     assert.equal(Buffer.from(code.Pure!.bytes, "base64").toString("hex"), `08${LOBBY.code.slice(2)}`);
 });
@@ -341,7 +369,10 @@ test("join_open, leave_lobby, kick_guest, start_friendly and close_lobby take th
         { target: "ghosts::kick_guest", args: [obj("0x5"), obj(HOST), obj(GUEST), CLOCK] },
     ]);
     assert.deepEqual(calls(startFriendlyTx(D, HOST, GUEST)), [
-        { target: "ghosts::start_friendly", args: [obj("0x5"), obj("0x4"), obj(HOST), obj(GUEST), CLOCK] },
+        {
+            target: "ghosts::start_friendly",
+            args: [obj("0x5"), obj("0x4"), obj(HOST), obj(GUEST), RANDOM, CLOCK],
+        },
     ]);
     assert.deepEqual(calls(closeLobbyTx(D, HOST)), [
         { target: "ghosts::close_lobby", args: [obj("0x5"), obj(HOST), CLOCK] },
@@ -536,17 +567,17 @@ test("a friendly game is played to the end for nothing: no score, no rating, eve
     }
 });
 
-test("a rated game still works after a friendly one", async () => {
+test("a game for stakes still works after a friendly one", async () => {
     const agent = new GhostsAgent(createSandbox({ seed: 4, guest: true }), fast);
     await agent.setName("both-modes");
     await agent.setup();
     await agent.hostLobby({ invite: true });
     await playGames(agent, referencePolicy, { games: 1, signal: AbortSignal.timeout(20_000) });
     assert.equal((await agent.findGame()).phase, "deploy");
-    assert.deepEqual((await agent.current()).state.mode, { kind: "rated" });
+    assert.deepEqual((await agent.current()).state.mode, { kind: "stakes" });
 });
 
-test("a friendly game deploys 1 to its size, and a rated one all its positions", async () => {
+test("a friendly game deploys 1 to its size, and one for stakes all its positions", async () => {
     const agent = await named({ guest: true });
     await agent.hostLobby({ size: 3, invite: true });
     const { state } = await agent.current();

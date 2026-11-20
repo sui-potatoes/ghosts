@@ -3,7 +3,14 @@
 
 import type { FaucetResult } from "./faucet.ts";
 import type { InviteLobbyView, LobbyView, SearchRole } from "./lobby.ts";
+import type { RankedRules } from "./ranked.ts";
 import type { AccountView, Action, GameState, Receipt } from "./types.ts";
+
+/** A `Seat` waiting on the `Account`: in a game, or a notice (`game` null). */
+export interface SeatView {
+    id: string;
+    game: string | null;
+}
 
 /**
  * Where a game is played. `sui.ts` is the chain and `sandbox.ts` is an
@@ -16,6 +23,10 @@ export interface Backend {
     readonly address: string;
     /** The key that signs: the owner's own, or an alias acting as the owner. */
     readonly signer: string;
+    /** The package played on, where there is one: what a fleet checks it is current with. */
+    readonly packageId?: string;
+    /** False where there is no name service (a local network); names then come from addresses. */
+    readonly nameService?: boolean;
 
     balanceMist(): Promise<bigint>;
     /**
@@ -49,12 +60,36 @@ export interface Backend {
      */
     armSquad(): Promise<Receipt | null>;
     /**
-     * Find a game. A waiting player makes it start at once with this account in it,
-     * playing second; otherwise the account is left on a search.
+     * Find a game for stakes. A waiting player makes it start at once with this account in
+     * it; otherwise the account is left on a search.
      */
     findGame(): Promise<Receipt>;
-    /** Leave the queue. A search a match answered is left through its game instead. */
+    /**
+     * Leave the queue the search is in, stakes or ranked. A search a match answered is left
+     * through its game instead, and one the queue dropped by dismissing its notice.
+     */
     cancelSearch(): Promise<Receipt>;
+
+    // === Ranked ===
+
+    /** The live `Rules`. Throws `no_rules` on a deployment without them. */
+    rules(): Promise<RankedRules>;
+    /**
+     * `find_ranked` in the queue of `size`: `squad` empty to wait with `commitment`, or the squad
+     * in the clear to take a waiting player. The wrong one aborts (`rules::ESquadSize` when
+     * someone waits, `ESquadShown` when nobody does): the caller sends the other.
+     */
+    findRanked(size: number, squad: Uint8Array, commitment: string): Promise<Receipt>;
+    /** The `Seat`s waiting on this account: games to take, notices to dismiss. */
+    seats(): Promise<SeatView[]>;
+    /** Reveal into the game of the waiting ranked seat. Null when there is no such seat. */
+    revealSquad(squad: Uint8Array, salt: Uint8Array): Promise<Receipt | null>;
+    /** Give up on the reveal: take the ranked seat with nobody, a no-show at the deadline. */
+    takeSeat(): Promise<Receipt | null>;
+    /** Dismiss the notice of a dropped search: idle again. Null when there is none. */
+    dismissNotice(): Promise<Receipt | null>;
+    /** Reset the rating to the default: from above it, idle, once per cooldown. */
+    resetRating(): Promise<Receipt>;
 
     // === Friendly lobbies ===
 

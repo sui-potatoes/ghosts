@@ -186,47 +186,81 @@ export function lobbyExpiresAtMs(sinceMs: number): number {
     return sinceMs + LOBBY_LIFETIME_MS + 1;
 }
 
+/** The queue a search is in, from `Searching.queue`. */
+export type QueueKind =
+    | { mode: "stakes" }
+    | { mode: "ranked"; size: number }
+    /** A `Matchmaker` this deployment does not name. */
+    | { mode: "unknown" };
+
 /**
- * What an `Account`'s `Searching { order }` means, which only lookups tell: lobby keys and queue
- * tickets share the field.
+ * What an `Account`'s `Searching { order, queue }` means. `queue` names the `Lobbies` or a
+ * `Matchmaker`; in a lobby only lookups tell the role:
  * - `hosting_open`: `order` is the `Account`'s own ID and its listed lobby exists;
  * - `guest`: a listed lobby at `Open(order)` has this `Account` as its guest;
- * - `hosting_invite`: an invite-only lobby exists at `Protected(order)`;
- * - otherwise it is the queue: `queued`, or `seat_waiting` once a match found it (a `Seat` is
- *   sent to its `Account`, which then stays on its search until it is accepted).
+ * - `hosting_invite`: an invite-only lobby exists at `Protected(order)`.
+ *
+ * In a queue, the `Seat`s sent to the `Account` tell it: none, `queued`; one in a game,
+ * `seat_waiting` for stakes (`accept_seat`, anyone) or `reveal` for ranked (`reveal_squad`, the
+ * owner, within the reveal limit); one in no game, `notice` (the queue dropped the ticket:
+ * `dismiss_seat`, anyone).
  */
 export type SearchRole =
     | { kind: "hosting_open" }
     | { kind: "guest"; host: string }
     | { kind: "hosting_invite" }
-    | { kind: "queued" }
-    | { kind: "seat_waiting" };
+    | { kind: "queued"; queue: QueueKind }
+    | { kind: "seat_waiting"; queue: QueueKind; game: string }
+    | { kind: "reveal"; queue: QueueKind; game: string }
+    | { kind: "notice"; queue: QueueKind };
 
 /** The checks `classifySearch` needs, each only run when an earlier one did not settle it. */
 export interface SearchLookups {
+    /** What `Searching.queue` names: the `Lobbies`, or the queue of a mode. */
+    queue(id: string): "lobby" | QueueKind;
     /** The listed lobby at `Open(order)`, if any. */
     open(order: string): Promise<{ guest: string | null } | null>;
     /** Whether a lobby exists at `Protected(order)`. */
     protectedExists(order: string): Promise<boolean>;
-    /** Whether a `Seat` waits on the `Account`. */
-    seatWaiting(): Promise<boolean>;
+    /** The `Seat`s waiting on the `Account`: a game, or null for a notice. */
+    seats(): Promise<{ game: string | null }[]>;
 }
 
 export async function classifySearch(
     account: string,
-    order: string,
+    search: { order: string; queue: string },
     lookups: SearchLookups,
 ): Promise<SearchRole> {
     const own = normalizeSuiAddress(account);
-    const open = await lookups.open(order);
-    if (open) {
-        if (normalizeSuiAddress(order) === own) return { kind: "hosting_open" };
-        if (open.guest && normalizeSuiAddress(open.guest) === own) {
-            return { kind: "guest", host: normalizeSuiAddress(order) };
+    const { order } = search;
+    const queue = lookups.queue(search.queue);
+    if (queue === "lobby") {
+        const open = await lookups.open(order);
+        if (open) {
+            if (normalizeSuiAddress(order) === own) return { kind: "hosting_open" };
+            if (open.guest && normalizeSuiAddress(open.guest) === own) {
+                return { kind: "guest", host: normalizeSuiAddress(order) };
+            }
         }
+        if (await lookups.protectedExists(order)) return { kind: "hosting_invite" };
+        // a lobby that is gone leaves nothing to classify by: the account waits on nothing
+        return { kind: "queued", queue: { mode: "unknown" } };
     }
-    if (await lookups.protectedExists(order)) return { kind: "hosting_invite" };
-    return (await lookups.seatWaiting()) ? { kind: "seat_waiting" } : { kind: "queued" };
+    const seats = await lookups.seats();
+    const game = seats.find((seat) => seat.game !== null)?.game;
+    if (game) {
+        return queue.mode === "ranked"
+            ? { kind: "reveal", queue, game }
+            : { kind: "seat_waiting", queue, game };
+    }
+    if (seats.length > 0) return { kind: "notice", queue };
+    return { kind: "queued", queue };
+}
+
+/** A queue in words, for situations and logs: `stakes`, `ranked 3x3`. */
+export function queueName(queue: QueueKind): string {
+    if (queue.mode === "ranked") return `ranked ${queue.size}x${queue.size}`;
+    return queue.mode;
 }
 
 // === The host behind a code ===

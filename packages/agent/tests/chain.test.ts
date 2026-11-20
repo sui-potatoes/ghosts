@@ -28,7 +28,7 @@ import {
     winnerOf,
 } from "../src/bcs.ts";
 import { BLACK_RAIN, DEMO_1, DEMO_2 } from "../src/maps.ts";
-import { FIXTURES } from "./fixtures.ts";
+import { FIXTURES, IDS } from "./fixtures.ts";
 
 const bytes = (hex: string) => Uint8Array.from(Buffer.from(hex, "hex"));
 
@@ -49,8 +49,8 @@ test("every Move-written value reserializes to the same bytes under the SDK's sc
         [AccountBcs, FIXTURES.accountIdle],
         [AccountBcs, FIXTURES.accountSearching],
         [AccountBcs, FIXTURES.accountPlaying],
-        [AccountBcs, FIXTURES.accountAfterLoss],
-        [AccountBcs, FIXTURES.accountAfterWin],
+        [AccountBcs, FIXTURES.accountAfterStakesLoss],
+        [AccountBcs, FIXTURES.accountAfterStakesWin],
         [AccountBcs, FIXTURES.accountSuspended],
         [SeatBcs, FIXTURES.seat],
         [RecruitBcs, FIXTURES.recruitHired],
@@ -91,7 +91,7 @@ test("a game just matched is deploying, with the clock running and nobody on the
 test("units carry their owner, and squads come from the units on the map", () => {
     const game = decodeGame(bytes(FIXTURES.gamePlayingT0), "1");
     assert.deepEqual(game.status, { kind: "active" });
-    assert.equal(game.deadlineMs, 91_000, "`Playing.started_ms` plus the 90s turn");
+    assert.equal(game.deadlineMs, 121_000, "`Playing.started_ms` plus the 120s first turn");
     assert.deepEqual(game.squads, [[ALICE_RECRUIT], [BOB_RECRUIT]]);
     assert.deepEqual(game.history, [
         { kind: "placed", x: 0, y: 3 },
@@ -205,31 +205,39 @@ test("every `State` and `Ending` decodes, and `winner` follows the Move one", ()
     );
 });
 
-test("an Account's state decodes from Idle through Playing and Suspended", () => {
+test("an Account's state decodes from Idle through Searching and Playing, a suspension apart", () => {
     const idle = decodeAccount(bytes(FIXTURES.accountIdle));
     assert.equal(idle.id, ALICE);
     assert.equal(idle.owner, `0x${"a11ce".padStart(64, "0")}`);
     assert.deepEqual(idle.search, { kind: "idle" });
     assert.deepEqual([idle.rating, idle.deviation, idle.recruits], [1500, 350, 1]);
-    assert.equal(idle.suspendedUntilMs, 0);
+    assert.deepEqual([idle.suspendedUntilMs, idle.resets, idle.lastResetMs], [0, 0, 0]);
+    assert.deepEqual([idle.ratedGames, idle.lastPlayedMs], [0, 0]);
 
+    // a search names its queue: the stakes queue holds no commitment
     const searching = decodeAccount(bytes(FIXTURES.accountSearching));
     assert.equal(searching.search.kind, "searching");
-    if (searching.search.kind === "searching") assert.equal(searching.search.sinceMs, 0);
+    if (searching.search.kind === "searching") {
+        assert.equal(searching.search.sinceMs, 0);
+        assert.equal(searching.search.queue, IDS.stakes);
+        assert.equal(searching.search.commitment, null);
+    }
 
     const playing = decodeAccount(bytes(FIXTURES.accountPlaying));
     assert.deepEqual(playing.search, { kind: "playing", game: GAME });
     assert.equal(playing.recruits, 1, "`recruits` counts the ones at home");
 
-    // Winning and losing move the score and the rating, as `complete_game` does.
-    const lost = decodeAccount(bytes(FIXTURES.accountAfterLoss));
-    assert.deepEqual(lost.score, { wins: 0, losses: 1, draws: 0 });
-    assert.deepEqual([lost.rating, lost.recruits], [1338, 0], "the fallen is gone for good");
-    const won = decodeAccount(bytes(FIXTURES.accountAfterWin));
-    assert.deepEqual(won.score, { wins: 1, losses: 0, draws: 0 });
-    assert.deepEqual([won.rating, won.recruits], [1662, 1], "the survivor came home");
+    // A game for stakes is unrated: neither the score nor the rating moves.
+    const lost = decodeAccount(bytes(FIXTURES.accountAfterStakesLoss));
+    assert.deepEqual(lost.score, { wins: 0, losses: 0, draws: 0 });
+    assert.deepEqual([lost.rating, lost.deviation, lost.recruits], [1500, 350, 0], "the fallen is gone for good");
+    const won = decodeAccount(bytes(FIXTURES.accountAfterStakesWin));
+    assert.deepEqual(won.score, { wins: 0, losses: 0, draws: 0 });
+    assert.deepEqual([won.rating, won.recruits], [1500, 1], "the survivor came home");
+    assert.deepEqual([won.search, won.suspendedUntilMs], [{ kind: "idle" }, 0]);
 
-    // Abandoning suspends for a minute from `complete_game` (the clock read 3s).
+    // Abandoning suspends for a minute from `complete_game` (the clock read 3s): a field of its
+    // own, the state idle.
     const suspended = decodeAccount(bytes(FIXTURES.accountSuspended));
     assert.deepEqual(suspended.search, { kind: "idle" });
     assert.equal(suspended.suspendedUntilMs, 63_000);

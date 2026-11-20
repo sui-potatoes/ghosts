@@ -15,6 +15,7 @@ import { z } from "zod";
 import type { GhostsAgent } from "./agent.ts";
 import { LOBBY_LIFETIME_MS, MAX_LOBBY_SIZE, MIN_LOBBY_SIZE } from "./lobby.ts";
 import { NAME_MAX, NAME_MIN } from "./names.ts";
+import { parseSquad, type Loadout } from "./ranked.ts";
 import {
     DEPLOY_LIMIT_MS,
     GRENADE_DAMAGE,
@@ -25,6 +26,7 @@ import {
     MAX_TURNS,
     TURN_LIMIT_MS,
     FIRST_TURN_MS,
+    TICKET_TTL_MS,
 } from "./rules.ts";
 import { ActionError } from "./types.ts";
 
@@ -49,9 +51,22 @@ in and the next one: every next_turn, by either side, takes one turn off each ef
 effect again refreshes it to its full length and does not stack; a daze and smoke can be on one
 unit. Moves, reloads and throws still work under an effect. The effects field of a unit and the
 aim and defense shown for it include them.
-WINNING: eliminate the enemy squad. A game still going at turn ${MAX_TURNS} is a draw. Fallen recruits
-are gone for good.
-CLOCK: squads deploy within ${DEPLOY_LIMIT_MS / 1000}s and each turn lasts ${TURN_LIMIT_MS / 1000}s${FIRST_TURN_MS !== TURN_LIMIT_MS ? ` (the first, ${FIRST_TURN_MS / 1000}s)` : ""}. Think fast. Once your turn runs out only
+WINNING: eliminate the enemy squad. A game still going at turn ${MAX_TURNS} is a draw. Who moves first
+is drawn for every game.
+
+RANKED: the only mode that moves your rating and score. Your squad is built for the game from a
+budget of credits your tier sets (ghosts_ranked_info: tier, budgets, prices, unlocks, presets): each
+unit is a rifle, an armor and an optional utility. Search with ghosts_find_game, mode ranked, size 3,
+and squad "auto" (built for you) or your own. If nobody waits, your search waits holding only a
+commitment to your squad; when a match finds you, ghosts_wait reveals it for you, within
+the reveal limit, so keep calling ghosts_wait while searching: a squad not revealed in time loses the
+game and suspends you. If someone waits, your squad is shown and the game starts at once. Players
+only meet others of their own tier. No recruit is risked. A search lasts ${TICKET_TTL_MS / 60_000} minutes;
+ghosts_wait then clears it, and you search again. A rating above the default can be reset
+(ghosts_reset_rating) once per cooldown.
+STAKES: your own recruits, unrated. They earn experience coming home and fallen recruits are gone for
+good. Setup hires and arms them.
+CLOCK: squads deploy within ${DEPLOY_LIMIT_MS / 1000}s and each turn lasts ${TURN_LIMIT_MS / 1000}s (the first, ${FIRST_TURN_MS / 1000}s). Think fast. Once your turn runs out only
 next_turn is open. Once the opponent's runs out, you can send next_turn to take your turn. That
 counts as a miss for them, and ${MAX_MISSED_TURNS} misses in a row lose the game. Passing your own turn or acting clears
 your count. Past the deployment time, next_turn starts the game, and a side that never deployed
@@ -102,6 +117,16 @@ const WRITE = { readOnlyHint: false, destructiveHint: false, openWorldHint: true
 
 /** The longest `ghosts_wait` holds a call, well under common 60s client timeouts. */
 const MAX_WAIT_SECONDS = 50;
+
+/** A squad as a tool takes it: "auto", or the text `parseSquad` reads. */
+function squadInput(text: string): Loadout[] | "auto" {
+    if (text.trim().toLowerCase() === "auto") return "auto";
+    try {
+        return parseSquad(text);
+    } catch (error) {
+        throw new ActionError("bad_squad", (error as Error).message);
+    }
+}
 
 export function createMcpServer(agent: GhostsAgent): McpServer {
     const server = new McpServer(
@@ -184,14 +209,80 @@ export function createMcpServer(agent: GhostsAgent): McpServer {
 
     server.registerTool(
         "ghosts_find_game",
-        { description: "Search for a game. Then call ghosts_wait.", annotations: WRITE },
-        () => answer(() => agent.findGame()),
+        {
+            description:
+                "Search for a game, then call ghosts_wait (it reveals a ranked squad for you when a " +
+                "match finds you). Ranked: rated, a squad built for the game. Stakes: your own " +
+                "recruits, unrated.",
+            inputSchema: {
+                mode: z
+                    .enum(["ranked", "stakes"])
+                    .optional()
+                    .describe("Ranked or stakes; this server's mode by default."),
+                size: z.number().int().min(3).max(4).default(3).describe("Ranked units a side."),
+                squad: z
+                    .string()
+                    .max(200)
+                    .default("auto")
+                    .describe(
+                        'Ranked: "auto", or units by comma, each a preset (recruit, runner, assault, ' +
+                            "sniper, heavy) or RIFLE/ARMOR/UTILITY like 2/1/frag.",
+                    ),
+            },
+            annotations: WRITE,
+        },
+        ({ mode, size, squad }) =>
+            answer(() => {
+                const ranked = (mode ?? agent.mode.kind) === "ranked";
+                if (!ranked) return agent.findGame();
+                return agent.findRanked({ size, squad: squadInput(squad) });
+            }),
+    );
+
+    server.registerTool(
+        "ghosts_ranked_info",
+        {
+            description:
+                "Ranked play for you: your tier and rating, the budget per size, every item with " +
+                "its price and unlock tier, the presets you can field and a sample auto squad.",
+            inputSchema: {
+                size: z.number().int().min(3).max(4).default(3).describe("Units a side."),
+            },
+            annotations: READ_ONLY,
+        },
+        ({ size }) => answer(() => agent.rankedInfo(size)),
     );
 
     server.registerTool(
         "ghosts_cancel_search",
-        { description: "Stop searching for a game.", annotations: WRITE },
+        { description: "Stop searching for a game, ranked or stakes.", annotations: WRITE },
         () => answer(() => agent.cancelSearch()),
+    );
+
+    server.registerTool(
+        "ghosts_dismiss_notice",
+        {
+            description:
+                "Clear a search the queue dropped (its ticket expired): you are idle again. " +
+                "ghosts_wait does this on its own.",
+            annotations: WRITE,
+        },
+        () =>
+            answer(async () => {
+                await agent.backend.dismissNotice();
+                return agent.situation();
+            }),
+    );
+
+    server.registerTool(
+        "ghosts_reset_rating",
+        {
+            description:
+                "Reset your rating to the default (1500). Only from above it, while idle, and once " +
+                "per cooldown. Your score stays.",
+            annotations: { ...WRITE, destructiveHint: true },
+        },
+        () => answer(() => agent.resetRating()),
     );
 
     const accountId = z

@@ -126,12 +126,8 @@ export const MAX_BATCH = 8;
 
 /** `ghosts::ghosts`: how long a player has for their turn. */
 export const TURN_LIMIT_MS = 90_000;
-/**
- * `ghosts::ghosts`: how long the first turn lasts. The deployed package has no such
- * constant and gives the first turn `TURN_LIMIT_MS` too: set this to 120_000 only
- * once a package with it is live.
- */
-export const FIRST_TURN_MS = TURN_LIMIT_MS;
+/** `ghosts::ghosts`: how long the first turn lasts, as the scene is still loading. */
+export const FIRST_TURN_MS = 120_000;
 /** How long turn number `turn` lasts. */
 export const turnLimitMs = (turn: number) => (turn === 0 ? FIRST_TURN_MS : TURN_LIMIT_MS);
 /** `ghosts::ghosts`: how long the players have to pick their squads once matched. */
@@ -144,11 +140,17 @@ export const FREE_RECRUITS = 4;
  */
 export function deployLimit(state: Pick<GameState, "mode" | "positions">, side: number): number {
     const open = state.positions[side]?.length ?? 0;
+    if (state.mode.kind === "ranked") return 0;
     return state.mode.kind === "friendly" ? Math.min(open, state.mode.size) : open;
 }
 
-/** `ghosts::ghosts`: how long a search stays in the queue. */
+/** `ghosts::ghosts`: how long before anyone but its owner can cancel a search. */
 export const SEARCH_TIMEOUT_MS = 120_000;
+/**
+ * `ghosts::ghosts::TICKET_TTL_MS`: how long a ticket stays in any queue. An older one is dropped
+ * when a search next walks its bucket, and its player is sent a notice.
+ */
+export const TICKET_TTL_MS = 300_000;
 /** `ghosts::ghosts`: how long an account can't search after misbehaving. */
 export const SUSPENSION_MS = 60_000;
 /** `ghosts::ghosts`: how many turns in a row a side can miss before it counts as abandoning. */
@@ -489,6 +491,7 @@ export function refusal(
     if (status.kind === "finished") return "The game is over: send complete.";
     if (action.kind === "abandon") return null;
     if (action.kind === "deploy") {
+        if (state.mode.kind === "ranked") return "A ranked squad is revealed, not deployed.";
         if (status.kind !== "deploying" || late) return "The time to deploy is over.";
         if (state.squads[side]?.length) return "Your squad is already deployed.";
         return state.positions[side]?.length ? null : "This side has no spawn positions.";
@@ -622,7 +625,7 @@ export function throwEffect(state: GameState, action: EffectThrowAction): GameRe
 }
 
 /**
- * `ghosts::next_turn` as it changes the map: the fallen are buried (in a rated game), the turn passes, and in a
+ * `ghosts::next_turn` as it changes the map: the fallen are buried (but in a friendly game), the turn passes, and in a
  * single walk of `Map.units` every unit gets one turn off each effect, those at zero going,
  * while the units of the side whose turn begins get their AP back. Changes `state`.
  *
@@ -632,7 +635,7 @@ export function throwEffect(state: GameState, action: EffectThrowAction): GameRe
  */
 export function passTurn(state: GameState, last = false): GameRecord[] {
     // a friendly game keeps its fallen on the map until `complete_game` (`bury_fallen` is a no-op)
-    if (state.mode.kind === "rated") state.fallen = [];
+    if (state.mode.kind !== "friendly") state.fallen = [];
     state.turn += 1;
     state.active = state.turn % state.players.length;
     if (last) return [];

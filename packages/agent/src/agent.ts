@@ -23,9 +23,33 @@ import {
     newInviteCode,
     parseCode,
     parseInvite,
+    queueName,
     type LobbyView,
     type SearchRole,
 } from "./lobby.ts";
+import {
+    autoSquad,
+    budgetOf,
+    checkSquad,
+    decodeSquad,
+    describeSquad,
+    encodeSquad,
+    ARMOR_NAMES,
+    LOADOUT_PRESETS,
+    loadoutUnlocked,
+    newSquadSalt,
+    PRESET_IDS,
+    RIFLE_NAMES,
+    squadCommitment,
+    squadPrice,
+    tierName,
+    tierOf,
+    UTILITY_NAMES,
+    type AutoSquadOptions,
+    type Loadout,
+    type RankedRules,
+} from "./ranked.ts";
+import { memoryRevealStore, type RevealStore } from "./reveal.ts";
 import { FaucetError } from "./faucet.ts";
 import { ensureFunds, GAS_FLOOR, TRIGGER_BALANCE, type FundsOutcome } from "./funds.ts";
 import { nameProblem, normalizeName } from "./names.ts";
@@ -33,13 +57,14 @@ import {
     effectiveStats,
     FREE_RECRUITS,
     legalActions,
-    SEARCH_TIMEOUT_MS,
+    TICKET_TTL_MS,
     hasUsesLeft,
     validateBatch,
     type LegalAction,
 } from "./rules.ts";
 import {
     ActionError,
+    isAbort,
     type AccountView,
     type Ending,
     type GameMode,
@@ -51,6 +76,9 @@ import {
 } from "./types.ts";
 import { pollingWake, type Wake } from "./wake.ts";
 
+/** What `playGames` queues for and `setup` prepares: owned recruits, or a ranked size. */
+export type PlayMode = { kind: "stakes" } | { kind: "ranked"; size: number };
+
 export type Phase =
     | "no_name"
     | "no_account"
@@ -58,6 +86,10 @@ export type Phase =
     | "suspended"
     | "idle"
     | "searching"
+    /** A ranked match found this search: the squad must be revealed within the limit. `wait` does it. */
+    | "reveal"
+    /** The queue dropped this search (its ticket expired): dismiss the notice. `wait` does it. */
+    | "notice"
     /** Hosting a friendly lobby: `lobby` says who is in it. Actionable once a guest waits or it expired. */
     | "lobby_hosting"
     /** Waiting in the listed lobby of another host, until it starts the game or kicks you. */
@@ -78,6 +110,9 @@ export interface Situation {
     game?: string;
     /** Set in the lobby phases. */
     lobby?: LobbySituation;
+    /** Set while searching a queue: `stakes`, `ranked 3x3`; and how long the search has run. */
+    queue?: string;
+    searchingMs?: number;
     turn?: number;
     /** Time left to deploy or on the current turn. Past zero, only `next_turn` is open. */
     turnMsLeft?: number;
@@ -180,8 +215,26 @@ export interface ActResult {
     situation: Situation;
 }
 
+/** What the agent did about a ranked search, for logs. Squads only once they are public. */
+export type RankedEvent =
+    | { kind: "queued"; size: number }
+    | { kind: "matched"; size: number; squad: string; game?: string }
+    | { kind: "revealed"; size: number; squad: string; game: string }
+    | { kind: "gave_up"; game: string; reason: string }
+    | { kind: "dismissed"; queue: string }
+    | { kind: "cancelled"; queue: string };
+
 export interface AgentOptions {
     wake?: Wake;
+    /** What `playGames` queues for and `setup` prepares. Stakes by default. */
+    mode?: PlayMode;
+    /**
+     * Where a ranked search keeps its squad and salt until the reveal. In memory by default; a bot
+     * should use `fileRevealStore` next to its key, so that a restart can still reveal.
+     */
+    reveals?: RevealStore;
+    /** Told what the agent does about ranked searches: queued, matched, revealed, gave up. */
+    onRanked?: (event: RankedEvent) => void;
     now?: () => number;
     /** Below this balance `status` asks for a top-up. */
     lowBalanceMist?: bigint;
@@ -196,6 +249,19 @@ export interface AgentOptions {
 const LEGEND =
     ". empty, + low cover, = high cover, ~ unwalkable, # wall, A-D your units, w-z enemy units";
 const DEFAULT_LOW_BALANCE_MIST = 100_000_000n;
+/** A search older than the ticket lifetime and this is left and queued again. */
+const STALE_GRACE_MS = 10_000;
+/** A kept secret no search can need any more: older than a ticket and a reveal together. */
+const SECRET_LIFETIME_MS = 15 * 60_000;
+/** How often a ranked search is tried again when the queue changes under it. */
+const RANKED_ATTEMPTS = 3;
+const EMPTY_SQUAD = new Uint8Array(0);
+/** The commitment a matching search sends: ignored by the contract, and tied to nothing. */
+const NO_COMMITMENT = "0x0";
+
+/** Ranked games the `Account` finished: what the placement floor reads. */
+export const gamesPlayed = (account: Pick<AccountView, "score">) =>
+    account.score.wins + account.score.losses + account.score.draws;
 
 export class GhostsAgent {
     backend: Backend;
@@ -203,6 +269,9 @@ export class GhostsAgent {
     now: () => number;
     lowBalanceMist: bigint;
     recovery: string | null;
+    mode: PlayMode;
+    reveals: RevealStore;
+    onRanked: ((event: RankedEvent) => void) | null;
     /** Names read once: `situation` runs on every poll and names rarely change. */
     private ownName: string | null = null;
     private names = new Map<string, string | null>();
@@ -212,6 +281,9 @@ export class GhostsAgent {
         this.wake = options.wake ?? pollingWake();
         this.now = options.now ?? Date.now;
         this.lowBalanceMist = options.lowBalanceMist ?? DEFAULT_LOW_BALANCE_MIST;
+        this.mode = options.mode ?? { kind: "stakes" };
+        this.reveals = options.reveals ?? memoryRevealStore();
+        this.onRanked = options.onRanked ?? null;
         this.recovery = options.recovery ? normalizeSuiAddress(options.recovery) : null;
         if (this.recovery && !isValidSuiAddress(this.recovery)) {
             throw new Error(`Not a recovery address: ${options.recovery}`);
@@ -220,12 +292,14 @@ export class GhostsAgent {
 
     /** Who this agent is, what it has and what it should do. Never includes key material. */
     async status() {
-        const [balance, account, situation, name] = await Promise.all([
+        const [balance, account, situation, name, rules] = await Promise.all([
             this.backend.balanceMist(),
             this.backend.account(),
             this.situation(),
             this.backend.name(),
+            this.backend.rules().catch(() => null),
         ]);
+        const tier = account && rules ? tierOf(rules, account.rating, gamesPlayed(account)) : null;
         return {
             network: this.backend.network,
             address: this.backend.address,
@@ -233,11 +307,19 @@ export class GhostsAgent {
             name,
             balanceMist: balance.toString(),
             needsTopUp: balance < this.lowBalanceMist,
+            mode: this.mode,
             account: account && {
                 id: account.id,
                 rating: account.rating,
+                deviation: account.deviation,
+                /** Ranked games only. */
                 score: account.score,
+                tier: tier === null ? null : { index: tier, name: tierName(tier) },
                 recruits: account.recruits,
+                suspendedUntilMs: account.suspendedUntilMs,
+                suspended: this.now() < account.suspendedUntilMs,
+                resets: account.resets,
+                lastResetMs: account.lastResetMs,
                 recovery: account.recovery,
             },
             situation,
@@ -254,8 +336,15 @@ export class GhostsAgent {
         if (!this.ownName) {
             return todo("no_name", "Pick your name: it is what every opponent will see.");
         }
-        if (!account) return todo("no_account", "Run setup to open an account and hire a squad.");
-        if (account.recruits === 0) return todo("no_squad", "Run setup to hire a squad.");
+        const ranked = this.mode.kind === "ranked";
+        if (!account) {
+            const what = ranked ? "open an account" : "open an account and hire a squad";
+            return todo("no_account", `Run setup to ${what}.`);
+        }
+        // a ranked squad is built for the game: only stakes and friendly games need recruits
+        if (account.recruits === 0 && !ranked) {
+            return todo("no_squad", "Run setup to hire a squad.");
+        }
         if (account.search.kind === "searching" && role === undefined) {
             role = await this.backend.searchRole();
         }
@@ -266,6 +355,13 @@ export class GhostsAgent {
                 actionable: false,
                 next: "Wait: this account left a game behind and can't search yet.",
             };
+        }
+        if (this.mode.kind === "ranked") {
+            return todo(
+                "idle",
+                `Find a ranked game of ${this.mode.size} (squad "auto" builds one), or host or ` +
+                    "join a friendly lobby.",
+            );
         }
         const short = account.recruits < FREE_RECRUITS;
         return todo(
@@ -346,7 +442,40 @@ export class GhostsAgent {
                 next: "Wait for the host to start the game, or leave the lobby.",
             };
         }
-        return { phase: "searching", actionable: false, next: "Wait for an opponent." };
+        const queue = role && "queue" in role ? queueName(role.queue) : undefined;
+        const searching = { queue, searchingMs: Math.max(0, this.now() - sinceMs) };
+        if (role?.kind === "reveal") {
+            return {
+                ...searching,
+                phase: "reveal",
+                actionable: true,
+                game: role.game,
+                next: "A ranked match found you: reveal your squad now (wait does it), or lose.",
+            };
+        }
+        if (role?.kind === "notice") {
+            return {
+                ...searching,
+                phase: "notice",
+                actionable: true,
+                next: "The queue dropped your search: dismiss the notice (wait does it), search again.",
+            };
+        }
+        if (role?.kind === "seat_waiting") {
+            return {
+                ...searching,
+                phase: "searching",
+                actionable: false,
+                game: role.game,
+                next: "A match found you: wait takes your seat.",
+            };
+        }
+        return {
+            ...searching,
+            phase: "searching",
+            actionable: false,
+            next: "Wait for an opponent.",
+        };
     }
 
     private inGame(account: AccountView, game: GameState): Situation {
@@ -364,6 +493,26 @@ export class GhostsAgent {
                 ...todo("game_over", "Send the complete action to bring your squad home."),
                 result,
                 ending: game.status.ending.kind,
+            };
+        }
+        if (game.status.kind === "deploying" && game.mode.kind === "ranked") {
+            if (this.now() > game.deadlineMs) {
+                return {
+                    ...shared,
+                    ...todo(
+                        "deployment_over",
+                        "Send next_turn: the time to reveal is over, and a side with nobody on " +
+                            "the map is a no-show.",
+                    ),
+                };
+            }
+            return {
+                ...shared,
+                phase: "opponent_turn",
+                actionable: false,
+                next: game.squads[side]?.length
+                    ? "Wait for the opponent to reveal their squad."
+                    : "Your squad was not revealed: the game ends as a no-show at the deadline.",
             };
         }
         if (game.status.kind === "deploying") {
@@ -435,37 +584,86 @@ export class GhostsAgent {
     }
 
     /**
-     * The situation, after taking the seat a match sent this account. Whoever finds a
-     * waiting player starts the game and is in it at once; the player who waited stays
-     * on their search until their `Seat` is accepted, which anyone can do.
+     * The situation, after the steps nobody should have to think about. Whoever finds a waiting
+     * player starts the game and is in it at once; the player who waited stays on their search
+     * until their `Seat` is taken: a stakes seat is accepted (anyone can), a ranked one revealed
+     * into with the squad and salt kept at the search (the owner only, within the reveal limit:
+     * a seat not revealed is a no-show). A notice that the queue dropped the search is dismissed,
+     * and a search past the ticket lifetime is left, so that the next one is fresh.
      */
     private async advance(): Promise<Situation> {
         let account = await this.backend.account();
         let role: SearchRole | null | undefined;
         if (account?.search.kind === "searching") {
             role = await this.backend.searchRole();
-            // a lobby is no queue ticket: nothing to accept, and a lobby lives its own lifetime
-            const queue = !role || role.kind === "queued" || role.kind === "seat_waiting";
-            if (queue && (await this.backend.acceptSeat())) {
+            if (await this.settle(account, role)) {
                 account = await this.backend.account();
                 role = undefined;
             }
         }
-        if (
-            account?.search.kind === "searching" &&
-            (role === undefined || role?.kind === "queued") &&
-            this.now() - account.search.sinceMs > SEARCH_TIMEOUT_MS
-        ) {
-            // Nobody has answered in a while: leave the queue, so a stale ticket doesn't
-            // pair this account with someone who has long moved on.
+        const keep = account?.search.kind === "searching" ? account.search.commitment : null;
+        this.reveals.prune(keep, Date.now() - SECRET_LIFETIME_MS);
+        return this.situation(role);
+    }
+
+    /** The step a search calls for now, if any. Returns whether one was sent. */
+    private async settle(account: AccountView, role: SearchRole | null): Promise<boolean> {
+        if (account.search.kind !== "searching" || !role) return false;
+        switch (role.kind) {
+            case "seat_waiting":
+                return (await this.backend.acceptSeat()) !== null;
+            case "reveal":
+                return this.reveal(account, role.game);
+            case "notice":
+                if (!(await this.backend.dismissNotice())) return false;
+                this.onRanked?.({ kind: "dismissed", queue: queueName(role.queue) });
+                return true;
+            case "queued": {
+                if (role.queue.mode === "unknown") return false;
+                const age = this.now() - account.search.sinceMs;
+                if (age <= TICKET_TTL_MS + STALE_GRACE_MS) return false;
+                // past its lifetime the ticket can only be dropped: leave, and search afresh
+                try {
+                    await this.backend.cancelSearch();
+                    this.onRanked?.({ kind: "cancelled", queue: queueName(role.queue) });
+                    return true;
+                } catch (error) {
+                    // a search walked by and dropped it a moment ago: its notice comes next
+                    if (!(error instanceof ActionError) || error.code !== "rejected") throw error;
+                    return false;
+                }
+            }
+            default:
+                return false;
+        }
+    }
+
+    /**
+     * Reveal the squad of the ranked search into the game its seat is in. Without the secret, or
+     * with a reveal the contract refuses for good (too late, a changed rule), the seat is taken
+     * without a squad: the game ends as a no-show, which is what it is anyway, and nobody waits.
+     */
+    private async reveal(account: AccountView, game: string): Promise<boolean> {
+        if (account.search.kind !== "searching") return false;
+        const commitment = account.search.commitment;
+        const secret = commitment ? this.reveals.find(commitment) : null;
+        let reason = "The squad and salt of this search are not kept here.";
+        if (secret) {
             try {
-                await this.backend.cancelSearch();
+                if (!(await this.backend.revealSquad(secret.squad, secret.salt))) return false;
+                this.reveals.forget(secret.commitment);
+                const squad = describeSquad(decodeSquad(secret.squad));
+                this.onRanked?.({ kind: "revealed", size: secret.size, squad, game });
+                return true;
             } catch (error) {
-                // A match answered it a moment ago: its seat is taken on the next poll.
-                if (!(error instanceof ActionError) || error.code !== "rejected") throw error;
+                // a refusal that cannot change by trying again: too late, or a changed rule
+                if (!(error instanceof ActionError) || error.retryable || !error.abort) throw error;
+                reason = error.message;
             }
         }
-        return this.situation(role);
+        if (!(await this.backend.takeSeat())) return false;
+        this.onRanked?.({ kind: "gave_up", game, reason });
+        return true;
     }
 
     /**
@@ -481,7 +679,11 @@ export class GhostsAgent {
         return this.situation();
     }
 
-    /** Open the account, fill the squad and arm it, whichever of those is still missing. */
+    /**
+     * Open the account, fill the squad and arm it, whichever of those is still missing. Ranked
+     * play builds its squad for each game, so in the ranked mode only the account is opened:
+     * hiring and arming cost gas that only stakes and friendly games need.
+     */
     async setup(): Promise<Situation> {
         await this.funded();
         if (!(await this.backend.account())) await this.backend.createAccount();
@@ -489,6 +691,7 @@ export class GhostsAgent {
         if (account && this.recovery && !account.recovery) {
             await this.backend.setRecovery(this.recovery);
         }
+        if (this.mode.kind === "ranked") return this.situation();
         if (account && account.recruits < FREE_RECRUITS && account.search.kind === "idle") {
             await this.backend.hireSquad();
         }
@@ -510,6 +713,139 @@ export class GhostsAgent {
 
     async cancelSearch(): Promise<Situation> {
         await this.backend.cancelSearch();
+        return this.situation();
+    }
+
+    // === Ranked ===
+
+    /** The tier of this account under the live rules, with the rules. */
+    async rankedStanding(): Promise<{ rules: RankedRules; account: AccountView; tier: number }> {
+        const [rules, account] = await Promise.all([this.backend.rules(), this.backend.account()]);
+        if (!account) throw new ActionError("no_account", "This agent has no account yet.");
+        return { rules, account, tier: tierOf(rules, account.rating, gamesPlayed(account)) };
+    }
+
+    /**
+     * What ranked play is here: the tier, its budget for each size, every item with its price
+     * and unlock tier, the presets this tier can field, and an auto squad for the size.
+     */
+    async rankedInfo(size?: number) {
+        const { rules, account, tier } = await this.rankedStanding();
+        const units = size ?? (this.mode.kind === "ranked" ? this.mode.size : 3);
+        const items = (list: RankedRules["weapons"], names: readonly string[], first: number) =>
+            list.map((item, i) => ({
+                id: first + i,
+                name: names[i] ?? `#${first + i}`,
+                price: item.price,
+                unlockedAt: tierName(item.minTier),
+                unlocked: item.minTier <= tier,
+            }));
+        let sample: { squad: string; price: number } | null = null;
+        try {
+            const built = autoSquad(rules, tier, units);
+            sample = { squad: describeSquad(built.squad), price: built.price };
+        } catch {
+            sample = null;
+        }
+        return {
+            rulesVersion: rules.version,
+            rating: account.rating,
+            gamesPlayed: gamesPlayed(account),
+            tier: { index: tier, name: tierName(tier) },
+            placement: { games: rules.placementGames, floor: tierName(rules.placementTier) },
+            sizes: rules.sizes.map((s) => ({
+                units: s.units,
+                open: s.level !== null,
+                budget: budgetOf(rules, tier, s.units),
+            })),
+            rifles: items(rules.weapons, RIFLE_NAMES, 1),
+            armor: items(rules.armor, ARMOR_NAMES, 1),
+            utilities: items(rules.utilities, UTILITY_NAMES, 0),
+            presets: PRESET_IDS.filter((id) => loadoutUnlocked(rules, tier, LOADOUT_PRESETS[id])).map(
+                (id) => ({
+                    id,
+                    loadout: describeSquad([LOADOUT_PRESETS[id]]),
+                    price: squadPrice(rules, [LOADOUT_PRESETS[id]]),
+                }),
+            ),
+            revealLimitMs: rules.revealLimitMs,
+            auto: sample,
+            squadFormat:
+                "Units by comma: a preset name, or RIFLE/ARMOR/UTILITY like 2/1/frag " +
+                "(utility frag, flashbang, smoke or -).",
+        };
+    }
+
+    /**
+     * Search for a ranked game of `size` (the mode's, or 3). `squad` is the loadouts, or "auto"
+     * (the default) for one built from the live rules for this account's tier. The squad is
+     * checked first as the contract will check it. Nobody waiting: the search waits holding only
+     * the commitment, its squad and salt kept here for the reveal, which `wait` sends. Someone
+     * waiting: the squad is shown and placed at once, and the game is on.
+     */
+    async findRanked(
+        options: { size?: number; squad?: Loadout[] | "auto"; auto?: AutoSquadOptions } = {},
+    ): Promise<Situation> {
+        await this.named();
+        await this.funded();
+        const size = options.size ?? (this.mode.kind === "ranked" ? this.mode.size : 3);
+        const { rules, tier } = await this.rankedStanding();
+        const auto = !options.squad || options.squad === "auto";
+        const build = (): Uint8Array => {
+            if (!auto) return encodeSquad(options.squad as Loadout[]);
+            try {
+                return autoSquad(rules, tier, size, options.auto).bytes;
+            } catch (error) {
+                throw new ActionError("bad_squad", (error as Error).message);
+            }
+        };
+        let squad = build();
+        const problem = checkSquad(rules, size, tier, squad);
+        if (problem) throw new ActionError("bad_squad", problem.message);
+
+        for (let attempt = 0; attempt < RANKED_ATTEMPTS; attempt++) {
+            const salt = newSquadSalt();
+            const commitment = squadCommitment(squad, salt);
+            // kept before the search goes out: once it lands, only this can reveal
+            this.reveals.save({ commitment, squad, salt, size, savedAtMs: Date.now() });
+            try {
+                await this.backend.findRanked(size, EMPTY_SQUAD, commitment);
+                this.onRanked?.({ kind: "queued", size });
+                return this.advance();
+            } catch (error) {
+                this.reveals.forget(commitment);
+                // `rules::ESquadSize`: someone compatible waits, so the squad is shown to them
+                if (!isAbort(error, "rules", 0)) throw error;
+            }
+            try {
+                await this.backend.findRanked(size, squad, NO_COMMITMENT);
+                const account = await this.backend.account();
+                const game = account?.search.kind === "playing" ? account.search.game : undefined;
+                const shown = describeSquad(decodeSquad(squad));
+                this.onRanked?.({ kind: "matched", size, squad: shown, game });
+                return this.advance();
+            } catch (error) {
+                // `ESquadShown`: the waiter was taken first. The squad went out in the clear in an
+                // aborted transaction, so an auto squad is built anew before the search waits.
+                if (!isAbort(error, "ghosts", 32)) throw error;
+                if (auto) squad = build();
+            }
+        }
+        throw new ActionError("congested", "The ranked queue kept changing: search again.", true);
+    }
+
+    /**
+     * Search in the mode of this agent: ranked (an auto squad unless `squad` says otherwise) or
+     * stakes.
+     */
+    async findMatch(): Promise<Situation> {
+        if (this.mode.kind === "ranked") return this.findRanked({ size: this.mode.size });
+        return this.findGame();
+    }
+
+    /** Reset the rating to the default, deviation too: from above it, idle, once per cooldown. */
+    async resetRating(): Promise<Situation> {
+        await this.backend.resetRating();
         return this.situation();
     }
 
@@ -684,8 +1020,13 @@ export class GhostsAgent {
         };
     }
 
+    /** Whether this network has a faucet the agent may ask: testnet's, or a local node's. */
+    private get hasFaucet(): boolean {
+        return this.backend.network === "testnet" || this.backend.network === "localnet";
+    }
+
     private async topUp(): Promise<FundsOutcome> {
-        if (this.backend.network !== "testnet") {
+        if (!this.hasFaucet) {
             throw new ActionError(
                 "rejected",
                 `The faucet is testnet only; this agent is on ${this.backend.network}.`,
@@ -702,7 +1043,7 @@ export class GhostsAgent {
      * the trigger. A failed request stops nothing while the balance can still pay for gas.
      */
     private async funded(): Promise<void> {
-        if (this.backend.network !== "testnet") return;
+        if (!this.hasFaucet) return;
         const { balance, error } = await this.topUp();
         if (error && (balance === null || balance < GAS_FLOOR)) {
             throw new ActionError(
@@ -837,9 +1178,22 @@ export class GhostsAgent {
     }
 }
 
+/** What a ranked score's change says of the game; undefined when it did not move (stakes). */
+function resultFrom(
+    before: AccountView["score"] | null,
+    after: AccountView["score"],
+): Situation["result"] {
+    if (!before) return undefined;
+    if (after.wins > before.wins) return "won";
+    if (after.losses > before.losses) return "lost";
+    if (after.draws > before.draws) return "draw";
+    return undefined;
+}
+
 function todo(phase: Phase, next: string): Pick<Situation, "phase" | "actionable" | "next"> {
     return { phase, actionable: true, next };
 }
+
 
 /** The records since the start of the previous turn. */
 function lastTwoTurns(history: GameRecord[]): GameRecord[] {
@@ -856,6 +1210,14 @@ export interface PlayOptions {
     name?: string;
     signal?: AbortSignal;
     onEvent?: (event: { situation: Situation; receipt?: Receipt }) => void;
+    /**
+     * How long a search may go unanswered before the loop leaves it and stops, with the games it
+     * played. Ranked players only meet their own tier, so a small fleet can leave one alone in a
+     * tier; without it the loop searches on, queueing again after each ticket's lifetime.
+     */
+    patienceMs?: number;
+    /** False: never search; only play out and complete a game the account is in, then return. */
+    queue?: boolean;
 }
 
 /**
@@ -871,12 +1233,40 @@ export async function playGames(
     const games = options.games ?? 1;
     const results: Situation["result"][] = [];
     const counted = new Set<string>();
+    /** When the current unanswered search began, by real time. */
+    let searchingSince: number | null = null;
+    /** The game this loop last saw the account in, and the score before it. */
+    let playing: string | null = null;
+    let scoreBefore: AccountView["score"] | null = null;
 
     while (!options.signal?.aborted) {
         // An in-memory backend resolves everything at once: yield, or timers never fire.
         await new Promise((resolve) => setImmediate(resolve));
         const situation = await agent.wait({ timeoutMs: 60_000, signal: options.signal });
         options.onEvent?.({ situation });
+
+        if (situation.phase === "searching" && options.patienceMs !== undefined) {
+            searchingSince ??= Date.now();
+            if (Date.now() - searchingSince > options.patienceMs) {
+                await agent.cancelSearch().catch(() => {});
+                return { played: results.length, results };
+            }
+        } else if (situation.phase !== "notice") {
+            searchingSince = null;
+        }
+
+        // A game the opponent completed before this loop saw it over still counts: the account
+        // is out of it, and its result is what the ranked score says, if it moved.
+        if (situation.game) playing = situation.game;
+        else if (playing && !counted.has(playing)) {
+            counted.add(playing);
+            const account = await agent.backend.account();
+            results.push(account ? resultFrom(scoreBefore, account.score) : undefined);
+            playing = null;
+        }
+        if (!playing && situation.phase === "idle") {
+            scoreBefore = (await agent.backend.account())?.score ?? null;
+        }
 
         switch (situation.phase) {
             case "no_name":
@@ -887,10 +1277,17 @@ export async function playGames(
                 break;
             case "no_account":
             case "no_squad":
+                if (options.queue === false) return { played: results.length, results };
                 await agent.setup();
                 break;
             case "idle":
-                if (results.length >= games) return { played: results.length, results };
+                if (results.length >= games || options.queue === false) {
+                    return { played: results.length, results };
+                }
+                if (agent.mode.kind === "ranked") {
+                    await agent.findRanked({ size: agent.mode.size });
+                    break;
+                }
                 await agent.setup(); // hires are free: replace the fallen before queueing
                 await agent.findGame();
                 break;
@@ -899,6 +1296,7 @@ export async function playGames(
                     counted.add(situation.game!);
                     results.push(situation.result);
                 }
+                playing = null;
                 try {
                     const { receipt } = await agent.act(["complete"]);
                     options.onEvent?.({ situation, receipt });

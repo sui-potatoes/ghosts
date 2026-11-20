@@ -28,7 +28,8 @@ try {
     const seat = process.env.GHOSTS_SEAT;
     if (seat && !process.env.GHOSTS_KEY_FILE) {
         if (!/^\d+$/.test(seat)) throw new Error("GHOSTS_SEAT is a seat number, like 3.");
-        const file = join(homedir(), ".config", "ghosts", "fleet", `agent-${seat}.key`);
+        const fleet = process.env.GHOSTS_FLEET_DIR ?? join(homedir(), ".config", "ghosts", "fleet");
+        const file = join(fleet, `agent-${seat}.key`);
         // Never create a key by accident: a missing seat is a mistake.
         if (!existsSync(file)) throw new Error(`No key for seat ${seat}.`);
         process.env.GHOSTS_KEY_FILE = file;

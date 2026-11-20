@@ -198,9 +198,10 @@ test("three missed turns in a row lose the game", async () => {
     await agent.findGame();
     await agent.act(["deploy"]);
 
-    // Twice the silent opponent's turn runs out, and we pass ours straight back.
+    // Twice the silent opponent's turn runs out, and we pass ours straight back. The first turn
+    // lasts longer, as the scene is still loading.
     for (let miss = 1; miss <= 2; miss++) {
-        clock += 90_001;
+        clock += miss === 1 ? 120_001 : 90_001;
         assert.equal((await agent.act(["next_turn"])).situation.phase, "your_turn");
         assert.deepEqual((await agent.current()).state.missed, [miss, 0]);
         assert.equal((await agent.act(["next_turn"])).situation.phase, "opponent_turn");
@@ -213,9 +214,9 @@ test("three missed turns in a row lose the game", async () => {
 
     assert.equal((await agent.act(["complete"])).situation.phase, "idle");
     const { account } = await agent.status();
-    assert.deepEqual(account?.score, { wins: 1, losses: 0, draws: 0 });
+    assert.deepEqual(account?.score, { wins: 0, losses: 0, draws: 0 }, "stakes are unrated");
     assert.equal(account?.recruits, 4, "the squad came home");
-    assert.equal(account?.rating, 1500, "only the score moves: nothing writes the rating");
+    assert.equal(account?.rating, 1500, "and the rating stays");
 });
 
 test("a side that never deploys loses and is suspended", async () => {
@@ -315,6 +316,8 @@ test("the clock passes a turn: it doesn't end the game", async () => {
     assert.equal((await agent.wait({ timeoutMs: 5 })).actionable, false);
 
     clock += 90_001;
+    assert.equal((await agent.wait({ timeoutMs: 5 })).actionable, false, "the first turn is longer");
+    clock += 30_000;
     assert.equal((await agent.wait({ timeoutMs: 5 })).phase, "opponent_timed_out");
     assert.deepEqual(
         (await agent.legal()).actions.map((a) => a.id),
@@ -389,7 +392,7 @@ test("two sides that only pass end in a stalemate at turn 60, a draw", async () 
 
     await agent.act(["complete"]);
     const { account } = await agent.status();
-    assert.deepEqual(account?.score, { wins: 0, losses: 0, draws: 1 });
+    assert.deepEqual(account?.score, { wins: 0, losses: 0, draws: 0 }, "stakes go on no score");
     assert.equal(account?.recruits, 4);
     assert.equal(await agent.backend.account().then((a) => a?.suspendedUntilMs), 0, "no blame");
 });
@@ -428,7 +431,7 @@ test("a kill takes the unit off the map but buries it only at the next turn chan
     assert.ok(seen, "some seed in the range kills someone");
 });
 
-test("a search that nobody answers times out and frees the account", async () => {
+test("a search that nobody answers lasts the ticket lifetime, then its notice frees the account", async () => {
     let clock = 1_000_000;
     const now = () => clock;
     const agent = new GhostsAgent(createSandbox({ empty: true, now }), { ...fast, now });
@@ -437,7 +440,14 @@ test("a search that nobody answers times out and frees the account", async () =>
     assert.equal((await agent.findGame()).phase, "searching");
     assert.equal((await agent.wait({ timeoutMs: 5 })).phase, "searching");
 
+    // past the old two minutes the ticket is still live
     clock += 120_001;
+    const still = await agent.wait({ timeoutMs: 5 });
+    assert.deepEqual([still.phase, still.queue], ["searching", "stakes"]);
+
+    // past the lifetime the queue drops it with a notice, which waiting dismisses
+    clock += 180_000;
+    assert.equal((await agent.situation()).phase, "notice");
     assert.equal((await agent.wait({ timeoutMs: 5 })).phase, "idle");
 });
 

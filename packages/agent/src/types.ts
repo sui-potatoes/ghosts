@@ -101,10 +101,16 @@ export type GameStatus =
     | { kind: "finished"; winner: string | null; ending: Ending };
 
 /**
- * `ghosts::ghosts::Mode`. A friendly game of `size` deploys 1 to `size` recruits a side and
+ * `ghosts::ghosts::Mode`. `stakes`: the stakes queue over owned recruits, unrated, with XP, death
+ * and suspension. `friendly`: a lobby game of `size` that deploys 1 to `size` recruits a side and
  * moves no rating, score, suspension, XP or recruit: the fallen are home again at `complete`.
+ * `ranked`: the ranked queue of `size`, between players of `tier`, squads built from loadouts
+ * (no recruit in it); the only mode that moves rating and score.
  */
-export type GameMode = { kind: "rated" } | { kind: "friendly"; size: number };
+export type GameMode =
+    | { kind: "stakes" }
+    | { kind: "friendly"; size: number }
+    | { kind: "ranked"; size: number; tier: number };
 
 export interface GameState {
     id: string;
@@ -141,13 +147,23 @@ export interface GameState {
 }
 
 /**
- * `ghosts::account::State`. `Suspended` reads as `idle` with `suspendedUntilMs` set. A
- * search a match found stays `searching` until its `Seat` is accepted.
+ * `ghosts::account::State`. A search a match found stays `searching` until its `Seat` is taken,
+ * and one the queue dropped until its notice is dismissed. A suspension is a field of its own.
  */
 export type Search =
     | { kind: "idle" }
-    /** `order` is a queue ticket, or a lobby's key: `lobbyRole` in `lobby.ts` says which. */
-    | { kind: "searching"; order: string; sinceMs: number }
+    /**
+     * `queue` is the `Matchmaker` (stakes, or ranked of a size) or the `Lobbies`; `order` a queue
+     * ticket or a lobby's key (`classifySearch` in `lobby.ts` says which). A ranked search holds
+     * the `commitment` to its squad, `blake2b256(squad ‖ salt)`.
+     */
+    | {
+          kind: "searching";
+          order: string;
+          sinceMs: number;
+          queue: string;
+          commitment: string | null;
+      }
     | { kind: "playing"; game: string };
 
 export interface AccountView {
@@ -155,11 +171,18 @@ export interface AccountView {
     owner: string;
     rating: number;
     deviation: number;
+    /** Ranked games only: their sum is what the placement floor reads. */
     score: { wins: number; losses: number; draws: number };
+    /** The games the Glicko rating counted, and when it last moved (0: never). */
+    ratedGames: number;
+    lastPlayedMs: number;
     recruits: number;
     search: Search;
-    /** From `State::Suspended`: the account can't search for a game before this time. 0 if not. */
+    /** `Account.suspended_until`: the account can't start a game before this time. 0 if never. */
     suspendedUntilMs: number;
+    /** How many times the rating was reset, and when it last was (0: never). */
+    resets: number;
+    lastResetMs: number;
     /** The wallet that can take this account over, if the owner named one. */
     recovery: string | null;
 }
@@ -184,6 +207,31 @@ export type GameRecord =
     | { kind: "effect_start"; x: number; y: number; effect: EffectKind; turns: number }
     /** The effect ran out on the unit on `(x, y)`. A dead unit's effects end without one. */
     | { kind: "effect_end"; x: number; y: number; effect: EffectKind };
+
+/** `ghosts::ghosts::GameStarted`: a game was created; `players` in drawn turn order. */
+export interface GameStartedEvent {
+    game: string;
+    players: string[];
+    mode: GameMode;
+    /** False only for an invite-only lobby's game. */
+    listed: boolean;
+}
+
+/** `ghosts::ghosts::GameEnded`: a game was wrapped up and deleted, and how it ended. */
+export interface GameEndedEvent {
+    game: string;
+    ending: Ending;
+}
+
+/** A `Matchmaker` as far as status needs it. */
+export interface QueueView {
+    id: string;
+    /** Tickets in the queue, expired ones not yet dropped included. */
+    waiting: number;
+    ticketTtlMs: number;
+    bucketSize: number;
+    maxWindow: number;
+}
 
 export interface Receipt {
     digest: string;
@@ -227,17 +275,36 @@ export type ActionErrorCode =
     | "over_budget"
     | "low_balance"
     | "rejected"
-    | "congested";
+    | "congested"
+    /** Ranked: no valid squad, a missing secret to reveal with, or a deployment without `Rules`. */
+    | "bad_squad"
+    | "no_rules";
 
 /** A refusal an agent can read and react to; `retryable` says trying again may work. */
 export class ActionError extends Error {
     code: ActionErrorCode;
     retryable: boolean;
+    /** The Move abort behind a refusal, when there was one: what callers branch on. */
+    declare abort?: MoveAbort;
 
-    constructor(code: ActionErrorCode, message: string, retryable = false) {
+    constructor(code: ActionErrorCode, message: string, retryable = false, abort?: MoveAbort) {
         super(message);
         this.name = "ActionError";
         this.code = code;
         this.retryable = retryable;
+        if (abort) this.abort = abort;
     }
+}
+
+/** A Move abort: the module that aborted and its code. */
+export interface MoveAbort {
+    module: string;
+    code: number;
+}
+
+/** Whether an error is the Move abort `code` of `module`. */
+export function isAbort(error: unknown, module: string, code: number): boolean {
+    return (
+        error instanceof ActionError && error.abort?.module === module && error.abort.code === code
+    );
 }

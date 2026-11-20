@@ -2,17 +2,23 @@
 //
 // To regenerate: copy `move/` to a scratch directory, append the code below (without these
 // comment lines) to `packages/ghosts/tests/ghosts.move`, which it extends (a module takes one
-// `extend` per mode, and the code uses that file's `setup_*`, `deploy` and `end_turn` helpers),
-// then run in `packages/ghosts`:
+// `extend` per mode, and the code uses that file's `setup_*`, `deploy`, `end_turn` and ranked
+// helpers), then run in `packages/ghosts`:
 //
 //     sui move test print_ -s 2>&1 | grep -o 'FIX [A-Za-z0-9]* [0-9a-f]*'
 //
-// Each line is `FIX <name> <hex>`: the name is the key in `fixtures.ts`. `gameScript0` to
-// `gameScript10` are the game after each step of the scripted match `parity.test.ts` plays in the
-// sandbox. The friendly games (`gameFriendly*`, `account*`) are printed by the two tests at the end of
-// this part. The lobby values (`lobby*`, `accountLobby*` and the ids) come from the second part,
-// which goes at the end of `packages/ghosts/tests/lobby.move` (it extends `ghosts::lobby`, so it can
-// read a lobby's bytes) and runs with `sui move test print_lobbies -s`. Nothing is added to the repo.
+// Each line is `FIX <name> <hex>`: the name is the key in `fixtures.ts`. The ids the tests name
+// (`id*`) are printed too. `gameScript0` to `gameScript10` are the game after each step of the
+// scripted match `parity.test.ts` plays in the sandbox. The friendly games (`gameFriendly*`,
+// `account*`) are printed by the two friendly tests. The ranked values (`ranked*`, `rules`,
+// `event*`, `notice*`, `accountRanked*`) by the ranked ones; `unitL<rifle><armor><utility>` are
+// `unit::from_loadout` for all 36 loadouts (`n` for no utility). The lobby values (`lobby*`,
+// `accountLobby*` and the ids) come from the second part, which goes at the end of
+// `packages/ghosts/tests/lobby.move` (it extends `ghosts::lobby`, so it can read a lobby's bytes)
+// and runs with `sui move test print_lobbies -s`. Nothing is added to the repo.
+//
+// `State`, `Ending`, `Recruit` and `Record` did not change with ranked play: their fixtures are
+// the earlier printer's (`print_records`, and `stateDeploying` to `recruitGrenadier`).
 
 use ghosts::effect;
 use grid::direction::{up, left};
@@ -27,6 +33,8 @@ fun fix(name: vector<u8>, bytes: vector<u8>) {
     debug::print(&line);
 }
 
+fun fix_id(name: vector<u8>, id: ID) { fix(name, to_bytes(&id)) }
+
 /// A recruit with a Standard Rifle, no armor, carrying the utility of `kind`
 /// (none for 255), in the `Account` of the sender.
 fun hire_kind(acc: &mut Account, kind: u8, ctx: &mut TxContext): ID {
@@ -36,6 +44,16 @@ fun hire_kind(acc: &mut Account, kind: u8, ctx: &mut TxContext): ID {
     let id = object::id(&recruit);
     acc.add_recruit(recruit);
     id
+}
+
+/// The `Seat` last sent to the `Account` of `owner`, as bytes, and back where it was.
+fun seat_bytes(f: &mut Fixture, owner: address): vector<u8> {
+    let sender = f.ts.sender();
+    f.ts.next_tx(sender);
+    let seat = f.ts.take_from_address<Seat>(owner);
+    let bytes = to_bytes(&seat);
+    ts::return_to_address(owner, seat);
+    bytes
 }
 
 #[test]
@@ -64,13 +82,35 @@ fun print_records() {
     fix(b"records", to_bytes(&records));
 }
 
+/// A game for stakes on Demo 1, one grenadier a side: Alice waits, Bob finds her, Alice goes
+/// first (the draw undone, see `put_first`).
 #[test]
-fun print_legacy_games() {
+fun print_stakes_games() {
     let mut fixture = setup_grenadiers();
     let f = &mut fixture;
+    fix_id(b"idAlice", object::id(&f.alice));
+    fix_id(b"idBob", object::id(&f.bob));
+    fix_id(b"idAliceRecruit", f.alice_recruit);
+    fix_id(b"idBobRecruit", f.bob_recruit);
+    fix_id(b"idStakes", object::id(&f.mm));
     fix(b"accountIdle", to_bytes(&f.alice));
-    let mut game = f.start();
+
+    f.ts.next_tx(ALICE);
+    find_game(&mut f.mm, &mut f.alice, &f.preset, &f.rng, &f.clock, f.ts.ctx());
+    fix(b"accountSearching", to_bytes(&f.alice));
+    f.ts.next_tx(BOB);
+    find_game(&mut f.mm, &mut f.bob, &f.preset, &f.rng, &f.clock, f.ts.ctx());
+    fix(b"accountPlaying", to_bytes(&f.bob));
+    f.alice_first();
+    let alice = object::id_address(&f.alice);
+    fix(b"seat", f.seat_bytes(alice));
+
+    f.ts.next_tx(ALICE);
+    let mut game = f.ts.take_shared<Game>();
+    fix_id(b"idGame", object::id(&game));
     fix(b"gameDeploying", to_bytes(&game));
+    let seat = f.seat();
+    accept_seat(&mut f.alice, seat);
     f.clock.set_for_testing(1000);
     f.deploy(&mut game);
     fix(b"gamePlayingT0", to_bytes(&game));
@@ -93,8 +133,9 @@ fun print_legacy_games() {
     fixture.finish();
 }
 
+/// Alice's recruit falls in a game for stakes: Bob wins, and neither rating nor score moves.
 #[test]
-fun print_legacy_won_fallen() {
+fun print_stakes_won_fallen() {
     let mut fixture = setup_grenadiers();
     let f = &mut fixture;
     let mut game = f.start();
@@ -102,12 +143,17 @@ fun print_legacy_won_fallen() {
     f.deploy(&mut game);
     kill(&mut game, vector[f.alice_recruit]);
     fix(b"gameOverWonFallen", to_bytes(&game));
-    ts::return_shared(game);
+    f.clock.set_for_testing(3000);
+    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    fix(b"accountAfterStakesLoss", to_bytes(&f.alice));
+    fix(b"accountAfterStakesWin", to_bytes(&f.bob));
     fixture.finish();
 }
 
+/// Alice walks out of a game for stakes: `Over(Abandoned(Alice))`, then completed at 3 s, she
+/// is suspended for a minute and idle.
 #[test]
-fun print_legacy_abandoned() {
+fun print_stakes_abandoned() {
     let mut fixture = setup_grenadiers();
     let f = &mut fixture;
     let mut game = f.start();
@@ -115,7 +161,9 @@ fun print_legacy_abandoned() {
     f.deploy(&mut game);
     abandon_game(&mut game, &f.alice, f.ts.ctx());
     fix(b"gameOverAbandoned", to_bytes(&game));
-    ts::return_shared(game);
+    f.clock.set_for_testing(3000);
+    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    fix(b"accountSuspended", to_bytes(&f.alice));
     fixture.finish();
 }
 
@@ -244,6 +292,130 @@ fun print_friendly_listed() {
     fixture.finish();
 }
 
+// === Ranked ===
+
+/// A ranked game of three on Black Rain, Contractors both: Alice waits with the commitment to
+/// `alice_squad` and `SALT`, Bob finds her at 1 s with `bob_squad`, Alice reveals at 2 s, Bob
+/// wipes her out, and the game is wrapped up at 5 s; then Bob, above the default, resets his
+/// rating at 9 s. Who moves first is the scenario's draw.
+#[test]
+fun print_ranked_game() {
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    fix_id(b"idRankedAlice", object::id(&f.alice));
+    fix_id(b"idRankedBob", object::id(&f.bob));
+    fix_id(b"idRankedThree", object::id(&f.three));
+    fix_id(b"idRankedFour", object::id(&f.four));
+    fix_id(b"idRankedLevel", object::id(&f.preset));
+    fix(b"rules", to_bytes(&f.rules));
+    fix(b"rankedSalt", SALT);
+    fix(b"rankedAliceSquad", alice_squad());
+    fix(b"rankedBobSquad", bob_squad());
+    fix(b"rankedCommitment", to_bytes(&commitment(alice_squad())));
+
+    f.queue_ranked(alice_squad());
+    fix(b"accountRankedSearching", to_bytes(&f.alice));
+    fix(b"rankedQueueOne", to_bytes(&f.three));
+
+    f.clock.set_for_testing(1_000);
+    f.find_ranked_with(bob_squad());
+    let started = event::events_by_type<GameStarted>();
+    fix(b"eventRankedStarted", to_bytes(&started[0]));
+    fix(b"accountRankedFinder", to_bytes(&f.bob));
+    fix(b"accountRankedRevealWaiting", to_bytes(&f.alice));
+    let alice = object::id_address(&f.alice);
+    fix(b"seatRanked", f.seat_bytes(alice));
+
+    f.ts.next_tx(ALICE);
+    let mut game = f.ts.take_shared<Game>();
+    fix_id(b"idRankedGame", object::id(&game));
+    fix(b"gameRankedRevealWait", to_bytes(&game));
+
+    f.clock.set_for_testing(2_000);
+    f.reveal_with(&mut game, alice_squad());
+    fix(b"gameRankedPlaying", to_bytes(&game));
+    fix(b"accountRankedPlaying", to_bytes(&f.alice));
+
+    let alice_side = side_of(&game, object::id(&f.alice));
+    wipe_out(&mut game, alice_side);
+    fix(b"gameRankedOver", to_bytes(&game));
+    f.clock.set_for_testing(5_000);
+    f.ts.next_tx(BOB);
+    f.complete(game);
+    let ended = event::events_by_type<GameEnded>();
+    fix(b"eventRankedEnded", to_bytes(&ended[0]));
+    fix(b"accountRankedAfterLoss", to_bytes(&f.alice));
+    fix(b"accountRankedAfterWin", to_bytes(&f.bob));
+
+    f.clock.set_for_testing(9_000);
+    f.ts.next_tx(BOB);
+    account::reset_rating(&mut f.bob, &f.rules, &f.clock, f.ts.ctx());
+    fix(b"accountRankedReset", to_bytes(&f.bob));
+    fixture.finish();
+}
+
+/// A ranked search past the ticket lifetime: Bob's search walks by and drops it, Alice is sent a
+/// notice, still `Searching` with her commitment until it is dismissed.
+#[test]
+fun print_ranked_notice() {
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    f.queue_ranked(alice_squad());
+    f.clock.set_for_testing(TICKET_TTL_MS + 1);
+    f.find_ranked_with(vector[]);
+    fix(b"accountRankedDropped", to_bytes(&f.alice));
+    let alice = object::id_address(&f.alice);
+    fix(b"noticeSeat", f.seat_bytes(alice));
+    fixture.finish();
+}
+
+/// A ranked no-show: Alice never reveals, Bob ends the deployment past the limit, takes her seat
+/// and wraps up.
+#[test]
+fun print_ranked_no_show() {
+    let mut fixture = setup_black_rain();
+    let f = &mut fixture;
+    let mut game = f.match_ranked();
+    let limit = f.rules.reveal_limit_ms();
+    f.clock.set_for_testing(limit + 1);
+    f.ts.next_tx(BOB);
+    next_turn(&mut game, &f.bob, &f.clock, f.ts.ctx());
+    fix(b"gameRankedNoShow", to_bytes(&game));
+    f.ts.next_tx(BOB);
+    let seat = f.seat();
+    take_seat(&game, &mut f.alice, seat, &f.clock, f.ts.ctx());
+    f.complete(game);
+    let ended = event::events_by_type<GameEnded>();
+    fix(b"eventRankedNoShow", to_bytes(&ended[0]));
+    fix(b"accountRankedNoShow", to_bytes(&f.alice));
+    fix(b"accountRankedNoShowWinner", to_bytes(&f.bob));
+    fixture.finish();
+}
+
+/// `unit::from_loadout` of every loadout: rifles 1-3, armors 1-3, frag, flashbang, smoke and none,
+/// with the recruit ID `0x1` and the owner `0x2`.
+#[test]
+fun print_loadout_units() {
+    let utilities = vector[0u8, 1, 2, 255];
+    let mut w = 1u8;
+    while (w <= 3) {
+        let mut a = 1u8;
+        while (a <= 3) {
+            utilities.do_ref!(|u| {
+                let unit = unit::from_loadout(@0x1.to_id(), @0x2.to_id(), w, a, *u);
+                let mut name = b"unitL";
+                name.push_back(48 + w);
+                name.push_back(48 + a);
+                name.push_back(if (*u == 255) 110 else 48 + *u);
+                fix(name, to_bytes(&unit));
+                unit.destroy();
+            });
+            a = a + 1;
+        };
+        w = w + 1;
+    };
+}
+
 // ---- second part: the end of `packages/ghosts/tests/lobby.move` (its own `fix` below) ----
 //
 // fun fix(name: vector<u8>, bytes: vector<u8>) {
@@ -314,4 +486,3 @@ fun print_friendly_listed() {
 //     ts::return_shared(registry);
 //     ts.end();
 // }
-//

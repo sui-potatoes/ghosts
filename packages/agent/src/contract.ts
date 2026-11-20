@@ -3,8 +3,8 @@
 
 /**
  * The Move calls the SDK makes, in one file so the contract can move under it.
- * They mirror `ghosts::ghosts` and `ghosts::account` in the package source. Only
- * `set_recovery` is still assumed: see "Still assumed" in the README.
+ * They mirror `ghosts::ghosts`, `ghosts::account` and `ghosts::rules` in the package
+ * source. Only `set_recovery` is still assumed: see "Still assumed" in the README.
  */
 
 import { Transaction } from "@mysten/sui/transactions";
@@ -15,16 +15,29 @@ import { ActionError, type Action, type GameState, type ObjectRef } from "./type
 const GAME_MODULE = "ghosts";
 const LOBBY_MODULE = "lobby";
 const ACCOUNT_MODULE = "account";
+const RULES_MODULE = "rules";
 
 export interface Deployment {
     package: string;
     registry: string;
+    /** The stakes queue, `Matchmaker<ghosts::Ghosts>`. */
     matchmaker: string;
     /** The frozen `Preset` games are played on, created once on publish. */
     preset: string;
     /** The shared `Lobbies` object friendly games are listed on. */
     lobbies: string;
-    names: NameRegistry;
+    /**
+     * The shared `ghosts::rules::Rules`: prices, tiers, budgets, and the queue and level of each
+     * ranked size. Ranked play needs it; a deployment without it plays stakes and friendly only.
+     */
+    rules?: string;
+    /**
+     * The `Matchmaker<ghosts::Ranked>` of each size, by units a side. Optional: `Rules.sizes`
+     * names them, and a value here must agree with it.
+     */
+    rankedQueues?: Record<number, string>;
+    /** The commander-names instance; null where there is none (a local network). */
+    names: NameRegistry | null;
 }
 
 /** A `commander-names` instance. */
@@ -44,13 +57,17 @@ export const TESTNET_NAMES: NameRegistry = {
     domain: "demo.ghosts.sui",
 };
 
-/** The package on testnet, the same ids as `GHOSTS` in `app/src/constants.ts`. */
+/**
+ * The package on testnet: the publish with ranked play. The ranked queues and their levels are
+ * read from the `Rules` (`Rules.sizes`), as the app does.
+ */
 export const TESTNET_DEPLOYMENT: Deployment = {
-    package: "0xdbd205dbe67b44f721933e20b95010b8e01c7c1316ff32540d7af4cb46b4246e",
-    registry: "0xaa4e35823c515cf91bbcb53311f10d6fccc2d4e4bc148fa8bb7d43f250d79589",
-    matchmaker: "0x93791ca35a785341beff57c4d59647e26da06d923c8666e67d204e401dbd017e",
-    preset: "0x5e37e87da2aca8ce31b0a2ac918ea76fa376ba9d8c02e61e976d5c9c7c2ebff1",
-    lobbies: "0x81afce11aa84fc75c08ebee3565670961002122986396444c32333f7fb72185f",
+    package: "0x55020cb734b77cec16c17fa216df136b1d2955f17606549f7d43fcbd461b76db",
+    registry: "0x5e035047bc45e546d9bc6ff423fd71d84b544453036d2c346a451b392e5ee434",
+    matchmaker: "0x11cb5f36c2d72deae4965c6029ecc854cf252774b0dc8c3c22ba64df7f180bd9",
+    preset: "0xa29eaae6fd01e9e13d379ccf16ca7ac040f867edf072825e0722cc521efb2232",
+    lobbies: "0x1a0e0cfebaaa1e9ca54b918fb22049b6fb1aaeb7bfe2ad61d63f15afaf806af5",
+    rules: "0x5d37a13a7fd691e0fe52ba4bfb40b1999481dff80df0b4cb0cb92870116b6f00",
     names: TESTNET_NAMES,
 };
 
@@ -185,6 +202,7 @@ export function joinLobbyTx(
     code: Uint8Array,
 ): Transaction {
     const tx = new Transaction();
+    // `entry`, with `Random` for the draw of who goes first
     tx.moveCall({
         target: `${d.package}::${GAME_MODULE}::join_lobby`,
         arguments: [
@@ -192,6 +210,7 @@ export function joinLobbyTx(
             tx.object(d.preset),
             tx.object(host),
             tx.object(account),
+            tx.object.random(),
             tx.object(CLOCK),
             tx.pure.vector("u8", Array.from(code)),
         ],
@@ -245,7 +264,7 @@ export function kickGuestTx(d: Deployment, host: string, guest: string): Transac
     return tx;
 }
 
-/** The host starts the game of its listed lobby with its guest. */
+/** The host starts the game of its listed lobby with its guest; who goes first is drawn. */
 export function startFriendlyTx(d: Deployment, host: string, guest: string): Transaction {
     const tx = new Transaction();
     tx.moveCall({
@@ -255,6 +274,7 @@ export function startFriendlyTx(d: Deployment, host: string, guest: string): Tra
             tx.object(d.preset),
             tx.object(host),
             tx.object(guest),
+            tx.object.random(),
             tx.object(CLOCK),
         ],
     });
@@ -280,16 +300,38 @@ export function closeLobbyWithGuestTx(d: Deployment, host: string, guest: string
     return tx;
 }
 
-/** A `Seat` sent to an `Account` and still to be accepted, by the reference that receives it. */
+/**
+ * A `Seat` sent to an `Account` and still to be taken, by the reference that receives it. With
+ * `game` null it is a notice: the queue dropped the search.
+ */
 export interface PendingSeat {
     account: string;
     seat: ObjectRef;
-    /** The game the seat is in, when known. */
-    game?: string;
+    /** The game the seat is in; null for a notice; undefined when not read. */
+    game?: string | null;
+    /** A seat of a ranked game: revealed into, or taken with `take_seat`, never accepted. */
+    ranked?: boolean;
 }
 
-/** `accept_seat`: put the `Account` into the game its `Seat` is in. Anyone can send it. */
-function acceptSeat(d: Deployment, tx: Transaction, { account, seat }: PendingSeat) {
+/**
+ * Put the `Account` into the game its `Seat` is in, as whoever is not its owner may: a stakes
+ * seat with `accept_seat` (anyone, any time), a ranked one with `take_seat` (anyone once the game
+ * no longer waits for the reveal: the seat is then a no-show's).
+ */
+function acceptSeat(d: Deployment, tx: Transaction, { account, seat, game, ranked }: PendingSeat) {
+    if (ranked) {
+        if (!game) throw new ActionError("rejected", "A ranked seat is taken in its game.");
+        tx.moveCall({
+            target: `${d.package}::${GAME_MODULE}::take_seat`,
+            arguments: [
+                tx.object(game),
+                tx.object(account),
+                tx.receivingRef(seat),
+                tx.object(CLOCK),
+            ],
+        });
+        return;
+    }
     tx.moveCall({
         target: `${d.package}::${GAME_MODULE}::accept_seat`,
         arguments: [tx.object(account), tx.receivingRef(seat)],
@@ -299,6 +341,131 @@ function acceptSeat(d: Deployment, tx: Transaction, { account, seat }: PendingSe
 export function acceptSeatsTx(d: Deployment, seats: PendingSeat[]): Transaction {
     const tx = new Transaction();
     for (const seat of seats) acceptSeat(d, tx, seat);
+    return tx;
+}
+
+// === Ranked ===
+
+/**
+ * `find_ranked(mm, acc, rules, preset, rng, clock, squad, commitment)`. With nobody compatible
+ * waiting the `squad` must be empty, and the search waits holding `commitment`; with someone
+ * waiting it must be the squad in the clear, which is checked and placed at once, and the
+ * commitment is ignored. `queue` is the `Matchmaker<Ranked>` of the size and `level` its `Preset`,
+ * both from `Rules.sizes`.
+ */
+export function findRankedTx(
+    d: Deployment,
+    account: string,
+    ranked: { rules: string; queue: string; level: string },
+    squad: Uint8Array,
+    commitment: string,
+): Transaction {
+    const tx = new Transaction();
+    tx.moveCall({
+        target: `${d.package}::${GAME_MODULE}::find_ranked`,
+        arguments: [
+            tx.object(ranked.queue),
+            tx.object(account),
+            tx.object(ranked.rules),
+            tx.object(ranked.level),
+            tx.object.random(),
+            tx.object(CLOCK),
+            tx.pure.vector("u8", Array.from(squad)),
+            tx.pure.address(commitment),
+        ],
+    });
+    return tx;
+}
+
+/**
+ * `reveal_squad(game, acc, rules, seat, clock, squad, salt)`: the owner shows the squad and salt
+ * its search committed to and takes its seat; the squad lands and the first turn begins.
+ */
+export function revealSquadTx(
+    d: Deployment,
+    rules: string,
+    { account, seat, game }: PendingSeat,
+    squad: Uint8Array,
+    salt: Uint8Array,
+): Transaction {
+    if (!game) throw new ActionError("rejected", "A notice has no game to reveal into.");
+    const tx = new Transaction();
+    tx.moveCall({
+        target: `${d.package}::${GAME_MODULE}::reveal_squad`,
+        arguments: [
+            tx.object(game),
+            tx.object(account),
+            tx.object(rules),
+            tx.receivingRef(seat),
+            tx.object(CLOCK),
+            tx.pure.vector("u8", Array.from(squad)),
+            tx.pure.vector("u8", Array.from(salt)),
+        ],
+    });
+    return tx;
+}
+
+/**
+ * `take_seat(game, acc, seat, clock)` for the owner: give up on the reveal and sit in the game
+ * with nobody on the map, which ends as a no-show at the deadline (or `abandon` it at once).
+ */
+export function takeSeatTx(d: Deployment, seat: PendingSeat): Transaction {
+    const tx = new Transaction();
+    acceptSeat(d, tx, { ...seat, ranked: true });
+    return tx;
+}
+
+/** `dismiss_seat(acc, seat)`: clear a search the queue dropped, with its notice. Anyone can. */
+export function dismissSeatTx(d: Deployment, { account, seat }: PendingSeat): Transaction {
+    const tx = new Transaction();
+    tx.moveCall({
+        target: `${d.package}::${GAME_MODULE}::dismiss_seat`,
+        arguments: [tx.object(account), tx.receivingRef(seat)],
+    });
+    return tx;
+}
+
+/** `cancel_ranked(mm, acc, clock)`: leave the ranked queue `queue` the search is in. */
+export function cancelRankedTx(d: Deployment, queue: string, account: string): Transaction {
+    const tx = new Transaction();
+    tx.moveCall({
+        target: `${d.package}::${GAME_MODULE}::cancel_ranked`,
+        arguments: [tx.object(queue), tx.object(account), tx.object(CLOCK)],
+    });
+    return tx;
+}
+
+/**
+ * `account::reset_rating(acc, rules, clock)`: back to the default rating, deviation too. Only from
+ * above the default, while idle, once per cooldown of the `Rules`.
+ */
+export function resetRatingTx(d: Deployment, rules: string, account: string): Transaction {
+    const tx = new Transaction();
+    tx.moveCall({
+        target: `${d.package}::${ACCOUNT_MODULE}::reset_rating`,
+        arguments: [tx.object(account), tx.object(rules), tx.object(CLOCK)],
+    });
+    return tx;
+}
+
+/** `rules::check_squad(rules, size, tier, squad)`: what a devInspect of a squad runs. */
+export function checkSquadTx(
+    d: Deployment,
+    rules: string,
+    size: number,
+    tier: number,
+    squad: Uint8Array,
+): Transaction {
+    const tx = new Transaction();
+    tx.moveCall({
+        target: `${d.package}::${RULES_MODULE}::check_squad`,
+        arguments: [
+            tx.object(rules),
+            tx.pure.u8(size),
+            tx.pure.u8(tier),
+            tx.pure.vector("u8", Array.from(squad)),
+        ],
+    });
     return tx;
 }
 
@@ -497,9 +664,26 @@ const ABORTS: Record<string, Record<number, string>> = {
         17: "The game is still running.",
         21: "Your squad is already deployed.",
         22: "This account has no recruits to play with.",
-        25: "This account is not in the queue: in a lobby, leave or close it; if a match found its search, accept the seat first.",
-        27: "This account has yet to accept its seat in the game.",
+        25: "This account is not in that queue: in a lobby, leave or close it; if a match found its search, take the seat first; if the queue dropped it, dismiss its notice.",
+        27: "This account has yet to take its seat in the game.",
         28: "That squad is larger than the friendly game allows.",
+        29: "That seat is not for this: a notice has no game, and a game seat is not a notice.",
+        30: "That call is not for a game of this mode.",
+        31: "The squad and salt revealed are not what the search committed to.",
+        32: "Nobody is waiting any more: queue again with the commitment alone.",
+        33: "A ranked seat is taken by revealing the squad, or with take_seat.",
+        34: "That preset is not the level of this ranked size.",
+        35: "The level has no room for the size, or a spawn no unit can stand on.",
+    },
+    [RULES_MODULE]: {
+        0: "The squad is not three bytes for each unit of the size: someone is waiting, send the squad.",
+        1: "The squad names an item the rules do not have.",
+        2: "The squad carries an item the tier has not unlocked.",
+        3: "The squad costs more than the tier's budget.",
+        4: "That queue is not a ranked queue of the rules.",
+        5: "That ranked size has no level yet: it cannot be queued for.",
+        6: "A tier out of range, out of order, or without a budget for every size.",
+        7: "The rules have no such size.",
     },
     [LOBBY_MODULE]: {
         0: "A lobby has 3 or 4 recruits a side.",
@@ -521,6 +705,10 @@ const ABORTS: Record<string, Record<number, string>> = {
         3: "That voice does not exist.",
         6: "The squad is in a game.",
         7: "That is not the recruit that was borrowed.",
+        9: "That utility does not exist.",
+        10: "Only a rating above the default can be reset.",
+        11: "The account must be idle to reset its rating.",
+        12: "The rating was reset too recently: wait for the cooldown.",
     },
 };
 

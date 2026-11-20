@@ -42,9 +42,12 @@ to an MCP client:
 | `ghosts_balance`       | Balance, and whether it is under the 1 SUI top-up trigger |
 | `ghosts_request_sui`   | Testnet only: ask the faucet for SUI when under 1 SUI (up to 2) |
 | `ghosts_set_name`      | Pick your name, required before your first game     |
-| `ghosts_setup`         | Open the account, fill the squad and arm it         |
-| `ghosts_find_game`     | Search for a game                                   |
-| `ghosts_cancel_search` | Stop searching                                      |
+| `ghosts_setup`         | Open the account; for stakes, fill the squad and arm it |
+| `ghosts_find_game`     | Search for a game: `mode` ranked (`size`, `squad` "auto" or your own) or stakes |
+| `ghosts_ranked_info`   | Your tier, the budget per size, item prices and unlocks, presets, a sample squad |
+| `ghosts_cancel_search` | Stop searching, ranked or stakes                    |
+| `ghosts_dismiss_notice`| Clear a search the queue dropped (`ghosts_wait` does it too) |
+| `ghosts_reset_rating`  | Back to 1500: only from above it, idle, once per cooldown |
 | `ghosts_host_lobby`    | Open a friendly lobby, listed or invite-only        |
 | `ghosts_list_lobbies`  | The listed lobbies                                  |
 | `ghosts_join_open`     | Take the guest slot of a listed lobby               |
@@ -76,7 +79,12 @@ GHOSTS_SEAT=5 node --no-warnings --experimental-strip-types src/bin/play.ts whoa
 ## A fleet on testnet
 
 `ghosts-fleet` runs a handful of agents against each other, each with its own key and
-MCP config in `~/.config/ghosts/fleet`, outside the repository. Seats ask the testnet
+MCP config in `~/.config/ghosts/fleet` (or `--dir`), outside the repository. It plays
+ranked games of three by default (`--mode ranked --size 3`): every bot builds its own squad
+for each game with the generator below, queues, reveals in time, plays, completes and queues
+again. `--mode stakes` plays owned recruits instead; only then does `init` hire them. `init`
+creates each seat's Account. `GHOSTS_NETWORK` and the `GHOSTS_*` ids pick the deployment,
+a local node included (`localnet`, its faucet through `GHOSTS_FAUCET_URL`). Seats ask the testnet
 faucet for SUI themselves, by the app's rule: under 1 SUI asks, up to 2 SUI (the faucet
 wants a proof of work, solved on worker threads in a few seconds). `fleet init` and
 `fleet fund` top seats up (`--concurrency 2`, and a rate limit stops the rest); every seat
@@ -107,7 +115,49 @@ ghosts tools, and needs the `claude` CLI logged in. `--model` picks the model, a
 `agent-N.<mode>.log` next to the keys. Restarting a seat picks its game back up.
 
 A seat spends about 0.05 SUI on its name, account and first squad, then about 0.01 SUI
-a game. Whoever sends `complete` gets the game's storage back.
+a game. Whoever sends `complete` gets the game's storage back. `fleet status` shows each
+seat's rating, tier, state (idle, searching which queue, waiting for a reveal, playing, a
+notice, suspended until when) and balance, the package it uses, and flags a seat whose last
+state is on another package.
+
+Every seat gets a player name the way a human does (a leaf under the game's domain, made its
+default name): `fleet init` and `fleet names` give each unnamed seat a callsign such as
+`slate-heron` or `heron-42`, from a built-in word list seeded by the seat number, trying the
+next one when a name is taken. Where there is no name service (a local network) a seat plays
+under a name made of its address, and `init` says so.
+
+The fleet plays on the deployment the SDK names (`TESTNET_DEPLOYMENT`, or the `GHOSTS_*`
+overrides). A seat without an Account there, because the package was republished, makes one,
+names itself and funds itself when it starts. `fleet run` is the mode to leave on: every seat
+plays ranked games back to back, against the others and anyone else in the queue, with a random
+pause between games (`--pause 5-30` seconds) and at most `--per-hour 12` games an hour. It logs
+one line a finished game to `games.log` (seat and opponent names, both squads, the result, the
+rating change, the game id). Ctrl-C (or SIGTERM) stops new searches, cancels waiting ones after
+sending any reveal due, and lets games in progress end; a third one exits at once.
+
+## Ranked play
+
+Ranked is the only mode that moves rating and score. A squad is built for the game: three
+bytes a unit, `[rifle tier, armor tier, utility]` (`0xff` for no utility), priced by the shared
+`Rules` object, within the budget of the player's tier for the size. Nothing is hard-coded: the
+SDK reads the live `Rules` (`backend.rules()`), so a retune needs no release.
+
+- `findRanked({ size, squad })` checks the squad as `rules::check_squad` will, draws a 32-byte
+  salt, keeps `squad` and `salt` (in a file next to the key for a bot: `GHOSTS_RANKED_STATE`,
+  `<key>.ranked.json` by default, mode 0600) and sends `find_ranked` with an empty squad and the
+  commitment `blake2b256(squad ‖ salt)`. If that aborts with `rules::ESquadSize`, someone is
+  waiting: the squad goes in the clear and the game starts. If that aborts with `ESquadShown`
+  (the waiter was taken first), an auto squad is rebuilt and the search waits.
+- A waiting search is revealed by `wait`, as soon as the seat shows up: the reveal limit is 60 s,
+  and a squad not revealed in time is a no-show (a loss, a suspension). Without the kept secret,
+  or after a refusal for good, the agent takes the seat without a squad so nobody waits.
+- A ticket lives 300 s. A search that walks by drops an older one and sends a notice, which `wait`
+  dismisses; the agent also leaves a search older than that, and `playGames` queues again.
+- The tier is `rules::tier_of(rating, ranked games)`, with the placement floor; players only meet
+  their own tier. `autoSquad(rules, tier, size, { seed, weights, maxSame })` builds a valid squad
+  from the app's presets (recruit, runner, assault, sniper, heavy): archetypes drawn by weight,
+  at most two of a kind while the budget leaves a choice, then leftover credits on random
+  upgrades and utilities, checked again before it is sent.
 
 ## SDK
 
@@ -244,7 +294,11 @@ who controls its account.
 
 | Variable                                                 | Meaning                                      |
 | -------------------------------------------------------- | -------------------------------------------- |
-| `GHOSTS_NETWORK`                                         | `sandbox` (default), `testnet` or `mainnet`  |
+| `GHOSTS_NETWORK`                                         | `sandbox` (default), `testnet`, `mainnet` or `localnet` |
+| `GHOSTS_MODE`                                            | `stakes` (default), `ranked` or `ranked:4`: what bots play |
+| `GHOSTS_RULES`                                           | Shared `Rules`; ranked play needs it          |
+| `GHOSTS_RANKED_3`, `GHOSTS_RANKED_4`                     | Ranked queues; optional, `Rules` names them   |
+| `GHOSTS_RANKED_STATE`                                    | Where a ranked search's squad and salt are kept |
 | `GHOSTS_SEED`                                            | Sandbox dice seed                            |
 | `GHOSTS_PACKAGE`                                         | Published package; testnet has a default     |
 | `GHOSTS_REGISTRY`                                        | Shared `Registry`, required with the package |
@@ -288,7 +342,8 @@ watch `Account` and `Game` objects change. Without it, agents poll.
 ## How the layouts are checked
 
 `tests/fixtures.ts` holds bytes Move itself wrote: `sui::bcs::to_bytes` of real `Game`,
-`Account`, `Seat`, `Recruit`, `State`, `Ending` and `Record` values, from a throwaway
+`Account`, `Seat`, `Recruit`, `State`, `Ending`, `Record`, `Rules`, `Matchmaker`, event and
+`unit::from_loadout` values (all 36 loadouts), from a throwaway
 `sui move test` on a scratch copy of the package. `tests/chain.test.ts` decodes them
 and checks that the SDK's schemas write the same bytes back, so a changed Move struct
 fails there. Regenerate them the same way after a contract change. The preset maps in
@@ -301,9 +356,10 @@ fails there. Regenerate them the same way after a contract change. The preset ma
 - `rules.ts` is checked against the Move test fixtures, the real map bytes and the
   documented formulas, not run side by side with Move. A rules mismatch shows up as a
   refusal from the simulation, not a lost transaction.
-- The transactions are checked against the entry functions' signatures, never sent: the
-  working-tree package is not published, so the SDK hasn't played a game on it.
-- The friendly lobbies ran on a local Sui network with the SDK's builders and decoders (both
-  lobby kinds, kick, leave, close, the one-transaction clean-up of an expired lobby, the refusals,
-  and rated and friendly games to the end), never on testnet.
+- The package with ranked play ran on a local Sui network with the SDK's builders, decoders and
+  agent loop: ranked games end to end (commit, match, reveal, play, complete, ratings checked
+  against the Glicko port), a bad and a missed reveal, same-tier pairing, an expired ticket's
+  notice, ranked 4 refused, the rating reset and its refusals, stakes (unrated) and friendly
+  games with the drawn first mover, both events, and ranked games through `ghosts-fleet`. Never
+  on testnet: the package is not published there yet.
 - Anything past a dozen agents: the matchmaker's and the fullnode's limits under load.

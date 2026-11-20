@@ -52,7 +52,7 @@ function board(hex: string): GameState {
         abandonedBy: null,
         deadlineMs: 1000,
         status: { kind: "active" },
-        mode: { kind: "rated" },
+        mode: { kind: "stakes" },
         tiles: decodeTiles(map),
         units: [],
     };

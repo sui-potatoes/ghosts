@@ -10,13 +10,17 @@
 import { bcs } from "@mysten/sui/bcs";
 
 import { turnLimitMs } from "./rules.ts";
+import type { RankedRules } from "./ranked.ts";
 import type {
     AccountView,
     Ending,
+    GameEndedEvent,
     GameMode,
+    GameStartedEvent,
     GameRecord,
     GameState,
     GameStatus,
+    QueueView,
     Search,
     EffectKind,
     Stats,
@@ -49,8 +53,11 @@ const ActionBcs = bcs.struct("Action", { uses: bcs.option(bcs.u8()), kind: Actio
  */
 const EffectBcs = bcs.u8();
 
-/** `ghosts::unit::Unit`: a recruit as the map holds them, with the `Account` it belongs to. */
-const UnitBcs = bcs.struct("Unit", {
+/**
+ * `ghosts::unit::Unit`: a recruit as the map holds them, with the `Account` it belongs to. A ranked
+ * unit has no recruit behind it: `recruit` is a fresh ID with nothing there.
+ */
+export const UnitBcs = bcs.struct("Unit", {
     recruit: bcs.Address,
     owner: bcs.Address,
     ap: Param,
@@ -151,12 +158,15 @@ export const GameStateBcs = bcs.enum("State", {
 });
 
 /**
- * `ghosts::ghosts::Mode`: how a game is played. `Rated` is a queue match, `Friendly` a lobby game
- * of `size`, the most recruits each side deploys. New variants are appended.
+ * `ghosts::ghosts::Mode`: what a game is played for. `Stakes` (tag 0, once `Rated`) is a match of
+ * the stakes queue over owned recruits, unrated; `Friendly` a lobby game of `size`, the most
+ * recruits each side deploys; `Ranked` a match of the ranked queue of `size`, between players of
+ * `tier`, with squads built from loadouts. New variants are appended.
  */
 export const ModeBcs = bcs.enum("Mode", {
-    Rated: null,
+    Stakes: null,
     Friendly: bcs.struct("Friendly", { size: bcs.u8() }),
+    Ranked: bcs.struct("Ranked", { size: bcs.u8(), tier: bcs.u8() }),
 });
 
 /** `ghosts::ghosts::Game`. Squads and the fallen are not fields: the units say whose they are. */
@@ -174,8 +184,11 @@ export const GameBcs = bcs.struct("Game", {
     mode: ModeBcs,
 });
 
-/** `ghosts::ghosts::Seat`: a place in `game`, sent to the `Account` a match found waiting. */
-export const SeatBcs = bcs.struct("Seat", { id: bcs.Address, game: bcs.Address });
+/**
+ * `ghosts::ghosts::Seat`: a place in `game`, sent to the `Account` a match found waiting; with no
+ * game, a notice that the queue dropped the search (`dismiss_seat` clears it).
+ */
+export const SeatBcs = bcs.struct("Seat", { id: bcs.Address, game: bcs.option(bcs.Address) });
 
 /**
  * `ghosts::lobby::Lobby`: a lobby's size, its guest (listed lobbies only) and the `Account`s the
@@ -260,12 +273,19 @@ export const RecruitBcs = bcs.struct("Recruit", {
     leader: bcs.Address,
 });
 
-/** `ghosts::account::State`: where an `Account` stands. */
+/**
+ * `ghosts::account::State`: where an `Account` stands. A search names its `queue`: a `Matchmaker`,
+ * or the `Lobbies`; a ranked one holds the `commitment` to its squad.
+ */
 export const AccountStateBcs = bcs.enum("State", {
     Idle: null,
-    Searching: bcs.struct("Searching", { order: bcs.Address, sinceMs: bcs.u64() }),
+    Searching: bcs.struct("Searching", {
+        order: bcs.Address,
+        sinceMs: bcs.u64(),
+        queue: bcs.Address,
+        commitment: bcs.option(bcs.Address),
+    }),
     Playing: bcs.Address,
-    Suspended: bcs.struct("Suspended", { untilMs: bcs.u64() }),
 });
 
 /**
@@ -283,7 +303,13 @@ export const AccountBcs = bcs.struct("Account", {
         games: bcs.u64(),
         lastPlayedMs: bcs.u64(),
     }),
+    /** Ranked games only. */
     score: bcs.struct("Score", { wins: bcs.u64(), losses: bcs.u64(), draws: bcs.u64() }),
+    /** Until when the account cannot start a game; 0 if never suspended. */
+    suspendedUntil: bcs.u64(),
+    /** How many times the rating was reset, and when it last was (0: never). */
+    resets: bcs.u16(),
+    lastResetMs: bcs.u64(),
 });
 
 /** `sui::dynamic_field::Field<address, ID>`: one `Registry.accounts` record. */
@@ -295,6 +321,84 @@ export const AccountRecord = bcs.struct("Field", {
 
 /** `Registry`, as far as its accounts table: later fields are not read. */
 export const RegistryHead = bcs.struct("Registry", { id: bcs.Address, accounts: Table });
+
+// === Ranked ===
+
+/** `ghosts::rules::Item`: the price of an item and the lowest tier it is unlocked at. */
+export const RankedItemBcs = bcs.struct("Item", { price: bcs.u16(), minTier: bcs.u8() });
+
+/** `ghosts::rules::Tier`: the lowest rating of a tier and its budget per size, in `sizes` order. */
+export const RankedTierBcs = bcs.struct("Tier", {
+    minRating: bcs.u64(),
+    budgets: bcs.vector(bcs.u16()),
+});
+
+/** `ghosts::rules::Size`: units a side, its `Matchmaker<Ranked>` and its level (none: closed). */
+export const RankedSizeBcs = bcs.struct("Size", {
+    units: bcs.u8(),
+    queue: bcs.Address,
+    level: bcs.option(bcs.Address),
+});
+
+/**
+ * `ghosts::rules::Rules`, shared: index `i` of `weapons` and `armor` is the item of tier `i + 1`,
+ * of `utilities` the utility of kind `i`; a tier is its index in `tiers`.
+ */
+export const RulesBcs = bcs.struct("Rules", {
+    id: bcs.Address,
+    version: bcs.u32(),
+    weapons: bcs.vector(RankedItemBcs),
+    armor: bcs.vector(RankedItemBcs),
+    utilities: bcs.vector(RankedItemBcs),
+    tiers: bcs.vector(RankedTierBcs),
+    sizes: bcs.vector(RankedSizeBcs),
+    placementGames: bcs.u8(),
+    placementTier: bcs.u8(),
+    revealLimitMs: bcs.u64(),
+    resetCooldownMs: bcs.u64(),
+});
+
+/** `matchmaker::matchmaker::Config`. */
+export const MatchmakerConfigBcs = bcs.struct("Config", {
+    bucketSize: bcs.u64(),
+    bucketCapacity: bcs.u64(),
+    windowStep: bcs.u64(),
+    windowStepMs: bcs.u64(),
+    maxWindow: bcs.u64(),
+    ticketTtlMs: bcs.u64(),
+});
+
+/** `matchmaker::matchmaker::Matchmaker<T>`: tickets are dynamic fields, `size` counts them. */
+export const MatchmakerBcs = bcs.struct("Matchmaker", {
+    id: bcs.Address,
+    config: MatchmakerConfigBcs,
+    occupied: bcs.u256(),
+    players: Table,
+    size: bcs.u64(),
+});
+
+/** `matchmaker::matchmaker::Ticket`, a bucket holds a vector of them. */
+export const TicketBcs = bcs.struct("Ticket", {
+    id: bcs.Address,
+    player: bcs.Address,
+    rating: bcs.u64(),
+    window: bcs.u64(),
+    sinceMs: bcs.u64(),
+});
+
+/** `matchmaker::matchmaker::Match`: the order of the player who waited, and both players. */
+export const MatchBcs = bcs.struct("Match", { id: bcs.Address, players: bcs.vector(bcs.Address) });
+
+/** `ghosts::ghosts::GameStarted`: emitted once by the call that creates a game. */
+export const GameStartedBcs = bcs.struct("GameStarted", {
+    game: bcs.Address,
+    players: bcs.vector(bcs.Address),
+    mode: ModeBcs,
+    listed: bcs.bool(),
+});
+
+/** `ghosts::ghosts::GameEnded`: emitted once, by `complete_game`. */
+export const GameEndedBcs = bcs.struct("GameEnded", { game: bcs.Address, ending: EndingBcs });
 
 // === Decoding ===
 
@@ -422,9 +526,72 @@ export function winnerOf(ending: Ending, players: string[]): string | null {
 
 /** `Mode`, as the plain view. */
 export function decodeMode(mode: ReturnType<typeof ModeBcs.parse>): GameMode {
-    return mode.$kind === "Friendly"
-        ? { kind: "friendly", size: mode.Friendly.size }
-        : { kind: "rated" };
+    if (mode.$kind === "Friendly") return { kind: "friendly", size: mode.Friendly.size };
+    if (mode.$kind === "Ranked") {
+        return { kind: "ranked", size: mode.Ranked.size, tier: mode.Ranked.tier };
+    }
+    return { kind: "stakes" };
+}
+
+/** The inverse of `decodeMode`, for `ModeBcs.serialize`. */
+export function encodeMode(mode: GameMode): Parameters<typeof ModeBcs.serialize>[0] {
+    if (mode.kind === "friendly") return { Friendly: { size: mode.size } };
+    if (mode.kind === "ranked") return { Ranked: { size: mode.size, tier: mode.tier } };
+    return { Stakes: null };
+}
+
+/** The live `Rules`, as the plain view. */
+export function decodeRules(bytes: Uint8Array): RankedRules {
+    const rules = RulesBcs.parse(bytes);
+    return {
+        id: rules.id,
+        version: rules.version,
+        weapons: rules.weapons,
+        armor: rules.armor,
+        utilities: rules.utilities,
+        tiers: rules.tiers.map((tier) => ({
+            minRating: Number(tier.minRating),
+            budgets: tier.budgets,
+        })),
+        sizes: rules.sizes.map((size) => ({
+            units: size.units,
+            queue: size.queue,
+            level: size.level ?? null,
+        })),
+        placementGames: rules.placementGames,
+        placementTier: rules.placementTier,
+        revealLimitMs: Number(rules.revealLimitMs),
+        resetCooldownMs: Number(rules.resetCooldownMs),
+    };
+}
+
+/** A `Matchmaker`'s shared object: its config and how many tickets wait, expired ones included. */
+export function decodeMatchmaker(bytes: Uint8Array): QueueView {
+    const mm = MatchmakerBcs.parse(bytes);
+    return {
+        id: mm.id,
+        waiting: Number(mm.size),
+        ticketTtlMs: Number(mm.config.ticketTtlMs),
+        bucketSize: Number(mm.config.bucketSize),
+        maxWindow: Number(mm.config.maxWindow),
+    };
+}
+
+/** `GameStarted`, as the plain view. */
+export function decodeGameStarted(bytes: Uint8Array): GameStartedEvent {
+    const event = GameStartedBcs.parse(bytes);
+    return {
+        game: event.game,
+        players: event.players,
+        mode: decodeMode(event.mode),
+        listed: event.listed,
+    };
+}
+
+/** `GameEnded`, as the plain view. */
+export function decodeGameEnded(bytes: Uint8Array): GameEndedEvent {
+    const event = GameEndedBcs.parse(bytes);
+    return { game: event.game, ending: decodeEnding(event.ending) };
 }
 
 function decodeStatus(game: DecodedGame): GameStatus {
@@ -512,11 +679,12 @@ export function decodeSearch(state: ReturnType<typeof AccountStateBcs.parse>): S
                 kind: "searching",
                 order: state.Searching.order,
                 sinceMs: Number(state.Searching.sinceMs),
+                queue: state.Searching.queue,
+                commitment: state.Searching.commitment ?? null,
             };
         case "Playing":
             return { kind: "playing", game: state.Playing };
         default:
-            // `Suspended` is free to search again once its time has passed
             return { kind: "idle" };
     }
 }
@@ -533,10 +701,13 @@ export function decodeAccount(bytes: Uint8Array): AccountView {
             losses: Number(account.score.losses),
             draws: Number(account.score.draws),
         },
+        ratedGames: Number(account.rating.games),
+        lastPlayedMs: Number(account.rating.lastPlayedMs),
         recruits: Number(account.recruits),
         search: decodeSearch(account.state),
-        suspendedUntilMs:
-            account.state.$kind === "Suspended" ? Number(account.state.Suspended.untilMs) : 0,
+        suspendedUntilMs: Number(account.suspendedUntil),
+        resets: account.resets,
+        lastResetMs: Number(account.lastResetMs),
         // Not in the Move package yet: see "Still assumed" in the README.
         recovery: null,
     };

@@ -10,13 +10,16 @@
 import { parseArgs } from "node:util";
 
 import type { GhostsAgent, Observation, ObservedUnit, Situation } from "./agent.ts";
+import { autoSquad, describeSquad, parseSquad, tierName, type Loadout } from "./ranked.ts";
 import { MAX_BATCH, type LegalAction } from "./rules.ts";
 import { ActionError, type GameRecord, type Receipt } from "./types.ts";
 
 export const USAGE = `ghosts-play <command> [args]   (JSON on stdout, one line per call)
 
 identity   whoami | balance | faucet (testnet SUI) | name <name> | setup
-queue      find | cancel | status
+ranked     ranked [--size 3|4] [--squad auto|SQUAD] | ranked-info [--size 3|4]
+           squad [--size 3|4] [--seed N]  (an auto squad, not sent) | dismiss | reset-rating
+queue      find (stakes: your recruits, unrated) | cancel | status
 friendly   host [--size 3|4] [--invite] | lobbies | join-open HOST | join CODE | join HOST:CODE | join HOST CODE
            kick | start | leave | close | cleanup HOST
 state      state [--moves N] | legal [--unit X,Y] [--kind K] [--limit N]
@@ -25,6 +28,8 @@ act        move X,Y PATH | attack X,Y TX,TY | reload X,Y
            grenade X,Y TX,TY | flashbang X,Y TX,TY | smoke_grenade X,Y TX,TY
            end | deploy | complete | abandon | act ID [ID...]
 PATH is letters u d l r (up = x-1, down = x+1, left = y-1, right = y+1), e.g. uull.
+SQUAD is units by comma: a preset (recruit runner assault sniper heavy) or RIFLE/ARMOR/UTILITY,
+e.g. assault,2/1/-,1/1/smoke. A ranked search reveals its squad when wait sees the match: keep waiting.
 HOST is an Account ID. host --invite prints an invite, HOST:CODE, to share; join takes the CODE alone and
 finds the host, or the whole invite.
 Env: GHOSTS_NETWORK (default testnet), GHOSTS_SEAT=N or GHOSTS_KEY_FILE.`;
@@ -44,6 +49,8 @@ export interface Parsed {
         moves?: number;
         size?: number;
         invite?: boolean;
+        squad?: Loadout[] | "auto";
+        seed?: number;
     };
 }
 
@@ -90,6 +97,8 @@ export function parseCommand(argv: string[]): Parsed {
                 moves: { type: "string" },
                 size: { type: "string" },
                 invite: { type: "boolean" },
+                squad: { type: "string" },
+                seed: { type: "string" },
             },
         });
     } catch (error) {
@@ -113,6 +122,17 @@ export function parseCommand(argv: string[]): Parsed {
     if (values.moves !== undefined) flags.moves = count("moves", values.moves, 0, 500);
     if (values.size !== undefined) flags.size = count("size", values.size, 3, 4);
     if (values.invite !== undefined) flags.invite = values.invite;
+    if (values.squad !== undefined) {
+        if (values.squad.trim().toLowerCase() === "auto") flags.squad = "auto";
+        else {
+            try {
+                flags.squad = parseSquad(values.squad);
+            } catch (error) {
+                throw usage((error as Error).message);
+            }
+        }
+    }
+    if (values.seed !== undefined) flags.seed = count("seed", values.seed, 0, 2 ** 32 - 1);
     return { command, positionals, flags };
 }
 
@@ -301,6 +321,31 @@ export async function runCommand(agent: GhostsAgent, parsed: Parsed): Promise<un
         case "cancel":
             arity(parsed, 0, "no arguments");
             return agent.cancelSearch();
+        case "ranked":
+            arity(parsed, 0, "no arguments");
+            return agent.findRanked({ size: flags.size, squad: flags.squad ?? "auto" });
+        case "ranked-info":
+            arity(parsed, 0, "no arguments");
+            return agent.rankedInfo(flags.size);
+        case "squad": {
+            arity(parsed, 0, "no arguments");
+            const { rules, tier } = await agent.rankedStanding();
+            const built = autoSquad(rules, tier, flags.size ?? 3, { seed: flags.seed });
+            return {
+                tier: tierName(tier),
+                squad: describeSquad(built.squad),
+                archetypes: built.archetypes,
+                price: built.price,
+                budget: built.budget,
+            };
+        }
+        case "dismiss":
+            arity(parsed, 0, "no arguments");
+            await agent.backend.dismissNotice();
+            return agent.situation();
+        case "reset-rating":
+            arity(parsed, 0, "no arguments");
+            return agent.resetRating();
         case "status":
             arity(parsed, 0, "no arguments");
             return agent.situation();
