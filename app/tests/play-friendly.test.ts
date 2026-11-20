@@ -23,6 +23,7 @@ import {
     joinBlock,
     linkCode,
     LOBBY_LIFETIME_MS,
+    noticeStale,
     parseCode,
     personLine,
     shareLink,
@@ -31,6 +32,7 @@ import {
     startBlock,
     timeLeft,
     typingProblem,
+    writeBlock,
     type GateInput,
     type LobbyState,
     type OpenGame,
@@ -155,6 +157,76 @@ test("Join on the list: the gate first, then full, then the level", () => {
         joinBlock({ ...game, full: true }, { reason: "Sign in to play" }, 3),
         "Sign in to play",
     );
+});
+
+test("a game that removed the player is inactive, with its reason, before the other rules", () => {
+    const game: OpenGame = {
+        hostId: "0x1",
+        owner: "0xa",
+        rating: 1500,
+        size: 3,
+        sinceMs: 0,
+        full: false,
+        removed: true,
+    };
+    assert.equal(joinBlock(game, null, 3), "The host removed you from this game");
+    assert.equal(
+        joinBlock({ ...game, full: true }, null, 3),
+        "The host removed you from this game",
+    );
+    assert.equal(
+        joinBlock(game, { reason: "Sign in to play" }, 3),
+        "Sign in to play",
+        "the gate still comes first",
+    );
+});
+
+test("a write in flight: the pressed row says so, every other row waits", () => {
+    assert.equal(writeBlock(null, false, "close"), undefined);
+    const closing = { what: "close" } as const;
+    assert.equal(writeBlock(closing, true, "close"), "Closing game");
+    assert.equal(writeBlock(closing, true, "start"), "Saving a change");
+    // listed games are told apart by their host
+    const joining = { what: "join", id: "0x1" } as const;
+    assert.equal(writeBlock(joining, true, "join", "0x1"), "Joining");
+    assert.equal(writeBlock(joining, true, "join", "0x2"), "Saving a change");
+    // a lookup before the write is on its way blocks everything too
+    assert.equal(writeBlock(null, true, "join", "0x2"), "Saving a change");
+});
+
+test("a notice goes once the list is read again without its game", () => {
+    const notice = { line: "This game was closed", host: "0x1", at: 1000 };
+    // read before the notice: nothing is known yet
+    assert.equal(noticeStale(notice, { at: 900, hosts: [] }), false);
+    assert.equal(noticeStale(notice, null), false);
+    // read after, and the game is still listed (a removed player's game stays)
+    assert.equal(noticeStale(notice, { at: 2000, hosts: ["0x1", "0x2"] }), false);
+    // read after, and it is gone
+    assert.equal(noticeStale(notice, { at: 2000, hosts: ["0x2"] }), true);
+    assert.equal(noticeStale(notice, { at: 2000, hosts: [] }), true);
+});
+
+test("a friendly game's result for each way it can end", () => {
+    const note = (outcome: MatchResult["outcome"]) =>
+        debriefOf(
+            {
+                outcome,
+                friendly: true,
+                earned: null,
+                rating: null,
+                squad: [],
+                fallen: [],
+                history: [],
+                recruitsHome: null,
+            },
+            3,
+        );
+    const left = note("opponent-abandoned");
+    assert.equal(left.title, "Victory");
+    assert.equal(left.tone, "win");
+    assert.equal(left.note, "Your opponent left the match");
+    assert.equal(note("defeat").title, "Defeat");
+    assert.equal(note("forfeited").title, "Match forfeited");
 });
 
 test("time left counts down to 0:00, and players read with their rating", () => {

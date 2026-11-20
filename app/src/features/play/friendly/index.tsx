@@ -10,6 +10,7 @@
  */
 
 import { useCurrentAccount, useCurrentClient } from "@mysten/dapp-kit-react";
+import { normalizeSuiAddress } from "@mysten/sui/utils";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -46,7 +47,17 @@ import { beforeGame } from "../../../chain/funds";
 import { useGoUp } from "../../../hooks/useGoUp";
 import { requestSignIn } from "../../../signIn";
 import { FriendlyView, type FriendlyOps } from "./FriendlyView";
-import { FRIENDLY_ROUTE, gateOf, linkCode, parseCode, type LobbyState } from "./model";
+import {
+    FRIENDLY_ROUTE,
+    gateOf,
+    linkCode,
+    noticeStale,
+    parseCode,
+    type LobbyState,
+    type Notice,
+    type OpenGame,
+    type Pending,
+} from "./model";
 
 /** How often a guest re-reads the host's `Account`, for the lobby's clock. */
 const HOST_POLL_MS = 5_000;
@@ -74,7 +85,14 @@ export function FriendlyScreen() {
     const open = useOpenLobbies(watching);
     const [localError, setLocalError] = useState<string | null>(null);
     const [checking, setChecking] = useState(false);
-    const [notice, setNotice] = useState<string | null>(null);
+    const [notice, setNotice] = useState<Notice | null>(null);
+    const [pending, setPending] = useState<Pending | null>(null);
+    // Bumped whenever the player acts: a notice still being worked out is then out of date.
+    const epoch = useRef(0);
+    const dismiss = () => {
+        epoch.current++;
+        setNotice(null);
+    };
 
     // A followed link fills the code field; the query is spent at once, so the code
     // stays out of the history.
@@ -92,8 +110,16 @@ export function FriendlyScreen() {
         place?.kind === "host-open" ? place.guest : place?.kind === "guest" ? place.host : null;
     const other = useGhostsAccount(otherId, place?.kind === "guest" ? HOST_POLL_MS : undefined);
     const otherName = useAssignedName(other.data?.owner) ?? null;
+    // The host's clock only from a read made for this lobby: an `Account` cached from an earlier
+    // lobby of the same host has another `since`. It must also be searching on this lobby's key.
+    const otherState = other.data?.state;
     const otherSince =
-        other.data?.state.$kind === "Searching" ? Number(other.data.state.Searching.sinceMs) : null;
+        place?.kind === "guest" &&
+        other.isFetchedAfterMount &&
+        otherState?.$kind === "Searching" &&
+        normalizeSuiAddress(otherState.Searching.order) === normalizeSuiAddress(place.host)
+            ? Number(otherState.Searching.sinceMs)
+            : null;
 
     const lobby: LobbyState | null = useMemo(() => {
         if (!place) return null;
@@ -121,6 +147,9 @@ export function FriendlyScreen() {
     const ownExit = useRef(false);
     useEffect(() => {
         if (place && id) {
+            // In a lobby again: whatever happened to the last one is old news.
+            epoch.current++;
+            setNotice((current) => (current ? null : current));
             last.current = {
                 role: place.kind === "guest" ? "guest" : "host",
                 host: place.kind === "guest" ? place.host : id,
@@ -135,17 +164,24 @@ export function FriendlyScreen() {
             ownExit.current = false;
             return;
         }
+        const raise = (line: string) =>
+            setNotice({ line, host: normalizeSuiAddress(was.host), at: Date.now() });
         if (was.role === "host") {
-            setNotice(
+            raise(
                 was.since !== null && isExpired(was.since, Date.now())
                     ? "This game has expired"
                     : "This game was closed",
             );
             return;
         }
+        const asked = epoch.current;
         void fetchLobby(client, "Open", was.host)
             .catch(() => null)
-            .then((read) => setNotice(DROPPED_LINES[droppedWhy(id!, read, was.since, Date.now())]));
+            .then((read) => {
+                // Dropped only if the player has not done anything since.
+                if (epoch.current === asked)
+                    raise(DROPPED_LINES[droppedWhy(id!, read, was.since, Date.now())]);
+            });
     }, [place, id, state, otherSince, sinceMs, client]);
 
     const suspendedMs =
@@ -163,66 +199,99 @@ export function FriendlyScreen() {
     });
 
     /** A lobby call: the balance checked as before any game, then the one write path. */
-    const send = async (steps: Step[]) => {
+    const send = async (steps: Step[], what: Pending) => {
         setLocalError(null);
-        setNotice(null);
-        if (owner) await beforeGame(owner);
-        const done = await action.run(steps);
-        void queryClient.invalidateQueries({ queryKey: ["ghosts", "lobby-place"] });
-        void queryClient.invalidateQueries({ queryKey: ["ghosts", "open-lobbies"] });
-        return done;
+        dismiss();
+        setPending(what);
+        try {
+            if (owner) await beforeGame(owner);
+            const done = await action.run(steps);
+            // Pending until the screen has read what the write did.
+            await Promise.all([
+                queryClient.invalidateQueries({ queryKey: ["ghosts", "lobby-place"] }),
+                queryClient.invalidateQueries({ queryKey: ["ghosts", "open-lobbies"] }),
+            ]);
+            return done;
+        } finally {
+            setPending(null);
+        }
     };
+
+    // The listed games but the player's own, each marked when its host removed the player.
+    const games = useMemo<OpenGame[] | null>(() => {
+        if (!open.data) return open.isError ? [] : null;
+        const me = id ? normalizeSuiAddress(id) : null;
+        return open.data
+            .filter((g) => g.hostId !== id)
+            .map(({ kicked, ...game }) => ({
+                ...game,
+                removed: !!me && kicked.some((k) => normalizeSuiAddress(k) === me),
+            }));
+    }, [open.data, open.isError, id]);
+
+    // The notice is one-time: once the list is read again without its game, it goes.
+    useEffect(() => {
+        if (!notice || !open.data) return;
+        const list = { at: open.dataUpdatedAt, hosts: open.data.map((g) => g.hostId) };
+        if (noticeStale(notice, list)) setNotice(null);
+    }, [notice, open.data, open.dataUpdatedAt]);
 
     const guestOf = () => (place?.kind === "host-open" ? place.guest : null);
 
     const ops: FriendlyOps = {
         host: (size, listed) => {
             if (!id || gate) return;
-            if (listed) return void send([() => openLobbyTx(id, size, null)]);
+            if (listed) return void send([() => openLobbyTx(id, size, null)], { what: "host" });
             const code = randomCode();
             // Kept on this device before the code goes out, under the key the chain files it at.
             keepCode(protectedKey(code), codeText(code));
-            void send([() => openLobbyTx(id, size, codeHash(code))]);
+            void send([() => openLobbyTx(id, size, codeHash(code))], { what: "host" });
         },
         joinCode: (text) => {
             if (!id || gate || checking) return;
             const parsed = parseCode(text);
             if (!parsed.ok) return setLocalError(parsed.message);
             setLocalError(null);
+            dismiss();
             setChecking(true);
             void findInviteHost(client, parsed.bytes, id)
                 .then(async (found) => {
                     if (!found.ok) return setLocalError(found.message);
                     if (found.own) return setLocalError("This is your own game");
-                    await send([() => joinLobbyTx(found.hostId, id, parsed.bytes)]);
+                    await send([() => joinLobbyTx(found.hostId, id, parsed.bytes)], {
+                        what: "join",
+                    });
                 })
                 .catch(() => setLocalError("Connection lost. Try again."))
                 .finally(() => setChecking(false));
         },
         joinOpen: (hostId) => {
             if (!id || gate) return;
-            void send([() => joinOpenTx(hostId, id)]);
+            // A game that removed this player is never joined.
+            const listed = games?.find((g) => g.hostId === hostId);
+            if (listed?.removed) return;
+            void send([() => joinOpenTx(hostId, id)], { what: "join", id: hostId });
         },
         leave: () => {
             if (!id) return;
             ownExit.current = true;
-            void send([() => leaveLobbyTx(id)]).then((done) => {
+            void send([() => leaveLobbyTx(id)], { what: "leave" }).then((done) => {
                 if (!done) ownExit.current = false;
             });
         },
         kick: () => {
             const guest = guestOf();
-            if (id && guest) void send([() => kickGuestTx(id, guest)]);
+            if (id && guest) void send([() => kickGuestTx(id, guest)], { what: "kick" });
         },
         start: () => {
             const guest = guestOf();
-            if (id && guest) void send([() => startFriendlyTx(id, guest)]);
+            if (id && guest) void send([() => startFriendlyTx(id, guest)], { what: "start" });
         },
         close: () => {
             if (!id) return;
             ownExit.current = true;
             const guest = guestOf();
-            void send([() => closeLobbyTx(id, guest)]).then((done) => {
+            void send([() => closeLobbyTx(id, guest)], { what: "close" }).then((done) => {
                 if (!done) ownExit.current = false;
             });
         },
@@ -243,15 +312,10 @@ export function FriendlyScreen() {
             setLocalError(null);
             action.clearError();
         },
-        clearNotice: () => setNotice(null),
+        clearNotice: dismiss,
         watchOpen: setWatching,
         useName,
     };
-
-    const games = useMemo(
-        () => open.data?.filter((g) => g.hostId !== id) ?? (open.isError ? [] : null),
-        [open.data, open.isError, id],
-    );
 
     return (
         <FriendlyView
@@ -261,8 +325,9 @@ export function FriendlyScreen() {
                 lobby,
                 games,
                 busy: action.busy || checking,
+                pending,
                 error: localError ?? (action.error || null),
-                notice,
+                notice: notice?.line ?? null,
                 linkCode: link,
             }}
             ops={ops}

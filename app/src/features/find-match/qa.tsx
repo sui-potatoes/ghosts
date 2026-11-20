@@ -5,7 +5,7 @@
  * QA harness for the find-match screen, in builds made with `VITE_FIND_QA=1`
  * only (the route is not registered otherwise, see `App.tsx`): the real
  * `FindMatch` over a fixture state, no chain, no sign-in. `?phase=starting|
- * hiring|searching|timeout`, and `&then=searching&after=MS` to move on to
+ * hiring|searching|timeout|idle` (`idle` is a direct visit: nothing asked for a search), and `&then=searching&after=MS` to move on to
  * another phase after a wait (the moment the cancel turns active). Cancels are
  * counted on `window.__cancels`.
  */
@@ -14,8 +14,9 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { FindMatch, type FindOps } from "./FindMatch";
+import { requestFind } from "./model";
 
-type Phase = "starting" | "hiring" | "searching" | "timeout";
+type Phase = "starting" | "hiring" | "searching" | "timeout" | "idle";
 
 const stateOf = (phase: Phase): FindOps["state"] => ({
     signedIn: true,
@@ -38,6 +39,8 @@ export default function FindQa() {
         return () => window.clearTimeout(timer);
     }, [then, after]);
 
+    // An arrival from Find Match asks for the search; a direct visit (`idle`) does not.
+    if (phase === "starting") requestFind();
     const since = useState(() => Date.now() - (phase === "timeout" ? 130_000 : 8_000))[0];
     const log = (what: string) => {
         const w = window as unknown as { __cancels?: string[] };

@@ -3,7 +3,7 @@
 
 import { Encounter, followOpponent } from "@ghosts/engine";
 import { useCurrentClient } from "@mysten/dapp-kit-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 
@@ -22,6 +22,7 @@ import {
 } from "../chain";
 import type { ChainGame } from "../chain/bcs";
 import { chainDriver, matchScenario } from "../chain/driver";
+import { fetchEndingTx, vanishedOutcome } from "../chain/ending";
 import { useMatchIntel, useOpponentName } from "../chain/useMatchIntel";
 import {
     abandonGameTx,
@@ -53,6 +54,7 @@ import {
 } from "../chain/match-rules";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { LoadingSpinner } from "../components/LoadingSpinner";
+import { GHOSTS } from "../constants";
 import { engineSettings } from "../engineSettings";
 import { MatchDebrief } from "../features/debrief/MatchDebrief";
 import { figuresOf } from "../features/debrief/figures";
@@ -677,6 +679,15 @@ export default function Match() {
             score: account.data.score,
         };
     const ended = !!game.data && (isOver(game.data) || gone);
+    // A friendly game wrapped up between two polls moves no score: what ended it is the
+    // transaction that freed the `Account`.
+    const vanished = gone && !!game.data && isFriendly(game.data) && !isOver(game.data);
+    const endingTx = useQuery({
+        queryKey: ["ghosts", "ending", gameId],
+        enabled: vanished && !!accountId.data,
+        staleTime: Infinity,
+        queryFn: () => fetchEndingTx(action.client, accountId.data!, GHOSTS.package),
+    });
     useEffect(() => {
         if (!ended) return;
         const timer = window.setTimeout(() => setPlayed(true), LAST_SHOT_MS);
@@ -698,11 +709,15 @@ export default function Match() {
         gone && !over && atStart.current && account.data
             ? settledOutcome(atStart.current.score, account.data.score)
             : null;
+    const vanishedAs =
+        vanished && endingTx.data && account.data
+            ? vanishedOutcome(game.data, side, endingTx.data, account.data.owner)
+            : null;
     const outcome = abandoned
         ? "abandoned"
         : over
           ? outcomeFor(game.data, side)
-          : (settled ?? "ended");
+          : (settled ?? vanishedAs ?? "ended");
     const fieldReady = (inGame.data?.length ?? 0) >= unitsOnMap(game.data).length;
     const abandon = () => setConfirming(true);
     /** Abandon without asking (the caller asked): the opponent wins, the squad comes home. */

@@ -259,7 +259,7 @@ function survivorAfter(
 const FRIENDLY_NOTES: Partial<Record<ResultOutcome, string>> = {
     stalemate: "Turn limit reached",
     forfeited: `Missed ${MAX_MISSED_TURNS} turns in a row`,
-    "opponent-abandoned": "Opponent abandoned the match",
+    "opponent-abandoned": "Your opponent left the match",
     "opponent-forfeited": "Opponent stopped playing",
     "opponent-no-show": "Opponent never deployed",
 };

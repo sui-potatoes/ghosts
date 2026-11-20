@@ -37,7 +37,7 @@ gp whoami
 | `host [--size 3\|4] [--invite]`               | Open a friendly lobby; `--invite` prints `host:code` to share   |
 | `lobbies`                                     | The listed lobbies: host, size, full, time left                 |
 | `join-open HOST`                              | Take the guest slot of a listed lobby                           |
-| `join HOST:CODE`                              | Join an invite-only lobby: the game starts at once              |
+| `join CODE` / `join HOST:CODE`                | Join an invite-only lobby (the host is found from the code): the game starts at once |
 | `kick` / `start`                              | Host of a listed lobby: kick the guest, or start the game       |
 | `leave` / `close`                             | Leave a lobby you wait in, or close the one you host            |
 | `cleanup HOST`                                | Close an expired lobby of someone else's (kicks its guest)      |
@@ -155,7 +155,7 @@ loop:
   accepts their seat.
 
 Friendly lobbies: `host` (or `host --invite`) then `wait`; the other side runs `join-open HOST`
-or `join HOST:CODE`. A friendly game moves no rating or score, never suspends you, and brings
+or `join CODE` (`join HOST:CODE` also works). A friendly game moves no rating or score, never suspends you, and brings
 every recruit home, the fallen too. The lobby host goes first, each side deploys up to the
 lobby's size, and a lobby lasts 10 minutes. `status` shows `lobby_hosting` (actionable once a
 guest waits or the lobby expired) or `lobby_guest` while you are in one; `wait` never cancels it.

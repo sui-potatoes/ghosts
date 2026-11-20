@@ -64,7 +64,7 @@ NAME: your name is how every opponent knows you. Pick it yourself before your fi
 FRIENDLY: a friendly game is played for nothing: no rating, score, suspension or XP moves, and the
 fallen recruits come home with the survivors. Host a lobby (ghosts_host_lobby: listed, or invite-only
 with a code to share), or join one (ghosts_list_lobbies then ghosts_join_open, or ghosts_join_invite
-with the host:code you were given). In a listed lobby the host starts the game (ghosts_start_friendly)
+with the code you were given, or host:code). In a listed lobby the host starts the game (ghosts_start_friendly)
 or kicks the guest, who cannot return (ghosts_kick_guest); an invite starts the game as soon as the
 guest joins. A lobby lasts ${LOBBY_LIFETIME_MS / 60_000} minutes. Each side deploys 1 to the lobby's size.
 
@@ -249,13 +249,13 @@ export function createMcpServer(agent: GhostsAgent): McpServer {
         "ghosts_join_invite",
         {
             description:
-                "Join an invite-only lobby with the invite its host shared (host:code). The game " +
-                "starts at once.",
+                "Join an invite-only lobby with the code its host shared (the host is looked up), or " +
+                "with the whole invite (host:code). The game starts at once.",
             inputSchema: {
                 invite: z
                     .string()
                     .max(200)
-                    .describe("host:code, e.g. 0x...:ABCD-EFGH-JKMNP, or the host and the code split by a space."),
+                    .describe("The code, e.g. ABCD-EFGH-JKMNP, or host:code, e.g. 0x...:ABCD-EFGH-JKMNP, or the host and the code split by a space."),
             },
             annotations: WRITE,
         },

@@ -33,6 +33,7 @@ import {
     type Command,
 } from "../../../ui";
 import {
+    DOING,
     formatCode,
     joinBlock,
     LOBBY_LIFETIME_MS as LIFETIME_MS,
@@ -44,9 +45,11 @@ import {
     startBlock,
     timeLeft,
     typingProblem,
+    writeBlock,
     type Gate,
     type LobbyState,
     type OpenGame,
+    type Pending,
 } from "./model";
 import "./friendly.css";
 
@@ -63,6 +66,8 @@ export type FriendlyData = {
     games: OpenGame[] | null;
     /** A write is in flight. */
     busy: boolean;
+    /** What the player pressed to send it; null while nothing is. */
+    pending: Pending | null;
     /** The last refusal or failure, in plain words. */
     error: string | null;
     /** What happened to a game the player was in (removed, closed, expired). */
@@ -176,6 +181,13 @@ export function FriendlyView({ data, ops }: { data: FriendlyData; ops: FriendlyO
                 status={
                     <>
                         {copied && <StatusChip label="Clipboard" value="Copied" />}
+                        {data.pending && (
+                            <StatusChip
+                                label="Game"
+                                value={DOING[data.pending.what]}
+                                state="busy"
+                            />
+                        )}
                         {lobby && (
                             <StatusChip
                                 label="Time left"
@@ -219,6 +231,7 @@ export function FriendlyView({ data, ops }: { data: FriendlyData; ops: FriendlyO
                         lobby={lobby}
                         now={now}
                         busy={data.busy}
+                        pending={data.pending}
                         error={error}
                         copy={copy}
                         copied={copied}
@@ -246,6 +259,7 @@ export function FriendlyView({ data, ops }: { data: FriendlyData; ops: FriendlyO
                         listed={listed}
                         setListed={setListed}
                         busy={data.busy}
+                        pending={data.pending}
                         error={error}
                         open={() => ops.host(size, listed)}
                     />
@@ -256,6 +270,7 @@ export function FriendlyView({ data, ops }: { data: FriendlyData; ops: FriendlyO
                         gate={gate}
                         presetSide={data.presetSide}
                         busy={data.busy}
+                        pending={data.pending}
                         line={data.notice ?? error}
                         join={ops.joinOpen}
                         host={() => goView("host")}
@@ -373,6 +388,7 @@ function HostSetup({
     listed,
     setListed,
     busy,
+    pending,
     error,
     open,
 }: {
@@ -383,6 +399,7 @@ function HostSetup({
     listed: boolean;
     setListed: (v: boolean) => void;
     busy: boolean;
+    pending: Pending | null;
     error: string | null;
     open: () => void;
 }) {
@@ -407,8 +424,8 @@ function HostSetup({
                             name={sizeLabel(n)}
                             kind={`Up to ${n} recruits each`}
                             selected={size === n}
-                            tag={size === n ? "Chosen" : undefined}
-                            tagTone="accent"
+                            tag={size === n ? "Chosen" : (block ?? undefined)}
+                            tagTone={size === n ? "accent" : "dim"}
                             title={sizeLabel(n)}
                             hint={block ?? `Up to ${n} of your recruits on each side`}
                             instant
@@ -416,7 +433,8 @@ function HostSetup({
                                 {
                                     action: "confirm",
                                     label: "Choose",
-                                    deny: block ?? undefined,
+                                    deny:
+                                        block ?? (pending || busy ? "Saving a change" : undefined),
                                     run: () => setSize(n),
                                 },
                             ]}
@@ -443,7 +461,7 @@ function HostSetup({
                 <ActionRow
                     id="host-create"
                     group="main"
-                    label="Open game"
+                    label={pending?.what === "host" ? DOING.host : "Open game"}
                     title="Open game"
                     hint={listed ? "Anyone can take the other side" : "You get a code to share"}
                     instant
@@ -452,7 +470,7 @@ function HostSetup({
                             action: "confirm",
                             label: "Open game",
                             tone: "primary",
-                            deny: gate?.reason ?? blocked ?? (busy ? "Opening" : undefined),
+                            deny: gate?.reason ?? blocked ?? writeBlock(pending, busy, "host"),
                             run: open,
                         },
                     ]}
@@ -502,6 +520,7 @@ function LobbyPanel({
     lobby,
     now,
     busy,
+    pending,
     error,
     copy,
     copied,
@@ -510,13 +529,16 @@ function LobbyPanel({
     lobby: LobbyState;
     now: number;
     busy: boolean;
+    pending: Pending | null;
     error: string | null;
     copy: (what: string, text: string) => void;
     copied: string | null;
     ops: FriendlyOps;
 }) {
     const expired = lobby.sinceMs !== null && now - lobby.sinceMs > LIFETIME_MS;
-    const working = busy ? "Saving a change" : undefined;
+    /** A button's own progress label, or its usual one. */
+    const labelOf = (what: Pending["what"], usual: string) =>
+        pending?.what === what ? DOING[what] : usual;
 
     if (lobby.kind === "guest") {
         return (
@@ -534,7 +556,7 @@ function LobbyPanel({
                 <ActionRow
                     id="leave"
                     group="main"
-                    label="Leave game"
+                    label={labelOf("leave", "Leave game")}
                     tone="danger"
                     title="Leave game"
                     hint="Back to the open games"
@@ -543,7 +565,7 @@ function LobbyPanel({
                             action: "confirm",
                             label: "Leave",
                             tone: "danger",
-                            deny: working,
+                            deny: writeBlock(pending, busy, "leave"),
                             run: ops.leave,
                         },
                     ]}
@@ -612,7 +634,7 @@ function LobbyPanel({
                     <ActionRow
                         id="start"
                         group="main"
-                        label="Start match"
+                        label={labelOf("start", "Start match")}
                         title="Start match"
                         hint={block ?? "Both sides pick their squads"}
                         commands={[
@@ -620,7 +642,7 @@ function LobbyPanel({
                                 action: "confirm",
                                 label: "Start",
                                 tone: "primary",
-                                deny: block ?? working,
+                                deny: block ?? writeBlock(pending, busy, "start"),
                                 run: ops.start,
                             },
                         ]}
@@ -630,7 +652,7 @@ function LobbyPanel({
                     <ActionRow
                         id="kick"
                         group="main"
-                        label="Remove guest"
+                        label={labelOf("kick", "Remove guest")}
                         tone="danger"
                         title="Remove guest"
                         hint="They cannot join this game again"
@@ -639,7 +661,7 @@ function LobbyPanel({
                                 action: "confirm",
                                 label: "Remove",
                                 tone: "danger",
-                                deny: working,
+                                deny: writeBlock(pending, busy, "kick"),
                                 run: ops.kick,
                             },
                         ]}
@@ -648,7 +670,7 @@ function LobbyPanel({
                 <ActionRow
                     id="close"
                     group="main"
-                    label="Close game"
+                    label={labelOf("close", "Close game")}
                     tone="danger"
                     title="Close game"
                     hint={lobby.listed ? "Takes it off the list" : "The code stops working"}
@@ -657,7 +679,7 @@ function LobbyPanel({
                             action: "confirm",
                             label: "Close",
                             tone: "danger",
-                            deny: working,
+                            deny: writeBlock(pending, busy, "close"),
                             run: ops.close,
                         },
                     ]}
@@ -729,6 +751,7 @@ function OpenGames({
     gate,
     presetSide,
     busy,
+    pending,
     line,
     join,
     host,
@@ -739,6 +762,7 @@ function OpenGames({
     gate: Gate | null;
     presetSide: number | null;
     busy: boolean;
+    pending: Pending | null;
     line: string | null;
     join: (hostId: string) => void;
     host: () => void;
@@ -809,7 +833,12 @@ function OpenGames({
                             key={game.hostId}
                             game={game}
                             now={now}
-                            deny={joinBlock(game, gate, presetSide) ?? (busy ? "Joining" : null)}
+                            deny={
+                                joinBlock(game, gate, presetSide) ??
+                                writeBlock(pending, busy, "join", game.hostId) ??
+                                null
+                            }
+                            joining={pending?.what === "join" && pending.id === game.hostId}
                             join={join}
                             useName={useName}
                         />
@@ -824,12 +853,15 @@ function OpenRow({
     game,
     now,
     deny,
+    joining,
     join,
     useName,
 }: {
     game: OpenGame;
     now: number;
     deny: string | null;
+    /** Its join is on its way. */
+    joining: boolean;
     join: (hostId: string) => void;
     useName: (owner: string | null) => string | null;
 }) {
@@ -841,8 +873,16 @@ function OpenRow({
             group="main"
             name={name}
             kind={`${sizeLabel(game.size)} · Rating ${game.rating}`}
-            tag={game.full ? "Full" : `${left} left`}
-            tagTone={game.full ? "dim" : "default"}
+            tag={
+                joining
+                    ? DOING.join
+                    : game.removed
+                      ? "Removed"
+                      : game.full
+                        ? "Full"
+                        : `${left} left`
+            }
+            tagTone={joining ? "accent" : game.full || game.removed ? "dim" : "default"}
             title={name}
             hint={deny ?? `${sizeLabel(game.size)} · ${left} left · You wait for the host to start`}
             commands={[

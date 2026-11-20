@@ -32,6 +32,16 @@ test("just arrived and sent: a pending screen, not a blank one", () => {
     assert.equal(v.headline, "Finding match");
 });
 
+test("a direct visit sends nothing and says so: an idle screen with the action to start", () => {
+    const v = view();
+    assert.equal(v.phase, "idle");
+    assert.equal(v.pending, false);
+    assert.equal(v.action.id, "find");
+    assert.equal(v.action.inactive, undefined);
+    // a search that was asked for and sent is the pending one
+    assert.equal(view({ starting: true }).phase, "starting");
+});
+
 test("hiring, then searching with a cancel", () => {
     assert.equal(view({ hiring: true, starting: true }).phase, "hiring");
     const v = view({ searching: true, elapsedMs: 5_000 });

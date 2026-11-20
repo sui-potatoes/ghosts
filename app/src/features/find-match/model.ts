@@ -24,7 +24,7 @@ export type FindState = {
     /** Time in the queue; 0 before it. */
     elapsedMs: number;
     timeoutMs: number;
-    /** A queue request is on its way, or the screen has yet to send one. */
+    /** A queue request is on its way: the screen was asked for a search and has sent it. */
     starting: boolean;
     /** Another write is in flight: a cancel sent now would be dropped. */
     busy?: boolean;
@@ -42,9 +42,10 @@ export type FindPhase =
     | "searching"
     | "funding"
     | "hiring"
-    | "starting";
+    | "starting"
+    | "idle";
 
-export type FindAction = "sign-in" | "resume" | "lobby" | "retry" | "cancel" | "menu";
+export type FindAction = "sign-in" | "resume" | "lobby" | "find" | "retry" | "cancel" | "menu";
 
 export type FindView = {
     phase: FindPhase;
@@ -142,12 +143,21 @@ export function findView(s: FindState): FindView {
             action: { id: "retry", label: "Try again" },
             pending: false,
         };
+    if (s.starting)
+        return {
+            phase: "starting",
+            headline: "Finding match",
+            note: "Joining the queue.",
+            action: { id: "cancel", label: "Cancel search", inactive: "Joining the queue" },
+            pending: true,
+        };
+    // Here without having asked for a search (a typed address, a reload): nothing is sent.
     return {
-        phase: "starting",
-        headline: "Finding match",
-        note: "Joining the queue.",
-        action: { id: "cancel", label: "Cancel search", inactive: "Joining the queue" },
-        pending: true,
+        phase: "idle",
+        headline: "Find match",
+        note: "Queue your squad for a rated match.",
+        action: { id: "find", label: "Find match" },
+        pending: false,
     };
 }
 

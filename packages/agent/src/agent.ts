@@ -117,7 +117,7 @@ export interface Invite {
     code: string;
     /** The host's `Account` ID, which `join_lobby` needs besides the code. */
     host: string;
-    /** `host:code`, what `joinInvite` takes as one string. */
+    /** `host:code`, what `joinInvite` takes as one string (the code alone works too). */
     text: string;
 }
 
@@ -545,22 +545,35 @@ export class GhostsAgent {
     }
 
     /**
-     * Join the invite-only lobby of `host` (its `Account` ID) with its code, `XXXX-XXXX-XXXXX` in
-     * any case and separators; the game starts at once. Or pass one string, `host:code`.
+     * Join an invite-only lobby; the game starts at once. Pass the code alone, `XXXX-XXXX-XXXXX` in
+     * any case and separators, and the host is looked up from the transaction that opened the
+     * lobby. Or pass `host:code` as one string, or the host (an `Account` ID) and the code as two,
+     * which skips the lookup: the way in when it finds nothing.
      */
-    async joinInvite(host: string, code?: string): Promise<Situation> {
-        let account = host;
+    async joinInvite(invite: string, code?: string): Promise<Situation> {
+        let account: string | null = invite;
         let text = code;
         if (text === undefined) {
-            const invite = parseInvite(host);
-            if (!invite) {
-                throw new ActionError("bad_action", "That is not an invite: it is host:code.");
+            const named = parseInvite(invite);
+            if (named) {
+                account = named.host;
+                text = formatCode(encodeCode(named.code));
+            } else {
+                account = null;
+                text = invite;
             }
-            account = invite.host;
-            text = formatCode(encodeCode(invite.code));
         }
         const parsed = parseCode(text);
         if (!parsed.ok) throw new ActionError("bad_action", parsed.message);
+        if (account === null) {
+            account = await this.backend.inviteHost(parsed.code).catch(() => null);
+            if (account === null) {
+                throw new ActionError(
+                    "no_lobby",
+                    "No game with this code, or its host could not be found. Ask the host for the invite as host:code.",
+                );
+            }
+        }
         if (!isValidSuiAddress(normalizeSuiAddress(account))) {
             throw new ActionError("bad_action", "The host is an Account ID, 0x and 64 hex digits.");
         }

@@ -84,6 +84,11 @@ export interface Backend {
     lobby(host: string): Promise<LobbyView | null>;
     /** The invite-only lobby a code opens; null if there is none. It holds its size and nothing else. */
     inviteLobby(code: Uint8Array): Promise<InviteLobbyView | null>;
+    /**
+     * The host `Account` of the invite-only lobby a code opens, read from the transaction that
+     * opened it; null if there is none or the lookup finds nothing.
+     */
+    inviteHost(code: Uint8Array): Promise<string | null>;
     /** Every listed lobby, all pages. */
     listLobbies(): Promise<LobbyView[]>;
     /** What this account's search is (hosting, a guest, queued, a seat waiting); null if it is not searching. */

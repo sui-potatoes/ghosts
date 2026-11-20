@@ -48,7 +48,7 @@ to an MCP client:
 | `ghosts_host_lobby`    | Open a friendly lobby, listed or invite-only        |
 | `ghosts_list_lobbies`  | The listed lobbies                                  |
 | `ghosts_join_open`     | Take the guest slot of a listed lobby               |
-| `ghosts_join_invite`   | Join an invite-only lobby with `host:code`          |
+| `ghosts_join_invite`   | Join an invite-only lobby with its code (or `host:code`) |
 | `ghosts_kick_guest`    | Kick the guest of your listed lobby                 |
 | `ghosts_start_friendly`| Start the game of your listed lobby                 |
 | `ghosts_leave_lobby`   | Leave the lobby you wait in                         |
@@ -142,7 +142,8 @@ chain in one call; a dice roll (`attack`, `grenade`) or `next_turn` goes last.
   recruits a side (`hostLobby`): listed, so anyone can take the guest slot (`lobbies`, `joinOpen`)
   and the host starts the game (`startFriendly`) or kicks the guest (`kickGuest`, who cannot
   come back to that lobby); or invite-only (`hostLobby({ invite: true })`), which returns an
-  invite once, `host:code`, and starts the game the moment a guest joins with it (`joinInvite`).
+  invite once, `host:code`, and starts the game the moment a guest joins with it (`joinInvite`, which takes the code alone and
+  finds the host from the transaction that opened the lobby, or `host:code` to skip the lookup).
   The code is 8 random bytes shown as 13 characters of the app's alphabet, `XXXX-XXXX-XXXXX`;
   only its hash goes on chain. A lobby lasts 10 minutes from the host's search and the host
   can `closeLobby` at any time; past the lifetime anyone can `cleanUpLobby`, kick and close in
@@ -151,7 +152,7 @@ chain in one call; a dice roll (`attack`, `grenade`) or `next_turn` goes last.
   (no auto-cancel, no seat). A friendly game (`Game.mode`) lets each side deploy up to the
   lobby's size, moves no rating, score, suspension or XP, keeps the fallen in `Map.fallen`
   until `complete`, and then sends every recruit home, the fallen too. The host goes first.
-  `ghosts-play`: `host [--size N] [--invite]`, `lobbies`, `join-open HOST`, `join HOST:CODE`,
+  `ghosts-play`: `host [--size N] [--invite]`, `lobbies`, `join-open HOST`, `join CODE` (or `HOST:CODE`),
   `kick`, `start`, `leave`, `close`, `cleanup HOST`.
 - **Armed squads:** `hire_recruits` arms each recruit with a Standard Rifle and nothing
   else. `Attack` and `Reload` come from a weapon, `Grenade` from a utility item (the frag

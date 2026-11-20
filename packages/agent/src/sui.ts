@@ -57,6 +57,7 @@ import {
 } from "./contract.ts";
 import {
     classifySearch,
+    findInviteHost,
     openLobbyId,
     protectedKey,
     protectedLobbyId,
@@ -537,6 +538,53 @@ export function createSuiBackend(options: SuiBackendOptions): Backend {
             const field = protectedLobbyId(home, key);
             const found = await lobbyAt(field);
             return found ? ({ size: found.value.size, field, key } satisfies InviteLobbyView) : null;
+        },
+
+        async inviteHost(code) {
+            const accountType = normalizeStructTag(`${deployment.package}::account::Account`);
+            return findInviteHost(code, {
+                async fieldTransaction(key) {
+                    const { objects } = await client.core.getObjects({
+                        objectIds: [protectedLobbyId(lobbyHome(), key)],
+                        include: { previousTransaction: true },
+                    });
+                    const field = objects[0];
+                    if (!field || field instanceof Error) return null;
+                    return field.previousTransaction ?? null;
+                },
+                async writtenAccounts(digest) {
+                    const opened = await client.core.getTransaction({
+                        digest,
+                        include: { effects: true, objectTypes: true },
+                    });
+                    const tx = opened.Transaction ?? opened.FailedTransaction;
+                    const written = (tx?.effects?.changedObjects ?? [])
+                        .filter((change) => change.outputState === "ObjectWrite")
+                        .map((change) => change.objectId)
+                        .filter((id) => {
+                            const type = tx?.objectTypes?.[id];
+                            return type !== undefined && normalizeStructTag(type) === accountType;
+                        });
+                    if (written.length === 0) return [];
+                    const { objects } = await client.core.getObjects({
+                        objectIds: written,
+                        include: { content: true },
+                    });
+                    return objects.flatMap((object) => {
+                        if (object instanceof Error) return [];
+                        const account = AccountBcs.parse(object.content);
+                        return [
+                            {
+                                id: account.id,
+                                order:
+                                    account.state.$kind === "Searching"
+                                        ? account.state.Searching.order
+                                        : null,
+                            },
+                        ];
+                    });
+                },
+            });
         },
 
         async listLobbies() {

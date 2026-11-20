@@ -873,6 +873,11 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
                 : null;
         },
 
+        async inviteHost(code) {
+            if (sameCode(code)) return SANDBOX_PEER_HOST;
+            return mine?.kind === "invite" && mine.key === protectedKey(code) ? ACCOUNT : null;
+        },
+
         async listLobbies() {
             const listed = [myView(), peerOpen() ? peerView() : null];
             return listed.filter((lobby): lobby is LobbyView => lobby !== null);

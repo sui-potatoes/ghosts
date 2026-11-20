@@ -228,3 +228,38 @@ export async function classifySearch(
     if (await lookups.protectedExists(order)) return { kind: "hosting_invite" };
     return (await lookups.seatWaiting()) ? { kind: "seat_waiting" } : { kind: "queued" };
 }
+
+// === The host behind a code ===
+
+/**
+ * The reads `findInviteHost` makes, so the lookup can be tested without a node. A protected lobby
+ * holds only its size and its key is a hash, so nothing on chain maps a code to its host: the way
+ * there is the transaction that filed the lobby.
+ */
+export interface InviteReads {
+    /** The previous transaction of the `Protected` lobby field at `key`; null when there is no such lobby. */
+    fieldTransaction(key: string): Promise<string | null>;
+    /**
+     * The `Account`s that transaction wrote, each with its search `order` while it is `Searching`
+     * (null in any other state).
+     */
+    writtenAccounts(digest: string): Promise<{ id: string; order: string | null }[]>;
+}
+
+/**
+ * The host `Account` ID behind an invite code, or null when the code opens nothing. A protected
+ * field is written once, by `open_lobby`, and only removed after, so the field's previous
+ * transaction is that call; of the `Account`s it wrote, the host is the one `Searching` with the
+ * key as its order. The same lookup the app makes (`findInviteHost` in `app/src/chain/lobby.ts`).
+ */
+export async function findInviteHost(code: Uint8Array, reads: InviteReads): Promise<string | null> {
+    const key = normalizeSuiAddress(protectedKey(code));
+    const digest = await reads.fieldTransaction(key);
+    if (!digest) return null;
+    for (const account of await reads.writtenAccounts(digest)) {
+        if (account.order !== null && normalizeSuiAddress(account.order) === key) {
+            return normalizeSuiAddress(account.id);
+        }
+    }
+    return null;
+}

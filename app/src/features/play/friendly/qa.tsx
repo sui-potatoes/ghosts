@@ -8,15 +8,16 @@
  * one of `landing`, `host-open`, `host-guest`, `invite`, `invite-elsewhere`,
  * `host-expired`, `guest`, `guest-expired`, `list`, `list-empty`, `kicked`,
  * `closed`, `expired`, `signed-out`, `no-recruits`, `queued`, `join-error`,
- * `four` (a level with 4 spawns a side). What the screen asks for is counted on
- * `window.__friendly`.
+ * `guest-reading` (the host's clock not read yet), `four` (a level with 4 spawns a side).
+ * A press of a lobby write shows its pending state for 2.5 seconds, as the live screen does
+ * while it is on its way. What the screen asks for is counted on `window.__friendly`.
  */
 
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { FriendlyView, type FriendlyData } from "./FriendlyView";
-import type { Gate, OpenGame } from "./model";
+import type { Gate, OpenGame, Pending } from "./model";
 
 const NAMES: Record<string, string> = {
     "0xa1": "kestrel",
@@ -33,6 +34,8 @@ const GAMES: OpenGame[] = [
     { hostId: "0x3", owner: "0xa3", rating: 1610, size: 4, sinceMs: minutesAgo(6), full: false },
     { hostId: "0x4", owner: "0xa9", rating: 1500, size: 3, sinceMs: minutesAgo(8.5), full: false },
 ];
+/** The host of the first game removed the player from it. */
+const REMOVED: OpenGame[] = GAMES.map((g, i) => (i === 0 ? { ...g, removed: true } : g));
 
 const GUEST = { id: "0xg", name: "vesper", rating: 1544 };
 const CODE = "24VMT8UT43YR9";
@@ -53,6 +56,7 @@ function fixture(state: string): FriendlyData {
         lobby: null,
         games: GAMES,
         busy: false,
+        pending: null,
         error: null,
         notice: null,
         linkCode: null,
@@ -121,7 +125,19 @@ function fixture(state: string): FriendlyData {
         case "list-empty":
             return { ...base, games: [] };
         case "kicked":
-            return { ...base, notice: "The host removed you from this game" };
+            return { ...base, games: REMOVED, notice: "The host removed you from this game" };
+        case "removed":
+            return { ...base, games: REMOVED };
+        case "guest-reading":
+            return {
+                ...base,
+                lobby: {
+                    kind: "guest",
+                    size: 3,
+                    sinceMs: null,
+                    host: { name: "kestrel", rating: 1520 },
+                },
+            };
         case "closed":
             return { ...base, notice: "The host closed this game" };
         case "expired":
@@ -141,17 +157,24 @@ export default function FriendlyQa() {
         const w = window as unknown as { __friendly?: string[] };
         (w.__friendly ??= []).push(what);
     };
+    /** A write: pending for a moment, then settled. */
+    const write = (what: string, pending: Pending) => {
+        log(what);
+        setData((d) => (d.pending ? d : { ...d, busy: true, pending, notice: null }));
+        window.setTimeout(() => setData((d) => ({ ...d, busy: false, pending: null })), 2500);
+    };
     return (
         <FriendlyView
             data={data}
             ops={{
-                host: (size, listed) => log(`host ${size} ${listed ? "open" : "invite"}`),
+                host: (size, listed) =>
+                    write(`host ${size} ${listed ? "open" : "invite"}`, { what: "host" }),
                 joinCode: (text) => log(`join-code ${text}`),
-                joinOpen: (hostId) => log(`join-open ${hostId}`),
-                leave: () => log("leave"),
-                kick: () => log("kick"),
-                start: () => log("start"),
-                close: () => log("close"),
+                joinOpen: (hostId) => write(`join-open ${hostId}`, { what: "join", id: hostId }),
+                leave: () => write("leave", { what: "leave" }),
+                kick: () => write("kick", { what: "kick" }),
+                start: () => write("start", { what: "start" }),
+                close: () => write("close", { what: "close" }),
                 gateAction: () => log("gate"),
                 leaveScreen: () => log("leave-screen"),
                 clearError: () => setData((d) => (d.error ? { ...d, error: null } : d)),

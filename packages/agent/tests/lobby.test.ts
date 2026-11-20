@@ -36,7 +36,9 @@ import {
     CODE_LENGTH,
     encodeCode,
     formatCode,
+    findInviteHost,
     formatInvite,
+    type InviteReads,
     LOBBY_LIFETIME_MS,
     lobbyExpired,
     lobbyExpiresAtMs,
@@ -602,4 +604,58 @@ test("the shell hosts, lists, joins, kicks, starts, leaves, closes and cleans up
     assert.equal(((await run(`join ${invite}`)) as any).phase, "deploy");
     await assert.rejects(run("join"), (e: ActionError) => e.code === "bad_action");
     await assert.rejects(run("cleanup"), (e: ActionError) => e.code === "bad_action");
+});
+
+// === The host behind a code ===
+
+test("the host behind a code: the Account the opening transaction wrote, searching on the key", async () => {
+    const code = Uint8Array.from([9, 8, 7, 6, 5, 4, 3, 2]);
+    const key = protectedKey(code);
+    const asked: string[] = [];
+    const reads: InviteReads = {
+        async fieldTransaction(at) {
+            asked.push(at);
+            return at === normalizeSuiAddress(key) ? "digest-open" : null;
+        },
+        async writtenAccounts(digest) {
+            assert.equal(digest, "digest-open");
+            return [
+                { id: GUEST, order: null },
+                { id: HOST, order: key },
+            ];
+        },
+    };
+    assert.equal(await findInviteHost(code, reads), HOST);
+    assert.deepEqual(asked, [normalizeSuiAddress(key)], "the lobby is read at the double hash");
+
+    // no lobby under the code
+    assert.equal(await findInviteHost(Uint8Array.from([1, 1, 1, 1, 1, 1, 1, 1]), reads), null);
+    // the transaction wrote no Account searching on the key (a queue order is not a lobby key)
+    const elsewhere: InviteReads = {
+        fieldTransaction: async () => "digest-open",
+        writtenAccounts: async () => [{ id: HOST, order: HOST }, { id: GUEST, order: null }],
+    };
+    assert.equal(await findInviteHost(code, elsewhere), null);
+});
+
+test("joining with the code alone looks the host up; host:code skips the lookup", async () => {
+    const inviteCode = formatCode(encodeCode(SANDBOX_INVITE.code));
+    const alone = await named();
+    assert.equal((await alone.joinInvite(inviteCode)).phase, "deploy");
+
+    const full = await named();
+    assert.equal((await full.joinInvite(formatInvite(SANDBOX_INVITE.host, SANDBOX_INVITE.code))).phase, "deploy");
+
+    // a code that opens nothing: no lobby, and no guess at a host
+    const unknown = await named();
+    await assert.rejects(unknown.joinInvite("2222-2222-22222"), (e: ActionError) => e.code === "no_lobby");
+    await assert.rejects(unknown.joinInvite("nonsense"), (e: ActionError) => e.code === "bad_action");
+
+    // a failing lookup falls back to the given host
+    const backend = createSandbox();
+    const fallback = new GhostsAgent({ ...backend, inviteHost: async () => { throw new Error("down"); } }, fast);
+    await fallback.setName("fallback");
+    await fallback.setup();
+    assert.equal((await fallback.joinInvite(SANDBOX_INVITE.host, inviteCode)).phase, "deploy");
+    await assert.rejects(fallback.joinInvite(inviteCode), (e: ActionError) => e.code === "no_lobby");
 });

@@ -132,6 +132,8 @@ export type OpenGame = {
     size: number;
     sinceMs: number;
     full: boolean;
+    /** The host removed this player from it: they cannot join it again. */
+    removed?: boolean;
 };
 
 /** Why the host cannot start yet, null when Start can run. */
@@ -150,6 +152,52 @@ export function joinBlock(
     presetSide: number | null,
 ): string | null {
     if (gate) return gate.reason;
+    if (game.removed) return "The host removed you from this game";
     if (game.full) return "This game is full";
     return sizeBlock(game.size, presetSide);
+}
+
+/** A lobby write in flight: what the player pressed, and for a listed game which one. */
+export type Pending = {
+    what: "host" | "join" | "leave" | "kick" | "start" | "close";
+    /** The listed game being joined (its host's `Account` ID). */
+    id?: string;
+};
+
+/** What the pressed row or button says while its write is on its way. */
+export const DOING: Record<Pending["what"], string> = {
+    host: "Opening game",
+    join: "Joining",
+    leave: "Leaving",
+    kick: "Removing guest",
+    start: "Starting match",
+    close: "Closing game",
+};
+
+/**
+ * Why a row cannot be pressed while a lobby write is in flight, undefined when it can: the
+ * pressed one says what it is doing, every other waits for it, so nothing is sent twice.
+ */
+export function writeBlock(
+    pending: Pending | null,
+    busy: boolean,
+    what: Pending["what"],
+    id?: string,
+): string | undefined {
+    if (pending && pending.what === what && pending.id === id) return DOING[what];
+    return pending || busy ? "Saving a change" : undefined;
+}
+
+/** A notice about a game the player was in: what to say, and the game's host. */
+export type Notice = { line: string; host: string; at: number };
+
+/**
+ * Whether a notice is out of date: the open list was read after it was raised and the game it
+ * names is no longer on it. A removed player's game stays listed, and its notice with it.
+ */
+export function noticeStale(
+    notice: Notice,
+    list: { at: number; hosts: readonly string[] } | null,
+): boolean {
+    return !!list && list.at > notice.at && !list.hosts.includes(notice.host);
 }

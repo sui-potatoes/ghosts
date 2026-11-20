@@ -125,6 +125,8 @@ export type OpenLobby = {
     full: boolean;
     /** When the host opened it: the lifetime runs from here. */
     sinceMs: number;
+    /** The `Account`s the host removed from it, oldest first. */
+    kicked: string[];
 };
 
 /** Every field of `Lobbies` whose key is `Open`: paged through, keys only. */
@@ -198,6 +200,7 @@ export async function fetchOpenLobbies(client: Client, now = Date.now()): Promis
             size: lobby.size,
             full: lobby.guest !== null && lobby.guest !== undefined,
             sinceMs,
+            kicked: lobby.kicked,
         });
     });
     return lobbies.sort((a, b) => a.sinceMs - b.sinceMs);

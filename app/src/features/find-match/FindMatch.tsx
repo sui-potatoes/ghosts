@@ -8,7 +8,7 @@
  * carries on (the title and the squad show it in their header).
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import {
     EmptyState,
@@ -57,7 +57,8 @@ export function FindMatch({ ops }: { ops: FindOps }) {
     // The arrival that asked for a search queues it, once, from here.
     const [started, setStarted] = useState(false);
     const asked = useRef(false);
-    useEffect(() => {
+    // Before the first paint, so an arrival that asked for a search never shows the idle screen.
+    useLayoutEffect(() => {
         if (asked.current) return;
         asked.current = true;
         if (!takeFindRequest()) return;
@@ -82,6 +83,10 @@ export function FindMatch({ ops }: { ops: FindOps }) {
         "sign-in": ops.signIn,
         resume: ops.resume,
         lobby: ops.lobby ?? ops.leave,
+        find: () => {
+            setStarted(true);
+            ops.find();
+        },
         retry: () => {
             setStarted(true);
             ops.find();
