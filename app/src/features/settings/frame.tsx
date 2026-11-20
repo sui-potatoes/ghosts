@@ -49,6 +49,13 @@ export function useSettingsContext(): SettingsContext {
 /** The view's provider of the context. */
 export const SettingsProvider = Context.Provider;
 
+/**
+ * The one body grid of every category, so switching tabs never resizes a panel:
+ * the first panel is the first track, a second panel (or the controller's
+ * diagram) the second, the rest is spare.
+ */
+const COLUMNS = "minmax(0, 520px) minmax(0, 560px) minmax(0, 1fr)";
+
 export type Line = { text: string; tone: "ok" | "warn" } | null;
 
 /**
@@ -58,13 +65,11 @@ export type Line = { text: string; tone: "ok" | "warn" } | null;
  * write) on the hint slot — amber when it is a failure.
  */
 export function SettingsFrame({
-    columns,
     status,
     overlay,
     line,
     children,
 }: {
-    columns: string;
     status?: ReactNode;
     overlay?: ReactNode;
     line?: Line;
@@ -92,7 +97,7 @@ export function SettingsFrame({
                     )}
                 </>
             }
-            columns={columns}
+            columns={COLUMNS}
             commands={<SettingsCommandBar glyphs={ctx.glyphs} line={line ?? null} />}
             overlay={ctx.prompt || overlay}
         >

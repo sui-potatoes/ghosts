@@ -33,7 +33,7 @@
 
 /* Row labels and chooser labels read alike on this screen. */
 .gset-row-label,
-.gset-c2 .gui-chooser-label {
+:is(.gset-c2, .gset-c3) .gui-chooser-label {
     flex: 1;
     min-width: 0;
     font: 500 var(--t-micro) / 1.2 var(--font-mono);
@@ -70,7 +70,7 @@
 
 .gset-row[data-focused] .gset-row-label,
 .gset-row[data-focused] .gset-row-value,
-.gset-c2 .gui-chooser[data-focused] .gui-chooser-label {
+:is(.gset-c2, .gset-c3) .gui-chooser[data-focused] .gui-chooser-label {
     color: var(--on-band);
 }
 .gset-row[data-focused] .gset-row-value[data-tone="warn"] {
@@ -110,60 +110,75 @@
     white-space: pre;
 }
 
-/* Choosers on this screen: a wide label, the control at the trailing edge. */
-.gset-c2 .gui-chooser {
+/* Choosers on this screen: a wide label, the control at the trailing edge. A chooser
+   is exactly a row tall with a row's inset, whatever it holds: the stepper's pips sit
+   in the control column's bottom edge instead of adding a line. */
+:is(.gset-c2, .gset-c3) .gui-chooser {
     grid-template-columns: minmax(0, 1fr) minmax(0, 220px);
+    grid-template-rows: minmax(0, 1fr);
+    height: var(--h-m);
+    padding: 0 calc(var(--u) * 3);
 }
-.gset-c2 .gui-chooser[data-kind="slider"] {
+:is(.gset-c2, .gset-c3) .gui-chooser[data-kind="slider"] {
     grid-template-columns: minmax(0, 1fr) minmax(0, 220px) calc(var(--u) * 8);
+}
+:is(.gset-c2, .gset-c3) .gui-chooser-label {
+    grid-row: 1;
+}
+:is(.gset-c2, .gset-c3) .gui-chooser-pips {
+    position: absolute;
+    grid-column: 2;
+    grid-row: 1;
+    align-self: end;
+    margin-bottom: calc(var(--u) * 0.5);
 }
 
 /* The restore row sits with the list, not apart from it. */
-.gset-c2 .gui-action-row,
-.gset-c3 .gui-action-row {
+:is(.gset-c2, .gset-c3) .gui-action-row {
     margin-top: calc(var(--u) * 2);
     flex: none;
+    padding: 0 calc(var(--u) * 3 - 1px);
 }
 
-/* The Player panel's two columns stack on a phone, the body scrolling. */
+/* On a phone the panels stack at full width and the body scrolls, its gutter
+   reserved so a scrollbar never shifts the rows. The column template is inline
+   (frame.tsx), hence the !important. */
 @media (max-width: 720px) {
     /* The frame's single track would otherwise grow to the seven tabs' width. */
-    .gui:has(.gset-rank) {
+    .gui:has(.gset-frame) {
         grid-template-columns: minmax(0, 1fr);
     }
-    .gui-body:has(> .gset-rank) {
+    .gui-body:has(> .gset-c2) {
         grid-template-columns: minmax(0, 1fr) !important;
         grid-template-rows: none;
         grid-auto-rows: min-content;
         overflow-y: auto;
+        scrollbar-gutter: stable;
     }
-    .gui-body:has(> .gset-rank) > .gset-c2,
-    .gui-body:has(> .gset-rank) > .gset-c3 {
+    .gui-body:has(> .gset-c2) > .gset-c2,
+    .gui-body:has(> .gset-c2) > .gset-c3 {
         grid-column: 1;
     }
 }
 
-/* The ranked record: the label column fits its longest label (up to most of the
-   panel), every row on the same column; a label that still cannot fit wraps
-   within its cell, never over its value. */
-.gset-readouts {
-    display: grid;
-    grid-template-columns: fit-content(60%) minmax(0, 1fr);
+/* Read-only lines (the ranked record, the network's) share one label column and one
+   height on every tab; a label or value that does not fit ends in an ellipsis
+   instead of growing the line. */
+:is(.gset-c2, .gset-c3) .gui-readout {
+    grid-template-columns: calc(var(--u) * 32) minmax(0, 1fr);
     column-gap: calc(var(--u) * 4);
+    height: calc(var(--u) * 7);
 }
-.gset-readouts > .gui-readout {
-    grid-column: 1 / -1;
-    grid-template-columns: subgrid;
-}
-.gset-readouts .gui-readout-label {
-    white-space: normal;
-    overflow-wrap: anywhere;
-    line-height: 1.3;
+:is(.gset-c2, .gset-c3) .gui-readout-label {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* === Controller diagram ============================================= */
 
 .gset-diagram-panel {
+    grid-column: 2 / -1;
     align-self: stretch;
     justify-content: center;
 }
@@ -188,19 +203,12 @@
     stroke-width: 1.25px;
 }
 
-/* Narrow portrait: the list and the diagram stack at full width and the body
-   scrolls (the column template is inline, hence the !important). */
+.gset-diagram-panel .gset-diagram {
+    min-height: 0;
+}
+
+/* Narrow portrait: the diagram keeps its proportions under the list. */
 @media (max-width: 720px) {
-    .gui-body:has(> .gset-diagram-panel) {
-        grid-template-columns: minmax(0, 1fr) !important;
-        grid-template-rows: none;
-        grid-auto-rows: min-content;
-        overflow-y: auto;
-    }
-    .gui-body:has(> .gset-diagram-panel) > .gset-c2,
-    .gui-body:has(> .gset-diagram-panel) > .gset-c3 {
-        grid-column: 1;
-    }
     .gset-diagram-panel .gset-diagram {
         flex: none;
         height: auto;

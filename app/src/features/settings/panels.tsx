@@ -78,13 +78,6 @@ import {
 import { KeyCaps, PadCaps, ValueRow } from "./parts";
 import { SettingsFrame, useSettingsContext, type Line } from "./frame";
 
-/** One column from the left edge; the rest of the page stays free. */
-const ONE = "minmax(0, 640px) minmax(0, 1fr)";
-/** Two columns side by side from the left edge. */
-const TWO = "minmax(0, 520px) minmax(0, 560px) minmax(0, 1fr)";
-/** Rows beside a wide visual, from the left edge; the visual takes the rest. */
-const WIDE = "minmax(0, 460px) minmax(0, 1fr)";
-
 const CHANGE: Command = { action: "nav", label: "Change", glyph: "lr" };
 
 /** The reset slot of a row whose value is not its default. */
@@ -161,7 +154,7 @@ function RestorePrompt({
 function SignInGate({ what }: { what: string }) {
     const { account } = useSettingsContext();
     return (
-        <SettingsFrame columns={ONE}>
+        <SettingsFrame>
             <Panel className="gset-c2 gset-fit">
                 <EmptyState
                     id="gate-sign-in"
@@ -198,7 +191,6 @@ export function PlayerPanel() {
     const label = signedIn ? "Player" : "Rating";
     return (
         <SettingsFrame
-            columns={TWO}
             status={
                 <>
                     {account.namePending && <StatusChip label="Name" value="Saving" state="busy" />}
@@ -216,7 +208,7 @@ export function PlayerPanel() {
                 )
             }
         >
-            <Panel label={label} className="gset-c2 gset-fit gset-rank">
+            <Panel label={label} className="gset-c2 gset-fit">
                 <List label={label}>
                     {signedIn && account.address && (
                         <ValueRow
@@ -316,8 +308,8 @@ function RankedBlock({ record }: { record: RatingRecord }) {
     const r = record.standing;
     const rate = r.games ? `${Math.round((r.wins / r.games) * 100)}%` : "-";
     return (
-        <Panel variant="ghost" label="Ranked" className="gset-c3 gset-fit gset-rank">
-            <div className="gset-readouts">
+        <Panel variant="ghost" label="Ranked" className="gset-c3 gset-fit">
+            <>
                 <ReadoutLine label="Tier">{r.tier.name}</ReadoutLine>
                 <ReadoutLine label="Rating">{r.rating}</ReadoutLine>
                 <ReadoutLine label="Ranked games">{r.games}</ReadoutLine>
@@ -337,7 +329,7 @@ function RankedBlock({ record }: { record: RatingRecord }) {
                     </ReadoutLine>
                 )}
                 <ReadoutLine label="Resets">{r.resets}</ReadoutLine>
-            </div>
+            </>
         </Panel>
     );
 }
@@ -476,7 +468,6 @@ export function AccountPanel() {
 
     return (
         <SettingsFrame
-            columns={TWO}
             status={sessions.busy && <StatusChip label="Sessions" value="Working" state="busy" />}
             overlay={overlay}
             line={line ?? fault}
@@ -667,7 +658,6 @@ export function AudioPanel() {
     const preview = usePreview();
     return (
         <SettingsFrame
-            columns={ONE}
             overlay={
                 restore && (
                     <RestorePrompt panel="audio" what="Audio" close={() => setRestore(false)} />
@@ -733,7 +723,6 @@ export function DisplayPanel() {
     const [restore, setRestore] = useState(false);
     return (
         <SettingsFrame
-            columns={ONE}
             overlay={
                 restore && (
                     <RestorePrompt panel="display" what="Display" close={() => setRestore(false)} />
@@ -831,7 +820,7 @@ export function ControlsPanel() {
     ) : null;
 
     return (
-        <SettingsFrame columns={TWO} overlay={overlay}>
+        <SettingsFrame overlay={overlay}>
             <Panel label="Menus" className="gset-c2 gset-fit">
                 <List label="Menu bindings">
                     {ACTIONS.map((action) => (
@@ -1028,7 +1017,7 @@ export function ControllerPanel() {
         ));
 
     return (
-        <SettingsFrame columns={WIDE} overlay={overlay}>
+        <SettingsFrame overlay={overlay}>
             <Panel label="Controller" className="gset-c2 gset-fit">
                 <List label="Controller">
                     <ValueRow
@@ -1306,7 +1295,7 @@ export function NetworkPanel() {
     ) : null;
 
     return (
-        <SettingsFrame columns={TWO} status={status} overlay={overlay} line={view.line}>
+        <SettingsFrame status={status} overlay={overlay} line={view.line}>
             <Panel label="Fullnode endpoint" className="gset-c2 gset-fit">
                 <List label="Fullnode endpoint">
                     <ValueRow

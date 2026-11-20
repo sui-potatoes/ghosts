@@ -215,21 +215,21 @@ test("the Player panel shows the rating from the account and sends the reset to 
     assert.doesNotMatch(block, /testnet|on chain|preview|for now/i);
 });
 
-test("the ranked record's labels sit in a column sized to the longest, wrapping inside it", async () => {
+test("read-only lines share one label column on every tab, and a label never runs over its value", async () => {
     const { readFileSync } = await import("node:fs");
     const css = readFileSync(
         new URL("../src/features/settings/settings-gui.css", import.meta.url),
         "utf8",
     );
-    const rule = css.slice(
-        css.indexOf(".gset-readouts {"),
-        css.indexOf("/* === Controller diagram"),
-    );
-    assert.match(rule, /grid-template-columns: fit-content\(60%\) minmax\(0, 1fr\)/);
-    assert.match(rule, /grid-template-columns: subgrid/);
-    assert.match(rule, /white-space: normal/);
-    // No pixel width tuned to today's strings.
-    assert.doesNotMatch(rule, /var\(--u\) \* \d+\) minmax/);
+    const at = css.indexOf(":is(.gset-c2, .gset-c3) .gui-readout {");
+    assert.ok(at >= 0);
+    const rule = css.slice(at, css.indexOf("/* === Controller diagram"));
+    // One definition for every tab, not a Player-only one.
+    assert.doesNotMatch(rule, /gset-rank|subgrid/);
+    assert.match(rule, /grid-template-columns:/);
+    // A label that cannot fit is cut with an ellipsis inside its own column.
+    assert.match(rule, /text-overflow: ellipsis/);
+    assert.match(rule, /overflow: hidden/);
 });
 
 test("the panels and the view share their context through a module neither imports the other from", async () => {
