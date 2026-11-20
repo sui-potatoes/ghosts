@@ -420,7 +420,8 @@ test("auto squads vary: compositions, utilities and upgrades, never all one arch
         assert.ok(seen.size >= 25, `tier ${tier}: ${seen.size} different squads`);
         const open = PRESET_IDS.filter((id) => tier >= 2 || id !== "heavy");
         for (const id of open) assert.ok(archetypes.has(id), `tier ${tier} fields a ${id}`);
-        for (const kind of [0, 1, 2]) assert.ok(utilities.has(kind), `tier ${tier} carries utility ${kind}`);
+        for (const kind of [0, 1]) assert.ok(utilities.has(kind), `tier ${tier} carries utility ${kind}`);
+        assert.ok(!utilities.has(2), `tier ${tier}: bots carry no smoke`);
     }
     // a Rookie has no sniper or heavy
     for (let seed = 0; seed < 100; seed++) {

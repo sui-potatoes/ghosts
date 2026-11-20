@@ -475,10 +475,14 @@ export const ARCHETYPE_WEIGHTS: Readonly<Record<PresetId, number>> = {
     heavy: 2,
 };
 
+/**
+ * Utility weights by default: a bot chooses between a frag grenade and a flashbang, about evenly.
+ * Smoke is left to the players for now: a weight of 0 never draws it.
+ */
 export const UTILITY_WEIGHTS: Readonly<Record<UtilityKindName, number>> = {
-    frag: 4,
-    flashbang: 3,
-    smoke: 3,
+    frag: 1,
+    flashbang: 1,
+    smoke: 0,
 };
 
 export interface AutoSquad {
@@ -531,7 +535,10 @@ export function autoSquad(
     const weights = { ...ARCHETYPE_WEIGHTS, ...options.weights };
     const utilityWeights = { ...UTILITY_WEIGHTS, ...options.utilityWeights };
     const maxSame = options.maxSame ?? 2;
-    const utilityWeight = (kind: number) => utilityWeights[UTILITY_NAMES[kind]] ?? 1;
+    // each utility already in the squad weighs the next of its kind down, so a squad varies
+    const utilityWeight = (kind: number, held: Loadout[]) =>
+        (utilityWeights[UTILITY_NAMES[kind]] ?? 1) /
+        (1 + held.filter((unit) => unit.utility === kind).length);
 
     const open = (items: RankedItem[], first: number) =>
         items.flatMap((item, i) => (item.minTier <= tier ? [i + first] : []));
@@ -576,7 +583,7 @@ export function autoSquad(
         if (loadout.utility !== null) {
             const price = rules.utilities[loadout.utility]?.price;
             const same = utilities.filter((u) => rules.utilities[u].price === price);
-            const weighted = same.map((u) => ({ value: u, weight: utilityWeight(u) }));
+            const weighted = same.map((u) => ({ value: u, weight: utilityWeight(u, squad) }));
             loadout.utility = pick(random, weighted) ?? loadout.utility;
         }
         squad.push(loadout);
@@ -597,7 +604,7 @@ export function autoSquad(
             if (rules.weapons[unit.rifle]) consider({ ...unit, rifle: unit.rifle + 1 }, 2);
             if (rules.armor[unit.armor]) consider({ ...unit, armor: unit.armor + 1 }, 2);
             if (unit.utility === null) {
-                for (const u of utilities) consider({ ...unit, utility: u }, utilityWeight(u));
+                for (const u of utilities) consider({ ...unit, utility: u }, utilityWeight(u, squad));
             }
         });
         const upgrade = pick(random, upgrades.map((u) => ({ value: u, weight: u.weight })));

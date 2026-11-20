@@ -417,7 +417,7 @@ test("a kill takes the unit off the map but buries it only at the next turn chan
 
             seen = true;
             const fallen = after.state.fallen[0];
-            assert.equal(after.state.squads.flat().length, before - 1, "off the map at once");
+            assert.equal(after.state.squads.flat().length, before - after.state.fallen.length, "off the map at once");
             assert.ok(!after.state.squads.flat().includes(fallen));
             assert.ok(!after.state.units.some((unit) => unit.recruit === fallen));
             assert.ok(after.state.history.some((r) => r.kind === "kia" && r.recruit === fallen));

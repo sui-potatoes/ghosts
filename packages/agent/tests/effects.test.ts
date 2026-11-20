@@ -38,8 +38,10 @@ import {
     throwEffect,
     validateBatch,
     type EffectThrowAction,
+    type ThrowAction,
 } from "../src/rules.ts";
-import { createSandbox, type SquadUnit } from "../src/sandbox.ts";
+import { autoSquad, unitFromLoadout } from "../src/ranked.ts";
+import { createSandbox, SANDBOX_RULES, type SquadUnit } from "../src/sandbox.ts";
 import type { GameRecord, GameState, Stats, Tile, Unit, UnitActionEntry } from "../src/types.ts";
 import { FIXTURES } from "./fixtures.ts";
 
@@ -634,7 +636,90 @@ test("bot games with every grenade keep the replay equal to the units, all along
         }
         assert.ok(game.history.length > 20, "a game was played");
     }
-    assert.ok(thrown.has("flashbang") && thrown.has("smoke_grenade"), [...thrown].join());
+    assert.ok(thrown.has("flashbang") && thrown.has("grenade"), [...thrown].join());
+    assert.ok(!thrown.has("smoke_grenade"), "the bot never throws smoke");
+});
+
+/** One bot-versus-bot game of auto squads: the throws by kind, and every order checked. */
+async function autoGame(seed: number) {
+    const squads: [SquadUnit[], SquadUnit[]] = [0, 1].map((side) =>
+        autoSquad(SANDBOX_RULES, 1, 3, { seed: seed * 2 + side }).squad.map((loadout) => {
+            const { stats, actions } = unitFromLoadout(loadout)!;
+            return { stats, actions };
+        }),
+    ) as unknown as [SquadUnit[], SquadUnit[]];
+    const carries = (kind: string) =>
+        squads.some((squad) => squad.some((unit) => unit.actions.some((a) => a.kind === kind)));
+    const thrown: Record<string, number> = { flashbang: 0, grenade: 0, smoke_grenade: 0 };
+    const play = (state: GameState, side: number, ids: string[]) => {
+        for (const id of ids) {
+            const action = parseAction(id);
+            assert.equal(refusal(state, side, action, 0), null, `seed ${seed}: ${id} is legal`);
+            if (action.kind in thrown) thrown[action.kind]++;
+            state = applyDeterministic(state, action);
+        }
+    };
+    const backend = createSandbox({
+        seed,
+        seated: true,
+        squads,
+        now: () => 0,
+        opponent: (input) => {
+            const ids = referencePolicy(input) as string[];
+            play(structuredClone(input.state), input.side, ids);
+            return ids;
+        },
+    });
+    await backend.createAccount();
+    await backend.hireSquad();
+    await backend.findGame();
+    await backend.acceptSeat();
+    const account = (await backend.account())!;
+    const id = account.search.kind === "playing" ? account.search.game : "";
+    let game = (await backend.game(id))!;
+    await backend.submit(game, [{ kind: "deploy" }]);
+    game = (await backend.game(id))!;
+    for (let turn = 0; turn < 80 && game.status.kind === "active"; turn++) {
+        for (let i = 0; i < 12 && game.status.kind === "active" && game.active === 0; i++) {
+            const legal = legalActions(game, 0, 0);
+            const ids = referencePolicy({ state: game, side: 0, legal, nowMs: 0 }) as string[];
+            play(structuredClone(game), 0, ids);
+            await backend.submit(game, ids.map(parseAction));
+            game = (await backend.game(id))!;
+        }
+        game = (await backend.game(id))!;
+    }
+    return { thrown, flash: carries("flashbang"), frag: carries("grenade"), smoke: carries("smoke_grenade") };
+}
+
+test("seeded bot games with auto squads: every order is legal, flashbangs and frags are thrown, smoke never", async () => {
+    const games: Awaited<ReturnType<typeof autoGame>>[] = [];
+    for (let seed = 1; seed <= 30; seed++) games.push(await autoGame(seed));
+    const carrying = (key: "flash" | "frag" | "smoke") => games.filter((g) => g[key]).length;
+    const using = (kind: string) => games.filter((g) => g.thrown[kind] > 0).length;
+
+    console.log(
+        `flashbangs in ${using("flashbang")} of ${carrying("flash")} games with one, ` +
+            `frags in ${using("grenade")} of ${carrying("frag")}, ` +
+            `smoke in ${using("smoke_grenade")} of ${carrying("smoke")}`,
+    );
+    assert.equal(carrying("smoke"), 0, "bots do not carry smoke");
+    assert.equal(using("smoke_grenade"), 0);
+    assert.ok(using("flashbang") >= carrying("flash") / 2, "flashbangs show up");
+    assert.ok(using("grenade") >= carrying("frag") / 2, "frags show up");
+});
+
+test("auto squads carry a frag or a flashbang, and vary within a squad", () => {
+    const kinds = new Set<number | null>();
+    let mixed = 0;
+    for (let seed = 1; seed <= 40; seed++) {
+        const { squad } = autoSquad(SANDBOX_RULES, 2, 4, { seed });
+        const utilities = squad.map((unit) => unit.utility);
+        for (const utility of utilities) kinds.add(utility);
+        if (utilities.includes(0) && utilities.includes(1)) mixed++;
+    }
+    assert.deepEqual([...kinds].sort(), [0, 1, null], "frag, flashbang or none, never smoke");
+    assert.ok(mixed >= 10, `a squad often carries both: ${mixed} of 40`);
 });
 
 // === The bots ===
@@ -670,41 +755,117 @@ test("the reference bot flashbangs enemies about to shoot, and not its own units
     assert.notEqual(parseAction(choose()[0]).kind, "flashbang");
 });
 
-test("the reference bot smokes its units an enemy is likely to hit, with no cover", () => {
+/** The reference bot's next order for `side` 0 on `state`. */
+const choose = (state: GameState) =>
+    parseAction(
+        (referencePolicy({ state, side: 0, legal: legalActions(state, 0, 0), nowMs: 0 }) as string[])[0],
+    );
+
+test("the reference bot flashbangs two threatening enemies, then shoots", () => {
     const state = arena();
-    place(state, 0, 5, 1, ["move", "smoke_grenade:1"]);
-    place(state, 1, 5, 9); // too far to shoot
-    place(state, 0, 5, 3, ["move"]); // no weapon: no good shot to take instead
-    const enemy = place(state, 1, 5, 7);
-    const choose = () =>
-        referencePolicy({
-            state,
-            side: 0,
-            legal: legalActions(state, 0, 0),
-            nowMs: 0,
-        }) as string[];
+    const flasher = place(state, 0, 5, 1, ["move", "attack", "reload", "flashbang:1"]);
+    // both enemies can shoot this unit, which has no weapon to answer with
+    place(state, 0, 5, 3, ["move"]);
+    const first = place(state, 1, 5, 5);
+    const second = place(state, 1, 5, 6);
 
-    // the unit at (5, 3) is 4 from the enemy at (5, 7): exposed on open ground
-    const picked = parseAction(choose()[0]);
-    assert.equal(picked.kind, "smoke_grenade");
+    const picked = choose(state);
+    assert.equal(picked.kind, "flashbang");
     const throwing = picked as EffectThrowAction;
-    const covered = blastUnits(state, throwing.tx, throwing.ty, 2);
-    assert.ok(covered.every((unit) => unit.side === 0), "no enemy in it");
-    assert.ok(covered.some((unit) => unit.x === 5 && unit.y === 3));
+    assert.deepEqual([flasher.x, flasher.y], [throwing.x, throwing.y]);
+    const burst = blastUnits(state, throwing.tx, throwing.ty, 2);
+    assert.ok(burst.includes(first) && burst.includes(second), "both in it");
+    assert.ok(burst.every((unit) => unit.side === 1), "none of mine in it");
 
-    // in cover already, or smoked already, or not within the enemy's reach: no throw
-    state.tiles[5][3] = { kind: "cover", left: 0, top: 0, right: 2, bottom: 0 };
-    assert.notEqual(parseAction(choose()[0]).kind, "smoke_grenade");
-    state.tiles[5][3] = { kind: "empty" };
-    // (the thrower stands 6 from the enemy: exposed too, so both have to be in smoke)
-    state.units[0].effects = [{ kind: "smoke", turns: 2 }];
-    state.units[2].effects = [{ kind: "smoke", turns: 2 }];
-    assert.notEqual(parseAction(choose()[0]).kind, "smoke_grenade");
-    state.units[0].effects = [];
-    state.units[2].effects = [];
-    [enemy.x, enemy.y] = [0, 9];
-    [state.units[1].x, state.units[1].y] = [1, 9];
-    assert.notEqual(parseAction(choose()[0]).kind, "smoke_grenade");
+    // the throw cost 1 AP: the shot is next, and it still lands on a dazed target
+    const after = applyDeterministic(state, picked);
+    assert.equal(choose(after).kind, "attack");
+});
+
+test("the reference bot flashbangs a sure shot when its own shot is weak", () => {
+    const state = arena();
+    const flasher = place(state, 0, 5, 1, ["move", "attack", "reload", "flashbang:1"]);
+    flasher.stats = { ...BASE, aim: 40 };
+    place(state, 0, 5, 3, ["move"]);
+    place(state, 1, 5, 5);
+
+    const shot = legalActions(state, 0, 0).find((a) => a.kind === "attack")!;
+    assert.ok(shot.hitChance! >= 35 && shot.hitChance! < 50, "a shot worth taking, but weak");
+    assert.equal(choose(state).kind, "flashbang");
+});
+
+test("the reference bot shoots when its shot is strong and the threat modest", () => {
+    const state = arena();
+    place(state, 0, 5, 1, ["move", "attack", "reload", "flashbang:1"]);
+    // armored enough that the one enemy hits it less than the flasher hits the enemy
+    const guard = place(state, 0, 5, 3, ["move"]);
+    guard.stats = { ...BASE, defense: 30 };
+    place(state, 1, 5, 5);
+    assert.equal(choose(state).kind, "attack");
+});
+
+test("the reference bot never flashbangs where one of its own units is in the burst", () => {
+    // a corridor: every tile the thrower reaches that dazes the enemy dazes the ally next to it
+    const state = arena(1, 10);
+    place(state, 0, 0, 2, ["attack", "reload", "flashbang:1"]);
+    place(state, 0, 0, 5, ["move"]);
+    place(state, 1, 0, 6);
+    const throws = legalActions(state, 0, 0).filter((a) => a.kind === "flashbang");
+    assert.ok(throws.length > 0 && throws.every((a) => a.alliesHit! > 0), "every burst hits mine");
+    assert.notEqual(choose(state).kind, "flashbang");
+});
+
+test("the reference bot never throws a smoke grenade, even to units under fire", () => {
+    const state = arena();
+    state.turn = 4;
+    place(state, 0, 5, 3, ["smoke_grenade:1"]);
+    place(state, 0, 6, 3, []);
+    place(state, 1, 5, 7);
+    place(state, 1, 6, 7);
+    assert.ok(legalActions(state, 0, 0).some((a) => a.kind === "smoke_grenade"), "a throw is legal");
+    assert.notEqual(choose(state).kind, "smoke_grenade");
+});
+
+test("the reference bot frags clustered enemies, and not where its own units would be hit", () => {
+    const state = arena();
+    const thrower = place(state, 0, 5, 1, ["move", "attack", "reload", "grenade:1"]);
+    const first = place(state, 1, 5, 5);
+    const second = place(state, 1, 5, 6);
+
+    const picked = choose(state) as ThrowAction;
+    assert.equal(picked.kind, "grenade");
+    assert.deepEqual([thrower.x, thrower.y], [picked.x, picked.y]);
+    const burst = blastUnits(state, picked.tx, picked.ty, 2);
+    assert.ok(burst.includes(first) && burst.includes(second), "both in it");
+    assert.ok(burst.every((unit) => unit.side === 1), "none of mine in it");
+
+    // the thrower is next to them: any throw that reaches them would catch it
+    place(state, 0, 5, 4, ["move"]);
+    const open = legalActions(state, 0, 0).filter((a) => a.kind === "grenade" && !a.alliesHit);
+    const next = choose(state);
+    if (next.kind === "grenade") assert.ok(open.some((a) => a.id === actionId(next)));
+    const [throwOne] = legalActions(state, 0, 0).filter((a) => a.kind === "grenade" && a.alliesHit);
+    assert.ok(throwOne, "a throw that would hit its own unit is legal, and not chosen");
+    assert.notEqual(actionId(next), throwOne.id);
+});
+
+test("the reference bot frags the cover an armored enemy stands behind", () => {
+    const state = arena();
+    place(state, 0, 5, 1, ["move", "attack", "reload", "grenade:1"]).ammo = 0;
+    place(state, 0, 4, 1, ["attack", "reload"]);
+    place(state, 0, 6, 1, ["attack", "reload"]);
+    const enemy = place(state, 1, 5, 5);
+    // armor 3 takes the frag down to 1 damage: the throw is not worth it for the damage alone
+    enemy.stats = { ...BASE, armor: 3 };
+    assert.notEqual(choose(state).kind, "grenade");
+
+    // dug in behind high cover, which the frag takes with it: every shot at it gets easier
+    const high = { kind: "cover", left: 2, top: 2, right: 2, bottom: 2 } as const;
+    state.tiles[5][4] = high;
+    state.tiles[5][5] = high;
+    const picked = choose(state) as ThrowAction;
+    assert.equal(picked.kind, "grenade");
+    assert.ok(blastUnits(state, picked.tx, picked.ty, 2).includes(enemy));
 });
 
 test("a bot is not given a throw it has no action for, or one already spent", () => {
