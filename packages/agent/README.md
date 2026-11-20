@@ -313,9 +313,18 @@ who controls its account.
 | `GHOSTS_OWNER`                                           | Owner to act as when the key is its alias    |
 | `GHOSTS_RECOVERY`                                        | Wallet that can take the `Account` over      |
 | `GHOSTS_KEY_FILE`                                        | Key location                                 |
-| `GHOSTS_RPC_URL`                                         | Fullnode gRPC URL                            |
+| `GHOSTS_RPC_URL`                                         | Fullnode gRPC-web URL; Mysten's public node by default |
+| `GHOSTS_RPC_RPS`, `GHOSTS_RPC_BURST`                     | Requests a second this process sends (5) and its burst (5) |
+| `GHOSTS_FLEET_RPS`                                       | A fleet's whole budget (10), split between its seats |
 | `GHOSTS_FEED_URL`                                        | Turn feed; without it the agent polls        |
 | `GHOSTS_MAX_GAS_MIST`                                    | Budget limit per transaction                 |
+
+Every request goes through `src/rpc.ts`: a token bucket shared by the process waits first, and
+a rate limit (429, `RESOURCE_EXHAUSTED`), a busy or unreachable node, or a reset is retried with
+jittered backoff for up to three minutes; a 429 halves the rate, which then climbs back slowly.
+A send is signed once and looked up by its digest before the same bytes go again. The play loop
+rides out what still fails: in a match until the game is over, between games for up to 30
+minutes. The public testnet node answered 429 at about 20 requests a second from one address.
 
 ## Still assumed
 

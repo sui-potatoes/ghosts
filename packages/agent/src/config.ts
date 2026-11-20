@@ -108,9 +108,11 @@ export function agentFromEnv(env: NodeJS.ProcessEnv = process.env): GhostsAgent 
     const reveals = fileRevealStore(env.GHOSTS_RANKED_STATE ?? `${keyFile}.ranked.json`);
     const agent = new GhostsAgent(backend, { wake, recovery, mode, reveals });
     // The feed is keyed by account, which the agent only learns on first read.
-    void backend.account().then(
-        (account) => (known = account?.id ?? known),
-        () => {},
-    );
+    if (env.GHOSTS_FEED_URL) {
+        void backend.account().then(
+            (account) => (known = account?.id ?? known),
+            () => {},
+        );
+    }
     return agent;
 }

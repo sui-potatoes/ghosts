@@ -13,7 +13,7 @@ import { bcs } from "@mysten/sui/bcs";
 import { SimulationError } from "@mysten/sui/client";
 import type { Signer } from "@mysten/sui/cryptography";
 import { SuiGrpcClient } from "@mysten/sui/grpc";
-import type { Transaction } from "@mysten/sui/transactions";
+import { TransactionDataBuilder, type Transaction } from "@mysten/sui/transactions";
 import {
     deriveDynamicFieldID,
     deriveObjectID,
@@ -74,6 +74,7 @@ import {
     type SearchRole,
 } from "./lobby.ts";
 import { rankedSize, sizeOfQueue, type RankedRules } from "./ranked.ts";
+import { executeSafely, isTransient, resilientFetch, urgent, type ResilientOptions } from "./rpc.ts";
 import { deployLimit, rollsDice } from "./rules.ts";
 import { ActionError, type GameState, type ObjectRef, type Receipt } from "./types.ts";
 
@@ -93,10 +94,22 @@ export interface SuiBackendOptions {
     maxGasMist?: bigint;
     /** The testnet faucet to ask for SUI, Mysten's by default; on `localnet`, the local faucet. */
     faucetUrl?: string;
+    /** How requests reach the node: the process's limiter and retries unless a test sets them. */
+    rpc?: ResilientOptions;
 }
 
-/** How long the `Rules` read is reused: retunes are rare, and every send checks them anyway. */
-const RULES_TTL_MS = 30_000;
+/**
+ * How long the `Rules` read is reused: retunes are rare, every send checks them anyway, and a
+ * search reads them fresh.
+ */
+const RULES_TTL_MS = 300_000;
+/**
+ * How long an object read is reused. It only folds the reads of one look at the game together
+ * (`wait` reads the `Account` and its game several times over); any send clears it.
+ */
+const READ_TTL_MS = 1_000;
+/** The reference gas price changes once an epoch (a day on testnet). */
+const GAS_PRICE_TTL_MS = 600_000;
 /** The local faucet `sui start --with-faucet` serves by default. */
 const LOCAL_FAUCET = "http://127.0.0.1:9123";
 
@@ -143,14 +156,53 @@ export function createSuiBackend(options: SuiBackendOptions): Backend {
     const client = new SuiGrpcClient({
         network,
         baseUrl: options.rpcUrl ?? defaultRpc(network),
+        fetch: resilientFetch(options.rpc),
     });
     let accountId: string | null = null;
+    /** The game the `Account` was last seen in: read along with it, in one request. */
+    let lastGame: string | null = null;
+    let gasPrice: { price: string; atMs: number } | null = null;
+    type Read = Exclude<
+        Awaited<ReturnType<typeof client.core.getObjects<{ content: true }>>>["objects"][number],
+        Error
+    >;
+    const reads = new Map<string, { atMs: number; read: Promise<Read> }>();
     let rulesRead: { rules: RankedRules; atMs: number } | null = null;
     let aliasConfirmed = address === signerAddress;
 
-    async function content(objectId: string) {
-        const { object } = await client.core.getObject({ objectId, include: { content: true } });
-        return object;
+    /**
+     * Objects by ID, in one request for those not read in the last `READ_TTL_MS`. A missing one
+     * rejects as `getObject` would.
+     */
+    function contentsOf(objectIds: string[]): Promise<Read>[] {
+        const now = Date.now();
+        const key = (id: string) => normalizeSuiAddress(id);
+        const missing = [...new Set(objectIds.map(key))].filter((id) => {
+            const cached = reads.get(id);
+            return !cached || now - cached.atMs > READ_TTL_MS;
+        });
+        if (missing.length > 0) {
+            const batch = client.core.getObjects({ objectIds: missing, include: { content: true } });
+            missing.forEach((id, i) => {
+                const read = batch.then(({ objects }) => {
+                    const object = objects[i];
+                    if (object instanceof Error) throw object;
+                    return object;
+                });
+                read.catch(() => reads.delete(id));
+                reads.set(id, { atMs: now, read });
+            });
+        }
+        return objectIds.map((id) => reads.get(key(id))!.read);
+    }
+
+    function content(objectId: string): Promise<Read> {
+        return contentsOf([objectId])[0];
+    }
+
+    /** What a send changed is read afresh. */
+    function forgetReads() {
+        reads.clear();
     }
 
     async function accountIdOf(owner: string): Promise<string | null> {
@@ -195,11 +247,18 @@ export function createSuiBackend(options: SuiBackendOptions): Backend {
         return accountId;
     }
 
+    async function referencePrice(): Promise<string> {
+        if (gasPrice && Date.now() - gasPrice.atMs < GAS_PRICE_TTL_MS) return gasPrice.price;
+        const { referenceGasPrice } = await client.core.getReferenceGasPrice();
+        gasPrice = { price: referenceGasPrice, atMs: Date.now() };
+        return referenceGasPrice;
+    }
+
     /** A dice roll's cost depends on its result (a kill does more), so it gets more headroom. */
     async function setBudget(tx: Transaction, headroom: bigint, floor: bigint): Promise<void> {
-        const [simulation, { referenceGasPrice }] = await Promise.all([
+        const [simulation, referenceGasPrice] = await Promise.all([
             client.core.simulateTransaction({ transaction: tx, include: { effects: true } }),
-            client.core.getReferenceGasPrice(),
+            referencePrice(),
         ]);
         if (simulation.FailedTransaction) throw refusal(simulation.FailedTransaction.status.error);
 
@@ -288,19 +347,20 @@ export function createSuiBackend(options: SuiBackendOptions): Backend {
                 ? refusal(error.executionError)
                 : new ActionError("rejected", message, true);
         }
-        if (
-            /unavailable|resource.?exhausted|too many|\b429\b|\b503\b|fetch failed/i.test(message)
-        ) {
-            return new ActionError("congested", "The network is busy: try again.", true);
+        if (isTransient(error)) {
+            return new ActionError("congested", `The network is busy: try again. (${message})`, true);
         }
         return error;
     }
 
     async function send(tx: Transaction, headroom = 130n, floor = 0n): Promise<Receipt> {
         try {
-            return await sendChecked(tx, headroom, floor);
+            // a send is what a turn waits on: it goes ahead of the polls
+            return await urgent(() => sendChecked(tx, headroom, floor));
         } catch (error) {
             throw translated(error);
+        } finally {
+            forgetReads();
         }
     }
 
@@ -308,16 +368,35 @@ export function createSuiBackend(options: SuiBackendOptions): Backend {
         await confirmAlias();
         tx.setSender(address);
         await setBudget(tx, headroom, floor);
-        const result = await client.core.signAndExecuteTransaction({
-            transaction: tx,
-            signer,
-            include: { effects: true },
+        // Signed once: the same bytes are the same digest, so a send whose answer was lost is
+        // looked up by it, and sent again only when the chain never saw it.
+        const bytes = await tx.build({ client });
+        const { signature } = await signer.signTransaction(bytes);
+        const digest = TransactionDataBuilder.getDigestFromBytes(bytes);
+        const result = await executeSafely({
+            execute: () =>
+                client.core.executeTransaction({
+                    transaction: bytes,
+                    signatures: [signature],
+                    include: { effects: true },
+                }),
+            lookup: async () => {
+                try {
+                    return await client.core.getTransaction({ digest, include: { effects: true } });
+                } catch (error) {
+                    if (isNotFound(error)) return null;
+                    throw error;
+                }
+            },
+            onRetry: ({ attempt, found }) =>
+                console.error(`send ${digest}: answer lost, ${found ? "found it" : "not on chain yet"} (try ${attempt})`),
         });
         if (result.FailedTransaction) throw refusal(result.FailedTransaction.status.error);
 
-        const { digest, effects } = result.Transaction;
-        // The next read must see this transaction, or the agent plans on a stale game.
-        await client.core.waitForTransaction({ digest });
+        const { effects } = result.Transaction;
+        // The next read must see this transaction, or the agent plans on a stale game. It ran
+        // either way: a node too busy to say so only makes the next read a little early.
+        await client.core.waitForTransaction({ digest }).catch(() => undefined);
 
         const gas = effects.gasUsed;
         const gasMist =
@@ -599,7 +678,11 @@ export function createSuiBackend(options: SuiBackendOptions): Backend {
         async account() {
             accountId ??= await accountIdOf(address);
             if (!accountId) return null;
-            return decodeAccount((await content(accountId)).content);
+            // the game it was last in comes along in the same request, for the read that follows
+            const [read] = contentsOf(lastGame ? [accountId, lastGame] : [accountId]);
+            const account = decodeAccount((await read).content);
+            lastGame = account.search.kind === "playing" ? account.search.game : null;
+            return account;
         },
 
         async accountById(id) {

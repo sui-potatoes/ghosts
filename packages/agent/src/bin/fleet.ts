@@ -18,6 +18,19 @@
  *                                               --patience S stops a bot left alone in its tier
  *   ghosts-fleet clients --agents 10 --games 1  a scripted MCP client in every seat
  *   ghosts-fleet play --agents 10 --games 1     an LLM in every seat, through its MCP server
+ *   ghosts-fleet settle --agents 10             leave every seat idle: a search cancelled, a notice
+ *                                               dismissed, a reveal sent, a game played out
+ *
+ * `--first N` starts the seats at agent-N (`--first 11 --agents 10` is seats 11 to 20).
+ *
+ * Every seat reads the chain through the same public node, so the fleet shares one request
+ * budget: `--rps` (or `GHOSTS_FLEET_RPS`), 10 a second by default, half of what the public testnet
+ * node took before it answered 429. A command that runs the seats in this process (`run`,
+ * `status`, `settle`) holds the whole budget; `bots`, `clients` and `play` give each seat process
+ * its share as `GHOSTS_RPC_RPS`, and start the seats `--stagger` seconds apart (3-7). `bots`
+ * restarts a seat whose process died (`--restarts`, 5 each, 10 s doubling to 2 min apart), stops
+ * every seat on SIGINT or SIGTERM once its game is over (a second signal kills them), and prints a
+ * summary. `GHOSTS_RPC_URL` points every seat at another node.
  *
  * `--mode ranked` (the default) plays ranked games of `--size` (3), each bot with a squad built
  * for the game, some randomness in it; `--mode stakes` plays the owned recruits, which `init`
@@ -38,11 +51,21 @@ import { parseArgs } from "node:util";
 
 import { gamesPlayed } from "../agent.ts";
 import { ensureFleetName, fleetName } from "../callsign.ts";
-import { ensureSeat, readSeatRecord, runSeat } from "../fleet.ts";
+import {
+    ensureSeat,
+    readSeatRecord,
+    runSeat,
+    settleSeat,
+    superviseSeats,
+    type SeatChild,
+    type SeatSummary,
+} from "../fleet.ts";
 import { agentFromEnv } from "../config.ts";
 import { TRIGGER_BALANCE } from "../funds.ts";
 import { queueName } from "../lobby.ts";
 import { tierName, tierOf } from "../ranked.ts";
+import { configureProcessLimiter, statsLine } from "../rpc.ts";
+import { TICKET_TTL_MS } from "../rules.ts";
 
 const BIN = dirname(fileURLToPath(import.meta.url));
 const MIST_PER_SUI = 1_000_000_000;
@@ -62,11 +85,22 @@ const { values, positionals } = parseArgs({
         dir: { type: "string" },
         "per-hour": { type: "string", default: "12" },
         pause: { type: "string", default: "5-30" },
+        first: { type: "string", default: "1" },
+        rps: { type: "string" },
+        stagger: { type: "string", default: "3-7" },
+        restarts: { type: "string", default: "5" },
     },
 });
 const DIR =
     values.dir ?? process.env.GHOSTS_FLEET_DIR ?? join(homedir(), ".config", "ghosts", "fleet");
-const seats = Array.from({ length: Number(values.agents) }, (_, i) => i + 1);
+const seats = Array.from({ length: Number(values.agents) }, (_, i) => i + Number(values.first));
+/** Requests a second for the whole fleet; each seat process gets its share. */
+const FLEET_RPS = Number(values.rps ?? process.env.GHOSTS_FLEET_RPS ?? 10);
+if (!(FLEET_RPS > 0)) throw new Error(`--rps is a positive number, not ${values.rps}.`);
+const SEAT_RPS = Math.round((FLEET_RPS / Math.max(1, seats.length)) * 1000) / 1000;
+// this process holds the whole budget: the seats it runs itself share it
+configureProcessLimiter({ rps: FLEET_RPS });
+const [staggerLow, staggerHigh] = values.stagger!.split("-").map((n) => Number(n) * 1000);
 const games = Number(values.games);
 if (values.mode !== "ranked" && values.mode !== "stakes") {
     throw new Error(`--mode is ranked or stakes, not ${values.mode}.`);
@@ -83,20 +117,32 @@ const env = (seat: number) => ({
     GHOSTS_KEY_FILE: keyFile(seat),
     GHOSTS_MODE: MODE,
 });
+/** A seat process's environment: its seat, and its share of the fleet's request budget. */
+const childEnv = (seat: number) => ({
+    ...process.env,
+    ...env(seat),
+    GHOSTS_RPC_RPS: String(SEAT_RPS),
+});
 
 function writeMcpConfig(seat: number) {
     const server = {
         command: process.execPath,
         args: ["--no-warnings", "--experimental-strip-types", resolve(BIN, "mcp.ts")],
         // the deployment's ids come along, so the server plays where the fleet does
-        env: { ...deploymentEnv(), ...env(seat) },
+        env: { ...deploymentEnv(), ...env(seat), GHOSTS_RPC_RPS: String(SEAT_RPS) },
     };
     writeFileSync(mcpFile(seat), JSON.stringify({ mcpServers: { ghosts: server } }, null, 2));
 }
 
 /** The `GHOSTS_*` settings of this shell, but those a seat sets for itself. */
 function deploymentEnv(): Record<string, string> {
-    const own = new Set(["GHOSTS_KEY_FILE", "GHOSTS_MODE", "GHOSTS_SEAT", "GHOSTS_RANKED_STATE"]);
+    const own = new Set([
+        "GHOSTS_KEY_FILE",
+        "GHOSTS_MODE",
+        "GHOSTS_SEAT",
+        "GHOSTS_RANKED_STATE",
+        "GHOSTS_RPC_RPS",
+    ]);
     return Object.fromEntries(
         Object.entries(process.env).filter(
             (entry): entry is [string, string] =>
@@ -231,6 +277,10 @@ async function run() {
     await Promise.all(
         agents.map(async (agent, i) => {
             const seat = seats[i];
+            // staggered, so the seats do not all search and read at once
+            await new Promise((resolve) =>
+                setTimeout(resolve, i * (staggerLow + Math.random() * (staggerHigh - staggerLow))),
+            );
             try {
                 await runSeat(agent, {
                     size: Number(values.size),
@@ -251,7 +301,27 @@ async function run() {
         }),
     );
     log.end();
+    console.log("rpc", JSON.stringify(statsLine()));
     console.log("every seat is settled: none searching, in a lobby or waiting to reveal");
+}
+
+/** Every seat left idle: what a crashed run left behind is cleaned up, games played out. */
+async function settle() {
+    await Promise.all(
+        seats.map(async (seat, i) => {
+            await new Promise((resolve) => setTimeout(resolve, i * 1_000));
+            const agent = agentFromEnv({ ...process.env, ...env(seat) });
+            try {
+                const before = await stateOf(agent);
+                await settleSeat(agent);
+                console.log(`agent-${seat} ${before} -> ${await stateOf(agent)}`);
+            } catch (error) {
+                console.log(`agent-${seat} settle failed: ${(error as Error).message}`);
+                process.exitCode = 1;
+            }
+        }),
+    );
+    console.log("rpc", JSON.stringify(statsLine()));
 }
 
 /** The CLI wallet sends what the faucet did not cover. */
@@ -271,9 +341,10 @@ async function stateOf(agent: ReturnType<typeof agentFromEnv>): Promise<string> 
     const account = await agent.backend.account();
     if (!account) return "no account";
     const now = Date.now();
+    const left = Math.ceil((account.suspendedUntilMs - now) / 60_000);
     const suspended =
         now < account.suspendedUntilMs
-            ? ` suspended until ${new Date(account.suspendedUntilMs).toISOString()}`
+            ? ` SUSPENDED until ${new Date(account.suspendedUntilMs).toISOString()} (${left} min left)`
             : "";
     if (account.search.kind === "playing") return `playing ${account.search.game}${suspended}`;
     if (account.search.kind === "idle") return `idle${suspended}`;
@@ -287,7 +358,9 @@ async function stateOf(agent: ReturnType<typeof agentFromEnv>): Promise<string> 
         case "seat_waiting":
             return `seat waiting in ${role.game} (${queueName(role.queue)})`;
         case "queued":
-            return `searching ${queueName(role.queue)} ${since}s`;
+            return since * 1000 > TICKET_TTL_MS
+                ? `searching ${queueName(role.queue)} ${since}s STALE: the ticket is past its lifetime`
+                : `searching ${queueName(role.queue)} ${since}s`;
         case "hosting_open":
         case "hosting_invite":
             return `hosting a lobby ${since}s`;
@@ -332,50 +405,132 @@ async function status() {
     }
 }
 
-/** Run a child per seat, logging to a file, and wait for all of them. */
-async function runAll(tag: string, start: (seat: number) => ReturnType<typeof spawn>) {
+/**
+ * A process per seat, logging to a file, started `--stagger` apart with its share of the budget;
+ * restarted after an unexpected exit (bots only: they count their games), and stopped with this
+ * process. Prints a line per seat at the end.
+ */
+async function runAll(
+    tag: string,
+    start: (seat: number, remaining: number) => ReturnType<typeof spawn>,
+    restarts = 0,
+): Promise<SeatSummary[]> {
     mkdirSync(DIR, { recursive: true, mode: 0o700 });
-    const exits = seats.map(
-        (seat) =>
-            new Promise<number>((done) => {
-                const log = createWriteStream(join(DIR, `agent-${seat}.${tag}.log`), {
-                    flags: "a",
-                });
-                const child = start(seat);
-                child.stdout?.pipe(log);
-                child.stderr?.pipe(log);
-                child.on("close", (code) => {
-                    console.log(`agent-${seat} exited ${code}`);
-                    done(code ?? 1);
-                });
-            }),
+    const stop = new AbortController();
+    const children = new Set<ReturnType<typeof spawn>>();
+    let signals = 0;
+    const onSignal = () => {
+        signals++;
+        if (signals === 1) {
+            console.log("stopping: every seat ends once its game is over (again to kill them)");
+            stop.abort();
+        } else {
+            children.forEach((child) => child.kill("SIGKILL"));
+            process.exit(1);
+        }
+    };
+    process.on("SIGINT", onSignal);
+    process.on("SIGTERM", onSignal);
+    // whatever happens to this process, no seat outlives it
+    process.on("exit", () => children.forEach((child) => child.kill("SIGKILL")));
+
+    const gamesLog = createWriteStream(join(DIR, "games.log"), { flags: "a" });
+    const logs = new Map<number, ReturnType<typeof createWriteStream>>();
+    const logOf = (seat: number) => {
+        if (!logs.has(seat)) {
+            logs.set(seat, createWriteStream(join(DIR, `agent-${seat}.${tag}.log`), { flags: "a" }));
+        }
+        return logs.get(seat)!;
+    };
+    const say = (line: string) => console.log(`${new Date().toISOString()} ${line}`);
+    console.log(
+        `${seats.length} seats, ${FLEET_RPS} requests/s for the fleet: ${SEAT_RPS} a seat, ` +
+            `starts ${staggerLow / 1000}-${staggerHigh / 1000} s apart`,
     );
-    const codes = await Promise.all(exits);
-    if (codes.some((code) => code !== 0)) process.exitCode = 1;
+    const summaries = await superviseSeats({
+        seats,
+        games,
+        maxRestarts: restarts,
+        staggerMs: [staggerLow, staggerHigh || staggerLow],
+        signal: stop.signal,
+        log: say,
+        start(seat, remaining, attempt) {
+            const child = start(seat, remaining);
+            children.add(child);
+            child.on("close", () => children.delete(child));
+            logOf(seat).write(`=== ${new Date().toISOString()} start ${attempt + 1}, ${remaining} game(s) to play\n`);
+            return child as SeatChild;
+        },
+        onLine(seat, line) {
+            logOf(seat).write(`${line}\n`);
+            const result = /^result (\{.*\})$/.exec(line)?.[1];
+            if (result) {
+                const out = `${new Date().toISOString()} agent-${seat} ${result}`;
+                console.log(out);
+                gamesLog.write(`${out}\n`);
+            } else if (/ stopped: |cancelled the search/.test(line)) say(`agent-${seat} ${line}`);
+        },
+    });
+    gamesLog.end();
+    logs.forEach((log) => log.end());
+
+    let totalRequests = 0;
+    let totalMinutes = 0;
+    let limited = 0;
+    let retries = 0;
+    console.log("=== summary");
+    for (const summary of summaries) {
+        const rpc = summary.rpc;
+        if (rpc) {
+            totalRequests += rpc.requests ?? 0;
+            totalMinutes += rpc.minutes ?? 0;
+            limited += rpc.limited ?? 0;
+            retries += rpc.retries ?? 0;
+        }
+        const tally = ["won", "lost", "draw"].map((r) => summary.results.filter((x) => x === r).length);
+        console.log(
+            `agent-${summary.seat} ${summary.end}: ${summary.played} game(s) (won ${tally[0]}, ` +
+                `lost ${tally[1]}, draw ${tally[2]}), ${summary.restarts} restart(s)` +
+                (rpc ? `, ${rpc.perMinute} requests/min, ${rpc.limited} rate limited, ${rpc.retries} retries` : "") +
+                (summary.end === "failed" ? `: ${summary.reason}` : ""),
+        );
+    }
+    console.log(
+        `fleet: ${summaries.reduce((n, s) => n + s.played, 0)} seat-games, ` +
+            `${summaries.reduce((n, s) => n + s.restarts, 0)} restarts, ` +
+            `${summaries.filter((s) => s.end === "failed").length} failed seats, ` +
+            `${totalMinutes ? Math.round((totalRequests / totalMinutes) * 10) / 10 : 0} requests/min a seat, ` +
+            `${limited} rate limited, ${retries} retries`,
+    );
+    if (summaries.some((summary) => summary.end === "failed")) process.exitCode = 1;
+    return summaries;
 }
 
 /** Each seat ready on the current deployment (an Account, a name), then the bot in it. */
 async function bots() {
     for (const seat of seats) await readySeat(seat);
-    return runAll("bot", (seat) =>
-        spawn(
-            process.execPath,
-            [
-                "--experimental-strip-types",
-                resolve(BIN, "bot.ts"),
-                "--mode",
-                values.mode!,
-                "--size",
-                values.size!,
-                ...(values.patience ? ["--patience", values.patience] : []),
-                "--games",
-                String(games),
-                // only used if the seat has no name yet: its first fleet name
-                "--name",
-                fleetName(seat, 0),
-            ],
-            { env: { ...process.env, ...env(seat) }, stdio: ["ignore", "pipe", "pipe"] },
-        ),
+    await runAll(
+        "bot",
+        (seat, remaining) =>
+            spawn(
+                process.execPath,
+                [
+                    "--experimental-strip-types",
+                    resolve(BIN, "bot.ts"),
+                    "--mode",
+                    values.mode!,
+                    "--size",
+                    values.size!,
+                    ...(values.patience ? ["--patience", values.patience] : []),
+                    "--games",
+                    String(remaining),
+                    // only used if the seat has no name yet: its first fleet name
+                    "--name",
+                    fleetName(seat, 0),
+                ],
+                { env: childEnv(seat), stdio: ["ignore", "pipe", "pipe"] },
+            ),
+        Number(values.restarts),
     );
 }
 
@@ -392,7 +547,7 @@ function clients() {
                 "--name",
                 `fleet-mcp-${seat}`,
             ],
-            { env: { ...process.env, ...env(seat) }, stdio: ["ignore", "pipe", "pipe"] },
+            { env: childEnv(seat), stdio: ["ignore", "pipe", "pipe"] },
         ),
     );
 }
@@ -436,7 +591,7 @@ function play() {
     });
 }
 
-const commands: Record<string, () => void | Promise<void>> = {
+const commands: Record<string, () => unknown> = {
     init,
     names,
     fund,
@@ -445,6 +600,7 @@ const commands: Record<string, () => void | Promise<void>> = {
     clients,
     play,
     run,
+    settle,
 };
 const command = commands[positionals[0]];
 if (!command) throw new Error(`Usage: ghosts-fleet ${Object.keys(commands).join("|")}`);

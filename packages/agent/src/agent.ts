@@ -74,6 +74,7 @@ import {
     type UnitActionEntry,
     type UnitEffect,
 } from "./types.ts";
+import { backoffMs, isTransient, urgent } from "./rpc.ts";
 import { pollingWake, type Wake } from "./wake.ts";
 
 /** What `playGames` queues for and `setup` prepares: owned recruits, or a ranked size. */
@@ -120,6 +121,8 @@ export interface Situation {
     result?: "won" | "lost" | "draw";
     /** Set in `game_over`: how the game ended, as the contract names it. */
     ending?: Ending["kind"];
+    /** Set in `suspended`: when the account may search again, by the chain clock. */
+    suspendedUntilMs?: number;
 }
 
 /** What the lobby this agent is in looks like. */
@@ -353,7 +356,10 @@ export class GhostsAgent {
             return {
                 phase: "suspended",
                 actionable: false,
-                next: "Wait: this account left a game behind and can't search yet.",
+                suspendedUntilMs: account.suspendedUntilMs,
+                next:
+                    "Wait: this account left a game behind and can't search until " +
+                    `${new Date(account.suspendedUntilMs).toISOString()}.`,
             };
         }
         if (this.mode.kind === "ranked") {
@@ -577,7 +583,7 @@ export class GhostsAgent {
             const timer = setTimeout(() => rest.abort(), Math.max(0, deadline - Date.now()));
             const stop = () => rest.abort();
             options.signal?.addEventListener("abort", stop, { once: true });
-            await this.wake.next(rest.signal);
+            await this.wake.next(rest.signal, situation);
             clearTimeout(timer);
             options.signal?.removeEventListener("abort", stop);
         }
@@ -1219,7 +1225,47 @@ export interface PlayOptions {
     patienceMs?: number;
     /** False: never search; only play out and complete a game the account is in, then return. */
     queue?: boolean;
+    /**
+     * Asked before each new search: false stops the loop at the next idle moment, a search still
+     * waiting is cancelled first, and a game in progress is played to its end. How a bot stops
+     * on a signal without walking out of a match.
+     */
+    keepQueueing?: () => boolean;
+    /** Told of each finished game the loop counts. */
+    onResult?: (result: { game: string; result: Situation["result"]; ending?: Ending["kind"] }) => void;
+    /**
+     * Told of a transient failure the loop rides out (a rate limit, a busy node): it backs off and
+     * goes on, inside a match until the game is over, outside one up to `giveUpMs` in a row.
+     */
+    onTransient?: (event: { error: unknown; inMatch: boolean; failures: number; delayMs: number }) => void;
+    /** Outside a match, how long transient failures in a row are ridden out before the loop throws. */
+    giveUpMs?: number;
+    /** Sleeps between retries; tests shorten them. */
+    sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
 }
+
+/** Outside a match a seat keeps trying for this long before it calls a failure lasting. */
+const GIVE_UP_MS = 30 * 60_000;
+/** Refused orders in a row a match rides out, each planned again from a fresh read. */
+const MAX_REFUSALS = 20;
+
+function pause(ms: number, signal?: AbortSignal): Promise<void> {
+    return new Promise((resolve) => {
+        if (signal?.aborted) return resolve();
+        const timer = setTimeout(resolve, ms);
+        signal?.addEventListener("abort", () => (clearTimeout(timer), resolve()), { once: true });
+    });
+}
+
+const IN_MATCH: Phase[] = [
+    "deploy",
+    "deployment_over",
+    "your_turn",
+    "opponent_turn",
+    "opponent_timed_out",
+    "game_over",
+    "reveal",
+];
 
 /**
  * The autonomous loop: sleep until there is something to do, ask the policy only
@@ -1232,95 +1278,140 @@ export async function playGames(
     options: PlayOptions = {},
 ): Promise<{ played: number; results: Situation["result"][] }> {
     const games = options.games ?? 1;
+    const sleep = options.sleep ?? pause;
+    const giveUpMs = options.giveUpMs ?? GIVE_UP_MS;
     const results: Situation["result"][] = [];
     const counted = new Set<string>();
-    /** When the current unanswered search began, by real time. */
+    /** When the search for the next game began, by real time: tickets renewed along the way count. */
     let searchingSince: number | null = null;
     /** The game this loop last saw the account in, and the score before it. */
     let playing: string | null = null;
     let scoreBefore: AccountView["score"] | null = null;
+    /** The last phase seen, and transient failures in a row since the first of them. */
+    let phase: Phase | null = null;
+    let failures = 0;
+    let refusals = 0;
+    let failingSince: number | null = null;
+    const done = () => ({ played: results.length, results });
+    const count = (game: string, result: Situation["result"], ending?: Ending["kind"]) => {
+        if (counted.has(game)) return;
+        counted.add(game);
+        results.push(result);
+        options.onResult?.({ game, result, ending });
+    };
 
     while (!options.signal?.aborted) {
-        // An in-memory backend resolves everything at once: yield, or timers never fire.
-        await new Promise((resolve) => setImmediate(resolve));
-        const situation = await agent.wait({ timeoutMs: 60_000, signal: options.signal });
-        options.onEvent?.({ situation });
+        try {
+            // An in-memory backend resolves everything at once: yield, or timers never fire.
+            await new Promise((resolve) => setImmediate(resolve));
+            const situation = await agent.wait({ timeoutMs: 60_000, signal: options.signal });
+            phase = situation.phase;
+            options.onEvent?.({ situation });
 
-        if (situation.phase === "searching" && options.patienceMs !== undefined) {
-            searchingSince ??= Date.now();
-            if (Date.now() - searchingSince > options.patienceMs) {
-                await agent.cancelSearch().catch(() => {});
-                return { played: results.length, results };
+            if (situation.game) searchingSince = null;
+            if (situation.phase === "searching" && options.patienceMs !== undefined) {
+                searchingSince ??= Date.now();
+                if (Date.now() - searchingSince > options.patienceMs) {
+                    await agent.cancelSearch().catch(() => {});
+                    return done();
+                }
             }
-        } else if (situation.phase !== "notice") {
-            searchingSince = null;
-        }
+            if (situation.phase === "searching" && options.keepQueueing?.() === false && !situation.game) {
+                await agent.cancelSearch().catch(() => {});
+                continue;
+            }
 
-        // A game the opponent completed before this loop saw it over still counts: the account
-        // is out of it, and its result is what the ranked score says, if it moved.
-        if (situation.game) playing = situation.game;
-        else if (playing && !counted.has(playing)) {
-            counted.add(playing);
-            const account = await agent.backend.account();
-            results.push(account ? resultFrom(scoreBefore, account.score) : undefined);
-            playing = null;
-        }
-        if (!playing && situation.phase === "idle") {
-            scoreBefore = (await agent.backend.account())?.score ?? null;
-        }
+            // A game the opponent completed before this loop saw it over still counts: the account
+            // is out of it, and its result is what the ranked score says, if it moved.
+            if (situation.game) playing = situation.game;
+            else if (playing && !counted.has(playing)) {
+                const account = await agent.backend.account();
+                count(playing, account ? resultFrom(scoreBefore, account.score) : undefined);
+                playing = null;
+            }
+            if (!playing && situation.phase === "idle") {
+                scoreBefore = (await agent.backend.account())?.score ?? null;
+            }
 
-        switch (situation.phase) {
-            case "no_name":
-                if (!options.name) {
-                    throw new ActionError("no_name", "Pick a name: pass the name option.");
-                }
-                await agent.setName(options.name);
-                break;
-            case "no_account":
-            case "no_squad":
-                if (options.queue === false) return { played: results.length, results };
-                await agent.setup();
-                break;
-            case "idle":
-                if (results.length >= games || options.queue === false) {
-                    return { played: results.length, results };
-                }
-                if (agent.mode.kind === "ranked") {
-                    await agent.findRanked({ size: agent.mode.size });
+            switch (situation.phase) {
+                case "no_name":
+                    if (!options.name) {
+                        throw new ActionError("no_name", "Pick a name: pass the name option.");
+                    }
+                    await agent.setName(options.name);
+                    break;
+                case "no_account":
+                case "no_squad":
+                    if (options.queue === false) return done();
+                    await agent.setup();
+                    break;
+                case "idle":
+                    if (results.length >= games || options.queue === false) return done();
+                    if (options.keepQueueing?.() === false) return done();
+                    searchingSince ??= Date.now();
+                    if (agent.mode.kind === "ranked") {
+                        await agent.findRanked({ size: agent.mode.size });
+                    } else {
+                        await agent.setup(); // hires are free: replace the fallen before queueing
+                        await agent.findGame();
+                    }
+                    // a match may be on already, or a reveal due soon: retry at match speed
+                    phase = "searching";
+                    break;
+                case "game_over":
+                    count(situation.game!, situation.result, situation.ending);
+                    playing = null;
+                    try {
+                        const { receipt } = await urgent(() => agent.act(["complete"]));
+                        options.onEvent?.({ situation, receipt });
+                    } catch (error) {
+                        // Anyone can complete a game, so the opponent may already have; a busy
+                        // node is tried again on the next round.
+                        if (!(error instanceof ActionError) || isTransient(error)) throw error;
+                    }
+                    break;
+                case "deploy":
+                case "deployment_over":
+                case "your_turn":
+                case "opponent_timed_out": {
+                    // what a turn needs goes ahead of everything else this process sends
+                    const receipt = await urgent(async () => {
+                        const { state, side } = await agent.current();
+                        const nowMs = agent.now();
+                        const legal = legalActions(state, side, nowMs);
+                        const ids = await policy({ state, side, legal, nowMs });
+                        return (await agent.act(ids)).receipt;
+                    });
+                    options.onEvent?.({ situation, receipt });
                     break;
                 }
-                await agent.setup(); // hires are free: replace the fallen before queueing
-                await agent.findGame();
-                break;
-            case "game_over":
-                if (!counted.has(situation.game!)) {
-                    counted.add(situation.game!);
-                    results.push(situation.result);
-                }
-                playing = null;
-                try {
-                    const { receipt } = await agent.act(["complete"]);
-                    options.onEvent?.({ situation, receipt });
-                } catch (error) {
-                    // Anyone can complete a game, so the opponent may already have.
-                    if (!(error instanceof ActionError)) throw error;
-                }
-                break;
-            case "deploy":
-            case "deployment_over":
-            case "your_turn":
-            case "opponent_timed_out": {
-                const { state, side } = await agent.current();
-                const nowMs = agent.now();
-                const legal = legalActions(state, side, nowMs);
-                const ids = await policy({ state, side, legal, nowMs });
-                const { receipt } = await agent.act(ids);
-                options.onEvent?.({ situation, receipt });
-                break;
+                default:
+                    break;
             }
-            default:
-                break;
+            failures = 0;
+            refusals = 0;
+            failingSince = null;
+        } catch (error) {
+            if (options.signal?.aborted) break;
+            // A busy node or a stale read: the chain holds the truth, and the next round reads it
+            // again. In a match the loop never stops trying, a missed turn being far better than a
+            // walk out, and even a refused order is planned again from a fresh read, a few times;
+            // outside one it backs off further, and gives up only after `giveUpMs`.
+            const inMatch = phase !== null && IN_MATCH.includes(phase);
+            // a search can turn into a match, or a reveal due, at any poll
+            const quick = inMatch || phase === "searching" || phase === "notice";
+            const refused = inMatch && error instanceof ActionError && !isTransient(error);
+            if (refused && ++refusals > MAX_REFUSALS) throw error;
+            if (!refused && !isTransient(error)) throw error;
+            failures++;
+            failingSince ??= Date.now();
+            if (!quick && Date.now() - failingSince > giveUpMs) throw error;
+            const delayMs = quick
+                ? 250 + backoffMs(failures, Math.random, 500, 4_000)
+                : 1_000 + backoffMs(failures, Math.random, 2_000, 60_000);
+            options.onTransient?.({ error, inMatch, failures, delayMs });
+            await sleep(delayMs, options.signal);
         }
     }
-    return { played: results.length, results };
+    return done();
 }
