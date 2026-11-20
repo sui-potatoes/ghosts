@@ -16,6 +16,8 @@ import { test } from "node:test";
 
 import { blackRain } from "../../packages/engine/src/scenario.ts";
 import { replayEncounter } from "../../packages/engine/src/game.ts";
+import { rebuildEncounter } from "../../packages/engine/src/replay/timeline.ts";
+import { pack, stats } from "../../packages/squad/src/stats.ts";
 import type { GameEvent } from "../../packages/engine/src/events.ts";
 import {
     archive,
@@ -27,6 +29,7 @@ import {
 import { Game, type ChainGame } from "../src/chain/bcs.ts";
 import { CALLS, RecruitField, GAME_TYPE, isRecruitEntry } from "../src/chain/watch-layout.ts";
 import { GHOSTS } from "../src/constants.ts";
+import { terrainAt, toCell } from "../src/chain/match-rules.ts";
 import {
     isGameId,
     listedBy,
@@ -784,4 +787,266 @@ test("a link opens live while the game exists, else its replay; only a game id i
     assert.ok(!isGameId("local"));
     assert.ok(!isGameId("0x12"));
     assert.ok(!isGameId(undefined));
+});
+
+// === The ground a blast leaves: the chain's cover tiles, as the viewer shows them ===
+
+/** `blackRain`'s tiles in the chain's grid (14 rows by 18 columns): where its map has cover. */
+const COVER_TILES: [number, number][] = [
+    [2, 12],
+    [3, 9],
+    [4, 5],
+    [6, 13],
+    [6, 14],
+    [9, 6],
+    [9, 7],
+    [9, 11],
+    [9, 12],
+    [11, 3],
+];
+const BOUNDS = blackRain.map.bounds;
+const cellKey = (cell: readonly number[]) => cell.join(",");
+const tileCell = (tile: number[]) => toCell(tile, BOUNDS);
+
+/** The cover tiles left once the blasts at `centers` (radius 2) have gone off: `Map.explode`. */
+function coverAfter(centers: [number, number][]) {
+    return COVER_TILES.filter(
+        ([row, col]) => !centers.some(([r, c]) => Math.abs(row - r) + Math.abs(col - c) <= 2),
+    );
+}
+
+/** A game on `blackRain`'s grid with `covers` left, side 0's unit at `a`, side 1's far off. */
+function field({
+    covers,
+    a,
+    history,
+    turn = 0,
+    stats = 0n,
+}: {
+    covers: [number, number][];
+    a: [number, number];
+    history: unknown[];
+    turn?: number;
+    stats?: bigint;
+}): ChainGame {
+    const b: [number, number] = [13, 17];
+    const grid = Array.from({ length: 14 }, (_, row) =>
+        Array.from({ length: 18 }, (_, col) => {
+            const at = (p: [number, number]) => p[0] === row && p[1] === col;
+            const unit = at(a)
+                ? { ...mapUnit(R1, A), stats: { value: stats } }
+                : at(b)
+                  ? mapUnit(R2, B)
+                  : null;
+            const cover = covers.some(at);
+            return {
+                tileType: cover
+                    ? { Cover: { left: 1, top: 1, right: 1, bottom: 1 } }
+                    : { Empty: true },
+                unit,
+            };
+        }),
+    );
+    return Game.parse(
+        Game.serialize({
+            id: GAME,
+            map: { id: addr("3a"), grid: { grid, rows: 14, cols: 18 }, fallen: [], units: [] },
+            players: [A, B],
+            state: { Playing: { startedMs: 1_000n, missed: [0, 0] } },
+            turn,
+            positions: [[], []],
+            history,
+            recruits: { id: TABLE, size: 2n },
+            mode: { Stakes: true },
+        } as never).toBytes(),
+    );
+}
+
+const RIGHT = 2;
+const LEFT = 8;
+const blastAt = (origin: number[], target: number[], radius = 2) => [
+    { Grenade: { origin, target } },
+    { Explosion: [target[0], target[1], radius] },
+];
+/**
+ * A game's records: A runs over the cover at (9,6) and (9,7) (a vault), a frag lands
+ * at (9,10) (taking the covers at (9,11) and (9,12), the second two tiles off), A
+ * runs back over the covers, a frag lands at (9,7) (taking (9,6) and (9,7)), A runs
+ * over the same tiles again, now open ground.
+ */
+const BLASTS = {
+    placed: [{ RecruitPlaced: [9, 5] }, { RecruitPlaced: [13, 17] }],
+    run: [{ Move: [9, 4, RIGHT, RIGHT, RIGHT] }],
+    first: blastAt([9, 7], [9, 10]),
+    back: [{ Move: [9, 7, LEFT, LEFT, LEFT] }],
+    second: blastAt([9, 4], [9, 7]),
+    again: [{ Move: [9, 4, RIGHT, RIGHT, RIGHT, RIGHT] }],
+};
+const turnOver = (n: number) => [{ NextTurn: n }, { NextTurn: n + 1 }];
+const RUN = [
+    ...BLASTS.placed,
+    ...BLASTS.run, // 0 move
+    ...turnOver(1), // 1 hostile-phase, 2 turn
+    ...BLASTS.first, // 3 grenade
+    ...turnOver(3), // 4, 5
+    ...BLASTS.back, // 6 move
+    ...BLASTS.second, // 7 grenade
+    ...turnOver(5), // 8, 9
+    ...BLASTS.again, // 10 move
+];
+/** After how many events each blast has gone off. */
+const AFTER_FIRST = 4;
+const AFTER_SECOND = 8;
+const BLAST_CENTERS: [number, number][] = [
+    [9, 10],
+    [9, 7],
+];
+const COUNT = 11;
+
+/** The chain's cover after the first `n` events, by the rule that decides it. */
+const chainCover = (n: number) =>
+    coverAfter(BLAST_CENTERS.slice(0, +(n >= AFTER_FIRST) + +(n >= AFTER_SECOND)));
+
+test("blasts take the cover the chain takes, tile by tile, at every point of the replay and either way round", () => {
+    const first = field({ covers: COVER_TILES, a: [9, 4], history: BLASTS.placed });
+    const last = field({
+        covers: chainCover(COUNT),
+        a: [9, 8],
+        history: RUN,
+        turn: 6,
+    });
+    const start = watchStart(blackRain, first, new Map());
+    const feed = new EventFeed(start, first, blank);
+    assert.equal(feed.take(last), COUNT);
+    assert.deepEqual(
+        feed.events.map((e) => e.type),
+        [
+            "move",
+            "hostile-phase",
+            "turn",
+            "grenade",
+            "hostile-phase",
+            "turn",
+            "move",
+            "grenade",
+            "hostile-phase",
+            "turn",
+            "move",
+        ],
+    );
+    // the vault is the cover there was when the unit moved, not what the last version holds
+    assert.deepEqual(
+        [0, 6, 10].map((i) => (feed.events[i] as Extract<GameEvent, { type: "move" }>).vault),
+        [true, true, false],
+    );
+
+    const covers = (n: number) => {
+        const rules = rebuildEncounter(start.scenario, feed.events, n, start.prepare);
+        return rules.map.covers.map(cellKey).sort();
+    };
+    const expected = (n: number) =>
+        chainCover(n)
+            .map((t) => cellKey(tileCell(t)))
+            .sort();
+    // forward, back to the start, then in no order: the same cover for the same cursor
+    const order = [
+        ...Array.from({ length: COUNT + 1 }, (_, i) => i),
+        ...Array.from({ length: COUNT + 1 }, (_, i) => COUNT - i),
+        5,
+        2,
+        11,
+        4,
+        3,
+        8,
+        7,
+        0,
+        9,
+    ];
+    for (const n of order) assert.deepEqual(covers(n), expected(n), `cover after ${n} events`);
+    assert.notDeepEqual(covers(AFTER_FIRST - 1), covers(AFTER_FIRST), "the first blast took cover");
+    assert.equal(covers(AFTER_FIRST).length, COVER_TILES.length - 2);
+    assert.equal(covers(COUNT).length, COVER_TILES.length - 4);
+
+    // the rules' view of every tile, against the chain's own map at that point
+    for (const n of [0, AFTER_FIRST - 1, AFTER_FIRST, AFTER_SECOND, COUNT]) {
+        const rules = rebuildEncounter(start.scenario, feed.events, n, start.prepare);
+        const chain = field({ covers: chainCover(n), a: [9, 4], history: [] });
+        for (const tile of COVER_TILES)
+            assert.equal(
+                rules.map.isCover(tileCell(tile)),
+                terrainAt(chain, tile) === "cover",
+                `tile ${tile} after ${n} events`,
+            );
+    }
+});
+
+test("an area weapon takes cover only when its stats break the ground", () => {
+    const history = [
+        ...BLASTS.placed,
+        { Attack: { origin: [9, 4], target: [9, 10] } },
+        { Explosion: [9, 10, 2] },
+    ];
+    for (const [envDamage, gone] of [
+        [0, 0],
+        [1, 2],
+    ]) {
+        const packed = pack(stats({ areaSize: 2, envDamage }));
+        const first = field({
+            covers: COVER_TILES,
+            a: [9, 4],
+            history: BLASTS.placed,
+            stats: packed,
+        });
+        const last = field({
+            covers: coverAfter(gone ? [[9, 10]] : []),
+            a: [9, 4],
+            history,
+            stats: packed,
+        });
+        const start = watchStart(blackRain, first, new Map());
+        const feed = new EventFeed(start, first, blank);
+        assert.equal(feed.take(last), 1);
+        const rules = rebuildEncounter(start.scenario, feed.events, 1, start.prepare);
+        assert.equal(rules.map.covers.length, COVER_TILES.length - gone, `env_damage ${envDamage}`);
+    }
+});
+
+test("joining a game under way shows the cover it has left, then follows the blasts that come", () => {
+    // seen from the second blast on: the first is in the history, its cover already gone
+    const joined = field({
+        covers: chainCover(AFTER_FIRST),
+        a: [9, 4],
+        history: RUN.slice(0, RUN.indexOf(BLASTS.back[0]) + 0),
+        turn: 4,
+    });
+    assert.ok(joined.history.some((r) => r.$kind === "Explosion"));
+    const start = watchStart(blackRain, joined, new Map());
+    const opening = blank(start.scenario);
+    start.prepare(opening);
+    assert.deepEqual(
+        opening.map.covers.map(cellKey).sort(),
+        chainCover(AFTER_FIRST)
+            .map((t) => cellKey(tileCell(t)))
+            .sort(),
+        "what the chain has now",
+    );
+    for (const tile of COVER_TILES)
+        assert.equal(opening.map.isCover(tileCell(tile)), terrainAt(joined, tile) === "cover");
+
+    // the game goes on: the next blast takes its own, and a rewind to the opening gives the join back
+    const later = field({ covers: chainCover(COUNT), a: [9, 8], history: RUN, turn: 6 });
+    const feed = new EventFeed(start, joined, blank);
+    assert.ok(feed.take(later) > 0);
+    const end = rebuildEncounter(start.scenario, feed.events, feed.events.length, start.prepare);
+    assert.deepEqual(
+        end.map.covers.map(cellKey).sort(),
+        chainCover(COUNT)
+            .map((t) => cellKey(tileCell(t)))
+            .sort(),
+    );
+    const rewound = rebuildEncounter(start.scenario, feed.events, 0, start.prepare);
+    assert.deepEqual(
+        rewound.map.covers.map(cellKey).sort(),
+        opening.map.covers.map(cellKey).sort(),
+    );
 });

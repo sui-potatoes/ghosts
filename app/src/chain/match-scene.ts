@@ -16,10 +16,13 @@ import type { ChainGame } from "./bcs.ts";
 import {
     blastCells,
     effectsOf,
+    terrainAt,
     toCell,
+    toTile,
     unitActions,
     unitsOnMap,
     type Bounds,
+    type Cell,
 } from "./match-rules.ts";
 
 /** How a unit looks when the scene is told (a recruit's face and armor). */
@@ -76,6 +79,70 @@ export function scenarioFor(
 export function restoreBlasts(rules: EncounterRules, game: ChainGame, bounds: Bounds) {
     for (const cell of blastCells(game, bounds))
         rules.map.applyPropDamage(rules.map.blastProps(cell));
+}
+
+type Props = EncounterRules["map"];
+/** More damage than any prop has health. */
+const BREAK = 1e9;
+type PropDamage = ReturnType<Props["blastProps"]>[number];
+
+/** The cells a prop holds as tactical cover. */
+const coverCells = (prop: Props["props"][number]) =>
+    prop.covers ?? (prop.cover ? [prop.cover] : []);
+
+/**
+ * What a blast the chain ran does to the scene, for a reader that follows the chain
+ * (the viewer): `Map.explode` turns every `Cover` tile within `radius` of the blast
+ * into `Empty`, whatever its health, and only those. So the cover props on those
+ * tiles are destroyed outright, and no other cover prop is touched; the rest of the
+ * scenery breaks as the scene's own blast says (scenery the ground does not keep).
+ * An area weapon without `env_damage` leaves the scene as it is.
+ */
+export function chainBlast(map: Props, at: Cell, radius: number, scorches = true): PropDamage[] {
+    if (!scorches) return [];
+    const changes = new Map<string, PropDamage>();
+    const take = (list: readonly PropDamage[]) => {
+        for (const change of list) {
+            const was = changes.get(change.id);
+            if (!was || was.hp > change.hp) changes.set(change.id, change);
+        }
+    };
+    const covers = new Set(map.props.filter((prop) => coverCells(prop).length).map((p) => p.id));
+    take(map.blastProps(at).filter((change) => !covers.has(change.id)));
+    for (const prop of map.props) {
+        const cells = coverCells(prop);
+        const reached = cells.some(
+            (cell) => Math.abs(cell[0] - at[0]) + Math.abs(cell[1] - at[1]) <= radius,
+        );
+        // the prop's own health is not the question: the tile is cover, then it is not
+        if (reached && map.health(prop.id) > 0) take(map.damageProp(prop.id, BREAK, "blast"));
+    }
+    return [...changes.values()];
+}
+
+/**
+ * The scene as a game that is already under way left it, for the viewer: the cover
+ * the game's map no longer has is gone, exactly (cover is `Cover` tiles, which only a
+ * blast ever turns to `Empty`), and the scenery its blasts reached is broken as they
+ * would have. A game with no blasts in its history is left as the scene has it.
+ */
+export function restoreChainBlasts(rules: EncounterRules, game: ChainGame, bounds: Bounds) {
+    const cells = blastCells(game, bounds);
+    if (!cells.length) return;
+    const map = rules.map;
+    const covers = new Set(map.props.filter((prop) => coverCells(prop).length).map((p) => p.id));
+    for (const cell of cells)
+        map.applyPropDamage(map.blastProps(cell).filter((change) => !covers.has(change.id)));
+    for (const prop of map.props) {
+        const cells = coverCells(prop);
+        // a tile off the game's grid says nothing
+        const gone = cells.some((cell) => {
+            const [row, col] = toTile(cell, bounds);
+            return !!game.map.grid.grid[row]?.[col] && terrainAt(game, [row, col]) !== "cover";
+        });
+        if (gone && map.health(prop.id) > 0)
+            map.applyPropDamage(map.damageProp(prop.id, BREAK, "blast"));
+    }
 }
 
 /** Bring the rules in line with the chain: it decides, the rules only show. */

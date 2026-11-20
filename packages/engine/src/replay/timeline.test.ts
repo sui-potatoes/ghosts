@@ -8,6 +8,7 @@ import { loadoutActions, usesLeft } from "../action-registry.ts";
 import type { GameEvent } from "../events.ts";
 import { distance, Encounter, key, type Cell, type Unit } from "../game.ts";
 import { blackRain } from "../scenario.ts";
+import { Destruction, loadDestruction } from "../scene/destruction.ts";
 import { opensTurn, rebuildEncounter, turnAt, turnsOf } from "./timeline.ts";
 
 /** The squad's gear for these games: every ally carries all three grenades. */
@@ -59,6 +60,9 @@ function state(game: Encounter) {
   return {
     units: structuredClone(game.units),
     props: game.map.props.map((p) => [p.id, game.map.health(p.id)]),
+    // the cover the rules read, not only the props' health behind it
+    covers: game.map.covers.map(key).sort(),
+    coverBy: game.units.map((u) => [u.id, game.cover(u), game.coverAt(u.pos)]),
     turn: game.turn,
     phase: game.phase,
     secured: game.secured,
@@ -99,6 +103,8 @@ test("a whole local game is rebuilt from its journal at every point of it, effec
     const actual = state(rebuilt);
     assert.deepEqual(actual.units, expected.units, `units after ${index} events`);
     assert.deepEqual(actual.props, expected.props, `props after ${index} events`);
+    assert.deepEqual(actual.covers, expected.covers, `cover after ${index} events`);
+    assert.deepEqual(actual.coverBy, expected.coverBy, `cover readouts after ${index} events`);
     assert.deepEqual([actual.turn, actual.phase, actual.secured, actual.result], [expected.turn, expected.phase, expected.secured, expected.result]);
     assert.deepEqual(actual.kills, expected.kills);
     assert.deepEqual(actual.log, expected.log);
@@ -147,4 +153,59 @@ test("turns: one per side's go, the side named by the event that opens it, kills
   assert.equal(turnAt(turns, 5), 2);
   assert.equal(turnAt(turns, 6), 2);
   assert.equal(turnsOf([], 1)[0].side, 1, "a game may open on side 1's turn");
+});
+
+/** What the scene would draw for an encounter's map: which props are standing. */
+async function standing(game: Encounter) {
+  const destruction = new Destruction(game.map, () => {});
+  try {
+    return game.map.props.filter((p) => destruction.isPropVisible(p.id)).map((p) => p.id);
+  } finally {
+    destruction.dispose();
+  }
+}
+
+test("destroyed cover follows the cursor: gone from the blast on, back when stepping before it", async () => {
+  await loadDestruction();
+  const base = new Encounter(blackRain);
+  const [coverProp, other] = base.map.props.filter((p) => p.cover && !p.covers);
+  const cell = coverProp.cover!;
+  assert.ok(base.map.isCover(cell) && base.map.isCover(other.cover!));
+  const thrower = base.allies[0];
+  const events: GameEvent[] = [
+    { type: "hostile-phase" },
+    { type: "turn", turn: 2 },
+    {
+      type: "grenade",
+      unit: thrower.id,
+      at: cell,
+      casualties: [],
+      environment: [{ id: coverProp.id, hp: 0, destroyed: true }],
+    },
+    { type: "hostile-phase" },
+    { type: "turn", turn: 3 },
+  ];
+  const before = 2;
+  const at = 3;
+  const covers = (index: number) => rebuildEncounter(blackRain, events, index, prepare).map.covers.map(key);
+  // forward, then backward, then jumping about: the same state for the same cursor
+  for (const order of [[0, 1, 2, 3, 4, 5], [5, 4, 3, 2, 1, 0], [3, 0, 5, 2, 4, 1]])
+    for (const index of order) {
+      const game = rebuildEncounter(blackRain, events, index, prepare);
+      const gone = index >= at;
+      assert.equal(game.map.isCover(cell), !gone, `cover on ${cell} after ${index} events`);
+      assert.equal(game.map.isCover(other.cover!), true, "the other cover stands");
+      assert.equal(game.map.covers.length, base.map.covers.length - (gone ? 1 : 0));
+      assert.equal((await standing(game)).includes(coverProp.id), !gone, `prop drawn after ${index} events`);
+    }
+  assert.deepEqual(covers(before), covers(0));
+  assert.deepEqual(covers(at), covers(5));
+  assert.notDeepEqual(covers(before), covers(at));
+  // played forward event by event, as a live game's rules take it, the state is the rebuilt one
+  const forward = new Encounter(blackRain);
+  prepare(forward);
+  events.forEach((event, i) => {
+    forward.ingest(event);
+    assert.deepEqual(forward.map.covers.map(key).sort(), covers(i + 1).sort());
+  });
 });

@@ -19,8 +19,11 @@ import { Game, type ChainGame, type Recruit } from "../../../chain/bcs.ts";
 import { endingOf, type GameEnding } from "../../../chain/ending.ts";
 import type { Recruit as LocalRecruit } from "@ghosts/squad/types";
 
+import { unpack } from "@ghosts/squad/stats";
+
 import {
     activeSide,
+    GRENADE_RADIUS,
     gameEvents,
     isDeploying,
     isOver,
@@ -32,7 +35,8 @@ import {
     type FieldView,
 } from "../../../chain/match-rules.ts";
 import {
-    restoreBlasts,
+    chainBlast,
+    restoreChainBlasts,
     scenarioFor,
     syncUnits,
     type UnitLook,
@@ -241,7 +245,7 @@ export function watchStart(
         bounds,
         prepare(rules) {
             syncUnits(rules, first, bounds);
-            restoreBlasts(rules, first, bounds);
+            restoreChainBlasts(rules, first, bounds);
             rules.phase = activeSide(first) === 0 ? "player" : "enemy";
             // The turn number the players see: both sides' goes in a round share it.
             rules.turn = Math.floor(first.turn / 2);
@@ -260,6 +264,11 @@ export class EventFeed {
     private readonly mirror: EncounterRules;
     private readonly bounds: Bounds;
     private seen: number;
+    /** The field as play started, and the cells since turned from cover to open ground. */
+    private readonly opening: ChainGame;
+    private readonly cleared = new Set<string>();
+    /** Which units' area weapons break the ground (`env_damage`). */
+    private readonly scorching = new Set<string>();
 
     constructor(
         start: WatchStart,
@@ -270,6 +279,9 @@ export class EventFeed {
         start.prepare(this.mirror);
         this.bounds = start.bounds;
         this.seen = first.history.length;
+        this.opening = first;
+        for (const { unit } of unitsOnMap(first))
+            if (unpack(BigInt(unit.stats.value)).envDamage) this.scorching.add(unit.recruit);
     }
 
     /** The records `game` has past the last look, as events; returns how many were added. */
@@ -282,9 +294,19 @@ export class EventFeed {
             side: 0,
             unitAt: ([x, z]) =>
                 mirror.units.find((u) => u.hp > 0 && u.pos[0] === x && u.pos[1] === z)?.id,
-            isCover: (cell) => terrainAt(game, tile(cell)) === "cover",
+            // cover as it stood when the unit moved: the opening's, less what blasts took since
+            isCover: (cell) =>
+                terrainAt(this.opening, tile(cell)) === "cover" && !this.cleared.has(`${cell}`),
             coverAt: (cell) => mirror.coverAt(cell),
-            blast: (cell) => mirror.map.blastProps(cell),
+            // the chain's own ground: `Map.explode` takes every cover tile in reach
+            blast: (cell, radius = GRENADE_RADIUS, weapon) => {
+                if (weapon !== undefined && !this.scorching.has(weapon)) return [];
+                for (let x = cell[0] - radius; x <= cell[0] + radius; x++)
+                    for (let z = cell[1] - radius; z <= cell[1] + radius; z++)
+                        if (Math.abs(x - cell[0]) + Math.abs(z - cell[1]) <= radius)
+                            this.cleared.add(`${[x, z]}`);
+                return chainBlast(mirror.map, cell, radius);
+            },
         };
         const before = this.events.length;
         for (const event of gameEvents(game.history.slice(this.seen), field)) {

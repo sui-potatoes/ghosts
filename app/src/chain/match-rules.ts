@@ -575,8 +575,16 @@ export interface FieldView {
     isCover(cell: Cell): boolean;
     /** Whether a unit arriving on a cell would take cover there. */
     coverAt(cell: Cell): boolean;
-    /** What a blast at a cell does to the props around it. */
-    blast(cell: Cell): Extract<GameEvent, { type: "grenade" }>["environment"];
+    /**
+     * What a blast at a cell does to the props around it. `radius` is the one the chain's
+     * `Explosion` record names; `weapon` is the unit whose area weapon went off (none for a
+     * grenade), for a reader that follows what the chain does to the ground.
+     */
+    blast(
+        cell: Cell,
+        radius?: number,
+        weapon?: string,
+    ): Extract<GameEvent, { type: "grenade" }>["environment"];
 }
 
 /** The order `Map.explode` visits tiles in: its neighbors, then the center. */
@@ -641,7 +649,7 @@ export function* gameEvents(records: ChainRecord[], field: FieldView): Generator
     /** The blast at `records[i]`: who is in it, in the order the records name them. */
     const takeBlast = () => {
         const blast = records[i++];
-        if (blast?.$kind !== "Explosion") return { at: null, casualties: [] };
+        if (blast?.$kind !== "Explosion") return { at: null, radius: 0, casualties: [] };
         const [row, col, radius] = blast.Explosion;
         const casualties: { unit: string; damage: number; killed: boolean }[] = [];
         for (const tile of blastTiles(row, col, radius)) {
@@ -650,7 +658,7 @@ export function* gameEvents(records: ChainRecord[], field: FieldView): Generator
             const { damage, killed } = takeHit();
             casualties.push({ unit, damage, killed });
         }
-        return { at: toCell([row, col], bounds), casualties };
+        return { at: toCell([row, col], bounds), radius, casualties };
     };
 
     while (i < records.length) {
@@ -686,8 +694,14 @@ export function* gameEvents(records: ChainRecord[], field: FieldView): Generator
 
                 // an area weapon's hit reads as a blast, whatever stands on the tile
                 if (records[i]?.$kind === "Explosion") {
-                    const { casualties } = takeBlast();
-                    yield { type: "grenade", unit, at, casualties, environment: field.blast(at) };
+                    const { casualties, radius } = takeBlast();
+                    yield {
+                        type: "grenade",
+                        unit,
+                        at,
+                        casualties,
+                        environment: field.blast(at, radius, unit),
+                    };
                     break;
                 }
                 if (records[i]?.$kind === "Miss") {
@@ -724,9 +738,15 @@ export function* gameEvents(records: ChainRecord[], field: FieldView): Generator
                 i++;
                 const unit = field.unitAt(toCell(record.Grenade.origin, bounds));
                 const at = toCell(record.Grenade.target, bounds);
-                const { casualties } = takeBlast();
+                const { casualties, radius } = takeBlast();
                 if (unit)
-                    yield { type: "grenade", unit, at, casualties, environment: field.blast(at) };
+                    yield {
+                        type: "grenade",
+                        unit,
+                        at,
+                        casualties,
+                        environment: field.blast(at, radius),
+                    };
                 break;
             }
             case "Flashbang":
