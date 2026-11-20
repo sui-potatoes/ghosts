@@ -461,10 +461,23 @@ export function useYourGames(accountId: string | null | undefined, owner: string
 // === One game in the viewer ===
 
 /** A game opened for the viewer. */
+/** What the match card and the Explorer link say about a game beyond its events. */
+export interface WatchFacts {
+    /** "Ranked 3x3 · Contractor", "Friendly 3x3" or "Contract". */
+    mode: string;
+    /** The level's name. */
+    level: string;
+    /** The transaction that completed the game, once it is over and known. */
+    endDigest: string | null;
+    /** When that transaction ran (epoch ms); null with no end. */
+    playedAt: number | null;
+}
+
 export type ChainOpened =
     | {
           kind: "watch";
           gameId: string;
+          facts: WatchFacts;
           source: RecordSource;
           live: boolean;
           /** The live game can be rewound to its first turn. */
@@ -559,6 +572,13 @@ export async function openChainGame(
     const intel: IntelSource = (unit, base) =>
         chainUnitIntel(base, recruitById.get(unit.id), startUnits.get(unit.id));
 
+    const facts: WatchFacts = {
+        mode: modeText(story.last),
+        level: start.scenario.briefing.title,
+        endDigest: story.finished ? (story.endTx?.digest ?? null) : null,
+        playedAt: story.finished ? (story.endTx?.timestampMs ?? null) : null,
+    };
+
     if (!story.finished && current) {
         const source = liveSource(
             { start, sides, feed, current },
@@ -584,6 +604,7 @@ export async function openChainGame(
         return {
             kind: "watch",
             gameId,
+            facts,
             source,
             live: true,
             fromStart: story.fromStart,
@@ -603,5 +624,15 @@ export async function openChainGame(
         outcome: () => end,
         events: feed.events,
     });
-    return { kind: "watch", gameId, source, live: false, fromStart: true, sides, squad, intel };
+    return {
+        kind: "watch",
+        gameId,
+        facts,
+        source,
+        live: false,
+        fromStart: true,
+        sides,
+        squad,
+        intel,
+    };
 }

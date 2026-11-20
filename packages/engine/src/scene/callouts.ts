@@ -5,7 +5,7 @@ import type { SceneClock } from "./clock";
 
 /**
  * Shot results over the target in the 3D scene: MISS, CRIT, and the damage as
- * a number. A callout is a DOM node in the plates' layer, projected over the
+ * a number; and RELOADED over a unit whose magazine is full again. A callout is a DOM node in the plates' layer, projected over the
  * target every frame, popped in, risen and faded out on the scene clock, so it
  * follows the replay's speed, holds while it is paused and is cleared by a seek.
  *
@@ -13,7 +13,7 @@ import type { SceneClock } from "./clock";
  * simultaneous ones stack, how long one lives) are tested in node.
  */
 
-export type CalloutKind = "miss" | "hit" | "crit";
+export type CalloutKind = "miss" | "hit" | "crit" | "reload";
 
 /**
  * Whether the damage is shown: "−3" on a hit, "CRIT −8" on a critical. Set to
@@ -53,6 +53,11 @@ export function calloutFor(result: ShotResult, showDamage = SHOW_DAMAGE): Callou
   const damage = `−${result.damage}`;
   if (result.crit) return { kind: "crit", text: showDamage ? `CRIT ${damage}` : "CRIT" };
   return showDamage ? { kind: "hit", text: damage } : null;
+}
+
+/** What a finished reload says over the unit that reloaded. */
+export function reloadCallout(): Callout {
+  return { kind: "reload", text: "RELOADED" };
 }
 
 /** Where the `slot`-th simultaneous callout on a target stands, relative to the first: up, and alternately aside. */
@@ -144,6 +149,16 @@ export class Callouts {
   show(result: ShotResult, target: string, anchor: Anchor, showDamage = SHOW_DAMAGE): boolean {
     const callout = calloutFor(result, showDamage);
     if (!callout) return false;
+    this.add(callout, target, anchor);
+    return true;
+  }
+
+  /** A reload's notice over the unit that reloaded, on the same terms as a shot result. */
+  reloaded(target: string, anchor: Anchor) {
+    this.add(reloadCallout(), target, anchor);
+  }
+
+  private add(callout: Callout, target: string, anchor: Anchor) {
     const taken = new Set<number>();
     for (const c of this.live) if (c.target === target) taken.add(c.slot);
     let slot = 0;
@@ -175,7 +190,6 @@ export class Callouts {
       return true;
     });
     this.wake();
-    return true;
   }
 
   /** Every callout gone at once: a seek leaves none in the air. */

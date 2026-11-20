@@ -94,12 +94,16 @@ export function pauseEntries(opts: {
     briefing: boolean;
     restart: boolean;
     quitLabel: string;
+    /** The briefing entry's words; "Briefing" by default. */
+    briefingLabel?: string;
     /** Further entries of the host's own, between Options and the way out. */
     extra?: readonly PauseEntry[];
 }): PauseEntry[] {
     return [
         { id: "resume", label: "Resume" },
-        ...(opts.briefing ? [{ id: "briefing", label: "Briefing" } as const] : []),
+        ...(opts.briefing
+            ? [{ id: "briefing", label: opts.briefingLabel ?? "Briefing" } as const]
+            : []),
         { id: "options", label: "Options" },
         ...(opts.restart ? [{ id: "restart", label: "Restart encounter" } as const] : []),
         ...(opts.extra ?? []),

@@ -1668,6 +1668,10 @@
 .encounter .shot-callout.miss {
   color: var(--dim);
 }
+.encounter .shot-callout.reload {
+  color: var(--text-color);
+  border-color: color-mix(in srgb, var(--text-secondary) 55%, transparent);
+}
 .encounter .shot-callout.hit {
   color: color-mix(in srgb, var(--hostile) 80%, var(--text-color));
   border-color: color-mix(in srgb, var(--hostile) 55%, transparent);

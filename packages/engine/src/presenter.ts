@@ -92,7 +92,6 @@ export async function present(event: GameEvent) {
     case "reload":
       audio.tone("reload", unit!.weapon);
       await battlefield.play(event);
-      if (ours(unit!)) notify(`${unit!.name} / MAGAZINE READY`);
       return;
     case "grenade":
     case "flashbang":

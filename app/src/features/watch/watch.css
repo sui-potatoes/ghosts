@@ -210,6 +210,12 @@
 .watch-button[data-tone="live"] {
     border-style: dashed;
 }
+/* The Replay marker, where the Live chip stands on a match that is over. */
+.watch-mode {
+    flex: none;
+    border-style: dashed;
+    color: var(--text-secondary);
+}
 @keyframes watch-live {
     50% {
         opacity: 0.35;

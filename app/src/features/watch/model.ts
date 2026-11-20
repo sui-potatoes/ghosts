@@ -8,7 +8,9 @@
  * in `tests/watch-viewer.test.ts`.
  */
 
-import type { PlaybackState, Speed, WatchSide } from "@ghosts/engine";
+import type { ObserverCard, PlaybackState, Speed, WatchOutcome, WatchSide } from "@ghosts/engine";
+
+import { agoText } from "./chain/list.ts";
 
 /** The speeds in order, as the engine has them (`SPEEDS`), without loading it. */
 export const SPEED_STEPS: readonly Speed[] = [0.5, 1, 2, 4];
@@ -233,5 +235,62 @@ export function transportKeys(
         "+": () => playback.stepSpeed(1),
         [WATCH_KEYS.live]: () => (playback.getState().growing ? playback.goLive() : false),
         [WATCH_KEYS.restart]: () => playback.restart(),
+    };
+}
+
+/** What the card knows about a match beyond its events. */
+export interface CardFacts {
+    mode?: string;
+    level?: string;
+    /** When it was completed (epoch ms), once it is over. */
+    playedAt?: number | null;
+}
+
+/** How a match ended, in words: who won and how, or why nobody did. */
+export function resultText(
+    outcome: WatchOutcome | null,
+    sides: readonly [WatchSide, WatchSide],
+): string {
+    if (!outcome) return "No result";
+    if (outcome.winner === null) return outcome.reason ?? "No winner";
+    const won = `${sides[outcome.winner].name} won`;
+    return `${won} · ${outcome.reason ?? "by elimination"}`;
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+/**
+ * The match card, the viewer's counterpart of the mission briefing: a replay is
+ * marked "Replay" and a live match "Live" in the eyebrow; the title is who
+ * played whom; the facts are labelled.
+ */
+export function matchCard(opts: {
+    live: boolean;
+    sides: readonly [WatchSide, WatchSide];
+    turns: PlaybackState["turns"];
+    outcome: WatchOutcome | null;
+    over: boolean;
+    facts?: CardFacts;
+    now: number;
+}): ObserverCard {
+    const { sides, facts = {}, live } = opts;
+    const rounds = new Set(opts.turns.map((t) => t.round)).size;
+    const rows: [string, string][] = [];
+    if (facts.mode) rows.push(["Mode", facts.mode]);
+    if (facts.level) rows.push(["Level", facts.level]);
+    rows.push(["Result", opts.over ? resultText(opts.outcome, sides) : "In progress"]);
+    rows.push(["Turns", opts.over ? plural(rounds, "turn") : `${plural(rounds, "turn")} so far`]);
+    if (opts.over && facts.playedAt) {
+        const date = new Date(facts.playedAt).toLocaleDateString("en-GB", {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+        });
+        rows.push(["Played", `${date} · ${agoText(facts.playedAt, opts.now)}`]);
+    }
+    return {
+        eyebrow: live ? "Live" : "Replay",
+        title: `${sides[0].name} vs ${sides[1].name}`,
+        facts: rows,
     };
 }

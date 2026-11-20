@@ -14,9 +14,11 @@ import {
     jumpTarget,
     keyCap,
     liveChip,
+    matchCard,
     pipHint,
     pipsOf,
     pipTitle,
+    resultText,
     scrubWindow,
     SCRUB_WINDOW,
     speedLabel,
@@ -26,6 +28,8 @@ import {
     WATCH_KEYS,
 } from "../src/features/watch/model.ts";
 import { EXPLORER, explorerUrl } from "../src/constants.ts";
+import { Playback, type PlaybackStage } from "../../packages/engine/src/replay/playback.ts";
+import { blackRain } from "../../packages/engine/src/scenario.ts";
 import { pauseEntries } from "../src/features/dialogs/model.ts";
 import { DEFAULT_BINDINGS } from "../src/settings/keys.ts";
 import { FocusStore, type Command, type FocusElement } from "../src/ui/focus-store.ts";
@@ -408,4 +412,130 @@ test("the explorer link carries the id, encoded, and the network from the consta
         explorerUrl("demo name&x=1", { base: "https://example.test/", network: "devnet" }),
         "https://example.test/?search=demo+name%26x%3D1&network=devnet",
     );
+});
+
+// === Match card ===
+
+const TURNS = [
+    { index: 0, round: 1, side: 0 as const, kills: 0 },
+    { index: 2, round: 1, side: 1 as const, kills: 1 },
+    { index: 5, round: 2, side: 0 as const, kills: 0 },
+];
+const FACTS = {
+    mode: "Ranked 3x3 · Contractor",
+    level: "Operation Black Rain",
+    playedAt: Date.UTC(2026, 10, 20, 12, 0),
+};
+const NOW = FACTS.playedAt + 3 * 3_600_000;
+const card = (over: Partial<Parameters<typeof matchCard>[0]> = {}) =>
+    matchCard({
+        live: false,
+        sides: SIDES,
+        turns: TURNS,
+        outcome: { winner: 1 },
+        over: true,
+        facts: FACTS,
+        now: NOW,
+        ...over,
+    });
+
+test("the card of a replay: marked Replay, who played whom, labelled facts", () => {
+    const c = card();
+    assert.equal(c.eyebrow, "Replay");
+    assert.equal(c.title, "Ghosts vs Hostiles");
+    assert.deepEqual(
+        c.facts.map(([label]) => label),
+        ["Mode", "Level", "Result", "Turns", "Played"],
+    );
+    const fact = (label: string) => c.facts.find(([l]) => l === label)![1];
+    assert.equal(fact("Mode"), "Ranked 3x3 · Contractor");
+    assert.equal(fact("Result"), "Hostiles won · by elimination");
+    assert.equal(fact("Turns"), "2 turns");
+    assert.match(fact("Played"), /2026 · 3 h ago$/);
+});
+
+test("the card's result for each ending", () => {
+    assert.equal(
+        resultText({ winner: 0, reason: "Hostiles left the match" }, SIDES),
+        "Ghosts won · Hostiles left the match",
+    );
+    assert.equal(
+        resultText({ winner: 1, reason: "Ghosts missed 3 turns in a row" }, SIDES),
+        "Hostiles won · Ghosts missed 3 turns in a row",
+    );
+    assert.equal(resultText({ winner: null, reason: "Draw" }, SIDES), "Draw");
+    assert.equal(
+        resultText({ winner: null, reason: "No winner by the turn limit" }, SIDES),
+        "No winner by the turn limit",
+    );
+    assert.equal(resultText({ winner: null }, SIDES), "No winner");
+    assert.equal(resultText(null, SIDES), "No result");
+});
+
+test("the card of a live match: marked Live, no result yet, the turn so far, no date; modes read as given", () => {
+    const c = card({ live: true, over: false, outcome: null });
+    assert.equal(c.eyebrow, "Live");
+    const facts = Object.fromEntries(c.facts);
+    assert.equal(facts.Result, "In progress");
+    assert.equal(facts.Turns, "2 turns so far");
+    assert.equal(facts.Played, undefined);
+    const friendly = card({ facts: { mode: "Friendly 3x3" } });
+    assert.deepEqual(
+        friendly.facts.map(([label]) => label),
+        ["Mode", "Result", "Turns"],
+        "what is not known is left out, not guessed",
+    );
+    assert.equal(Object.fromEntries(card({ turns: [TURNS[0]] }).facts).Turns, "1 turn");
+});
+
+test("the spectator menu offers Match details where the players' menu has Briefing", () => {
+    const ids = pauseEntries({
+        briefing: true,
+        briefingLabel: "Match details",
+        restart: false,
+        quitLabel: "Leave",
+        extra: spectatorEntries({ link: true, explorer: true }),
+    });
+    assert.deepEqual(
+        ids.map((e) => e.id),
+        ["resume", "briefing", "options", "explorer", "link", "quit"],
+    );
+    assert.equal(ids[1].label, "Match details");
+    assert.equal(
+        pauseEntries({ briefing: true, restart: false, quitLabel: "Q" })[1].label,
+        "Briefing",
+        "the players' menu keeps its word",
+    );
+});
+
+test("a held replay applies no event before Play", async () => {
+    const events: GameEvent[] = [move("a"), { type: "hostile-phase" }, move("h")];
+    const source = {
+        scenario: blackRain,
+        sides: SIDES,
+        events: () => events,
+        ended: () => true,
+        subscribe: () => () => {},
+    };
+    const presented: GameEvent[] = [];
+    const rebuilt: number[] = [];
+    const stage: PlaybackStage = {
+        rebuild: (_events, index) => void rebuilt.push(index),
+        present: async (event) => void presented.push(event),
+        wait: async () => {},
+        finish: async () => {},
+        setTimeScale: () => {},
+        setVoice: () => {},
+    };
+    const playback = new Playback(source, stage);
+    playback.start({ at: "start", paused: true });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.deepEqual(presented, [], "nothing presented while held");
+    assert.equal(playback.getState().playing, false);
+    assert.equal(playback.getState().cursor, 0);
+    assert.deepEqual(rebuilt.at(-1), 0, "the field shows the opening position");
+    playback.play();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.ok(presented.length > 0, "Play starts the events");
+    playback.dispose();
 });

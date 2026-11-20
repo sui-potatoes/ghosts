@@ -860,7 +860,7 @@ export class Battlefield {
       case "shot":
         return this.shot(unit(event.unit), unit(event.target), event.hit, event.environment ?? [], event);
       case "reload":
-        return this.units.reload(unit(event.unit));
+        return this.units.reload(unit(event.unit)).then(() => this.reloaded(event.unit));
       case "grenade":
         return this.throwAt(unit(event.unit), event.at, event.environment ?? [], undefined, "grenade", event.casualties);
       case "flashbang":
@@ -943,6 +943,12 @@ export class Battlefield {
   private callout(result: ShotResult, unit: string) {
     const rig = this.units.rig(unit);
     if (rig) this.callouts.show(result, unit, rig.root.position);
+  }
+
+  /** RELOADED over the unit whose reload animation just ended. */
+  private reloaded(unit: string) {
+    const rig = this.units.rig(unit);
+    if (rig) this.callouts.reloaded(unit, rig.root.position);
   }
 
   /** Where `anchor` (lifted `lift` metres) is on the field, in pixels. */

@@ -23,6 +23,10 @@ export type PauseProps = {
     onRestart?: () => void;
     onQuit: () => void;
     quitLabel?: string;
+    /** The briefing entry's words, the eyebrow and the title: the encounter's own by default. */
+    briefingLabel?: string;
+    eyebrow?: string;
+    title?: string;
     /** The host's own entries (a spectator's Copy link, Explorer), after Options. */
     extra?: readonly (PauseEntry & { run: () => void })[];
 };
@@ -36,6 +40,9 @@ export function PauseDialog({
     onRestart,
     onQuit,
     quitLabel = "Quit to menu",
+    briefingLabel,
+    eyebrow = "Encounter",
+    title = "Paused",
     extra,
 }: PauseProps) {
     const [view, setView] = useState<"menu" | "options" | "back-from-options">("menu");
@@ -77,14 +84,15 @@ export function PauseDialog({
         briefing: !!onBriefing,
         restart: !!onRestart,
         quitLabel,
+        briefingLabel,
         extra,
     });
 
     return (
         <DialogHost
             back={{ action: "back", label: "Resume", run: onResume }}
-            eyebrow="Encounter"
-            title="Paused"
+            eyebrow={eyebrow}
+            title={title}
             initial={view === "back-from-options" ? "pause-options" : undefined}
             compact
         >

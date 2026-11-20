@@ -78,7 +78,9 @@ export default function ChainWatch() {
                     leave={leave}
                     extras={{
                         link: `${window.location.origin}/watch/${data.gameId}`,
-                        explorer: explorerUrl(data.gameId),
+                        explorer: explorerUrl(data.facts.endDigest ?? data.gameId),
+                        facts: data.facts,
+                        hold: !data.live && !replay,
                         onReplay: data.live ? () => setReplay(true) : undefined,
                     }}
                 />

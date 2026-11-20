@@ -15,12 +15,18 @@
  * a game: the engine takes those keys first.
  */
 
-import { Encounter, type IntelSource, type Playback, type RecordSource } from "@ghosts/engine";
+import {
+    Encounter,
+    openMatchCard,
+    type IntelSource,
+    type Playback,
+    type RecordSource,
+} from "@ghosts/engine";
 import type { Recruit } from "@ghosts/squad/types";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 
 import { engineSettings } from "../../engineSettings";
-import { onKeys } from "../../input";
+import { onAction, onKeys } from "../../input";
 import { PauseMenu } from "../../PauseMenu";
 import {
     ContextMenu,
@@ -42,6 +48,8 @@ import {
     jumpTarget,
     keyCap,
     liveChip,
+    matchCard,
+    type CardFacts,
     pipHint,
     pipsOf,
     pipTitle,
@@ -62,9 +70,15 @@ export interface ViewerExtras {
     link?: string;
     /** The match's page on the block explorer: an Explorer entry in the menu. */
     explorer?: string;
+    /** What the match card says beyond the events: mode, level, when it was played. */
+    facts?: CardFacts;
+    /** Open on the match card and hold the replay until Play (a finished match opened as a replay). */
+    hold?: boolean;
     /** Open the game's replay, offered once a live game is over. */
     onReplay?: () => void;
 }
+
+const NO_SUBSCRIBE = () => () => {};
 
 /** The field playing a record source, and the transport over it. */
 export function Viewer({
@@ -84,7 +98,55 @@ export function Viewer({
     extras?: ViewerExtras;
 }) {
     const [playback, setPlayback] = useState<Playback | null>(null);
-    const observer = useMemo(() => ({ source, start, onPlayback: setPlayback }), [source, start]);
+    const playbackRef = useRef<Playback | null>(null);
+    /** The match card is up: the transport's keys stand still behind it, as behind the menu. */
+    const [cardOpen, setCardOpen] = useState(!!extras.hold);
+    const latest = useRef({ extras, leave, source });
+    latest.current = { extras, leave, source };
+    const observer = useMemo(
+        () => ({
+            source,
+            start,
+            hold: !!extras.hold,
+            onPlayback: (next: Playback) => {
+                playbackRef.current = next;
+                setPlayback(next);
+            },
+            // Read each time the card opens: who played, how it ended, as the match stands.
+            card: () => {
+                const state = playbackRef.current?.getState();
+                return matchCard({
+                    live: !!state?.growing,
+                    sides: source.sides,
+                    turns: state?.turns ?? [],
+                    outcome: source.outcome?.() ?? state?.outcome ?? null,
+                    over: !state?.growing,
+                    facts: latest.current.extras.facts,
+                    now: Date.now(),
+                });
+            },
+            onPlay: () => playbackRef.current?.play(),
+            onExit: () => latest.current.leave(),
+            onCardClose: () => setCardOpen(false),
+        }),
+        // The extras and `leave` are read through `latest`: the encounter is built once per source.
+        [source, start],
+    );
+    // The card is a native dialog: while it is up the transport's cursor behind it takes no action,
+    // and Enter or Space presses the card's focused button.
+    useEffect(() => {
+        if (!cardOpen) return;
+        return onAction((action) => {
+            if (action !== "confirm") return true;
+            const el = document.activeElement;
+            if (el instanceof HTMLElement && el.closest("dialog[open]")) el.click();
+            return true;
+        });
+    }, [cardOpen]);
+    const growing = useSyncExternalStore(
+        playback?.subscribe ?? NO_SUBSCRIBE,
+        () => playback?.getState().growing ?? false,
+    );
     /** The menu over the field. The playback is not touched: it plays on as it was. */
     const [menu, setMenu] = useState(false);
     const copy = useCopyLink(extras.link);
@@ -111,7 +173,7 @@ export function Viewer({
                         leave={leave}
                         extras={extras}
                         copy={copy}
-                        menuOpen={menu}
+                        menuOpen={menu || cardOpen}
                         openMenu={() => setMenu(true)}
                     />
                 )}
@@ -121,6 +183,14 @@ export function Viewer({
                 onResume={() => setMenu(false)}
                 quitLabel="Leave"
                 onQuit={leave}
+                eyebrow={growing ? "Live" : "Replay"}
+                title="Spectating"
+                briefingLabel="Match details"
+                onBriefing={() => {
+                    openMatchCard();
+                    setMenu(false);
+                    setCardOpen(true);
+                }}
                 extra={spectatorEntries({
                     link: !!extras.link,
                     explorer: !!explorer,
@@ -449,6 +519,11 @@ function Controls({
                         </TransportButton>
                     )}
                 </div>
+                {!chip && (
+                    <span className="watch-button watch-mode" data-tone="replay">
+                        Replay
+                    </span>
+                )}
                 {chip && (
                     <TransportButton
                         id="watch-live"

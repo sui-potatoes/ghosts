@@ -10,6 +10,7 @@ import {
   Callouts,
   calloutFor,
   calloutLook,
+  reloadCallout,
   stackOffset,
   type CalloutNode,
   type Projected,
@@ -167,4 +168,23 @@ test("a callout near the edge is held inside the field", () => {
   const [x, y] = nodes[0].style.transform.match(/translate\(([\d.]+)px,([\d.-]+)px\)/)!.slice(1).map(Number);
   assert.ok(x < 800 && x > 600);
   assert.ok(y >= 16);
+});
+
+test("a reload calls out RELOADED on the reloading unit, on the scene clock, and a seek clears it", () => {
+  assert.deepEqual(reloadCallout(), { kind: "reload", text: "RELOADED" });
+  const { clock, callouts, nodes } = field();
+  callouts.reloaded("u", anchor);
+  callouts.show({ hit: true, damage: 3 }, "u", anchor);
+  assert.equal(nodes[0].className, "shot-callout reload");
+  assert.equal(nodes[0].textContent, "RELOADED");
+  assert.equal(nodes[0].dataset.target, "u");
+  assert.equal(nodes[1].dataset.slot, "1", "stacks with a shot result on the same unit");
+  clock.step(CALLOUT_SECONDS * 0.5);
+  assert.equal(callouts.count, 2, "held");
+  callouts.clear();
+  assert.equal(callouts.count, 0);
+  assert.ok(nodes[0].removed);
+  callouts.reloaded("u", anchor);
+  clock.step(CALLOUT_SECONDS + 0.01);
+  assert.equal(callouts.count, 0, "gone after its life");
 });
