@@ -23,6 +23,8 @@ export type PauseProps = {
     onRestart?: () => void;
     onQuit: () => void;
     quitLabel?: string;
+    /** The host's own entries (a spectator's Copy link, Explorer), after Options. */
+    extra?: readonly (PauseEntry & { run: () => void })[];
 };
 
 const NAV: Command = { action: "nav", label: "Move", glyph: "ud" };
@@ -34,6 +36,7 @@ export function PauseDialog({
     onRestart,
     onQuit,
     quitLabel = "Quit to menu",
+    extra,
 }: PauseProps) {
     const [view, setView] = useState<"menu" | "options" | "back-from-options">("menu");
     // Closed, it forgets Options: the next pause starts on Resume.
@@ -62,14 +65,20 @@ export function PauseDialog({
             </div>
         );
 
-    const run: Record<PauseEntry["id"], () => void> = {
+    const run: Record<string, () => void> = {
+        ...Object.fromEntries((extra ?? []).map((e) => [e.id, e.run])),
         resume: onResume,
         briefing: () => onBriefing?.(),
         options: () => setView("options"),
         restart: () => onRestart?.(),
         quit: onQuit,
     };
-    const entries = pauseEntries({ briefing: !!onBriefing, restart: !!onRestart, quitLabel });
+    const entries = pauseEntries({
+        briefing: !!onBriefing,
+        restart: !!onRestart,
+        quitLabel,
+        extra,
+    });
 
     return (
         <DialogHost
@@ -84,13 +93,7 @@ export function PauseDialog({
     );
 }
 
-function PauseRows({
-    entries,
-    run,
-}: {
-    entries: PauseEntry[];
-    run: Record<PauseEntry["id"], () => void>;
-}) {
+function PauseRows({ entries, run }: { entries: PauseEntry[]; run: Record<string, () => void> }) {
     return (
         <>
             {entries.map((entry) => (

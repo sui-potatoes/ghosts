@@ -146,7 +146,7 @@ export function banner(
  */
 export function focusOrder(
     state: Pick<PlaybackState, "turns" | "turn" | "growing" | "finished">,
-    extras: { link?: boolean; replay?: boolean } = {},
+    extras: { link?: boolean } = {},
 ): string[] {
     const ids = ["watch-prev", "watch-play", "watch-next", "watch-speed"];
     const window = scrubWindow(pipsOf({ ...state, growing: state.growing }), state.turn);
@@ -155,8 +155,8 @@ export function focusOrder(
     if (window.later) ids.push("watch-ahead");
     if (state.growing) ids.push("watch-live");
     if (extras.link) ids.push("watch-link");
-    if (state.finished)
-        ids.unshift(...(extras.replay ? ["watch-replay"] : []), "watch-again", "watch-leave");
+    ids.push("watch-menu");
+    if (state.finished) ids.unshift("watch-replay", "watch-leave");
     return ids;
 }
 
@@ -183,4 +183,55 @@ export type WatchKey = keyof typeof WATCH_KEYS;
 /** How a key cap reads. */
 export function keyCap(key: string): string {
     return key === " " ? "Space" : key.length === 1 ? key.toUpperCase() : key;
+}
+
+/** The spectator menu's own entries (the pause menu adds Resume, Options and the way out). */
+export function spectatorEntries(opts: {
+    link: boolean;
+    explorer: boolean;
+    copied?: "idle" | "copied" | "refused";
+}): { id: "link" | "explorer"; label: string }[] {
+    return [
+        ...(opts.explorer ? [{ id: "explorer" as const, label: "Explorer" }] : []),
+        ...(opts.link
+            ? [
+                  {
+                      id: "link" as const,
+                      label: opts.copied === "copied" ? "Link copied" : "Copy link",
+                  },
+              ]
+            : []),
+    ];
+}
+
+/** What the transport keys need of the playback. */
+export type KeyedPlayback = {
+    toggle(): void;
+    prevTurn(): void;
+    nextTurn(): void;
+    stepSpeed(step: number): void;
+    goLive(): void;
+    restart(): void;
+    getState(): { growing: boolean };
+};
+
+/**
+ * The viewer's keyboard map for the shortcut lane. While the menu or the
+ * settings over it is open the map is empty: the transport stands still.
+ */
+export function transportKeys(
+    playback: KeyedPlayback,
+    menuOpen: boolean,
+): Record<string, () => boolean | void> {
+    if (menuOpen) return {};
+    return {
+        [WATCH_KEYS.toggle]: () => playback.toggle(),
+        [WATCH_KEYS.prev]: () => playback.prevTurn(),
+        [WATCH_KEYS.next]: () => playback.nextTurn(),
+        [WATCH_KEYS.slower]: () => playback.stepSpeed(-1),
+        [WATCH_KEYS.faster]: () => playback.stepSpeed(1),
+        "+": () => playback.stepSpeed(1),
+        [WATCH_KEYS.live]: () => (playback.getState().growing ? playback.goLive() : false),
+        [WATCH_KEYS.restart]: () => playback.restart(),
+    };
 }

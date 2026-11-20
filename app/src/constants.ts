@@ -44,6 +44,26 @@ export const GOOGLE_CLIENT_ID =
     "591411088609-6kbt6b07a6np6mq2mnlq97i150amussh.apps.googleusercontent.com";
 
 /**
+ * The block explorer links open in (DevXplorer): the base page and the network
+ * its `network` parameter names. `explorerUrl` builds every link from these two.
+ */
+export const EXPLORER = {
+    base: "https://devxplorer.io/",
+    network: NETWORK,
+} as const;
+
+/**
+ * The explorer's page for anything it can search: an object id, a transaction
+ * digest, an address, a name. The query is encoded.
+ */
+export function explorerUrl(query: string, explorer: { base: string; network: string } = EXPLORER) {
+    const url = new URL(explorer.base);
+    url.searchParams.set("search", query);
+    url.searchParams.set("network", explorer.network);
+    return url.toString();
+}
+
+/**
  * Feature switches for the scaffold. Each flips a part of the shell on
  * without touching the components themselves.
  */

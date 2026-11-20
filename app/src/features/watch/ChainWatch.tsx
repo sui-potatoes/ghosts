@@ -16,6 +16,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { LoadingSpinner } from "../../components/LoadingSpinner";
+import { explorerUrl } from "../../constants";
 import { useGoUp } from "../../hooks/useGoUp";
 import {
     EmptyState,
@@ -77,6 +78,7 @@ export default function ChainWatch() {
                     leave={leave}
                     extras={{
                         link: `${window.location.origin}/watch/${data.gameId}`,
+                        explorer: explorerUrl(data.gameId),
                         onReplay: data.live ? () => setReplay(true) : undefined,
                     }}
                 />

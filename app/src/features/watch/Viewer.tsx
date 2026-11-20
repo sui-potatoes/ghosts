@@ -21,6 +21,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactN
 
 import { engineSettings } from "../../engineSettings";
 import { onKeys } from "../../input";
+import { PauseMenu } from "../../PauseMenu";
 import {
     ContextMenu,
     FocusCommandBar,
@@ -46,6 +47,8 @@ import {
     pipTitle,
     scrubWindow,
     speedLabel,
+    spectatorEntries,
+    transportKeys,
     turnReadout,
     WATCH_KEYS,
     type Pip,
@@ -57,6 +60,8 @@ import "./watch.css";
 export interface ViewerExtras {
     /** The link to share (`/watch/<game>`): a Copy link control. */
     link?: string;
+    /** The match's page on the block explorer: an Explorer entry in the menu. */
+    explorer?: string;
     /** Open the game's replay, offered once a live game is over. */
     onReplay?: () => void;
 }
@@ -80,11 +85,22 @@ export function Viewer({
 }) {
     const [playback, setPlayback] = useState<Playback | null>(null);
     const observer = useMemo(() => ({ source, start, onPlayback: setPlayback }), [source, start]);
+    /** The menu over the field. The playback is not touched: it plays on as it was. */
+    const [menu, setMenu] = useState(false);
+    const copy = useCopyLink(extras.link);
+    const { explorer } = extras;
     return (
         <div className="watch-screen">
-            <Encounter observer={observer} squad={squad} intel={intel} settings={engineSettings} />
+            <Encounter
+                observer={observer}
+                squad={squad}
+                intel={intel}
+                settings={engineSettings}
+                paused={menu}
+                onPause={() => setMenu(true)}
+            />
             <FocusRoot
-                back={{ action: "back", label: "Leave", run: leave }}
+                back={{ action: "back", label: "Menu", run: () => setMenu(true) }}
                 onTab={(step) => (step > 0 ? playback?.nextTurn() : playback?.prevTurn())}
                 onSection={(step) => playback?.stepSpeed(step)}
             >
@@ -94,9 +110,29 @@ export function Viewer({
                         sides={source.sides}
                         leave={leave}
                         extras={extras}
+                        copy={copy}
+                        menuOpen={menu}
+                        openMenu={() => setMenu(true)}
                     />
                 )}
             </FocusRoot>
+            <PauseMenu
+                open={menu}
+                onResume={() => setMenu(false)}
+                quitLabel="Leave"
+                onQuit={leave}
+                extra={spectatorEntries({
+                    link: !!extras.link,
+                    explorer: !!explorer,
+                    copied: copy.copied,
+                }).map((entry) => ({
+                    ...entry,
+                    run:
+                        entry.id === "link"
+                            ? copy.run
+                            : () => window.open(explorer, "_blank", "noopener,noreferrer"),
+                }))}
+            />
         </div>
     );
 }
@@ -118,6 +154,7 @@ const PATHS = {
     prev: "M3.5 3.5v9M12.5 3.5l-6.5 4.5 6.5 4.5z",
     next: "M12.5 3.5v9M3.5 3.5l6.5 4.5-6.5 4.5z",
     again: "M3 8a5 5 0 1 0 1.5-3.5M3 2.5v3h3",
+    menu: "M3 4.5h10M3 8h10M3 11.5h10",
     link: "M6.5 9.5l3-3M7 4.5l1.2-1.2a2.6 2.6 0 0 1 3.6 3.6L10.6 8M9 11.5l-1.2 1.2a2.6 2.6 0 0 1-3.6-3.6L5.4 8",
 };
 
@@ -205,16 +242,41 @@ function PipButton({
     );
 }
 
+/** Copy link: whether the last copy landed on the clipboard (refused, the link is shown to copy by hand). */
+function useCopyLink(link: string | undefined) {
+    const [copied, setCopied] = useState<"idle" | "copied" | "refused">("idle");
+    useEffect(() => {
+        if (copied !== "copied") return;
+        const timer = window.setTimeout(() => setCopied("idle"), 2000);
+        return () => window.clearTimeout(timer);
+    }, [copied]);
+    const run = () => {
+        if (!link) return;
+        const done = () => setCopied("copied");
+        const refused = () => setCopied(copyByHand(link) ? "copied" : "refused");
+        if (navigator.clipboard) void navigator.clipboard.writeText(link).then(done, refused);
+        else refused();
+    };
+    return { copied, run };
+}
+
 function Controls({
     playback,
     sides,
     leave,
     extras,
+    copy,
+    menuOpen,
+    openMenu,
 }: {
     playback: Playback;
     sides: RecordSource["sides"];
     leave: () => void;
     extras: ViewerExtras;
+    copy: ReturnType<typeof useCopyLink>;
+    /** The menu (or the settings over it) is up: the transport's keys stand still. */
+    menuOpen: boolean;
+    openMenu: () => void;
 }) {
     const state = useSyncExternalStore(playback.subscribe, playback.getState);
     const glyphs = useGlyphSet();
@@ -224,43 +286,16 @@ function Controls({
     const chip = liveChip(state);
     const end = banner(state, sides);
     const strip = scrubWindow(pipsOf(state), state.turn);
-    /** Whether the last Copy link landed on the clipboard; refused, the bar shows the link to copy by hand. */
-    const [copied, setCopied] = useState<"idle" | "copied" | "refused">("idle");
-    useEffect(() => {
-        if (copied !== "copied") return;
-        const timer = window.setTimeout(() => setCopied("idle"), 2000);
-        return () => window.clearTimeout(timer);
-    }, [copied]);
+    const { copied, run: copyLink } = copy;
     const link = extras.link;
-    const copy = () => {
-        if (!link) return;
-        const done = () => setCopied("copied");
-        const refused = () => setCopied(copyByHand(link) ? "copied" : "refused");
-        if (navigator.clipboard) void navigator.clipboard.writeText(link).then(done, refused);
-        else refused();
-    };
 
     // The keyboard's transport keys, above the menu actions (Space plays and pauses from anywhere).
-    useEffect(
-        () =>
-            onKeys({
-                [WATCH_KEYS.toggle]: () => playback.toggle(),
-                [WATCH_KEYS.prev]: () => playback.prevTurn(),
-                [WATCH_KEYS.next]: () => playback.nextTurn(),
-                [WATCH_KEYS.slower]: () => playback.stepSpeed(-1),
-                [WATCH_KEYS.faster]: () => playback.stepSpeed(1),
-                "+": () => playback.stepSpeed(1),
-                [WATCH_KEYS.live]: () => (playback.getState().growing ? playback.goLive() : false),
-                [WATCH_KEYS.restart]: () => playback.restart(),
-            }),
-        [playback],
-    );
+    useEffect(() => onKeys(transportKeys(playback, menuOpen)), [playback, menuOpen]);
 
     // The match over: the cursor goes to the banner's first choice.
-    const firstChoice = extras.onReplay ? "watch-replay" : "watch-again";
     useEffect(() => {
-        if (state.finished) store.focus(firstChoice, false);
-    }, [state.finished, store, firstChoice]);
+        if (state.finished) store.focus("watch-replay", false);
+    }, [state.finished, store]);
 
     const restart: Command = { action: "reset", label: "Restart", run: () => playback.restart() };
     return (
@@ -271,39 +306,22 @@ function Controls({
                     <strong className="watch-banner-title">{end.title}</strong>
                     <span className="watch-banner-line">{end.line}</span>
                     <div className="watch-banner-actions">
-                        {extras.onReplay && (
-                            <TransportButton
-                                id="watch-replay"
-                                group="banner"
-                                title="Watch replay"
-                                commands={[
-                                    {
-                                        action: "confirm",
-                                        label: "Watch replay",
-                                        tone: "primary",
-                                        run: extras.onReplay,
-                                    },
-                                ]}
-                            >
-                                <Pictogram name="again" />
-                                <span>Watch replay</span>
-                            </TransportButton>
-                        )}
                         <TransportButton
-                            id="watch-again"
+                            id="watch-replay"
                             group="banner"
-                            title="Watch again"
+                            title="Watch replay"
                             commands={[
                                 {
                                     action: "confirm",
-                                    label: "Watch again",
+                                    label: "Watch replay",
                                     tone: "primary",
-                                    run: () => playback.restart(),
+                                    // A live match that ended opens its recording; a replay starts over.
+                                    run: extras.onReplay ?? (() => playback.restart()),
                                 },
                             ]}
                         >
                             <Pictogram name="again" />
-                            <span>Watch again</span>
+                            <span>Watch replay</span>
                         </TransportButton>
                         <TransportButton
                             id="watch-leave"
@@ -464,7 +482,7 @@ function Controls({
                         title={copied === "copied" ? "Link copied" : "Copy link"}
                         hint={copied === "refused" ? link : undefined}
                         tone={copied === "copied" ? "following" : undefined}
-                        commands={[{ action: "confirm", label: "Copy link", run: copy }]}
+                        commands={[{ action: "confirm", label: "Copy link", run: copyLink }]}
                     >
                         <Pictogram name="link" />
                         <span className="watch-link-label">
@@ -472,6 +490,15 @@ function Controls({
                         </span>
                     </TransportButton>
                 )}
+                <TransportButton
+                    id="watch-menu"
+                    group="share"
+                    title="Menu"
+                    commands={[{ action: "confirm", label: "Menu", run: openMenu }]}
+                >
+                    <Pictogram name="menu" />
+                    <span className="watch-link-label">Menu</span>
+                </TransportButton>
             </section>
             <FocusCommandBar glyphs={glyphs} />
             <ContextMenu root={root} />

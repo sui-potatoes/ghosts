@@ -84,7 +84,7 @@ export function signInOptions(state: SignInState): SignInOption[] {
 }
 
 export type PauseEntry = {
-    id: "resume" | "briefing" | "options" | "restart" | "quit";
+    id: "resume" | "briefing" | "options" | "restart" | "quit" | (string & {});
     label: string;
     danger?: boolean;
 };
@@ -94,12 +94,15 @@ export function pauseEntries(opts: {
     briefing: boolean;
     restart: boolean;
     quitLabel: string;
+    /** Further entries of the host's own, between Options and the way out. */
+    extra?: readonly PauseEntry[];
 }): PauseEntry[] {
     return [
         { id: "resume", label: "Resume" },
         ...(opts.briefing ? [{ id: "briefing", label: "Briefing" } as const] : []),
         { id: "options", label: "Options" },
         ...(opts.restart ? [{ id: "restart", label: "Restart encounter" } as const] : []),
+        ...(opts.extra ?? []),
         { id: "quit", label: opts.quitLabel },
     ];
 }

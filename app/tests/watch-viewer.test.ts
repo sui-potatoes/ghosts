@@ -20,9 +20,13 @@ import {
     scrubWindow,
     SCRUB_WINDOW,
     speedLabel,
+    spectatorEntries,
+    transportKeys,
     turnReadout,
     WATCH_KEYS,
 } from "../src/features/watch/model.ts";
+import { EXPLORER, explorerUrl } from "../src/constants.ts";
+import { pauseEntries } from "../src/features/dialogs/model.ts";
 import { DEFAULT_BINDINGS } from "../src/settings/keys.ts";
 import { FocusStore, type Command, type FocusElement } from "../src/ui/focus-store.ts";
 import { parentOf } from "../src/routes.ts";
@@ -223,11 +227,11 @@ test("a long game's strip is a window around the viewer's turn, with jumps of te
     const ids = focusOrder({ ...long(61), growing: true }, { link: true });
     assert.equal(ids.filter((id) => id.startsWith("watch-pip-")).length, SCRUB_WINDOW);
     assert.equal(ids[4], "watch-back");
-    assert.deepEqual(ids.slice(-3), ["watch-ahead", "watch-live", "watch-link"]);
+    assert.deepEqual(ids.slice(-4), ["watch-ahead", "watch-live", "watch-link", "watch-menu"]);
     assert.deepEqual(
-        focusOrder({ ...long(119), finished: true }, { replay: true }).slice(0, 3),
-        ["watch-replay", "watch-again", "watch-leave"],
-        "a live game that ended offers its replay first",
+        focusOrder({ ...long(119), finished: true }).slice(0, 2),
+        ["watch-replay", "watch-leave"],
+        "the banner offers one Watch replay, then Leave",
     );
 });
 
@@ -267,9 +271,10 @@ function box(left: number, top: number, width = 40, height = 40) {
 }
 
 const GROUP: Record<string, string> = {
-    "watch-again": "banner",
+    "watch-replay": "banner",
     "watch-leave": "banner",
     "watch-live": "live",
+    "watch-menu": "share",
 };
 const groupOf = (id: string) =>
     GROUP[id] ?? (id.startsWith("watch-pip") ? "scrubber" : "transport");
@@ -295,7 +300,7 @@ function laidOut(ids: string[]) {
 test("the cursor opens on the transport and walks it left to right: buttons, every turn, Live", () => {
     const ids = focusOrder(state({ growing: true }));
     assert.deepEqual(ids.slice(0, 4), ["watch-prev", "watch-play", "watch-next", "watch-speed"]);
-    assert.equal(ids.at(-1), "watch-live");
+    assert.deepEqual(ids.slice(-2), ["watch-live", "watch-menu"]);
     const s = laidOut(ids);
     assert.equal(s.focused, "watch-prev");
     const walked = [s.focused];
@@ -308,12 +313,12 @@ test("the cursor opens on the transport and walks it left to right: buttons, eve
     assert.equal(s.focused, ids.at(-2), "and back");
 });
 
-test("a finished game puts its banner first: Watch again, then Leave, above the transport", () => {
+test("a finished game puts its banner first: Watch replay, then Leave, above the transport", () => {
     const ids = focusOrder(state({ finished: true }));
-    assert.deepEqual(ids.slice(0, 2), ["watch-again", "watch-leave"]);
+    assert.deepEqual(ids.slice(0, 2), ["watch-replay", "watch-leave"]);
     assert.ok(!ids.includes("watch-live"), "no Live on a finished game");
     const s = laidOut(ids);
-    assert.equal(s.focused, "watch-again");
+    assert.equal(s.focused, "watch-replay");
     s.move("right");
     assert.equal(s.focused, "watch-leave");
     s.move("down");
@@ -327,4 +332,80 @@ test("a finished game puts its banner first: Watch again, then Leave, above the 
 test("Back from a game in the viewer goes to the watch screen, and from there to the menu", () => {
     assert.equal(parentOf(`/watch/0x${"a".repeat(64)}`), "/watch");
     assert.equal(parentOf("/watch"), "/");
+});
+
+// === Spectator menu ===
+
+test("the spectator menu: Resume, Options, Explorer, Copy link, Leave, in that order", () => {
+    const ids = (opts: Parameters<typeof spectatorEntries>[0]) =>
+        pauseEntries({
+            briefing: false,
+            restart: false,
+            quitLabel: "Leave",
+            extra: spectatorEntries(opts),
+        }).map((e) => e.id);
+    assert.deepEqual(ids({ link: true, explorer: true }), [
+        "resume",
+        "options",
+        "explorer",
+        "link",
+        "quit",
+    ]);
+    // no briefing, restart or abandon; a missing link or explorer leaves its entry out
+    assert.deepEqual(ids({ link: false, explorer: false }), ["resume", "options", "quit"]);
+    const labels = pauseEntries({
+        briefing: false,
+        restart: false,
+        quitLabel: "Leave",
+        extra: spectatorEntries({ link: true, explorer: true, copied: "copied" }),
+    }).map((e) => e.label);
+    assert.deepEqual(labels, ["Resume", "Options", "Explorer", "Link copied", "Leave"]);
+});
+
+test("the transport keys stand still while the menu is open and act otherwise", () => {
+    const calls: string[] = [];
+    const playback = {
+        toggle: () => calls.push("toggle"),
+        prevTurn: () => calls.push("prev"),
+        nextTurn: () => calls.push("next"),
+        stepSpeed: (n: number) => calls.push(`speed${n}`),
+        goLive: () => calls.push("live"),
+        restart: () => calls.push("restart"),
+        getState: () => ({ growing: true }),
+    };
+    assert.deepEqual(Object.keys(transportKeys(playback, true)), [], "no key while the menu is up");
+    const keys = transportKeys(playback, false);
+    for (const key of Object.values(WATCH_KEYS)) assert.ok(keys[key], `${key} acts`);
+    keys[WATCH_KEYS.toggle]();
+    keys[WATCH_KEYS.live]();
+    assert.deepEqual(calls, ["toggle", "live"]);
+});
+
+test("back: a prompt closes first, then the viewer opens the menu, and the menu's back resumes", () => {
+    // The input bus is LIFO (input.ts): the newest consumer takes Back first.
+    const handlers: ((action: string) => boolean)[] = [];
+    const dispatch = (action: string) => {
+        for (let i = handlers.length - 1; i >= 0; i--) if (handlers[i](action)) return true;
+        return false;
+    };
+    const log: string[] = [];
+    handlers.push((a) => a === "back" && (log.push("menu opens"), true)); // the viewer's root
+    handlers.push((a) => a === "back" && (log.push("prompt closes"), handlers.pop(), true));
+    dispatch("back");
+    dispatch("back");
+    handlers.push((a) => a === "back" && (log.push("resume"), handlers.pop(), true)); // the menu
+    dispatch("back");
+    assert.deepEqual(log, ["prompt closes", "menu opens", "resume"]);
+});
+
+test("the explorer link carries the id, encoded, and the network from the constants", () => {
+    assert.equal(
+        explorerUrl("0xabc"),
+        `https://devxplorer.io/?search=0xabc&network=${EXPLORER.network}`,
+    );
+    assert.equal(EXPLORER.network, "testnet");
+    assert.equal(
+        explorerUrl("demo name&x=1", { base: "https://example.test/", network: "devnet" }),
+        "https://example.test/?search=demo+name%26x%3D1&network=devnet",
+    );
 });
