@@ -1828,3 +1828,353 @@ fun test_unit_index_through_a_full_game() {
     complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
     fixture.finish();
 }
+
+// === Effects ===
+
+/// Utility kinds, see `items::utility`.
+const FRAG: u8 = 0;
+const FLASHBANG: u8 = 1;
+const SMOKE: u8 = 2;
+
+/// An armed recruit carrying the utility of the `kind`, in the `Account` of the sender.
+fun hire_carrying(acc: &mut Account, kind: u8, ctx: &mut TxContext): ID {
+    let mut recruit = recruit_module::new("Jane Doe", ctx);
+    recruit.add_armor(items::armor(2, ctx));
+    recruit.add_weapon(items::rifle(3, ctx));
+    recruit.add_utility(items::utility(kind, ctx));
+    let id = object::id(&recruit);
+    acc.add_recruit(recruit);
+    id
+}
+
+/// One recruit a side carrying the utility of `$kind` on an empty 6x6 map:
+/// Alice at (0, 0), Bob at (0, 3). Deployed, Alice is next.
+macro fun setup_carriers($kind: u8): (Fixture, Game) {
+    let kind = $kind;
+    let mut f = setup_on!(
+        |id| map::new(id, 6),
+        vector[vector[0, 0], vector[0, 3]],
+        |acc, ctx| hire_carrying(acc, kind, ctx),
+    );
+    let mut game = f.start();
+    f.deploy(&mut game);
+    (f, game)
+}
+
+/// Throw the grenade of the utility `kind` (flashbang or smoke) as `acc`.
+fun throw_effect(
+    f: &mut Fixture,
+    game: &mut Game,
+    alice: bool,
+    kind: u8,
+    from: vector<u16>,
+    to: vector<u16>,
+) {
+    let acc = if (alice) &f.alice else &f.bob;
+    if (kind == FLASHBANG) {
+        perform_flashbang(game, acc, &f.clock, from[0], from[1], to[0], to[1], f.ts.ctx())
+    } else perform_smoke_grenade(game, acc, &f.clock, from[0], from[1], to[0], to[1], f.ts.ctx())
+}
+
+/// End the turn of the side whose it is.
+fun end_turn(f: &mut Fixture, game: &mut Game) {
+    let alice = game.active_side() == 0;
+    f.ts.next_tx(if (alice) ALICE else BOB);
+    let acc = if (alice) &f.alice else &f.bob;
+    next_turn(game, acc, &f.clock, f.ts.ctx());
+    f.ts.next_tx(if (alice) BOB else ALICE);
+}
+
+/// The effects every unit carries are what a replay of the history says.
+fun check_replay(game: &Game) { game.map.assert_effects_replay(game.history.inner()) }
+
+/// The effect of the `kind` thrown on Alice's turn, at (0, 1): both units have
+/// it, Alice's thrower too, through her turn and Bob's, and it ends when Bob
+/// ends his. Thrown on Bob's turn, it ends when Alice ends hers.
+fun effect_timing(kind: u8, effect: ghosts::effect::Effect) {
+    use std::unit_test::assert_eq;
+
+    let (mut fixture, mut game) = setup_carriers!(kind);
+    let f = &mut fixture;
+    let ticked = ghosts::effect::new(effect.kind(), 1);
+
+    // thrown on Alice's turn
+    f.throw_effect(&mut game, true, kind, vector[0, 0], vector[0, 1]);
+    assert_eq!(game.map.effects_at(0, 0), vector[effect]);
+    assert_eq!(game.map.effects_at(0, 3), vector[effect]);
+    check_replay(&game);
+    f.end_turn(&mut game); // Alice ends: Bob's turn, one left
+    assert_eq!(game.map.effects_at(0, 0), vector[ticked]);
+    assert_eq!(game.map.effects_at(0, 3), vector[ticked]);
+    check_replay(&game);
+    f.end_turn(&mut game); // Bob ends: gone
+    assert_eq!(game.map.effects_at(0, 0), vector[]);
+    assert_eq!(game.map.effects_at(0, 3), vector[]);
+    let records = game.history.inner();
+    let n = records.length();
+    assert_eq!(records[n - 3], history::new_next_turn(2));
+    assert_eq!(records[n - 2], history::new_effect_end(0, 0, effect.kind()));
+    assert_eq!(records[n - 1], history::new_effect_end(0, 3, effect.kind()));
+    check_replay(&game);
+
+    // Alice's turn again; she ends it, Bob throws on his
+    f.end_turn(&mut game);
+    f.throw_effect(&mut game, false, kind, vector[0, 3], vector[0, 2]);
+    assert_eq!(game.map.effects_at(0, 0), vector[effect]);
+    assert_eq!(game.map.effects_at(0, 3), vector[effect]);
+    f.end_turn(&mut game); // Bob ends: Alice's turn, one left
+    assert_eq!(game.map.effects_at(0, 0), vector[ticked]);
+    assert_eq!(game.map.effects_at(0, 3), vector[ticked]);
+    check_replay(&game);
+    f.end_turn(&mut game); // Alice ends: gone
+    assert_eq!(game.map.effects_at(0, 0), vector[]);
+    assert_eq!(game.map.effects_at(0, 3), vector[]);
+    check_replay(&game);
+
+    f.ts.next_tx(ALICE);
+    abandon_game(&mut game, &f.alice, f.ts.ctx());
+    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    fixture.finish();
+}
+
+#[test]
+fun test_daze_timing() { effect_timing(FLASHBANG, ghosts::effect::daze()) }
+
+#[test]
+fun test_smoke_timing() { effect_timing(SMOKE, ghosts::effect::smoke()) }
+
+#[test, expected_failure(abort_code = ENotYourTurn)]
+fun test_flashbang_out_of_turn_fail() {
+    let (mut f, mut game) = setup_carriers!(FLASHBANG);
+    f.ts.next_tx(BOB);
+    f.throw_effect(&mut game, false, FLASHBANG, vector[0, 3], vector[0, 2]);
+    abort
+}
+
+#[test, expected_failure(abort_code = ENotYourTurn)]
+fun test_smoke_grenade_out_of_turn_fail() {
+    let (mut f, mut game) = setup_carriers!(SMOKE);
+    f.ts.next_tx(BOB);
+    f.throw_effect(&mut game, false, SMOKE, vector[0, 3], vector[0, 2]);
+    abort
+}
+
+#[test, expected_failure(abort_code = ENotYourUnit)]
+fun test_flashbang_with_opponents_unit_fail() {
+    let (mut f, mut game) = setup_carriers!(FLASHBANG);
+    f.throw_effect(&mut game, true, FLASHBANG, vector[0, 3], vector[0, 2]);
+    abort
+}
+
+#[test, expected_failure(abort_code = ETurnExpired)]
+fun test_smoke_grenade_after_time_limit_fail() {
+    let (mut f, mut game) = setup_carriers!(SMOKE);
+    f.clock.increment_for_testing(FIRST_TURN_MS + 1);
+    f.throw_effect(&mut game, true, SMOKE, vector[0, 0], vector[0, 1]);
+    abort
+}
+
+#[test, expected_failure(abort_code = ghosts::unit::EActionNotAllowed)]
+/// The frag grenade's carrier has no flashbang: a grenade must be equipped.
+fun test_flashbang_without_utility_fail() {
+    let (mut f, mut game) = setup_carriers!(FRAG);
+    f.throw_effect(&mut game, true, FLASHBANG, vector[0, 0], vector[0, 1]);
+    abort
+}
+
+#[test, expected_failure(abort_code = ghosts::unit::EActionNotAllowed)]
+/// The flashbang's carrier has no smoke grenade.
+fun test_smoke_grenade_without_utility_fail() {
+    let (mut f, mut game) = setup_carriers!(FLASHBANG);
+    f.throw_effect(&mut game, true, SMOKE, vector[0, 0], vector[0, 1]);
+    abort
+}
+
+#[test, expected_failure(abort_code = ghosts::unit::EActionNotAllowed)]
+/// The smoke grenade's carrier throws no frag grenade.
+fun test_frag_with_smoke_utility_fail() {
+    let (mut f, mut game) = setup_carriers!(SMOKE);
+    perform_grenade(&mut game, &f.alice, &f.rng, &f.clock, 0, 0, 0, 1, f.ts.ctx());
+    abort
+}
+
+#[test, expected_failure(abort_code = ghosts::unit::ENoUsesLeft)]
+fun test_flashbang_once_per_match() {
+    let (mut f, mut game) = setup_carriers!(FLASHBANG);
+    f.throw_effect(&mut game, true, FLASHBANG, vector[0, 0], vector[0, 1]);
+    f.throw_effect(&mut game, true, FLASHBANG, vector[0, 0], vector[0, 1]);
+    abort
+}
+
+#[test, expected_failure(abort_code = ghosts::unit::ENoUsesLeft)]
+fun test_smoke_grenade_once_per_match() {
+    let (mut f, mut game) = setup_carriers!(SMOKE);
+    f.throw_effect(&mut game, true, SMOKE, vector[0, 0], vector[0, 1]);
+    f.end_turn(&mut game);
+    f.end_turn(&mut game);
+    f.throw_effect(&mut game, true, SMOKE, vector[0, 0], vector[0, 1]);
+    abort
+}
+
+#[test, expected_failure(abort_code = ghosts::recruit::EUtilitiesFull)]
+/// One utility slot, one grenade: a recruit carrying one takes no second.
+fun test_one_grenade_per_recruit() {
+    let ctx = &mut tx_context::dummy();
+    let mut recruit = recruit_module::new("Jane Doe", ctx);
+    recruit.add_utility(items::utility(FLASHBANG, ctx));
+    recruit.add_utility(items::utility(SMOKE, ctx));
+    abort
+}
+
+/// The tile of the unit of `owner` among `tiles` that has the action `kind`.
+fun carrier_tile(game: &Game, tiles: vector<vector<u16>>, kind: action::ActionKind): vector<u16> {
+    let at = tiles.find_index!(|t| game.map.unit(t[0], t[1]).borrow().has_action(kind));
+    tiles[at.destroy_some()]
+}
+
+#[test]
+/// A scripted match with both grenades on both sides, two recruits a side: a
+/// smoke, its refresh by the other side, a daze on top, a unit walking off in
+/// its effects, a kill, expiry, and a new daze. After every step, a replay of
+/// the history from the start gives exactly the effects the units carry.
+fun test_effects_replay_through_a_match() {
+    use grid::direction::down;
+    use std::unit_test::assert_eq;
+    use ghosts::effect;
+
+    let mut fixture = setup_on!(
+        |id| map::new(id, 8),
+        vector[vector[0, 0], vector[0, 1], vector[0, 3], vector[0, 4]],
+        |acc, ctx| {
+            hire_carrying(acc, SMOKE, ctx);
+            hire_carrying(acc, FLASHBANG, ctx)
+        },
+    );
+    let f = &mut fixture;
+    let mut game = f.start();
+    f.deploy_black_rain(&mut game);
+    check_replay(&game);
+
+    let alice = vector[vector[0u16, 0], vector[0, 1]];
+    let bob = vector[vector[0u16, 3], vector[0, 4]];
+    let (smoke, flash) = (action::new_smoke_grenade(), action::new_flashbang());
+    let (alice_smoke, alice_flash) = (
+        carrier_tile(&game, alice, smoke),
+        carrier_tile(&game, alice, flash),
+    );
+    let (bob_smoke, bob_flash) = (carrier_tile(&game, bob, smoke), carrier_tile(&game, bob, flash));
+
+    // Alice smokes all four
+    f.throw_effect(&mut game, true, SMOKE, alice_smoke, vector[0, 2]);
+    check_replay(&game);
+    f.end_turn(&mut game);
+    check_replay(&game);
+    assert_eq!(game.map.effects_at(0, 0), vector[effect::new(1, 1)]);
+
+    // Bob refreshes the smoke, then dazes all four
+    f.throw_effect(&mut game, false, SMOKE, bob_smoke, vector[0, 2]);
+    check_replay(&game);
+    assert_eq!(game.map.effects_at(0, 0), vector[effect::smoke()]);
+    f.throw_effect(&mut game, false, FLASHBANG, bob_flash, vector[0, 2]);
+    check_replay(&game);
+    assert_eq!(game.map.effects_at(0, 4), vector[effect::smoke(), effect::daze()]);
+
+    // Bob walks a unit off at (0, 4), its effects with it
+    move_unit(&mut game, &f.bob, &f.clock, vector[0, 4, down!()], f.ts.ctx());
+    check_replay(&game);
+    assert_eq!(game.map.effects_at(1, 4), vector[effect::smoke(), effect::daze()]);
+    f.end_turn(&mut game);
+    check_replay(&game);
+
+    // Alice's turn: Bob's unit at (0, 3) falls, its effects with it
+    let fallen = game.map.unit(0, 3).borrow().recruit_id();
+    let records = vector[game.map.kill_for_testing(fallen)];
+    game.history.append(records);
+    game.count_losses(&records);
+    check_replay(&game);
+
+    // Alice ends: every effect runs out
+    f.end_turn(&mut game);
+    check_replay(&game);
+    assert_eq!(game.map.effects_at(1, 4), vector[]);
+    f.end_turn(&mut game);
+    check_replay(&game);
+
+    // a new daze from Alice, on her own and Bob's walker
+    f.throw_effect(&mut game, true, FLASHBANG, alice_flash, vector[0, 3]);
+    check_replay(&game);
+    assert_eq!(game.map.effects_at(1, 4), vector[effect::daze()]);
+    f.end_turn(&mut game);
+    check_replay(&game);
+
+    f.ts.next_tx(ALICE);
+    abandon_game(&mut game, &f.alice, f.ts.ctx());
+    complete_game(game, &mut f.alice, &mut f.bob, &f.clock, f.ts.ctx());
+    fixture.finish();
+}
+
+// Read with `sui move test -s bench_effects`: four armed recruits a side on an
+// empty 16x16 map, deployed; `a` is the base, `b` adds one `next_turn` with no
+// effects on the map, `c` puts both effects on all eight units, `d` does that
+// and one `next_turn` (all sixteen tick, none runs out), `e` two (the second
+// ends all sixteen).
+
+/// Four recruits a side on an empty 16x16 map, Alice in row 0, Bob in row 15.
+fun setup_effects_bench(): (Fixture, Game) {
+    let positions = vector[
+        vector[0, 0],
+        vector[0, 2],
+        vector[0, 4],
+        vector[0, 6],
+        vector[15, 0],
+        vector[15, 2],
+        vector[15, 4],
+        vector[15, 6],
+    ];
+    let mut f = setup_on!(|id| map::new(id, 16), positions, |acc, ctx| {
+        hire_carrying(acc, FRAG, ctx);
+        hire_carrying(acc, FRAG, ctx);
+        hire_carrying(acc, FRAG, ctx);
+        hire_carrying(acc, FRAG, ctx)
+    });
+    let mut game = f.start();
+    f.deploy_black_rain(&mut game);
+    (f, game)
+}
+
+/// Daze and smoke on all eight units.
+fun effects_on_everyone(game: &mut Game) {
+    let tiles = game.map.unit_tiles();
+    tiles.do!(|t| {
+        let (x, y) = (t / 16, t % 16);
+        game.map.apply_effect_for_testing(x, y, ghosts::effect::daze());
+        game.map.apply_effect_for_testing(x, y, ghosts::effect::smoke());
+    });
+}
+
+fun bench_effects(effects: bool, turns: u64) {
+    let (mut fixture, mut game) = setup_effects_bench();
+    let f = &mut fixture;
+    if (effects) effects_on_everyone(&mut game);
+    turns.do!(|_| f.end_turn(&mut game));
+    transfer::share_object(game);
+    fixture.finish();
+}
+
+#[test]
+fun bench_effects_a_deploy() { bench_effects(false, 0) }
+
+#[test]
+fun bench_effects_b_next_turn() { bench_effects(false, 1) }
+
+#[test]
+fun bench_effects_b_next_turn_x2() { bench_effects(false, 2) }
+
+#[test]
+fun bench_effects_c_applied() { bench_effects(true, 0) }
+
+#[test]
+fun bench_effects_d_next_turn() { bench_effects(true, 1) }
+
+#[test]
+fun bench_effects_e_next_turn_x2() { bench_effects(true, 2) }

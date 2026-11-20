@@ -4,6 +4,7 @@
 /// Stores game action records in order.
 module ghosts::history;
 
+use ghosts::effect::{Self, Effect};
 use sui::bcs::{Self, BCS};
 
 /// Stores history of actions.
@@ -35,6 +36,20 @@ public enum Record has copy, drop, store {
     /// A unit fell, and the tile it fell on.
     UnitKIA(ID, u16, u16),
     Dodged,
+    /// Block header for flashbang action: the unit at `origin` throws at
+    /// `target`. Followed by `EffectStart` for each unit in the area.
+    Flashbang { origin: vector<u16>, target: vector<u16> },
+    /// Block header for smoke grenade action: the unit at `origin` throws at
+    /// `target`. Followed by `EffectStart` for each unit in the area.
+    SmokeGrenade { origin: vector<u16>, target: vector<u16> },
+    /// The unit at `(x, y)` has the `Effect` from now on, its turns as given: it
+    /// landed, or refreshed the one of its kind the unit had (no `EffectEnd`
+    /// comes before a refresh). Whatever the source of the effect.
+    EffectStart(u16, u16, Effect),
+    /// The unit at `(x, y)` no longer has the effect of the kind (`u8`, see
+    /// `effect`): it ran out in `next_turn`, after the `NextTurn` record. A unit
+    /// that falls takes its effects with it: its `UnitKIA` ends them all.
+    EffectEnd(u16, u16, u8),
 }
 
 // === History API ===
@@ -86,6 +101,25 @@ public fun new_kia(id: ID, x: u16, y: u16): Record { Record::UnitKIA(id, x, y) }
 public fun new_grenade(origin: vector<u16>, target: vector<u16>): Record {
     Record::Grenade { origin, target }
 }
+
+/// Create new `Record::Flashbang` history record: unit at `origin` throws at `target`.
+public fun new_flashbang(origin: vector<u16>, target: vector<u16>): Record {
+    Record::Flashbang { origin, target }
+}
+
+/// Create new `Record::SmokeGrenade` history record: unit at `origin` throws at `target`.
+public fun new_smoke_grenade(origin: vector<u16>, target: vector<u16>): Record {
+    Record::SmokeGrenade { origin, target }
+}
+
+/// Create new `Record::EffectStart` history record: the unit at `(x, y)` has the `effect`.
+public fun new_effect_start(x: u16, y: u16, effect: Effect): Record {
+    Record::EffectStart(x, y, effect)
+}
+
+/// Create new `Record::EffectEnd` history record: the effect of the `kind` on
+/// the unit at `(x, y)` is gone.
+public fun new_effect_end(x: u16, y: u16, kind: u8): Record { Record::EffectEnd(x, y, kind) }
 
 /// Create new `Record::Explosion` history record: center `(x, y)` and radius.
 public fun new_explosion(x: u16, y: u16, r: u16): Record { Record::Explosion(x, y, r) }
@@ -145,6 +179,16 @@ public(package) fun from_bcs(bcs: &mut BCS): History {
             },
             10 => Record::UnitKIA(bcs.peel_address().to_id(), bcs.peel_u16(), bcs.peel_u16()),
             11 => Record::Dodged,
+            12 => Record::Flashbang {
+                origin: bcs.peel_vec!(|bcs| bcs.peel_u16()),
+                target: bcs.peel_vec!(|bcs| bcs.peel_u16()),
+            },
+            13 => Record::SmokeGrenade {
+                origin: bcs.peel_vec!(|bcs| bcs.peel_u16()),
+                target: bcs.peel_vec!(|bcs| bcs.peel_u16()),
+            },
+            14 => Record::EffectStart(bcs.peel_u16(), bcs.peel_u16(), effect::from_bcs(bcs)),
+            15 => Record::EffectEnd(bcs.peel_u16(), bcs.peel_u16(), bcs.peel_u8()),
             _ => abort,
         }
     });

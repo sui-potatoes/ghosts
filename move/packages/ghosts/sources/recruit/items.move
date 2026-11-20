@@ -40,16 +40,20 @@ public(package) fun armor(tier: u8, ctx: &mut TxContext): Armor {
 
 // === Utilities ===
 
-/// `Utility` kinds, as requisitioned.
+/// `Utility` kinds, as requisitioned. Only appended.
 const FRAG_GRENADE: u8 = 0;
+const FLASHBANG: u8 = 1;
+const SMOKE_GRENADE: u8 = 2;
 
 /// Whether there is a utility of the given kind.
-public(package) fun is_utility(kind: u8): bool { kind == FRAG_GRENADE }
+public(package) fun is_utility(kind: u8): bool { kind <= SMOKE_GRENADE }
 
 /// Creates a utility of the given kind. Aborts on an unknown kind.
 public(package) fun utility(kind: u8, ctx: &mut TxContext): Utility {
     match (kind) {
         FRAG_GRENADE => frag_grenade(ctx),
+        FLASHBANG => flashbang(ctx),
+        SMOKE_GRENADE => smoke_grenade(ctx),
         _ => abort,
     }
 }
@@ -60,6 +64,20 @@ public(package) fun utility(kind: u8, ctx: &mut TxContext): Utility {
 public(package) fun frag_grenade(ctx: &mut TxContext): Utility {
     let grenade = action::limited(action::new_grenade(), 1);
     utility::new("Frag Grenade", stats::new(0, 0, 0, 0, 0), vector[grenade], ctx)
+}
+
+/// A flashbang: a `Flashbang` action usable once per match, like the frag
+/// grenade. Its numbers are in `map::perform_flashbang` and `effect`.
+public(package) fun flashbang(ctx: &mut TxContext): Utility {
+    let flashbang = action::limited(action::new_flashbang(), 1);
+    utility::new("Flashbang", stats::new(0, 0, 0, 0, 0), vector[flashbang], ctx)
+}
+
+/// A smoke grenade: a `SmokeGrenade` action usable once per match, like the
+/// frag grenade. Its numbers are in `map::perform_smoke_grenade` and `effect`.
+public(package) fun smoke_grenade(ctx: &mut TxContext): Utility {
+    let smoke = action::limited(action::new_smoke_grenade(), 1);
+    utility::new("Smoke Grenade", stats::new(0, 0, 0, 0, 0), vector[smoke], ctx)
 }
 
 // === Weapons ===

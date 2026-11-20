@@ -67,14 +67,36 @@ fun test_utilities() {
     // it adds nothing to its carrier: the zero modifier
     assert_eq!(grenade.stats().inner(), 0);
     assert!(items::is_utility(0));
-    assert!(!items::is_utility(1));
+    assert!(!items::is_utility(3));
     grenade.destroy();
+}
+
+#[test]
+/// The flashbang and the smoke grenade are utilities like the frag grenade: each
+/// its own action with one use, and no stats of their own.
+fun test_effect_grenades() {
+    use ghosts::action;
+
+    let ctx = &mut tx_context::dummy();
+    let flashbang = items::utility(1, ctx);
+    assert_eq!(flashbang.name(), b"Flashbang".to_string());
+    assert_eq!(*flashbang.actions(), vector[action::limited(action::new_flashbang(), 1)]);
+    assert_eq!(flashbang.stats().inner(), 0);
+
+    let smoke = items::utility(2, ctx);
+    assert_eq!(smoke.name(), b"Smoke Grenade".to_string());
+    assert_eq!(*smoke.actions(), vector[action::limited(action::new_smoke_grenade(), 1)]);
+    assert_eq!(smoke.stats().inner(), 0);
+
+    assert!(items::is_utility(1) && items::is_utility(2));
+    flashbang.destroy();
+    smoke.destroy();
 }
 
 #[test, expected_failure]
 fun test_unknown_utility_fail() {
     let ctx = &mut tx_context::dummy();
-    items::utility(1, ctx).destroy();
+    items::utility(3, ctx).destroy();
 }
 
 #[test]

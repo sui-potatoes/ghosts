@@ -426,6 +426,36 @@ entry fun perform_grenade(
     game.history.append(history)
 }
 
+/// Throw a flashbang: every unit in the area is dazed. Nothing rolls.
+entry fun perform_flashbang(
+    game: &mut Game,
+    acc: &Account,
+    clock: &Clock,
+    x0: u16,
+    y0: u16,
+    x1: u16,
+    y1: u16,
+    ctx: &mut TxContext,
+) {
+    game.begin_unit_action(acc, clock, x0, y0, ctx);
+    game.history.append(game.map.perform_flashbang(x0, y0, x1, y1))
+}
+
+/// Throw a smoke grenade: every unit in the area is in smoke. Nothing rolls.
+entry fun perform_smoke_grenade(
+    game: &mut Game,
+    acc: &Account,
+    clock: &Clock,
+    x0: u16,
+    y0: u16,
+    x1: u16,
+    y1: u16,
+    ctx: &mut TxContext,
+) {
+    game.begin_unit_action(acc, clock, x0, y0, ctx);
+    game.history.append(game.map.perform_smoke_grenade(x0, y0, x1, y1))
+}
+
 /// Perform an attack action.
 entry fun perform_attack(
     game: &mut Game,
@@ -451,7 +481,8 @@ entry fun perform_attack(
 /// the turn is out of time, which goes against the player who let it run out:
 /// `MAX_MISSED_TURNS` in a row abandon the game. Past the time to deploy, it also
 /// ends the deployment of a side that did not make it: the first turn starts, or
-/// the game is over.
+/// the game is over. A new turn takes one turn off every effect on the map,
+/// see `Map.next_turn`.
 entry fun next_turn(game: &mut Game, acc: &Account, clock: &Clock, ctx: &mut TxContext) {
     let side = game.side(acc, ctx);
     let now = clock.timestamp_ms();
@@ -490,7 +521,8 @@ entry fun next_turn(game: &mut Game, acc: &Account, clock: &Clock, ctx: &mut TxC
 
     game.state = State::Playing { started_ms: now, missed };
     let next = game.players[game.active_side()];
-    game.map.reset_ap(next);
+    let expired = game.map.next_turn(next);
+    if (!expired.is_empty()) game.history.append(expired);
 }
 
 // === Getters ===

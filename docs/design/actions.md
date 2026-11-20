@@ -20,6 +20,8 @@ chain (`chain/map/unit.move:187`), engine (`engine/game.ts:69`) and agent SDK (r
 | `Attack` (engine `fire`) | chain `ghosts.move:424` `perform_attack`, `map.move:211`, `unit.move:93`; engine `game.ts:427`; agent `rules.ts:413` | chain: sets AP to 0 (`unit.move:102`). Engine: sets AP to 0, except the pistol, which costs 1 (`game.ts:194`). Both take 1 ammo | AP > 0; ammo > 0; line of sight (walls and high cover block, `map.move:596`); distance at most `range` + 3 (`unit.move:28`); single-target weapon needs a unit on the target tile, area weapon any non-wall tile; engine and agent: target on the other side | chain: hit roll (`aim`, +5 per tile under range, -10 per tile over, minus target defense = cover 25/50 + `defense`), crit roll, damage +/- `spread`, `plus_one`, target dodge. Engine: flat 10% crit, no dodge or spread, seeded LCG (`game.ts:141`) | damage minus target `armor` (min 1); crit adds half the damage; area weapon explodes with radius `area_size` | `Attack`, then `Miss`; or `Dodged` / `Damage` / `CriticalHit`, `[UnitKIA]`; or `Explosion` and its records | stats `aim`, `damage`, `spread`, `plus_one`, `crit_chance`, `can_be_dodged`, `area_size`, `env_damage`, `range`, `ammo` (all from weapon, `unit.move:179`) |
 | `Reload` | chain `ghosts.move:390`, `map.move:163`, `unit.move:66`; engine `game.ts:458`; agent `rules.ts:411` | 1 AP, does not end the activation | AP > 0; ammo below the maximum | none | ammo back to full | `Reload(x, y)` | stat `ammo` |
 | `Grenade` | chain `ghosts.move:403`, `map.move:382`, `unit.move:74`; engine `game.ts:463`; agent `rules.ts:435` | 1 AP and 1 use, does not end the activation | AP > 0; a use left (the frag grenade has one per match); target within 5 tiles (Manhattan); target not a wall; no wall on the line of throw (covers do not block) | chain: none that matters (cannot be dodged; `apply_damage` still draws a number). Engine: none | every unit within 2 tiles (Manhattan, own units included) takes 4 minus `armor`, min 1 (engine: 6 minus `armor`); chain also destroys covers in the area | `Grenade`, `Explosion`, then `Damage` and `[UnitKIA]` per unit | constants `GRENADE_RANGE/RADIUS/DAMAGE` in `map.move`; the use count is on the `Action` from the unit's `Utility` (3.3) |
+| `Flashbang` | chain `ghosts.move` `perform_flashbang`, `map.move` `perform_flashbang`, `unit.move` `perform_flashbang` | 1 AP and 1 use, does not end the activation | as `Grenade`: AP > 0; a use left (one per match); same range 5, wall and line-of-throw checks (`Map.thrower`) | none (no `Random` in the entry) | every unit within 2 tiles (both sides, the thrower too) is dazed for 2 turns: effective aim 0; no damage, covers stay | `Flashbang`, then `EffectStart` per unit; `EffectEnd` per unit when it runs out in `next_turn` | the `Flashbang` utility; numbers in `effect.move` |
+| `SmokeGrenade` | chain `ghosts.move` `perform_smoke_grenade`, `map.move` `perform_smoke_grenade`, `unit.move` `perform_smoke_grenade` | 1 AP and 1 use, does not end the activation | as `Flashbang` | none | every unit within 2 tiles (both sides, the thrower too) is in smoke for 2 turns: defense +30, aim -30 (floored at 0); no damage, covers stay | `SmokeGrenade`, then `EffectStart` per unit; `EffectEnd` as above | the `Smoke Grenade` utility; numbers in `effect.move` |
 | `Overwatch` | engine only: `game.ts:491`, reaction `game.ts:435`, hostile phase `ai.ts:31` | sets AP to 0 | AP > 0; ammo >= 1; HUD hides it in versus games (`actions.ts:244`) | as `Attack` | until the next own turn, one reaction shot at an enemy that moves within `range` + 3; spent even with no line | event `overwatch`, `shot` with `reaction`, `watch-spent` | a loaded weapon |
 | `Hunker` | engine only: `game.ts:486` | sets AP to 0 | AP > 0; hidden in versus games | none | defense against shots: 20 in the open, 50 behind a barrier, 60 behind a high wall (`game.ts:403`), until the next own turn or a move or shot | event `hunker` | nothing |
 | `Secure` (HUD: Extract) | engine only: `game.ts:475`, label `keys.ts:55` | 1 AP, does not end the activation | AP > 0; unit stands on the relay cell; not yet secured; hidden in versus games | none | marks the objective taken; victory then needs all hostiles down (`game.ts:135`) | event `secure` | position (scenario `relay`) |
@@ -38,23 +40,23 @@ Every unit order on chain first passes `begin_unit_action` (`ghosts.move:620`): 
 the `Account`, it is that side's turn and in time, the tile holds a unit, the unit's `owner` is that
 `Account`. The unit-level function then checks the unit's `actions`, before AP.
 
-Counts of distinct unit actions: chain 4 (`Move`, `Attack`, `Reload`, `Grenade`); engine 8 (those
+Counts of distinct unit actions: chain 6 (`Move`, `Attack`, `Reload`, `Grenade`, `Flashbang`, `SmokeGrenade`); engine 8 (those
 four plus `Overwatch`, `Hunker`, `Secure`, `SwitchWeapon`; the HUD binds 7, `keys.ts:14`); agent SDK
 4 (`Move`, `Attack`, `Reload`, `Grenade`: `agent/types.ts:121`, `agent/contract.ts:199`). Plus
 match-level orders: chain 3 in a match (`next_turn`, `deploy_squad`, `abandon_game`) and
 `complete_game` after it; agent SDK the same four.
 
 Gear on chain: `Weapon` (stats, up to 3 upgrades), `WeaponUpgrade` (stats only), `Armor` (stats
-only), `Utility` (a stats modifier and actions; one item, the frag grenade). Weapons (`chain/recruit/items.move:46`): Standard Rifle (4 dmg, range 4, 3 ammo, 10% crit),
+only), `Utility` (a stats modifier and actions; three items: the frag grenade, the flashbang and the smoke grenade, kinds 0, 1, 2). Weapons (`chain/recruit/items.move:46`): Standard Rifle (4 dmg, range 4, 3 ammo, 10% crit),
 Sharpshooter Rifle (5 dmg, range 5, 20% crit, corporal), Plasma Rifle (6 dmg, range 5, 30% crit,
 lieutenant). None has `area_size` or `env_damage` above 0. Upgrades: scope (+aim), laser sight
 (+crit), stock (+range), expanded clip (+ammo). Armor: light (+1 armor, +10 dodge), medium (+2
 armor), heavy (-1 mobility, +1 health, +3 armor, -10 dodge). Of the gear only a `Utility` adds an
-action (`Grenade`); a weapon grants `Attack` and `Reload` implicitly.
+action (`Grenade`, `Flashbang` or `SmokeGrenade`, one per item); a weapon grants `Attack` and `Reload` implicitly.
 
 ## 2. Enum sketch
 
-The four "on chain today" variants exist: `chain/map/action.move` (`ghosts::action`, constructors
+The six "on chain today" variants exist: `chain/map/action.move` (`ghosts::action`, constructors
 `new_move` ... `new_grenade`, `from_bcs`). The rest is a sketch, not built. Unit variants only: every
 action's parameters (path, target tile) already travel in the entry function and the `Record`.
 
@@ -66,6 +68,8 @@ public enum ActionKind has copy, drop, store {
     Attack, // `perform_attack`; the engine calls it `fire`
     Reload,
     Grenade,
+    Flashbang,    // tag 4, `perform_flashbang`: dazes the area
+    SmokeGrenade, // tag 5, `perform_smoke_grenade`: smokes the area
     // === not yet on chain: engine only ===
     // Overwatch, Hunker, Secure, SwitchWeapon (payload kept out, the order carries it)
     // === not yet on chain: design note ===
@@ -154,8 +158,10 @@ closest existing one.
 | `Move` | base | `mobility` | on chain today |
 | `Attack`, `Reload` | weapon | as 3.1, with a weapon | on chain today |
 | `Grenade` | utility item | frag grenade equipped, a use left | on chain today |
+| `Flashbang` | utility item | flashbang equipped, a use left | on chain today |
+| `SmokeGrenade` | utility item | smoke grenade equipped, a use left | on chain today |
 
-`Utility` (`chain/recruit/utility.move`) is an object like `Weapon` and `Armor`: `id`, `name`,
+With one utility slot a recruit carries one of the three, so it has one of the three actions. `Utility` (`chain/recruit/utility.move`) is an object like `Weapon` and `Armor`: `id`, `name`,
 `stats` and `actions`. Its stats are a modifier added to the unit (a grenade adds nothing: zero), its
 actions are added to the unit's `actions` with their `uses` (the frag grenade: `Grenade` with
 `uses: some(1)`, once per match). The grenade's range, radius and damage are constants of

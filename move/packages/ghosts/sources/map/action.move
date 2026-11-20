@@ -28,8 +28,12 @@ public enum ActionKind has copy, drop, store {
     Attack,
     /// Refill the weapon's magazine, see `Map.perform_reload`.
     Reload,
-    /// Throw a grenade, see `Map.perform_grenade`.
+    /// Throw a frag grenade, see `Map.perform_grenade`.
     Grenade,
+    /// Throw a flashbang, see `Map.perform_flashbang`.
+    Flashbang,
+    /// Throw a smoke grenade, see `Map.perform_smoke_grenade`.
+    SmokeGrenade,
 }
 
 /// An `ActionKind` a `Unit` can perform, and how many more times.
@@ -63,6 +67,12 @@ public fun new_reload(): ActionKind { ActionKind::Reload }
 /// Create `ActionKind::Grenade`.
 public fun new_grenade(): ActionKind { ActionKind::Grenade }
 
+/// Create `ActionKind::Flashbang`.
+public fun new_flashbang(): ActionKind { ActionKind::Flashbang }
+
+/// Create `ActionKind::SmokeGrenade`.
+public fun new_smoke_grenade(): ActionKind { ActionKind::SmokeGrenade }
+
 // === Reads ===
 
 /// What the `Action` does.
@@ -93,6 +103,8 @@ public(package) fun kind_from_bcs(bcs: &mut BCS): ActionKind {
         1 => ActionKind::Attack,
         2 => ActionKind::Reload,
         3 => ActionKind::Grenade,
+        4 => ActionKind::Flashbang,
+        5 => ActionKind::SmokeGrenade,
         _ => abort,
     }
 }

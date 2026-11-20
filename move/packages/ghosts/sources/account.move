@@ -295,8 +295,8 @@ public fun requisition_armor(acc: &Account, tier: u8, ctx: &mut TxContext): Armo
     items::armor(tier, ctx)
 }
 
-/// Requisition a utility of the given kind (0 is the frag grenade): for a recruit,
-/// or the armory. Aborts with `EUnknownUtility` on any other kind.
+/// Requisition a utility of the given kind (0 the frag grenade, 1 the flashbang,
+/// 2 the smoke grenade): for a recruit, or the armory. Aborts with `EUnknownUtility` on any other kind.
 public fun requisition_utility(acc: &Account, kind: u8, ctx: &mut TxContext): Utility {
     acc.authorize(ctx);
     assert!(items::is_utility(kind), EUnknownUtility);

@@ -240,6 +240,8 @@ hit_chance = hit_chance - min(hit_chance, target_defense)
 is_hit = random u8 in [0, 99] < hit_chance
 ```
 
+`aim` is the shooter's effective aim and `target_defense` includes the target's effective `defense` (section 6.1): both are read through `Unit.effective_stats`, the base stats with each status effect's modifier added. There is no minimum hit chance: at effective aim 0 (dazed) the hit chance is `5 * (R - d)` for `d < R` (the distance bonus still applies), 0 at `d >= R`, minus defense, floored at 0. Area weapons ignore defense, so smoke does not help against them.
+
 The bonus is capped at 100 only on the `d < R` branch; `aim` itself can be up to 127 and then always hits. Run/tests (`T/map/unit_tests.move:203-251`): aim 65, R 4: d = 1..7 gives 80, 75, 70, 65, 55, 45, 35.
 
 ### 5.2 Random draws and damage (in order)
@@ -309,7 +311,26 @@ Constants (`S/map/map.move:47-51`): `GRENADE_RANGE` = 5, `GRENADE_RADIUS` = 2, `
 
 There is no hit roll, scatter or miss: the grenade always explodes at the target tile. The area is the diamond of Manhattan radius 2 around the target (13 cells, fewer at the map edge): the target, the 4 cells at distance 1 and the 8 at distance 2; cells are visited in the order given in 5.2 with the target last. Every unit on those cells takes `GRENADE_DAMAGE` reduced by its armor (`4 - armor`, minimum 1), cannot dodge (but `apply_damage` still draws one number per unit), and records `Damage(n)` and, if it falls, `UnitKIA`. Allies, enemies and the thrower are treated the same; the thrower may throw at its own tile or within 2 tiles of itself (run by the existing test: thrower at `(0,0)` throwing at `(0,2)` gives `[Grenade([0,0],[0,2]), Explosion(0,2,2), Damage(4)]`, HP 10 to 6, `T/map/map_tests.move:312-333`). Every `Cover` tile in the area (occupied or not) becomes `Empty`; `Wall` and `Unwalkable` tiles are untouched; line of sight from the center to the cells in the area is not checked, so a grenade also damages units behind a wall within 2 tiles of the target.
 
+Steps 1-4 are `Map.thrower`, shared by all three grenades (6.1).
+
 Uses: the frag grenade is one `Utility` carrying `Action { uses: some(1), kind: Grenade }` (`S/recruit/items.move:66-69`), so one throw per unit per match; `uses` is copied into the unit at deployment and never refilled during the match (`unit.move:222-227`). A recruit has `MAX_UTILITIES` = 1 slot (`S/recruit/recruit.move:39`).
+
+### 6.1 Flashbang, smoke grenade and status effects
+
+`Map.perform_flashbang` and `Map.perform_smoke_grenade`, entries `ghosts::perform_flashbang` and `ghosts::perform_smoke_grenade` (no `Random`), each after `begin_unit_action`: the throw checks 1-4 of section 6 (same `GRENADE_RANGE` 5, wall and line-of-throw rules, same error codes), then `Unit.perform_flashbang` / `perform_smoke_grenade`: `has_action(Flashbang | SmokeGrenade)` else `EActionNotAllowed`, `ap > 0` else `ENoAP`, a use else `ENoUsesLeft`, `ap -= 1`. Then every unit within Manhattan `GRENADE_RADIUS` 2 of the target, either side, the thrower included, gets the effect: a flashbang dazes, a smoke grenade smokes. No roll, no damage, no cover destroyed. Units are found through `Map.units` (row-major order), not by walking the area.
+
+Effects (`S/map/effect.move`): an `Effect` is one byte, `kind << 4 | turns`. `Unit.effects: vector<Effect>` (the last field of `Unit`) holds at most one per kind, in the order they first landed; base `stats` are never changed.
+
+| Kind | Tag | Turns | Modifier (added with `stats::add`, floored at 0, capped at 127) |
+| --- | --- | --- | --- |
+| Daze | 0 | 2 | aim -127: effective aim 0 |
+| Smoke | 1 | 2 | aim -30, defense +30 |
+
+- Effective stats: base, then each effect's modifier in list order. Daze takes all aim, so a unit with both has aim 0 either way.
+- Refresh: an effect of a kind the unit has sets its turns to the larger of the two; no stacking.
+- `turns` counts `next_turn` calls. In `next_turn`, after `NextTurn`, `Map.next_turn` walks `Map.units` once: each unit (either side) loses one turn on every effect and those at 0 are removed (`EffectEnd` each), and the units of the side starting its turn get AP back. Thrown on A's turn with 2 turns, an effect lasts the rest of A's turn and B's turn, and ends when B ends his.
+- A unit that falls takes its effects into `fallen`; nothing ticks them and no `EffectEnd` is written: its `UnitKIA` ends them.
+- Area effects stay with the units hit at throw time, not the tiles.
 
 ## 7. Reload
 
@@ -380,7 +401,7 @@ Weapon upgrades (`items.move:94-152`; one of each kind per weapon, three at most
 | Stock (2): Basic / Advanced / Sniper | +1 | +2 | +3 | `range` |
 | Expanded Clip (3): Basic / Advanced / Superior | +1 | +2 | +3 | `ammo` |
 
-Utility (`items.move:63-69`): Frag Grenade (kind 0), stats modifier all zero (`stats::new(0,0,0,0,0)`), one action `Grenade` with `uses: some(1)`. Its numbers (range 5, radius 2, damage 4) are constants of `perform_grenade`, not stats (section 6).
+Utilities (`items.move`), each with the zero stats modifier and one action with `uses: some(1)`: Frag Grenade (kind 0, `Grenade`), Flashbang (kind 1, `Flashbang`), Smoke Grenade (kind 2, `SmokeGrenade`). Their numbers are constants of the map functions and of `effect`, not stats (sections 6 and 6.1).
 
 Hiring (`S/account.move:152-214`): recruits are made by `recruit::new` (`S/recruit/recruit.move:215-227`): Rookie, `xp` 0, default stats, no armor, no utility; `hire` equips each with a Standard Rifle (`items::rifle(1)`), a real `Weapon` like a requisitioned one. `FREE_RECRUITS` 4: `hire_recruits` tops the squad up to 4 for free, and 4 is the most an `Account` holds (`account.move:56`).
 
@@ -402,7 +423,7 @@ Orders during play: `begin_turn_action` (`:604-617`) requires `Playing`, `side =
 2. In `Deploying`, as above. In `Over`: `EGameOver`.
 3. In `Playing`: if the caller is the active side, `missed[active] = 0`; otherwise it needs `now - started_ms > TURN_LIMIT_MS` (`ETurnNotExpired`, 13) and `missed[active] += 1`. If `missed[active] == MAX_MISSED_TURNS` the game ends as `Forfeited(active player)` and the turn number does not change.
 4. `turn += 1`, record `NextTurn(turn)`; if `turn >= MAX_TURNS` the game ends as `Stalemate` (30 turns per side).
-5. `state = Playing { started_ms: now, missed }` and `Map.reset_ap(next player)`: only the units of the side whose turn begins get AP back to 2 (`:484-486`).
+5. `state = Playing { started_ms: now, missed }` and `Map.next_turn(next player)`: every unit's effects lose one turn, those at 0 end with an `EffectEnd` record each (6.1), and only the units of the side whose turn begins get AP back to 2.
 
 Leaving: `abandon_game` (`:287-292`), any non-`Over` state, ends as `Abandoned(caller)`. Kills: after `perform_attack` or `perform_grenade` with a `UnitKIA` in the records, `count_losses` (`:638-645`) counts the units each side still has on the map: neither -> `Draw`, one -> `Won(other)`. The fallen of an ended game are buried by `complete_game`.
 
@@ -449,6 +470,12 @@ The test asserts `miss == dodge <= hit < kill` in BCS bytes (map plus history).
 | 9 | `Grenade` | `origin`, `target`: `vector<u16>` | first record of a grenade (`map.move:400`) |
 | 10 | `UnitKIA` | `ID` of the recruit, `u16 x`, `u16 y` | a unit fell, after its `Damage` / `CriticalHit` record |
 | 11 | `Dodged` | none | the target dodged (attack) or a unit dodged (area weapon) |
+| 12 | `Flashbang` | `origin`, `target`: `vector<u16>` | first record of a flashbang, then `EffectStart` per unit |
+| 13 | `SmokeGrenade` | `origin`, `target`: `vector<u16>` | first record of a smoke grenade, then `EffectStart` per unit |
+| 14 | `EffectStart` | `u16 x`, `u16 y`, `Effect` (`u8`: `kind << 4 \| turns`) | an effect landed on the unit at `(x, y)`, or refreshed its kind; turns as the unit now has them |
+| 15 | `EffectEnd` | `u16 x`, `u16 y`, `u8 kind` | an effect ran out in `next_turn`, after `NextTurn`; a fall (`UnitKIA`) ends a unit's effects without one |
+
+Replaying `EffectStart` (set the kind), `NextTurn` (every effect -1), `EffectEnd` (remove), `Move` (carry along) and `UnitKIA` (drop all) gives every unit's effects at any point (test `test_effects_replay_through_a_match`).
 
 Not recorded: the end of deployment, the end of the game and its reason (state only), a forfeit, an abandon. `History` is a vector appended in call order (`S/map/history.move:43-55`).
 

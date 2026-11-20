@@ -150,3 +150,82 @@ fun j_grenade_hit() { throw(stats::new(0, 0, 0, 0, 0)) }
 #[test]
 /// The target has 4 HP left and falls; the thrower survives.
 fun k_grenade_kill() { throw(stats::new(0, 0, 0x80 + 6, 0, 0)) }
+
+// === Outcomes with effects ===
+//
+// The same shots with effects on the units, the outcome unchanged, so the
+// difference to the shots above is what reading the effects costs.
+
+/// `setup_outcome` with the `shooter` and `target` effects put on the units.
+fun shoot_with(
+    weapon: Stats,
+    armor: Stats,
+    shooter: vector<ghosts::effect::Effect>,
+    target: vector<ghosts::effect::Effect>,
+    attack: bool,
+) {
+    let ctx = &mut tx_context::dummy();
+    let (mut map, attacker, defender) = setup_outcome(weapon, armor, ctx);
+    shooter.do!(|e| { map.apply_effect_for_testing(0, 0, e); });
+    target.do!(|e| { map.apply_effect_for_testing(1, 1, e); });
+    let mut rng = random::new_generator_from_seed_for_testing(b"bench");
+    if (attack) {
+        let _ = map.perform_attack(&mut rng, 0, 0, 1, 1);
+    };
+    teardown(map, attacker, defender);
+}
+
+/// Daze and smoke.
+fun both(): vector<ghosts::effect::Effect> {
+    vector[ghosts::effect::daze(), ghosts::effect::smoke()]
+}
+
+#[test]
+/// `e_outcome_baseline` with both effects on both units.
+fun l_outcome_baseline_effects() {
+    shoot_with(sure_shot(1), stats::new(0, 0, 0, 0, 0), both(), both(), false)
+}
+
+#[test]
+/// `f_attack_miss` with both effects on both units: the same miss.
+fun m_attack_miss_effects() {
+    shoot_with(sure_shot(1), stats::new_unchecked(100 << (5 * 8)), both(), both(), true)
+}
+
+#[test]
+/// The target of `h_attack_hit` dazed: its aim does not count, the same hit.
+fun n_outcome_baseline_target_dazed() {
+    shoot_with(
+        sure_shot(1),
+        stats::new(0, 0, 0, 0, 0),
+        vector[],
+        vector[ghosts::effect::daze()],
+        false,
+    )
+}
+
+#[test]
+/// `h_attack_hit` on a dazed target: the same hit.
+fun o_attack_hit_target_dazed() {
+    shoot_with(
+        sure_shot(1),
+        stats::new(0, 0, 0, 0, 0),
+        vector[],
+        vector[ghosts::effect::daze()],
+        true,
+    )
+}
+
+#[test]
+/// A flashbang from (0, 0) at (1, 1): both units dazed.
+fun p_flashbang() {
+    let ctx = &mut tx_context::dummy();
+    let mut map = map::new(ctx.fresh_object_address().to_id(), 4);
+    let mut attacker = recruit::default(ctx);
+    attacker.add_utility(items::flashbang(ctx));
+    let target = recruit::default(ctx);
+    map.place_recruit(&attacker, 0, 0);
+    map.place_recruit(&target, 1, 1);
+    let _ = map.perform_flashbang(0, 0, 1, 1);
+    teardown(map, attacker, target);
+}

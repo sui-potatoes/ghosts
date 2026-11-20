@@ -519,7 +519,7 @@ fun test_requisition_utility_not_owner_fail() {
 fun test_requisition_unknown_utility_fail() {
     let mut ts = ts::begin(@0);
     let (_registry, acc, _rng) = open_account(&mut ts);
-    let _utility = acc.requisition_utility(1, ts.ctx());
+    let _utility = acc.requisition_utility(3, ts.ctx());
     abort
 }
 

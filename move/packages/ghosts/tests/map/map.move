@@ -823,3 +823,437 @@ fun grenade_outcome_does_not_roll() {
 
     destroy(vector[thrower, own, foe, near]);
 }
+
+// === Effects ===
+
+/// Abort unless every unit on the map carries exactly the effects a replay of
+/// the `records` from the start says it does (see `history::replay_effects`).
+public fun assert_effects_replay(map: &Map, records: &vector<Record>) {
+    use std::unit_test::assert_eq;
+
+    let (tiles, effects) = history::replay_effects(records);
+    let cols = map.grid.cols();
+    map.units.do_ref!(|tile| {
+        let (x, y) = (*tile / cols, *tile % cols);
+        let (found, i) = tiles.index_of(&((x as u32) << 16 | (y as u32)));
+        let carried = *map.grid[x, y].unit.borrow().effects();
+        if (found) assert_eq!(carried, effects[i]) else assert_eq!(carried, vector[]);
+    });
+    tiles.do_ref!(|t| assert!(map.grid[(*t >> 16) as u16, (*t & 0xFFFF) as u16].unit.is_some()));
+}
+
+/// The effects on the unit at `(x, y)`.
+public fun effects_at(map: &Map, x: u16, y: u16): vector<Effect> {
+    *map.grid[x, y].unit.borrow().effects()
+}
+
+/// A recruit of `owner` carrying the utility of the `kind` (see `items::utility`).
+fun carrier_of(owner: address, kind: u8, ctx: &mut TxContext): ghosts::recruit::Recruit {
+    let mut recruit = recruit_of(owner, ctx);
+    recruit.add_utility(ghosts::items::utility(kind, ctx));
+    recruit
+}
+
+/// Throw the grenade of the utility `$kind` (1 flashbang, 2 smoke) from
+/// `(x, y)` at `(x1, y1)`.
+macro fun throw_effect(
+    $map: &mut Map,
+    $kind: u8,
+    $x: u16,
+    $y: u16,
+    $x1: u16,
+    $y1: u16,
+): vector<Record> {
+    let (map, kind) = ($map, $kind);
+    if (kind == 1) map.perform_flashbang($x, $y, $x1, $y1)
+    else map.perform_smoke_grenade($x, $y, $x1, $y1)
+}
+
+/// Thrower of Alice at (0, 0), her other unit at (0, 2), Bob's at (1, 1),
+/// (2, 1) and (4, 4), a low cover at (1, 2); the grenade of `kind` lands on
+/// (1, 1): every unit but the one at (4, 4) has the effect, both sides', the
+/// thrower too; nobody is hurt, the cover stands, the thrower spent 1 AP and
+/// its one use.
+fun effect_grenade_area(kind: u8, effect: Effect, header: Record) {
+    use std::unit_test::{assert_eq, destroy};
+
+    let ctx = &mut tx_context::dummy();
+    let mut map = new(@0.to_id(), 6);
+    let thrower = carrier_of(ALICE, kind, ctx);
+    let (own, foe, near, far) = (
+        recruit_of(ALICE, ctx),
+        recruit_of(BOB, ctx),
+        recruit_of(BOB, ctx),
+        recruit_of(BOB, ctx),
+    );
+    *&mut map.grid[1, 2].tile_type = cover(LOW_COVER, 0, 0, 0);
+    map.place_recruit(&thrower, 0, 0);
+    map.place_recruit(&own, 0, 2);
+    map.place_recruit(&foe, 1, 1);
+    map.place_recruit(&near, 2, 1);
+    map.place_recruit(&far, 4, 4);
+
+    let history = map.throw_effect!(kind, 0, 0, 1, 1);
+    assert_eq!(
+        history,
+        vector[
+            header,
+            history::new_effect_start(0, 0, effect),
+            history::new_effect_start(0, 2, effect),
+            history::new_effect_start(1, 1, effect),
+            history::new_effect_start(2, 1, effect),
+        ],
+    );
+    assert_eq!(map.effects_at(4, 4), vector[]);
+    map.units.do_ref!(|tile| {
+        let unit = map.grid[*tile / 6, *tile % 6].unit.borrow();
+        assert_eq!(unit.hp(), 10);
+    });
+    assert!(map.is_tile_cover(1, 2));
+    let unit = map.grid[0, 0].unit.borrow();
+    assert_eq!(unit.ap(), 1);
+    assert_eq!(unit.actions()[1].uses(), option::some(0));
+    map.assert_effects_replay(&history);
+
+    destroy(vector[thrower, own, foe, near, far]);
+    map.destroy();
+}
+
+#[test]
+fun flashbang_dazes_the_area() {
+    let header = history::new_flashbang(vector[0, 0], vector[1, 1]);
+    effect_grenade_area(1, effect::daze(), header)
+}
+
+#[test]
+fun smoke_grenade_smokes_the_area() {
+    let header = history::new_smoke_grenade(vector[0, 0], vector[1, 1]);
+    effect_grenade_area(2, effect::smoke(), header)
+}
+
+#[test]
+/// Both kinds on the same units: they coexist, and a second smoke refreshes
+/// the first, reported with its new turns.
+fun effects_from_both_grenades_coexist() {
+    use std::unit_test::{assert_eq, destroy};
+
+    let ctx = &mut tx_context::dummy();
+    let mut map = new(@0.to_id(), 6);
+    let (smoker, flasher, smoker_2) = (
+        carrier_of(ALICE, 2, ctx),
+        carrier_of(ALICE, 1, ctx),
+        carrier_of(ALICE, 2, ctx),
+    );
+    map.place_recruit(&smoker, 0, 0);
+    map.place_recruit(&flasher, 0, 1);
+    map.place_recruit(&smoker_2, 5, 5);
+
+    let mut history = map.perform_smoke_grenade(0, 0, 0, 0);
+    history.push_back(history::new_next_turn(1));
+    history.append(map.next_turn(BOB.to_id()));
+    assert_eq!(map.effects_at(0, 1), vector[effect::new(1, 1)]);
+    history.append(map.perform_flashbang(0, 1, 0, 1));
+    assert_eq!(map.effects_at(0, 1), vector[effect::new(1, 1), effect::daze()]);
+    // a smoke on nobody is the header alone
+    let empty = map.perform_smoke_grenade(5, 5, 2, 3);
+    assert_eq!(empty, vector[history::new_smoke_grenade(vector[5, 5], vector[2, 3])]);
+    history.append(empty);
+    // another smoke onto the same two units refreshes theirs
+    let smoker_3 = carrier_of(ALICE, 2, ctx);
+    map.place_recruit(&smoker_3, 2, 0);
+    let refresh = map.perform_smoke_grenade(2, 0, 0, 0);
+    assert_eq!(
+        refresh,
+        vector[
+            history::new_smoke_grenade(vector[2, 0], vector[0, 0]),
+            history::new_effect_start(0, 0, effect::smoke()),
+            history::new_effect_start(0, 1, effect::smoke()),
+            history::new_effect_start(2, 0, effect::smoke()),
+        ],
+    );
+    history.append(refresh);
+    assert_eq!(map.effects_at(0, 1), vector[effect::smoke(), effect::daze()]);
+    assert_eq!(map.unit(0, 1).borrow().effective_stats().aim(), 0);
+    map.assert_effects_replay(&history);
+
+    destroy(vector[smoker, flasher, smoker_2, smoker_3]);
+    map.destroy();
+}
+
+#[test]
+/// `next_turn` runs down every unit's effects, either side's, whoever's turn
+/// begins, and gives AP back only to the side whose turn it is; it ends the
+/// effects at zero with `EffectEnd`, unit by unit in the order of `Map.units`.
+fun next_turn_ticks_every_unit() {
+    use std::unit_test::{assert_eq, destroy};
+
+    let ctx = &mut tx_context::dummy();
+    let mut map = new(@0.to_id(), 6);
+    let (thrower, foe) = (carrier_of(ALICE, 1, ctx), carrier_of(BOB, 2, ctx));
+    map.place_recruit(&thrower, 0, 0);
+    map.place_recruit(&foe, 0, 2);
+    let mut history = map.perform_flashbang(0, 0, 0, 1);
+
+    let records = map.next_turn(BOB.to_id());
+    assert_eq!(records, vector[]);
+    assert_eq!(map.effects_at(0, 0), vector[effect::new(0, 1)]);
+    assert_eq!(map.unit(0, 0).borrow().ap(), 1);
+    assert_eq!(map.unit(0, 2).borrow().ap(), 2);
+    history.push_back(history::new_next_turn(1));
+    history.append(records);
+
+    let records = map.next_turn(ALICE.to_id());
+    assert_eq!(records, vector[history::new_effect_end(0, 0, 0), history::new_effect_end(0, 2, 0)]);
+    assert_eq!(map.effects_at(0, 0), vector[]);
+    assert_eq!(map.effects_at(0, 2), vector[]);
+    assert_eq!(map.unit(0, 0).borrow().ap(), 2);
+    history.push_back(history::new_next_turn(2));
+    history.append(records);
+    map.assert_effects_replay(&history);
+
+    destroy(vector[thrower, foe]);
+    map.destroy();
+}
+
+/// Out of 20 seeded shots from (0, 0) at the unit at (0, 2) on open ground, with
+/// a weapon of range 2 that adds `aim_mod` to the default aim of 65, how many
+/// hit. `$prepare` runs on the map before each shot.
+macro fun hits($aim_mod: u8, $prepare: |&mut Map|): u64 {
+    use std::unit_test::destroy;
+
+    let ctx = &mut tx_context::dummy();
+    let mut shooter = recruit_of(ALICE, ctx);
+    let weapon = ghosts::stats_builder::new()
+        .aim($aim_mod)
+        .damage(1)
+        .spread(0)
+        .crit_chance(0)
+        .range(2)
+        .build_weapon();
+    shooter.add_weapon(ghosts::weapon::new(b"Test".to_string(), weapon, ctx));
+    let target = recruit_of(BOB, ctx);
+
+    let mut hits = 0;
+    20u8.do!(|seed| {
+        let mut rng = sui::random::new_generator_from_seed_for_testing(vector[seed]);
+        let mut map = new(@0.to_id(), 4);
+        map.place_recruit(&shooter, 0, 0);
+        map.place_recruit(&target, 0, 2);
+        $prepare(&mut map);
+        let history = map.perform_attack(&mut rng, 0, 0, 0, 2);
+        if (history[1] != history::new_miss()) hits = hits + 1;
+        map.destroy();
+    });
+    destroy(vector[shooter, target]);
+    hits
+}
+
+/// A weapon modifier of `-n` aim.
+const MINUS: u8 = 0x80;
+
+#[test]
+/// A shooter with 30 aim against a target in smoke (defense 30) never hits;
+/// before the smoke and once it has run out, it does, the same shots.
+fun target_in_smoke_is_harder_to_hit() {
+    use std::unit_test::assert_eq;
+
+    let before = hits!(MINUS + 35, |_| ());
+    assert!(before > 0 && before < 20);
+    let during = hits!(MINUS + 35, |map| {
+        map.grid[0, 2].unit.borrow_mut().apply_effect(effect::smoke());
+        map.next_turn(BOB.to_id());
+    });
+    assert_eq!(during, 0);
+    let after = hits!(MINUS + 35, |map| {
+        map.grid[0, 2].unit.borrow_mut().apply_effect(effect::smoke());
+        map.next_turn(BOB.to_id());
+        map.next_turn(ALICE.to_id());
+    });
+    assert_eq!(after, before);
+}
+
+#[test]
+/// A shooter in smoke loses 30 aim: from 30 it never hits.
+fun shooter_in_smoke_misses() {
+    use std::unit_test::assert_eq;
+
+    let during = hits!(MINUS + 35, |map| {
+        map.grid[0, 0].unit.borrow_mut().apply_effect(effect::smoke());
+    });
+    assert_eq!(during, 0);
+}
+
+#[test]
+/// A dazed shooter has no aim: one who never misses never hits while dazed, at
+/// the weapon's own range (no distance bonus).
+fun dazed_shooter_misses() {
+    use std::unit_test::assert_eq;
+
+    assert_eq!(hits!(62, |_| ()), 20);
+    let dazed = hits!(62, |map| {
+        map.grid[0, 0].unit.borrow_mut().apply_effect(effect::daze());
+    });
+    assert_eq!(dazed, 0);
+}
+
+#[test, expected_failure(abort_code = EPathTooShort)]
+fun flashbang_out_of_range_fails() {
+    let ctx = &mut tx_context::dummy();
+    let mut map = new(@0.to_id(), 8);
+    let thrower = carrier_of(ALICE, 1, ctx);
+    map.place_recruit(&thrower, 0, 0);
+    map.perform_flashbang(0, 0, 3, 3);
+    abort
+}
+
+#[test, expected_failure(abort_code = EPathTooShort)]
+fun smoke_grenade_out_of_range_fails() {
+    let ctx = &mut tx_context::dummy();
+    let mut map = new(@0.to_id(), 8);
+    let thrower = carrier_of(ALICE, 2, ctx);
+    map.place_recruit(&thrower, 0, 0);
+    map.perform_smoke_grenade(0, 0, 0, 6);
+    abort
+}
+
+#[test, expected_failure(abort_code = ETileIsWall)]
+fun flashbang_on_wall_fails() {
+    let ctx = &mut tx_context::dummy();
+    let mut map = new(@0.to_id(), 6);
+    let thrower = carrier_of(ALICE, 1, ctx);
+    *&mut map.grid[0, 3].tile_type = TileType::Wall;
+    map.place_recruit(&thrower, 0, 0);
+    map.perform_flashbang(0, 0, 0, 3);
+    abort
+}
+
+#[test, expected_failure(abort_code = ETileIsWall)]
+fun smoke_grenade_on_wall_fails() {
+    let ctx = &mut tx_context::dummy();
+    let mut map = new(@0.to_id(), 6);
+    let thrower = carrier_of(ALICE, 2, ctx);
+    *&mut map.grid[0, 3].tile_type = TileType::Wall;
+    map.place_recruit(&thrower, 0, 0);
+    map.perform_smoke_grenade(0, 0, 0, 3);
+    abort
+}
+
+#[test, expected_failure(abort_code = ENoLineOfSight)]
+fun flashbang_without_line_of_throw_fails() {
+    let ctx = &mut tx_context::dummy();
+    let mut map = new(@0.to_id(), 6);
+    let thrower = carrier_of(ALICE, 1, ctx);
+    *&mut map.grid[0, 2].tile_type = TileType::Wall;
+    map.place_recruit(&thrower, 0, 0);
+    map.perform_flashbang(0, 0, 0, 4);
+    abort
+}
+
+#[test, expected_failure(abort_code = ENoLineOfSight)]
+fun smoke_grenade_without_line_of_throw_fails() {
+    let ctx = &mut tx_context::dummy();
+    let mut map = new(@0.to_id(), 6);
+    let thrower = carrier_of(ALICE, 2, ctx);
+    *&mut map.grid[0, 2].tile_type = TileType::Wall;
+    map.place_recruit(&thrower, 0, 0);
+    map.perform_smoke_grenade(0, 0, 0, 4);
+    abort
+}
+
+#[test]
+/// Covers do not stop a throw of either: it flies over them, as the frag does.
+fun effect_grenades_fly_over_cover() {
+    use std::unit_test::destroy;
+
+    let ctx = &mut tx_context::dummy();
+    let mut map = new(@0.to_id(), 6);
+    let (flasher, smoker) = (carrier_of(ALICE, 1, ctx), carrier_of(ALICE, 2, ctx));
+    *&mut map.grid[0, 2].tile_type = cover(HIGH_COVER, HIGH_COVER, HIGH_COVER, HIGH_COVER);
+    map.place_recruit(&flasher, 0, 0);
+    map.place_recruit(&smoker, 1, 0);
+    map.perform_flashbang(0, 0, 0, 4);
+    map.perform_smoke_grenade(1, 0, 1, 4);
+    assert!(map.is_tile_cover(0, 2));
+
+    destroy(vector[flasher, smoker]);
+    map.destroy();
+}
+
+#[test, expected_failure(abort_code = ENoUnit)]
+fun flashbang_from_empty_tile_fails() {
+    let mut map = new(@0.to_id(), 6);
+    map.perform_flashbang(0, 0, 0, 1);
+    abort
+}
+
+#[test, expected_failure(abort_code = ghosts::unit::EActionNotAllowed)]
+/// The frag grenade does not give a flashbang, nor a flashbang a smoke grenade.
+fun flashbang_without_the_utility_fails() {
+    let ctx = &mut tx_context::dummy();
+    let mut map = new(@0.to_id(), 6);
+    let thrower = carrier_of(ALICE, 0, ctx);
+    map.place_recruit(&thrower, 0, 0);
+    map.perform_flashbang(0, 0, 0, 1);
+    abort
+}
+
+#[test, expected_failure(abort_code = ghosts::unit::EActionNotAllowed)]
+fun smoke_grenade_without_the_utility_fails() {
+    let ctx = &mut tx_context::dummy();
+    let mut map = new(@0.to_id(), 6);
+    let thrower = carrier_of(ALICE, 1, ctx);
+    map.place_recruit(&thrower, 0, 0);
+    map.perform_smoke_grenade(0, 0, 0, 1);
+    abort
+}
+
+#[test, expected_failure(abort_code = ghosts::unit::ENoUsesLeft)]
+fun flashbang_twice_fails() {
+    let ctx = &mut tx_context::dummy();
+    let mut map = new(@0.to_id(), 6);
+    let thrower = carrier_of(ALICE, 1, ctx);
+    map.place_recruit(&thrower, 0, 0);
+    map.perform_flashbang(0, 0, 0, 1);
+    map.perform_flashbang(0, 0, 0, 1);
+    abort
+}
+
+#[test, expected_failure(abort_code = ghosts::unit::ENoUsesLeft)]
+fun smoke_grenade_twice_fails() {
+    let ctx = &mut tx_context::dummy();
+    let mut map = new(@0.to_id(), 6);
+    let thrower = carrier_of(ALICE, 2, ctx);
+    map.place_recruit(&thrower, 0, 0);
+    map.perform_smoke_grenade(0, 0, 0, 1);
+    map.reset_ap(ALICE.to_id());
+    map.perform_smoke_grenade(0, 0, 0, 1);
+    abort
+}
+
+#[test]
+/// Bytes of a map whose units carry effects read back the same.
+fun map_bcs_with_effects() {
+    use std::unit_test::{assert_eq, destroy};
+
+    let ctx = &mut tx_context::dummy();
+    let mut map = new(@0.to_id(), 4);
+    let (a, b) = (carrier_of(ALICE, 1, ctx), carrier_of(BOB, 2, ctx));
+    map.place_recruit(&a, 0, 0);
+    map.place_recruit(&b, 1, 1);
+    map.perform_flashbang(0, 0, 0, 0);
+    map.perform_smoke_grenade(1, 1, 1, 1);
+    let bytes = bcs::to_bytes(&map);
+    let restored = from_bytes(bytes);
+    assert_eq!(bcs::to_bytes(&restored), bytes);
+    assert_eq!(restored.effects_at(0, 0), vector[effect::daze(), effect::smoke()]);
+
+    destroy(vector[a, b]);
+    restored.destroy();
+    map.destroy();
+}
+
+/// Put the `effect` on the unit at `(x, y)`, as a grenade would.
+public fun apply_effect_for_testing(map: &mut Map, x: u16, y: u16, effect: Effect): Record {
+    let effect = map.grid[x, y].unit.borrow_mut().apply_effect(effect);
+    history::new_effect_start(x, y, effect)
+}

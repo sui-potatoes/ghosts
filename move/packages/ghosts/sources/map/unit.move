@@ -13,6 +13,7 @@ module ghosts::unit;
 
 use ghosts::{
     action::{Self, Action, ActionKind},
+    effect::{Self, Effect},
     param::{Self, Param},
     recruit::Recruit,
     stats::{Self, Stats},
@@ -62,6 +63,10 @@ public struct Unit has copy, store {
     /// there with their `uses`. Two actions of a kind are two entries, each with
     /// its own count. Checked before anything else.
     actions: vector<Action>,
+    /// The status effects on the `Unit`, at most one of each kind, in the order
+    /// they first landed. Its `stats` stay as they are: the effects add to them
+    /// where they are read, see `effective_stats`.
+    effects: vector<Effect>,
 }
 
 /// Give the `Unit` its action points back, as its side's turn begins.
@@ -70,7 +75,7 @@ public fun reset_ap(unit: &mut Unit) { unit.ap.reset() }
 /// Spend 1 AP on movement; abort if distance exceeds mobility or AP is zero.
 public fun perform_move(unit: &mut Unit, distance: u8) {
     assert!(unit.has_action(action::new_move()), EActionNotAllowed);
-    assert!(unit.stats.mobility() >= distance, ERangeExceeded);
+    assert!(unit.effective_stats().mobility() >= distance, ERangeExceeded);
     assert!(unit.ap.value() > 0, ENoAP);
 
     unit.spend_use(action::new_move());
@@ -87,16 +92,63 @@ public fun perform_reload(unit: &mut Unit) {
     unit.ammo.reset();
 }
 
-/// Throw a grenade if the unit has one: a `Grenade` action, from a `Utility`. It
-/// costs 1 AP and 1 use of the first `Grenade` action that has one left.
-public fun perform_grenade(unit: &mut Unit) {
-    assert!(unit.has_action(action::new_grenade()), EActionNotAllowed);
+/// Throw a frag grenade if the unit has one: a `Grenade` action, from a
+/// `Utility`. See `throw`.
+public fun perform_grenade(unit: &mut Unit) { unit.throw(action::new_grenade()) }
+
+/// Throw a flashbang if the unit has one: a `Flashbang` action, from a
+/// `Utility`. See `throw`.
+public fun perform_flashbang(unit: &mut Unit) { unit.throw(action::new_flashbang()) }
+
+/// Throw a smoke grenade if the unit has one: a `SmokeGrenade` action, from a
+/// `Utility`. See `throw`.
+public fun perform_smoke_grenade(unit: &mut Unit) { unit.throw(action::new_smoke_grenade()) }
+
+/// Throw a grenade of the action `kind`: it costs 1 AP and 1 use of the first
+/// action of the `kind` that has one left. What the grenade does is the map's.
+fun throw(unit: &mut Unit, kind: ActionKind) {
+    assert!(unit.has_action(kind), EActionNotAllowed);
     assert!(unit.ap.value() > 0, ENoAP);
 
-    unit.spend_use(action::new_grenade());
+    unit.spend_use(kind);
     // consumption would go here: a utility spent in a match could be lost with
     // the recruit's gear; consumables need design
     unit.ap.decrease(1);
+}
+
+/// Put the `effect` on the unit. One of a kind already there is refreshed to
+/// the larger of the two timers, not stacked; another kind is added after the
+/// ones there. Returns the effect as the unit now has it.
+public(package) fun apply_effect(unit: &mut Unit, effect: Effect): Effect {
+    let kind = effect.kind();
+    let idx = unit.effects.find_index!(|e| e.kind() == kind);
+    if (idx.is_none()) {
+        unit.effects.push_back(effect);
+        return effect
+    };
+
+    let idx = idx.destroy_some();
+    unit.effects[idx].refresh(effect);
+    unit.effects[idx]
+}
+
+/// A turn ends and the turn of the `Account` `owner` begins: the unit gets its
+/// AP back if it is theirs. Returns whether it has effects to `tick_effects`.
+public(package) fun next_turn(unit: &mut Unit, owner: ID): bool {
+    if (unit.owner == owner) unit.ap.reset();
+    !unit.effects.is_empty()
+}
+
+/// Take one turn off every effect on the unit and remove those at zero, the
+/// others keeping their order. Returns the removed ones, in order.
+public(package) fun tick_effects(unit: &mut Unit): vector<Effect> {
+    let mut expired = vector[];
+    let effects = &mut unit.effects;
+    let mut i = 0;
+    while (i < effects.length()) {
+        if (effects[i].tick()) i = i + 1 else expired.push_back(effects.remove(i));
+    };
+    expired
 }
 
 /// Spend one use of the first action of the `kind` that has one left; an unlimited
@@ -118,6 +170,10 @@ fun spend_use(unit: &mut Unit, kind: ActionKind) {
 /// and `crit_chance`, add half the base damage for a critical hit, and cap
 /// damage at 255. This function does not apply armor, dodge or HP changes.
 ///
+/// The stats are the unit's `effective_stats`: a dazed or smoked shooter aims
+/// worse. `target_defense` is the caller's, and must include the target's
+/// effects.
+///
 /// Returns: (is_hit, is_plus_one, is_critical, damage, hit_chance).
 public fun perform_attack(
     unit: &mut Unit,
@@ -133,10 +189,11 @@ public fun perform_attack(
     unit.ap.deplete();
     unit.ammo.decrease(1);
 
-    let crit_chance = unit.stats.crit_chance();
-    let dmg_stat = unit.stats.damage();
-    let eff_range = unit.stats.range();
-    let aim_stat = unit.stats.aim();
+    let stats = unit.effective_stats();
+    let crit_chance = stats.crit_chance();
+    let dmg_stat = stats.damage();
+    let eff_range = stats.range();
+    let aim_stat = stats.aim();
     let spread = MAX_RANGE_OFFSET;
 
     assert!(eff_range + spread >= range, ERangeExceeded);
@@ -159,14 +216,14 @@ public fun perform_attack(
 
     // damage math is done in u16 and capped at u8 max to avoid overflow and
     // underflow on extreme `damage` / `spread` stats
-    let spread = unit.stats.spread();
+    let spread = stats.spread();
     let is_critical = rng.generate_u8_in_range(0, 99) < crit_chance;
     let damage = match (rng.generate_bool()) {
         true => (dmg_stat as u16) + (rng.generate_u8_in_range(0, spread) as u16),
         false => (dmg_stat - rng.generate_u8_in_range(0, spread.min(dmg_stat))) as u16,
     };
 
-    let is_plus_one = rng.generate_u8_in_range(0, 99) < unit.stats.plus_one();
+    let is_plus_one = rng.generate_u8_in_range(0, 99) < stats.plus_one();
     let damage = if (is_plus_one) damage + 1 else damage;
     let damage = if (is_critical) damage + (dmg_stat as u16) / 2 else damage;
 
@@ -183,8 +240,9 @@ public fun apply_damage(
     damage: u8,
     can_dodge: bool,
 ): (bool, u8, bool) {
-    let dodge_stat = unit.stats.dodge();
-    let armor_stat = unit.stats.armor();
+    let stats = unit.effective_stats();
+    let dodge_stat = stats.dodge();
+    let armor_stat = stats.armor();
     let damage = if (armor_stat >= damage) 1 else damage - armor_stat;
 
     // if attack can be dodged, spin the wheel and see if the unit dodges
@@ -234,6 +292,7 @@ public fun from_recruit(recruit: &Recruit): Unit {
         ammo: param::new(stats.ammo() as u16),
         stats,
         actions,
+        effects: vector[],
     }
 }
 
@@ -260,8 +319,23 @@ public fun ap(unit: &Unit): u16 { unit.ap.value() }
 /// Get the `Unit`'s ammo.
 public fun ammo(unit: &Unit): u16 { unit.ammo.value() }
 
-/// Get the `Unit`'s stats.
+/// Get the `Unit`'s base stats, as it came onto the map: without its effects.
 public fun stats(unit: &Unit): &Stats { &unit.stats }
+
+/// Get the `Unit`'s stats as they count: the base `stats` with the `modifier` of
+/// every effect on it added, in order. Without effects, the base stats.
+public fun effective_stats(unit: &Unit): Stats {
+    if (unit.effects.is_empty()) return unit.stats;
+    let mut stats = unit.stats;
+    unit.effects.do_ref!(|e| stats = stats.add(&e.modifier()));
+    stats
+}
+
+/// Get the status effects on the `Unit`: see `Unit.effects`.
+public fun effects(unit: &Unit): &vector<Effect> { &unit.effects }
+
+/// Get whether the `Unit` has any status effect.
+public fun has_effects(unit: &Unit): bool { !unit.effects.is_empty() }
 
 /// Get the actions the `Unit` can perform, with their uses left: see `Unit.actions`.
 public fun actions(unit: &Unit): &vector<Action> { &unit.actions }
@@ -288,6 +362,7 @@ public(package) fun from_bcs(bcs: &mut BCS): Unit {
         ammo: param::from_bcs(bcs),
         stats: stats::from_bcs(bcs),
         actions: bcs.peel_vec!(|bcs| action::from_bcs(bcs)),
+        effects: bcs.peel_vec!(|bcs| effect::from_bcs(bcs)),
     }
 }
 

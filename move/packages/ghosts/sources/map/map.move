@@ -10,7 +10,7 @@
 /// - to_string
 module ghosts::map;
 
-use ghosts::{history::{Self, Record}, recruit::Recruit, unit::{Self, Unit}};
+use ghosts::{effect::{Self, Effect}, history::{Self, Record}, recruit::Recruit, unit::{Self, Unit}};
 use grid::{cell, cursor, grid::{Self, Grid}};
 use std::string::String;
 use sui::{bcs::{Self, BCS}, random::RandomGenerator};
@@ -45,9 +45,10 @@ const HIGH_COVER: u8 = 2;
 /// Constant for the defense bonus.
 const DEFENSE_BONUS: u8 = 25;
 
-/// The range of the grenade.
+/// The range of every grenade: frag, flashbang and smoke (Manhattan distance).
 const GRENADE_RANGE: u16 = 5;
-/// The radius of the grenade explosion (von Neumann neighborhood).
+/// The radius of every grenade's area (von Neumann neighborhood): frag,
+/// flashbang and smoke.
 const GRENADE_RADIUS: u16 = 2;
 /// The damage the grenade deals to every unit in the area.
 const GRENADE_DAMAGE: u8 = 4;
@@ -173,8 +174,31 @@ public(package) fun units_of_both(map: &Map, first: ID, second: ID): (vector<ID>
     (a, b)
 }
 
+/// A turn ends and the turn of the `Account` `owner` begins, in a single walk of
+/// `Map.units`, in their order: every unit on the map, either side's, has one
+/// turn taken off each of its effects, those at zero removed; and the units of
+/// `owner` get their action points back. The fallen, off the map, are not
+/// touched.
+///
+/// Records: `EffectEnd` for every effect that ran out, unit by unit in the order
+/// of `Map.units`, each unit's in the order it had them.
+public fun next_turn(map: &mut Map, owner: ID): vector<Record> {
+    let cols = map.grid.cols();
+    let mut history = vector[];
+    map.units.length().do!(|i| {
+        let tile = map.units[i];
+        let unit = map.grid[tile / cols, tile % cols].unit.borrow_mut();
+        if (unit.next_turn(owner)) {
+            let (x, y) = (tile / cols, tile % cols);
+            unit.tick_effects().do!(|e| history.push_back(history::new_effect_end(x, y, e.kind())));
+        }
+    });
+    history
+}
+
 /// Give the units of the `Account` `owner` their action points back: their turn
 /// begins. `Map.units` says where the units stand; only those tiles are read.
+/// `next_turn` does this as well as running the effects down.
 public fun reset_ap(map: &mut Map, owner: ID) {
     let cols = map.grid.cols();
     map.units.length().do!(|i| {
@@ -253,6 +277,9 @@ public fun move_unit(map: &mut Map, path: vector<u8>): Record {
 /// `can_be_dodged` stat decides whether the damage can be dodged. Either way
 /// the attacker needs a line of sight to the target (see `line_of_sight`).
 ///
+/// Both sides' stats are their `effective_stats`: the attacker's aim, the
+/// target's natural `defense`, with whatever effects they have.
+///
 /// Records: `Attack`, then `Miss`; or for a single target `Dodged`, or
 /// `Damage` / `CriticalHit`, `[UnitKIA]`; or for an area weapon the records
 /// of `explode`.
@@ -275,7 +302,7 @@ public fun perform_attack(
     let attacker = &map.grid[x0, y0].unit;
     assert!(attacker.is_some(), ENoUnit);
 
-    let stats = attacker.borrow().stats();
+    let stats = attacker.borrow().effective_stats();
     let radius = stats.area_size() as u16;
     let can_dodge = stats.can_be_dodged() != 0;
     let env_damage = stats.env_damage() != 0;
@@ -286,7 +313,7 @@ public fun perform_attack(
         let target = &map.grid[x1, y1].unit;
         assert!(target.is_some(), ENoUnit);
         let cover = if (range > 0) map.cover_bonus(x0, y0, x1, y1) else 0;
-        let natural = target.borrow().stats().defense();
+        let natural = target.borrow().effective_stats().defense();
         ((cover as u16) + (natural as u16)).min(100) as u8
     } else {
         assert!(!map.is_tile_wall(x1, y1), ETileIsWall);
@@ -441,18 +468,73 @@ public fun perform_grenade(
     x1: u16,
     y1: u16,
 ): vector<Record> {
+    map.thrower(x, y, x1, y1).perform_grenade();
+
+    let mut history = vector[history::new_grenade(vector[x, y], vector[x1, y1])];
+    history.append(map.explode(rng, x1, y1, GRENADE_RADIUS, GRENADE_DAMAGE, true, false));
+    history
+}
+
+/// Throw a flashbang from `(x, y)` at `(x1, y1)`: it costs 1 AP and dazes every
+/// unit within `GRENADE_RADIUS` of the target tile, either side's, the thrower
+/// included (see `effect::daze`). It always lands: nothing rolls, nothing is
+/// damaged, covers stay. The throw is checked like the frag grenade's (see
+/// `thrower`).
+///
+/// Records: `Flashbang`, then the records of `spread_effect`.
+public fun perform_flashbang(map: &mut Map, x: u16, y: u16, x1: u16, y1: u16): vector<Record> {
+    map.thrower(x, y, x1, y1).perform_flashbang();
+
+    let mut history = vector[history::new_flashbang(vector[x, y], vector[x1, y1])];
+    history.append(map.spread_effect(x1, y1, effect::daze()));
+    history
+}
+
+/// Throw a smoke grenade from `(x, y)` at `(x1, y1)`: it costs 1 AP and puts
+/// every unit within `GRENADE_RADIUS` of the target tile in smoke, either
+/// side's, the thrower included (see `effect::smoke`). The smoke stays with the
+/// units, not the tiles. Nothing rolls, nothing is damaged, covers stay. The
+/// throw is checked like the frag grenade's (see `thrower`).
+///
+/// Records: `SmokeGrenade`, then the records of `spread_effect`.
+public fun perform_smoke_grenade(map: &mut Map, x: u16, y: u16, x1: u16, y1: u16): vector<Record> {
+    map.thrower(x, y, x1, y1).perform_smoke_grenade();
+
+    let mut history = vector[history::new_smoke_grenade(vector[x, y], vector[x1, y1])];
+    history.append(map.spread_effect(x1, y1, effect::smoke()));
+    history
+}
+
+/// The checks every grenade throw from `(x, y)` at `(x1, y1)` passes, in order:
+/// the target within `GRENADE_RANGE`, not a `Wall`, reachable by a throw (walls
+/// block it, covers do not, see `line_of_throw`), and a unit to throw it.
+/// Returns that unit, for its own action to be performed.
+fun thrower(map: &mut Map, x: u16, y: u16, x1: u16, y1: u16): &mut Unit {
     assert!(grid::manhattan_distance!(x, y, x1, y1) <= GRENADE_RANGE, EPathTooShort);
     assert!(!map.is_tile_wall(x1, y1), ETileIsWall);
     assert!(map.line_of_throw(x, y, x1, y1), ENoLineOfSight);
     let unit = &mut map.grid[x, y].unit;
     assert!(unit.is_some(), ENoUnit);
+    unit.borrow_mut()
+}
 
-    // update unit's stats
-    let unit = unit.borrow_mut();
-    unit.perform_grenade();
-
-    let mut history = vector[history::new_grenade(vector[x, y], vector[x1, y1])];
-    history.append(map.explode(rng, x1, y1, GRENADE_RADIUS, GRENADE_DAMAGE, true, false));
+/// Put the `effect` on every unit within `GRENADE_RADIUS` (Manhattan) of
+/// `(x, y)`, the area a grenade reaches, through `Map.units`: the grid is not
+/// walked. See `Unit.apply_effect` for a unit that has the kind already.
+///
+/// Records: `EffectStart` per unit in the area, with the effect as the unit now
+/// has it, in the order of `Map.units` (row-major).
+fun spread_effect(map: &mut Map, x: u16, y: u16, effect: Effect): vector<Record> {
+    let cols = map.grid.cols();
+    let mut history = vector[];
+    map.units.length().do!(|i| {
+        let tile = map.units[i];
+        let (ux, uy) = (tile / cols, tile % cols);
+        if (grid::manhattan_distance!(x, y, ux, uy) <= GRENADE_RADIUS) {
+            let effect = map.grid[ux, uy].unit.borrow_mut().apply_effect(effect);
+            history.push_back(history::new_effect_start(ux, uy, effect));
+        };
+    });
     history
 }
 
