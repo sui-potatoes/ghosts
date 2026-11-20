@@ -33,18 +33,22 @@ import { terrainAt, toCell } from "../src/chain/match-rules.ts";
 import { scenarioFor } from "../src/chain/match-scene.ts";
 import { lookFor } from "../../packages/engine/src/scene-look.ts";
 import {
+    endingText,
     isGameId,
     listedBy,
     liveRow,
     modeText,
     offTheList,
     openingOf,
+    recentRow,
     resultFor,
     roundOf,
 } from "../src/features/watch/chain/list.ts";
+import { banner, matchCard, resultText } from "../src/features/watch/model.ts";
 import { liveSource, type LiveReads } from "../src/features/watch/chain/live.ts";
 import {
     EventFeed,
+    missedByTurn,
     readStory,
     senderSide,
     storyOutcome,
@@ -307,7 +311,9 @@ test("a finished game: play starts at the second deployment, the history is the 
         "the turn a player sees: rounds, from 0",
     );
     assert.deepEqual(storyOutcome(story.last, story.endTx, [OWNER_A, OWNER_B], SIDES), {
+        kind: "won",
         winner: 0,
+        reason: "by elimination",
     });
 });
 
@@ -367,8 +373,9 @@ test("a game that never reached play reads as unplayed, with who did not show", 
     assert.equal(story.kind, "unplayed");
     if (story.kind !== "unplayed") return;
     assert.deepEqual(storyOutcome(story.last, story.endTx, [OWNER_A, OWNER_B], SIDES), {
+        kind: "no-show",
         winner: 0,
-        reason: "Bravo did not deploy a squad",
+        reason: "Bravo did not deploy in time",
     });
 });
 
@@ -402,28 +409,41 @@ test("a live game still picking squads waits; one in play starts from its first 
 
 test("every ending reads with who won and why", () => {
     const players = [A, B];
-    assert.deepEqual(watchOutcome({ $kind: "Won", Won: B }, players, SIDES), { winner: 1 });
+    assert.deepEqual(watchOutcome({ $kind: "Won", Won: B }, players, SIDES), {
+        kind: "won",
+        winner: 1,
+        reason: "by elimination",
+    });
     assert.deepEqual(watchOutcome({ $kind: "Abandoned", Abandoned: A }, players, SIDES), {
+        kind: "abandoned",
         winner: 1,
         reason: "Alpha left the match",
     });
     assert.deepEqual(watchOutcome({ $kind: "Forfeited", Forfeited: B }, players, SIDES), {
+        kind: "forfeited",
         winner: 0,
         reason: "Bravo missed 3 turns in a row",
     });
     assert.deepEqual(watchOutcome({ $kind: "NoShow", NoShow: A }, players, SIDES), {
+        kind: "no-show",
         winner: 1,
-        reason: "Alpha did not deploy a squad",
+        reason: "Alpha did not deploy in time",
     });
     assert.deepEqual(watchOutcome({ $kind: "NobodyShowed", NobodyShowed: true }, players, SIDES), {
+        kind: "nobody-showed",
         winner: null,
-        reason: "Neither side deployed a squad",
+        reason: "Neither side deployed",
     });
-    assert.equal(
-        watchOutcome({ $kind: "Stalemate", Stalemate: true }, players, SIDES)?.winner,
-        null,
-    );
-    assert.equal(watchOutcome({ $kind: "Draw", Draw: true }, players, SIDES)?.reason, "Draw");
+    assert.deepEqual(watchOutcome({ $kind: "Stalemate", Stalemate: true }, players, SIDES), {
+        kind: "stalemate",
+        winner: null,
+        reason: "Turn limit reached",
+    });
+    assert.deepEqual(watchOutcome({ $kind: "Draw", Draw: true }, players, SIDES), {
+        kind: "draw",
+        winner: null,
+        reason: "Both squads fell",
+    });
     assert.equal(watchOutcome(null, players, SIDES), null);
 });
 
@@ -433,15 +453,21 @@ test("a game deleted in the transaction that ended it: the calls and the sender 
     const end = (calls: string[], sender: string) =>
         storyOutcome(playing, { calls, sender }, owners, SIDES);
     assert.deepEqual(end([CALLS.abandon, CALLS.complete], OWNER_B), {
+        kind: "abandoned",
         winner: 0,
         reason: "Bravo left the match",
     });
     // turn 2 is the first player's: their clock ran out three times
     assert.deepEqual(end([CALLS.nextTurn, CALLS.complete], OWNER_B), {
+        kind: "forfeited",
         winner: 1,
         reason: "Alpha missed 3 turns in a row",
     });
-    assert.deepEqual(end(["perform_attack", CALLS.complete], OWNER_A), { winner: 0 });
+    assert.deepEqual(end(["perform_attack", CALLS.complete], OWNER_A), {
+        kind: "won",
+        winner: 0,
+        reason: "by elimination",
+    });
     assert.equal(
         end([CALLS.abandon, CALLS.complete], addr("ee")),
         null,
@@ -453,8 +479,9 @@ test("a game deleted in the transaction that ended it: the calls and the sender 
     assert.deepEqual(
         storyOutcome(stale, { calls: [CALLS.nextTurn], sender: OWNER_A }, owners, SIDES),
         {
+            kind: "stalemate",
             winner: null,
-            reason: "No winner by the turn limit",
+            reason: "Turn limit reached",
         },
     );
 });
@@ -518,7 +545,7 @@ test("live: events past the cursor as the history grows, a failed read tried aga
     assert.equal(told, 1, "a read with nothing new tells nobody");
     await tick(); // 6: over
     assert.equal(source.ended(), true);
-    assert.deepEqual(source.outcome?.(), { winner: 0 });
+    assert.deepEqual(source.outcome?.(), { kind: "won", winner: 0, reason: "by elimination" });
     assert.equal(source.events().at(-1)?.type, "shot");
     assert.equal(source.deadline(), undefined);
     assert.equal(told, 2);
@@ -541,7 +568,11 @@ test("live: a game gone between two reads ends with its last version's records a
         ["shot:miss", "turn"],
         "the records the last poll missed",
     );
-    assert.deepEqual(source.outcome?.(), { winner: 1, reason: "Alpha left the match" });
+    assert.deepEqual(source.outcome?.(), {
+        kind: "abandoned",
+        winner: 1,
+        reason: "Alpha left the match",
+    });
 });
 
 test("live: a game gone with nothing left to read still ends, plainly", async () => {
@@ -550,7 +581,7 @@ test("live: a game gone with nothing left to read still ends, plainly", async ()
     source.subscribe(() => {});
     await tick();
     assert.equal(source.ended(), true);
-    assert.deepEqual(source.outcome?.(), { winner: null, reason: "The match ended" });
+    assert.deepEqual(source.outcome?.(), { winner: null, reason: "The ending was not recorded" });
 });
 
 test("live: nobody reads while nobody follows, and a game already over opens ended", async () => {
@@ -570,7 +601,7 @@ test("live: nobody reads while nobody follows, and a game already over opens end
 
     const over = liveSource(startedAt("6"), liveReads([parse("6")]).reads);
     assert.equal(over.ended(), true);
-    assert.deepEqual(over.outcome?.(), { winner: 0 });
+    assert.deepEqual(over.outcome?.(), { kind: "won", winner: 0, reason: "by elimination" });
 });
 
 // === The archive: fullnode first, GraphQL past its window ===
@@ -1070,4 +1101,89 @@ test("joining a game under way shows the cover it has left, then follows the bla
         rewound.map.covers.map(cellKey).sort(),
         opening.map.covers.map(cellKey).sort(),
     );
+});
+
+// === The ending on every surface ===
+
+test("one phrase per ending across the card, the banner and the list rows", () => {
+    const players = [A, B];
+    const endings = [
+        { $kind: "Won", Won: B },
+        { $kind: "Draw", Draw: true },
+        { $kind: "Stalemate", Stalemate: true },
+        { $kind: "Abandoned", Abandoned: A },
+        { $kind: "Forfeited", Forfeited: A },
+        { $kind: "NoShow", NoShow: B },
+        { $kind: "NobodyShowed", NobodyShowed: true },
+    ] as const;
+    const names = ["Alpha", "Bravo"] as const;
+    for (const ending of endings) {
+        const outcome = watchOutcome(ending, players, SIDES)!;
+        const list = endingText(ending, players, names);
+        const end = banner({ finished: true, outcome, turns: [] }, SIDES)!;
+        assert.equal(end.title, list.tag, `${ending.$kind}: banner title is the row's tag`);
+        assert.equal(end.reason, list.line, `${ending.$kind}: banner reason is the row's line`);
+        const card = matchCard({
+            live: false,
+            sides: SIDES,
+            turns: [],
+            outcome,
+            over: true,
+            now: 0,
+        });
+        assert.equal(
+            card.facts.find(([label]) => label === "Result")![1],
+            resultText(outcome, SIDES),
+        );
+        assert.equal(resultText(outcome, SIDES), `${list.tag} \u00b7 ${list.line}`);
+        const row = recentRow(
+            { gameId: GAME, players: [A, B], mode: { $kind: "Contract" } as never, ending },
+            names,
+            undefined,
+            0,
+        );
+        assert.match(row.kind, new RegExp(`${list.tag} \u00b7 ${list.line}$`), "the Recent row");
+        assert.doesNotMatch(`${list.tag}${list.line}`, /\.$/, "no trailing full stop");
+    }
+    // the match from the report: the winner's name and the cause in one row
+    const forfeit = recentRow(
+        { gameId: GAME, players: [A, B], mode: { $kind: "Contract" } as never, ending: endings[4] },
+        ["ai-pia", "ai-wanda"],
+        undefined,
+        0,
+    );
+    assert.match(forfeit.kind, /ai-wanda won \u00b7 ai-pia missed 3 turns in a row$/);
+});
+
+test("a forfeit's missed turns, counted as the chain counts them", () => {
+    const [a, b] = [OWNER_A, OWNER_B];
+    const tx = (sender: string, ...calls: string[]) => ({ sender, calls });
+    const act = "perform_attack";
+    // turn 0 is A's: A acts and ends it, B acts and ends its own, then A acts in turn 2 but B calls
+    // the clock (miss 1), B takes turn 3, A does nothing in turn 4 (miss 2), B plays turn 5, and
+    // turn 6, A's, is called a third time: the forfeit, which adds no turn of its own
+    const later = [
+        tx(a, act, act),
+        tx(a, CALLS.nextTurn),
+        tx(b, act),
+        tx(b, CALLS.nextTurn),
+        tx(a, act),
+        tx(b, CALLS.nextTurn),
+        tx(b, act),
+        tx(b, CALLS.nextTurn),
+        tx(b, CALLS.nextTurn),
+        tx(b, act),
+        tx(b, CALLS.nextTurn),
+        tx(b, CALLS.nextTurn, CALLS.complete),
+    ];
+    assert.deepEqual(missedByTurn(later, [a, b], 0), [0, 0, 1, 0, 2, 0, 3]);
+    assert.deepEqual(
+        missedByTurn(later.slice(0, 6), [a, b], 0),
+        [0, 0, 1],
+        "only the turns that have ended so far",
+    );
+    // the other side to open: the same calls read the other way round
+    assert.deepEqual(missedByTurn([tx(a, CALLS.nextTurn)], [a, b], 1), [1]);
+    assert.deepEqual(missedByTurn([tx(a, CALLS.nextTurn)], [a, b], 0), [0]);
+    assert.deepEqual(missedByTurn([tx(a, CALLS.nextTurn)], [null, null], 0), [1], "owners unknown");
 });

@@ -6,10 +6,12 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import type { GameEvent, PlaybackState } from "../../packages/engine/src/index.ts";
+import type { EndingOutcome } from "../src/features/watch/chain/phrases.ts";
 import { COMBAT_ACTIONS, DEFAULT_COMBAT_BINDINGS } from "../../packages/engine/src/keys.ts";
 import {
     banner,
     cycleSpeed,
+    finalLine,
     focusOrder,
     jumpTarget,
     keyCap,
@@ -18,7 +20,9 @@ import {
     pipHint,
     pipsOf,
     pipTitle,
+    readoutNote,
     resultText,
+    sceneEnding,
     scrubWindow,
     SCRUB_WINDOW,
     speedLabel,
@@ -150,28 +154,144 @@ test("the Live chip: none on a replay, lit while following, the way back with ho
     assert.equal(liveChip(state({ growing: true, behind: 1 }))?.label, "Live · 1 turn behind");
 });
 
-test("the banner names the winner, or why there is none, with the record in labelled numbers", () => {
+test("the banner has two lines: who won, and why under it, then the record in labelled numbers", () => {
     assert.equal(banner(state(), SIDES), null);
     assert.deepEqual(banner(state({ finished: true, outcome: { winner: 1 } }), SIDES), {
         title: "Hostiles won",
+        reason: "by elimination",
         line: "2 turns · 2 units fell",
     });
+    assert.equal(banner(state({ finished: true }), SIDES)?.title, "No result");
+    assert.equal(banner(state({ finished: true }), SIDES)?.reason, "The ending was not recorded");
+});
+
+/** Every ending as the source tells it for sides Ghosts (0) and Hostiles (1). */
+const ENDINGS: [string, EndingOutcome, string, string, string | null][] = [
+    [
+        "elimination",
+        { kind: "won", winner: 0, reason: "by elimination" },
+        "Ghosts won",
+        "by elimination",
+        null,
+    ],
+    [
+        "abandoned",
+        { kind: "abandoned", winner: 0, reason: "Hostiles left the match" },
+        "Ghosts won",
+        "Hostiles left the match",
+        "Hostiles left the match \u00b7 Match abandoned",
+    ],
+    [
+        "forfeited",
+        { kind: "forfeited", winner: 1, reason: "Ghosts missed 3 turns in a row" },
+        "Hostiles won",
+        "Ghosts missed 3 turns in a row",
+        "Ghosts missed 3 turns in a row \u00b7 Match forfeited",
+    ],
+    [
+        "no-show",
+        { kind: "no-show", winner: 0, reason: "Hostiles did not deploy in time" },
+        "Ghosts won",
+        "Hostiles did not deploy in time",
+        null,
+    ],
+    [
+        "nobody showed",
+        { kind: "nobody-showed", winner: null, reason: "Neither side deployed" },
+        "No winner",
+        "Neither side deployed",
+        null,
+    ],
+    [
+        "stalemate",
+        { kind: "stalemate", winner: null, reason: "Turn limit reached" },
+        "Draw",
+        "Turn limit reached",
+        "Turn limit reached \u00b7 Match drawn",
+    ],
+    [
+        "draw",
+        { kind: "draw", winner: null, reason: "Both squads fell" },
+        "Draw",
+        "Both squads fell",
+        null,
+    ],
+];
+
+test("each ending: the banner's title and reason, the card's result, the scene's final line", () => {
+    for (const [name, outcome, title, reason, last] of ENDINGS) {
+        const end = banner(state({ finished: true, outcome }), SIDES);
+        assert.equal(end?.title, title, name);
+        assert.equal(end?.reason, reason, name);
+        assert.equal(resultText(outcome, SIDES), `${title} \u00b7 ${reason}`, `${name}: card`);
+        assert.equal(finalLine(outcome, SIDES), last, `${name}: final line`);
+        assert.match(`${title} ${reason}`, /^[^.]*$/, `${name}: no full stop`);
+    }
+});
+
+test("the scene's ending: the header's result and the status line, only at the end of the match", () => {
+    const forfeit = ENDINGS[2][1];
+    assert.equal(sceneEnding({ finished: false, outcome: null }, SIDES), null);
+    assert.equal(sceneEnding({ finished: true, outcome: null }, SIDES), null);
+    assert.deepEqual(sceneEnding({ finished: true, outcome: forfeit }, SIDES), {
+        header: "Hostiles won",
+        status: "Ghosts missed 3 turns in a row \u00b7 Match forfeited",
+    });
+    assert.deepEqual(sceneEnding({ finished: true, outcome: ENDINGS[0][1] }, SIDES), {
+        header: "Ghosts won",
+        status: undefined,
+    });
+    assert.deepEqual(sceneEnding({ finished: true, outcome: ENDINGS[5][1] }, SIDES), {
+        header: "Draw",
+        status: "Turn limit reached \u00b7 Match drawn",
+    });
+});
+
+test("the readout note: missed turns build up in a forfeit, the final line closes the match", () => {
+    const forfeit = ENDINGS[2][1];
+    // seven goes, Ghosts (0) on the even ones; Ghosts missed the 3rd, 5th and 7th
+    const turns = [0, 1, 2, 3, 4, 5, 6].map((i) => ({
+        start: i,
+        side: (i % 2) as 0 | 1,
+        round: Math.floor(i / 2),
+        kills: 0,
+    }));
+    const missed = [0, 0, 1, 0, 2, 0, 3];
+    const note = (turn: number, finished = false) =>
+        readoutNote(
+            { turns, turn, finished, outcome: finished ? forfeit : null, growing: false },
+            SIDES,
+            forfeit,
+            missed,
+        );
     assert.deepEqual(
-        banner(
-            state({ finished: true, outcome: { winner: 0, reason: "Hostiles left the match" } }),
-            SIDES,
-        ),
-        { title: "Ghosts won", line: "Hostiles left the match · 2 turns · 2 units fell" },
-        "a match won off the field says why",
+        [0, 1, 2, 3, 4, 5, 6].map((t) => note(t)),
+        [
+            null,
+            null,
+            "Ghosts missed turn 1 of 3",
+            null,
+            "Ghosts missed turn 2 of 3",
+            null,
+            "Ghosts missed turn 3 of 3",
+        ],
     );
+    assert.equal(note(6, true), "Ghosts missed 3 turns in a row \u00b7 Match forfeited");
+    const live = readoutNote(
+        { turns, turn: 6, finished: false, outcome: null, growing: true },
+        SIDES,
+        null,
+    );
+    assert.equal(live, null, "a match still going says nothing");
     assert.equal(
-        banner(
-            state({ finished: true, outcome: { winner: null, reason: "Left before the end" } }),
+        readoutNote(
+            { turns, turn: 4, finished: false, outcome: null, growing: false },
             SIDES,
-        )?.title,
-        "Left before the end",
+            ENDINGS[2][1],
+        ),
+        null,
+        "no per-turn counts known: nothing is guessed before the end",
     );
-    assert.equal(banner(state({ finished: true }), SIDES)?.title, "No winner");
 });
 
 test("player-facing copy reads as finished: no preview, beta or soon", () => {
@@ -454,22 +574,16 @@ test("the card of a replay: marked Replay, who played whom, labelled facts", () 
     assert.match(fact("Played"), /2026 · 3 h ago$/);
 });
 
-test("the card's result for each ending", () => {
-    assert.equal(
-        resultText({ winner: 0, reason: "Hostiles left the match" }, SIDES),
-        "Ghosts won · Hostiles left the match",
-    );
+test("the card's result for each ending: the title, a dot, the reason", () => {
     assert.equal(
         resultText({ winner: 1, reason: "Ghosts missed 3 turns in a row" }, SIDES),
-        "Hostiles won · Ghosts missed 3 turns in a row",
+        "Hostiles won \u00b7 Ghosts missed 3 turns in a row",
     );
-    assert.equal(resultText({ winner: null, reason: "Draw" }, SIDES), "Draw");
     assert.equal(
-        resultText({ winner: null, reason: "No winner by the turn limit" }, SIDES),
-        "No winner by the turn limit",
+        resultText({ winner: null }, SIDES),
+        "No winner \u00b7 The ending was not recorded",
     );
-    assert.equal(resultText({ winner: null }, SIDES), "No winner");
-    assert.equal(resultText(null, SIDES), "No result");
+    assert.equal(resultText(null, SIDES), "No result \u00b7 The ending was not recorded");
 });
 
 test("the card of a live game: marked Live, no result yet, the turn so far, no date; modes read as given", () => {

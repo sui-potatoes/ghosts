@@ -330,9 +330,10 @@ function ObserverHeader() {
         <strong>
           Turn {pad2(observer.turn)}{" "}
           <span>
-            {winner !== null
-              ? `${observer.sides[winner].name} won`
-              : `${observer.sides[sideInPhase(game)].name} to move`}
+            {observer.ending ??
+              (winner !== null
+                ? `${observer.sides[winner].name} won`
+                : `${observer.sides[sideInPhase(game)].name} to move`)}
           </span>
         </strong>
       </div>

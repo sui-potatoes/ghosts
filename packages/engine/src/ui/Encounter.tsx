@@ -8,11 +8,11 @@ import { boot } from "../boot";
 import type { Recruit } from "@ghosts/squad/types";
 import type { DriverFactory } from "../driver";
 import type { Scenario } from "../scenario";
-import { Playback } from "../replay/playback";
+import { Playback, type PlaybackState } from "../replay/playback";
 import { sceneStage } from "../replay/stage";
-import type { ObserverCard } from "../observer";
+import type { ObserverCard, ObserverEnding } from "../observer";
 import type { RecordSource } from "../replay/timeline";
-export type { ObserverCard } from "../observer";
+export type { ObserverCard, ObserverEnding } from "../observer";
 import { newSession, type Session } from "../session";
 import { defaultSettings, type EngineSettings } from "../settings";
 import type { EncounterDebrief } from "../aftermath/report";
@@ -74,6 +74,8 @@ export interface ObserverOptions {
    * Opened again later (`openMatchCard`) it only has Back. `onCardClose` hears every close.
    */
   card?: () => ObserverCard;
+  /** The match's ending for the playback as it stands (null while it goes on): the header and the status line show it. */
+  ending?: (state: PlaybackState) => ObserverEnding | null;
   hold?: boolean;
   onPlay?: () => void;
   onExit?: () => void;
@@ -85,11 +87,23 @@ function startPlayback(session: Session, options: ObserverOptions): () => void {
   const stage = sceneStage(options.source);
   const playback = new Playback(options.source, stage, stage.firstSide, stage.firstRound);
   // The live game's clock shows while the viewer follows it.
+  let announced = false;
   const clock = () => {
-    const deadline = playback.getState().live ? options.source.deadline?.() : undefined;
-    if (session.observer && session.observer.deadline !== deadline) {
-      session.observer.deadline = deadline;
+    const state = playback.getState();
+    const deadline = state.live ? options.source.deadline?.() : undefined;
+    const ending = options.ending?.(state) ?? null;
+    const view = session.observer;
+    if (!view) return;
+    if (view.deadline !== deadline || (view.ending ?? null) !== (ending?.header ?? null)) {
+      view.deadline = deadline;
+      view.ending = ending?.header ?? null;
       session.changed();
+    }
+    // The last beat: the status line once the last event has played out (not over its turn line).
+    if (!ending) announced = false;
+    else if (!announced && !state.playing) {
+      announced = true;
+      if (ending.status) session.notify(ending.status);
     }
   };
   const unsubscribe = playback.subscribe(clock);

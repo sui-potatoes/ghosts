@@ -80,6 +80,7 @@ export default function ChainWatch() {
                         link: `${window.location.origin}/watch/${data.gameId}`,
                         explorer: explorerUrl(data.facts.endDigest ?? data.gameId),
                         facts: data.facts,
+                        missed: data.missed,
                         hold: !data.live && !replay,
                         onReplay: data.live ? () => setReplay(true) : undefined,
                     }}

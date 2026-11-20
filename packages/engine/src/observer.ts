@@ -13,6 +13,7 @@
 
 import type { CombatAction } from "./keys.ts";
 import type { Unit } from "./game.ts";
+import type { PlaybackState } from "./replay/playback.ts";
 import type { WatchSide } from "./replay/timeline.ts";
 
 /** What the session knows when it is a viewer's. */
@@ -23,8 +24,20 @@ export interface ObserverView {
   turn: number;
   /** When the live game's turn runs out (epoch ms), while the viewer follows it; absent otherwise. */
   deadline?: number;
+  /** How the match ended, once the playback is at its end: the header shows it in place of whose turn it is. */
+  ending?: string | null;
   /** The host's card over the field (`ObserverOptions` in `ui/Encounter.tsx`). */
   host?: ObserverHost;
+}
+
+/**
+ * What the host says in the scene when the playback reaches the end of a match: the header's
+ * result ("Vance won", "Draw") and, when the match was not settled on the field, a status line
+ * ("Vance missed 3 turns in a row · Match forfeited") shown as the playback arrives.
+ */
+export interface ObserverEnding {
+  header: string;
+  status?: string;
 }
 
 /** What a viewer's card says: the briefing's eyebrow, title, a line and labelled facts. */
@@ -38,6 +51,8 @@ export interface ObserverCard {
 /** The host's side of the card: its words, and what Play, Exit and a close do. */
 export interface ObserverHost {
   card?: () => ObserverCard;
+  /** The ending to show for the playback as it stands; null while the match goes on. */
+  ending?: (state: PlaybackState) => ObserverEnding | null;
   onPlay?: () => void;
   onExit?: () => void;
   onCardClose?: () => void;

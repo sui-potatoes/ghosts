@@ -8,9 +8,17 @@
  * in `tests/watch-viewer.test.ts`.
  */
 
-import type { ObserverCard, PlaybackState, Speed, WatchOutcome, WatchSide } from "@ghosts/engine";
+import type {
+    ObserverCard,
+    ObserverEnding,
+    PlaybackState,
+    Speed,
+    WatchOutcome,
+    WatchSide,
+} from "@ghosts/engine";
 
 import { agoText } from "./chain/list.ts";
+import { ELIMINATION, endingKindOf, MISS_LIMIT, noWinner, VERDICT } from "./chain/phrases.ts";
 
 /** The speeds in order, as the engine has them (`SPEEDS`), without loading it. */
 export const SPEED_STEPS: readonly Speed[] = [0.5, 1, 2, 4];
@@ -124,21 +132,87 @@ export function liveChip(
 }
 
 /**
- * The end of a game: who won, or why there is no winner; the line says why a
- * game was won off the field (a player left) and the record in labelled numbers.
+ * The ending as every surface says it: who won (or "Draw", "No winner"), and why in plain
+ * words. A win the field decided carries no reason of its own: it is by elimination.
+ */
+export function endingLines(
+    outcome: WatchOutcome | null,
+    sides: readonly [WatchSide, WatchSide],
+): { title: string; reason: string } {
+    if (!outcome) return { title: "No result", reason: "The ending was not recorded" };
+    if (outcome.winner !== null)
+        return {
+            title: `${sides[outcome.winner].name} won`,
+            reason: outcome.reason ?? ELIMINATION,
+        };
+    return {
+        title: noWinner(endingKindOf(outcome)),
+        reason: outcome.reason ?? "The ending was not recorded",
+    };
+}
+
+/**
+ * The end of a game: two lines, who won and why under it, then the record in labelled
+ * numbers (`line`).
  */
 export function banner(
     state: Pick<PlaybackState, "finished" | "outcome" | "turns">,
     sides: readonly [WatchSide, WatchSide],
-): { title: string; line: string } | null {
+): { title: string; reason: string; line: string } | null {
     if (!state.finished) return null;
     const fell = state.turns.reduce((n, t) => n + t.kills, 0);
-    const outcome = state.outcome;
-    const won = outcome && outcome.winner !== null;
-    const title = won ? `${sides[outcome.winner!].name} won` : (outcome?.reason ?? "No winner");
     const turns = new Set(state.turns.map((t) => t.round)).size;
     const record = `${turns} turn${turns === 1 ? "" : "s"} · ${fell} unit${fell === 1 ? "" : "s"} fell`;
-    return { title, line: won && outcome.reason ? `${outcome.reason} · ${record}` : record };
+    return { ...endingLines(state.outcome, sides), line: record };
+}
+
+/**
+ * The scene's last beat for an ending that left units standing: the reason and the verdict
+ * ("ai-pia missed 3 turns in a row · Match forfeited"). Null for the rest.
+ */
+export function finalLine(
+    outcome: WatchOutcome | null,
+    sides: readonly [WatchSide, WatchSide],
+): string | null {
+    const kind = endingKindOf(outcome);
+    const verdict = kind && VERDICT[kind];
+    return verdict ? `${endingLines(outcome, sides).reason} · ${verdict}` : null;
+}
+
+/**
+ * What the viewer says in the scene once the playback is at the end of a match: the header's
+ * result ("ai-wanda won", "Draw") and, for an ending that left units standing, the status line.
+ * Null while the match goes on (or the end is not reached, or nobody knows how it ended).
+ */
+export function sceneEnding(
+    state: Pick<PlaybackState, "finished" | "outcome">,
+    sides: readonly [WatchSide, WatchSide],
+): ObserverEnding | null {
+    if (!state.finished || !state.outcome) return null;
+    return {
+        header: endingLines(state.outcome, sides).title,
+        status: finalLine(state.outcome, sides) ?? undefined,
+    };
+}
+
+/**
+ * The turn readout's note: at the end of a match the final line, and for a forfeit the turns
+ * missed building up as they happen ("ai-pia missed turn 2 of 3"). `missed` is the count by turn
+ * where it is known (a replay); without it only the final count is, at the last turn.
+ */
+export function readoutNote(
+    state: Pick<PlaybackState, "finished" | "outcome" | "turn" | "turns" | "growing">,
+    sides: readonly [WatchSide, WatchSide],
+    source: WatchOutcome | null,
+    missed?: readonly number[],
+): string | null {
+    if (state.growing) return null;
+    if (state.finished) return finalLine(state.outcome ?? source, sides);
+    if (endingKindOf(source) !== "forfeited") return null;
+    const count = missed?.[state.turn] ?? 0;
+    const mark = state.turns[state.turn];
+    if (!count || !mark) return null;
+    return `${sides[mark.side].name} missed turn ${count} of ${MISS_LIMIT}`;
 }
 
 /**
@@ -248,15 +322,13 @@ export interface CardFacts {
     playedAt?: number | null;
 }
 
-/** How a match ended, in words: who won and how, or why nobody did. */
+/** How a match ended, in words: who won (or "Draw") and why, as the banner says it. */
 export function resultText(
     outcome: WatchOutcome | null,
     sides: readonly [WatchSide, WatchSide],
 ): string {
-    if (!outcome) return "No result";
-    if (outcome.winner === null) return outcome.reason ?? "No winner";
-    const won = `${sides[outcome.winner].name} won`;
-    return `${won} · ${outcome.reason ?? "by elimination"}`;
+    const { title, reason } = endingLines(outcome, sides);
+    return `${title} · ${reason}`;
 }
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;

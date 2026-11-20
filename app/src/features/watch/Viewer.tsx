@@ -20,7 +20,9 @@ import {
     openMatchCard,
     type IntelSource,
     type Playback,
+    type PlaybackState,
     type RecordSource,
+    type WatchOutcome,
 } from "@ghosts/engine";
 import type { Recruit } from "@ghosts/squad/types";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
@@ -49,6 +51,8 @@ import {
     keyCap,
     liveChip,
     matchCard,
+    readoutNote,
+    sceneEnding,
     type CardFacts,
     pipHint,
     pipsOf,
@@ -72,6 +76,8 @@ export interface ViewerExtras {
     explorer?: string;
     /** What the match card says beyond the events: mode, level, when it was played. */
     facts?: CardFacts;
+    /** The turns in a row each side had let run out as each turn ended, by turn (a replay's). */
+    missed?: readonly number[];
     /** Open on the match card and hold the replay until Play (a finished match opened as a replay). */
     hold?: boolean;
     /** Open the game's replay, offered once a live game is over. */
@@ -125,6 +131,15 @@ export function Viewer({
                     now: Date.now(),
                 });
             },
+            // The playback at its end: the header says who won, and the status line why.
+            ending: (state: PlaybackState) =>
+                sceneEnding(
+                    {
+                        finished: state.finished,
+                        outcome: state.outcome ?? source.outcome?.() ?? null,
+                    },
+                    source.sides,
+                ),
             onPlay: () => playbackRef.current?.play(),
             onExit: () => latest.current.leave(),
             onCardClose: () => setCardOpen(false),
@@ -170,6 +185,7 @@ export function Viewer({
                     <Controls
                         playback={playback}
                         sides={source.sides}
+                        outcome={() => source.outcome?.() ?? null}
                         leave={leave}
                         extras={extras}
                         copy={copy}
@@ -333,6 +349,7 @@ function useCopyLink(link: string | undefined) {
 function Controls({
     playback,
     sides,
+    outcome,
     leave,
     extras,
     copy,
@@ -341,6 +358,8 @@ function Controls({
 }: {
     playback: Playback;
     sides: RecordSource["sides"];
+    /** How the match ended as its source tells it (null while it goes on). */
+    outcome: () => WatchOutcome | null;
     leave: () => void;
     extras: ViewerExtras;
     copy: ReturnType<typeof useCopyLink>;
@@ -355,6 +374,7 @@ function Controls({
     const readout = turnReadout(state, sides);
     const chip = liveChip(state);
     const end = banner(state, sides);
+    const note = readoutNote(state, sides, outcome(), extras.missed);
     const strip = scrubWindow(pipsOf(state), state.turn);
     const { copied, run: copyLink } = copy;
     const link = extras.link;
@@ -374,6 +394,7 @@ function Controls({
                 <section className="watch-banner" aria-live="polite">
                     <span className="watch-banner-eyebrow">Match over</span>
                     <strong className="watch-banner-title">{end.title}</strong>
+                    <span className="watch-banner-reason">{end.reason}</span>
                     <span className="watch-banner-line">{end.line}</span>
                     <div className="watch-banner-actions">
                         <TransportButton
@@ -403,6 +424,11 @@ function Controls({
                         </TransportButton>
                     </div>
                 </section>
+            )}
+            {note && (
+                <p className="watch-note" role="status">
+                    {note}
+                </p>
             )}
             <section className="watch-transport" aria-label="Playback">
                 <div className="watch-buttons">

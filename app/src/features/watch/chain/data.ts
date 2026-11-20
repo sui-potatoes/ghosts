@@ -49,6 +49,7 @@ import {
     isGameId,
     listedBy,
     liveRow,
+    endingText,
     modeText,
     needsCreationCheck,
     offTheList,
@@ -75,6 +76,7 @@ import {
 } from "./recent";
 import {
     EventFeed,
+    missedByTurn,
     rankedDress,
     readStory,
     storyOutcome,
@@ -383,12 +385,10 @@ export function useYourGames(accountId: string | null | undefined, owner: string
                 }),
             );
             const known = games.filter((g) => g !== null);
-            const opponents = await fetchPlayers(client, [
-                ...new Set(
-                    known.flatMap(({ game }) => game.players.filter((p) => p !== accountId)),
-                ),
+            const everyone = await fetchPlayers(client, [
+                ...new Set(known.flatMap(({ game }) => game.players)),
             ]);
-            const nameOfAccount = new Map(opponents.map((p) => [p.accountId, p.name]));
+            const nameOfAccount = new Map(everyone.map((p) => [p.accountId, p.name]));
             return known.map(({ f, game, announced }) => {
                 const side = game.players.indexOf(accountId!);
                 const sender =
@@ -397,10 +397,15 @@ export function useYourGames(accountId: string | null | undefined, owner: string
                 const ending = announced ?? endingOf(game, f, sender);
                 const result = resultFor(ending, game.players, side);
                 const opponent = nameOfAccount.get(game.players[1 - side]) ?? "A player";
+                const sideNames = game.players.map((id) => nameOfAccount.get(id) ?? "A player");
+                // Why it ended, in the words the card and the banner use.
+                const why = ending
+                    ? endingText(ending, game.players, [sideNames[0], sideNames[1]]).line
+                    : null;
                 return {
                     gameId: f.gameId,
                     name: `vs ${opponent}`,
-                    kind: `${when(f.timestampMs)} · ${modeText(game)}`,
+                    kind: [when(f.timestampMs), modeText(game), why].filter(Boolean).join(" · "),
                     tag: result,
                     won: result === "Won",
                 };
@@ -439,6 +444,8 @@ export type ChainOpened =
           /** Side 0's recruits, dressed for the field; side 1's looks are in the scenario. */
           squad: LocalRecruit[];
           intel: IntelSource;
+          /** The turns in a row each side had let run out as each turn ended, by turn; a replay's. */
+          missed?: number[];
       }
     | { kind: "deploying"; gameId: string; until: number; sides: readonly [WatchSide, WatchSide] }
     | { kind: "unplayed"; gameId: string; title: string; line: string }
@@ -588,5 +595,6 @@ export async function openChainGame(
         sides,
         squad,
         intel,
+        missed: missedByTurn(story.later, owners, story.first.turn),
     };
 }

@@ -25,6 +25,7 @@ import {
     STALE_PLAYING_MS,
 } from "../../../chain/watch-layout.ts";
 import { TIERS } from "../../play/economy/index.ts";
+import { kindOf, reasonOf } from "./phrases.ts";
 import type { RecentGame } from "./recent.ts";
 
 /** A game nobody is playing any more, or one waiting only to be wrapped up: off the live list. */
@@ -134,15 +135,16 @@ const sideIn = (players: readonly string[], account: string) => {
 };
 
 /**
- * How a finished game ended, for anyone: a short tag (who won, or "Draw") and the line
- * that says how, in plain words, with the players' names (`names` by side).
+ * How a finished game ended, for anyone: a short tag (who won, "Draw" or "No winner") and
+ * the line that says why, in plain words, with the players' names (`names` by side). The
+ * words are the viewer's too (`phrases.ts`).
  */
 export function endingText(
     ending: GameEnding | null,
     players: readonly string[],
     names: readonly [string, string],
 ): { tag: string; line: string } {
-    if (!ending) return { tag: "Ended", line: "The match ended" };
+    if (!ending) return { tag: "No result", line: "The ending was not recorded" };
     const name = (account: string) => {
         const side = sideIn(players, account);
         return side === null ? "A player" : names[side];
@@ -151,30 +153,30 @@ export function endingText(
         const side = sideIn(players, account);
         return side === null ? "The other player" : names[1 - side];
     };
+    const kind = kindOf(ending);
     switch (ending.$kind) {
         case "Won":
-            return { tag: `${name(ending.Won)} won`, line: "Won on the field" };
+            return { tag: `${name(ending.Won)} won`, line: reasonOf(kind) };
         case "Draw":
-            return { tag: "Draw", line: "Both squads fell" };
         case "Stalemate":
-            return { tag: "Draw", line: "No winner by the turn limit" };
+            return { tag: "Draw", line: reasonOf(kind) };
+        case "NobodyShowed":
+            return { tag: "No winner", line: reasonOf(kind) };
         case "Abandoned":
             return {
                 tag: `${other(ending.Abandoned)} won`,
-                line: `${name(ending.Abandoned)} left the match`,
+                line: reasonOf(kind, name(ending.Abandoned)),
             };
         case "Forfeited":
             return {
                 tag: `${other(ending.Forfeited)} won`,
-                line: `${name(ending.Forfeited)} missed 3 turns in a row`,
+                line: reasonOf(kind, name(ending.Forfeited)),
             };
         case "NoShow":
             return {
                 tag: `${other(ending.NoShow)} won`,
-                line: `${name(ending.NoShow)} did not deploy a squad`,
+                line: reasonOf(kind, name(ending.NoShow)),
             };
-        case "NobodyShowed":
-            return { tag: "No match", line: "Neither side deployed a squad" };
     }
 }
 
@@ -208,7 +210,7 @@ export function recentRow(
     const ended = endingText(game.ending, game.players, names);
     const mode = modeText(game);
     const ago = endedAt === undefined ? null : agoText(endedAt, now);
-    const how = game.ending.$kind === "Won" ? ended.tag : ended.line;
+    const how = `${ended.tag} · ${ended.line}`;
     return {
         id: game.gameId,
         name: `${names[0]} vs ${names[1]}`,

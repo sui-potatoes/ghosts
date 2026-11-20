@@ -42,6 +42,7 @@ import {
     type UnitLook,
 } from "../../../chain/match-scene.ts";
 import { CALLS, PLACEMENT_CALLS, RecruitField } from "../../../chain/watch-layout.ts";
+import { kindOf, reasonOf, type EndingOutcome } from "./phrases.ts";
 import { hash, rankedSide, sideLooks, virtualRecruits } from "../../play/ranked/kit.ts";
 
 /** A recruit deployed in a game, as its table entry held it. */
@@ -61,6 +62,8 @@ export type GameStory =
           recruits: GameRecruit[];
           /** The start was read from its history: a live game can be rewound to its first turn. */
           fromStart: boolean;
+          /** The transactions after play started, oldest first: who ended each turn. */
+          later: GameTx[];
       }
     /** It ended before play started: a side never deployed. */
     | { kind: "unplayed"; last: ChainGame; endTx: GameTx | null }
@@ -128,6 +131,7 @@ export async function readStory(
                   endTx: null,
                   recruits: [],
                   fromStart: false,
+                  later: [],
               }
             : { kind: "unavailable" };
     }
@@ -144,12 +148,16 @@ export async function readStory(
         if (tx.calls.some((call) => PLACEMENT_CALLS.includes(call))) deployed = i;
     });
     let first: ChainGame | null = null;
-    for (const tx of txs.slice(Math.max(0, deployed), Math.max(0, deployed) + START_READS)) {
+    let firstAt = -1;
+    for (const [at, tx] of txs
+        .slice(Math.max(0, deployed), Math.max(0, deployed) + START_READS)
+        .entries()) {
         if (!tx.after) break;
         const game = decode(await readAt(archive, gameId, tx.after));
         if (!game || isOver(game)) break;
         if (game.state.$kind === "Playing") {
             first = game;
+            firstAt = Math.max(0, deployed) + at;
             break;
         }
     }
@@ -164,6 +172,7 @@ export async function readStory(
                 endTx: null,
                 recruits,
                 fromStart: false,
+                later: [],
             };
         return { kind: "unplayed", last, endTx };
     }
@@ -175,6 +184,7 @@ export async function readStory(
         endTx,
         recruits,
         fromStart: true,
+        later: txs.slice(firstAt + 1),
     };
 }
 
@@ -327,12 +337,12 @@ export function senderSide(
     return at < 0 ? null : at;
 }
 
-/** How a game ended, for anyone watching it: who won and, when not on the field, why. */
+/** How a game ended, for anyone watching it: who won and why, in the words every surface shares (`phrases.ts`). */
 export function watchOutcome(
     ending: GameEnding | null,
     players: readonly string[],
     sides: readonly [WatchSide, WatchSide],
-): WatchOutcome | null {
+): EndingOutcome | null {
     if (!ending) return null;
     const sideOf = (account: string) => {
         const at = players.indexOf(account);
@@ -340,27 +350,27 @@ export function watchOutcome(
     };
     const other = (side: 0 | 1 | null) => (side === null ? null : ((1 - side) as 0 | 1));
     const name = (side: 0 | 1 | null) => (side === null ? "A player" : sides[side].name);
+    const kind = kindOf(ending);
+    const at = (account: string) => sideOf(account) as 0 | 1 | null;
     switch (ending.$kind) {
         case "Won":
-            return { winner: sideOf(ending.Won) };
+            return { kind, winner: sideOf(ending.Won), reason: reasonOf(kind) };
         case "Draw":
-            return { winner: null, reason: "Draw" };
         case "Stalemate":
-            return { winner: null, reason: "No winner by the turn limit" };
+        case "NobodyShowed":
+            return { kind, winner: null, reason: reasonOf(kind) };
         case "Abandoned": {
-            const side = sideOf(ending.Abandoned);
-            return { winner: other(side), reason: `${name(side)} left the match` };
+            const side = at(ending.Abandoned);
+            return { kind, winner: other(side), reason: reasonOf(kind, name(side)) };
         }
         case "Forfeited": {
-            const side = sideOf(ending.Forfeited);
-            return { winner: other(side), reason: `${name(side)} missed 3 turns in a row` };
+            const side = at(ending.Forfeited);
+            return { kind, winner: other(side), reason: reasonOf(kind, name(side)) };
         }
         case "NoShow": {
-            const side = sideOf(ending.NoShow);
-            return { winner: other(side), reason: `${name(side)} did not deploy a squad` };
+            const side = at(ending.NoShow);
+            return { kind, winner: other(side), reason: reasonOf(kind, name(side)) };
         }
-        case "NobodyShowed":
-            return { winner: null, reason: "Neither side deployed a squad" };
     }
 }
 
@@ -377,4 +387,48 @@ export function storyOutcome(
 ): WatchOutcome | null {
     const ending = endingOf(last, endTx, endTx ? senderSide(endTx.sender, owners) : null);
     return watchOutcome(ending, last.players, sides);
+}
+
+/** The calls that are not a side's go: they never clear a side's missed turns. */
+const NOT_A_GO: readonly string[] = [
+    CALLS.nextTurn,
+    CALLS.complete,
+    CALLS.abandon,
+    CALLS.deploy,
+    CALLS.findRanked,
+    CALLS.reveal,
+    CALLS.takeSeat,
+    CALLS.startListed,
+    CALLS.joinProtected,
+    CALLS.findGame,
+];
+
+/**
+ * The turns in a row each side had let run out as each turn ended, by turn (an index into
+ * the viewer's turns: the turn play opened on is 0), read as `next_turn` counts them: a side
+ * that ends its own turn or acts in it starts again from none, and a turn called by the other
+ * side, once its clock ran out, is one more. `later` is every transaction after play started,
+ * `firstTurn` the chain's turn it opened on, `owners` the players' addresses by side. A turn
+ * that was not missed holds 0; the last turn of a forfeit holds `MISS_LIMIT`.
+ */
+export function missedByTurn(
+    later: readonly Pick<GameTx, "sender" | "calls">[],
+    owners: readonly (string | null | undefined)[],
+    firstTurn: number,
+): number[] {
+    const missed = [0, 0];
+    const byTurn: number[] = [];
+    for (const tx of later) {
+        const side = senderSide(tx.sender, owners);
+        for (const call of tx.calls) {
+            const active = (firstTurn + byTurn.length) % 2;
+            if (call === CALLS.nextTurn) {
+                missed[active] = side === active ? 0 : missed[active] + 1;
+                byTurn.push(side === active ? 0 : missed[active]);
+            } else if (!NOT_A_GO.includes(call) && side === active) {
+                missed[active] = 0;
+            }
+        }
+    }
+    return byTurn;
 }

@@ -14,7 +14,7 @@ import { session } from "./session";
 
 export { correctEncounter, followOpponent } from "./actions";
 
-export { Encounter, type EncounterProps, type ObserverCard, type ObserverOptions } from "./ui/Encounter";
+export { Encounter, type EncounterProps, type ObserverCard, type ObserverEnding, type ObserverOptions } from "./ui/Encounter";
 export { Playback, SPEEDS, type PlaybackState, type Speed } from "./replay/playback";
 export {
   opensTurn,

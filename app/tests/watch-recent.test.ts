@@ -329,12 +329,12 @@ test("a recent row: both players, the mode, how it ended in plain words and how 
     assert.deepEqual(recentRow(game, ["Alpha", "Bravo"], now - 12 * 60_000, now), {
         id: RANKED_GAME.id,
         name: "Alpha vs Bravo",
-        kind: "Ranked 3x3 · Contractor · Alpha left the match",
+        kind: "Ranked 3x3 · Contractor · Bravo won · Alpha left the match",
         tag: "12 min ago",
         hint: "Bravo won · Alpha left the match · 12 min ago",
     });
     const win = recentRow({ ...game, ending: won(BOB) }, ["Alpha", "Bravo"], undefined, now);
-    assert.equal(win.kind, "Ranked 3x3 · Contractor · Bravo won");
+    assert.equal(win.kind, "Ranked 3x3 · Contractor · Bravo won · by elimination");
     assert.equal(win.tag, "Bravo won", "no time read: the result stands in");
 
     const line = (ending: GameEnding) => endingText(ending, [ALICE, BOB], ["Alpha", "Bravo"]);
@@ -344,16 +344,16 @@ test("a recent row: both players, the mode, how it ended in plain words and how 
     });
     assert.deepEqual(line({ $kind: "NoShow", NoShow: ALICE } as GameEnding), {
         tag: "Bravo won",
-        line: "Alpha did not deploy a squad",
+        line: "Alpha did not deploy in time",
     });
     assert.equal(
         line({ $kind: "Stalemate", Stalemate: true } as GameEnding).line,
-        "No winner by the turn limit",
+        "Turn limit reached",
     );
     assert.equal(line({ $kind: "Draw", Draw: true } as GameEnding).tag, "Draw");
     assert.equal(
         line({ $kind: "NobodyShowed", NobodyShowed: true } as GameEnding).line,
-        "Neither side deployed a squad",
+        "Neither side deployed",
     );
 
     assert.equal(agoText(now - 30_000, now), "Just now");
