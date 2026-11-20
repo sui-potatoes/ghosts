@@ -30,6 +30,8 @@ export interface BootOptions {
   labels: HTMLElement;
   reticle: HTMLElement;
   onPause: () => void;
+  /** The field is up and taking input (a viewer starts its playback here). */
+  onReady?: () => void;
 }
 
 /** `?review=` fixtures for local combat and debrief QA; only in the dev server. */
@@ -59,7 +61,7 @@ function placeReviewUnits(s: Session) {
  * deployment briefing. Returns the teardown, safe to call mid-load.
  */
 export function boot(options: BootOptions): () => void {
-  const { session: s, squad, settings, viewport, labels, reticle, onPause } = options;
+  const { session: s, squad, settings, viewport, labels, reticle, onPause, onReady } = options;
   provideSettings(settings);
   const cleanups: (() => void)[] = [];
   let disposed = false;
@@ -101,7 +103,8 @@ export function boot(options: BootOptions): () => void {
       }));
       await battlefield.warmup();
       if (disposed) return;
-      for (const u of s.game.units.filter((u) => !u.enemy)) s.portraits.set(u.id, battlefield.portrait(u));
+      // A viewer's rosters show both sides.
+      for (const u of s.game.units.filter((u) => s.observer || !u.enemy)) s.portraits.set(u.id, battlefield.portrait(u));
       cleanups.push(bindControls({ onPause }));
       cleanups.push(bindPadCombat({ onPause }));
       if (import.meta.env.DEV && review?.startsWith("debrief")) {
@@ -110,10 +113,13 @@ export function boot(options: BootOptions): () => void {
       }
       s.state = "ready";
       // The briefing first: an encounter that is already over opens its debrief once it closes.
-      if (s.game.scenario.versus) {
+      if (s.observer) {
+        // No seat, no briefing: the viewer's playback takes the field from here.
+      } else if (s.game.scenario.versus) {
         if (s.game.phase === "enemy") void watchOpponent();
       } else if (!shot && !s.game.scenario.skipBriefing) showBriefing("deploy");
       refresh();
+      onReady?.();
       if (shot) {
         if (shot.time && shot.time in timePresets)
           battlefield.setTimeOfDay(shot.time as TimeOfDay);

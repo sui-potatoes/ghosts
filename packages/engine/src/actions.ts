@@ -38,7 +38,8 @@ function syncScene() {
     aimed ?? null,
     u && aimed && { chance: game.chance(u, aimed), ...damagePreview(u, aimed) },
   );
-  battlefield.showRange(u, s.mode === "move" && !s.busy && !!u && allows(u, "move"));
+  // A viewer's selection is a readout, not an order: no reach on the ground.
+  battlefield.showRange(u, !s.observer && s.mode === "move" && !s.busy && !!u && allows(u, "move"));
   if (u && isThrowOrder(s.mode) && !s.busy) battlefield.showGrenadeRange(u, s.mode);
   battlefield.setHover(false);
   battlefield.showPath(undefined);
@@ -56,7 +57,7 @@ export function refresh() {
   const s = session;
   if (s.state !== "ready") return;
   syncScene();
-  if (s.game.result && !s.game.scenario.versus && !s.busy && !s.resultShown && !s.dialogOpen) {
+  if (s.game.result && !s.game.scenario.versus && !s.observer && !s.busy && !s.resultShown && !s.dialogOpen) {
     s.resultShown = true;
     s.debrief = true;
   }
@@ -131,9 +132,17 @@ async function perform(fn: () => Promise<void>) {
 
 export function select(id: string) {
   const s = session;
-  if (s.busy) return;
   const u = s.game.units.find((u) => u.id === id);
   if (!u || u.hp <= 0) return;
+  // A viewer holds any unit standing, either side, for its readout; it never waits on an animation.
+  if (s.observer) {
+    s.selected = id;
+    s.battlefield.select(id);
+    audio.tone("click");
+    refresh();
+    return;
+  }
+  if (s.busy) return;
   if (u.enemy) {
     if (isThrowOrder(s.mode)) {
       void pick(u.pos, u.id);
@@ -157,7 +166,7 @@ export function select(id: string) {
 /** Stand the selected operator down: nobody takes orders until the next pick. */
 export function deselect() {
   const s = session;
-  if (s.busy || !s.selected) return;
+  if ((s.busy && !s.observer) || !s.selected) return;
   s.selected = "";
   s.battlefield.select("");
   s.mode = "move";
@@ -175,6 +184,7 @@ export function cancelTargeting() {
 
 export async function fire() {
   const s = session;
+  if (s.observer) return;
   const a = s.selectedUnit(),
     b = s.targetUnit();
   if (!a || !b) return;
@@ -217,6 +227,7 @@ export async function fire() {
 /** Throw the grenade being aimed (the frag, the flashbang or the smoke grenade: the mode says which). */
 export async function throwGrenade() {
   const s = session;
+  if (s.observer) return;
   const u = s.selectedUnit();
   const kind = s.mode;
   if (!s.grenadeTarget || !u || !isThrowOrder(kind)) return;
@@ -252,7 +263,7 @@ export async function throwGrenade() {
 export async function action(name: string) {
   const s = session;
   const u = s.selectedUnit();
-  if (s.busy) return;
+  if (s.busy || s.observer) return;
   if (!u) {
     notify("NO OPERATOR SELECTED");
     return;
@@ -292,6 +303,12 @@ export async function action(name: string) {
 /** A click on the field: a tile to move to or aim at, or a unit marker. */
 export async function pick(p: Cell, id?: string) {
   const s = session;
+  // A viewer's click only picks a unit to read; the ground is nobody's to move on.
+  if (s.observer) {
+    if (id && id === s.selected) deselect();
+    else if (id) select(id);
+    return;
+  }
   if (s.busy || s.game.result) return;
   const u = s.selectedUnit();
   if (u && isThrowOrder(s.mode)) {
@@ -322,7 +339,7 @@ export async function pick(p: Cell, id?: string) {
 export async function endTurn() {
   const s = session;
   const { game, battlefield } = s;
-  if (s.busy || game.result || game.phase !== "player") return;
+  if (s.busy || s.observer || game.result || game.phase !== "player") return;
   s.mode = "move";
   s.grenadeTarget = null;
   await battlefield.leaveAim();
@@ -332,6 +349,7 @@ export async function endTurn() {
 /** Wait out the other side's turn: an encounter can open on it. */
 export async function watchOpponent() {
   const s = session;
+  if (s.observer) return;
   await perform(() => play(s.driver.watch?.() ?? s.driver.hostilePhase()));
 }
 

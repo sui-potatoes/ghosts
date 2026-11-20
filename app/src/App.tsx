@@ -56,6 +56,10 @@ const FindQa = import.meta.env.VITE_FIND_QA ? lazy(() => import("./features/find
 const FriendlyQa = import.meta.env.VITE_FRIENDLY_QA
     ? lazy(() => import("./features/play/friendly/qa"))
     : null;
+// The match viewer on games recorded on this device; `/watch/qa` plays one as if live (`VITE_WATCH_QA=1`).
+const WatchList = lazy(() => import("./features/watch/WatchList"));
+const WatchScreen = lazy(() => import("./features/watch/WatchScreen"));
+const WATCH_QA = import.meta.env.VITE_WATCH_QA === "1";
 import { FundsOnSignIn, SquadPreload, TransactionSender } from "./chain";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { LoadingSpinner } from "./components/LoadingSpinner";
@@ -274,6 +278,32 @@ export function App() {
                         element={
                             <Suspense fallback={<LoadingSpinner />}>
                                 <FriendlyQa />
+                            </Suspense>
+                        }
+                    />
+                )}
+                <Route
+                    path="/watch/local"
+                    element={
+                        <Suspense fallback={<LoadingSpinner />}>
+                            <WatchList />
+                        </Suspense>
+                    }
+                />
+                <Route
+                    path="/watch/local/:id"
+                    element={
+                        <Suspense fallback={<LoadingSpinner />}>
+                            <WatchScreen />
+                        </Suspense>
+                    }
+                />
+                {WATCH_QA && (
+                    <Route
+                        path="/watch/qa/:id"
+                        element={
+                            <Suspense fallback={<LoadingSpinner />}>
+                                <WatchScreen live />
                             </Suspense>
                         }
                     />

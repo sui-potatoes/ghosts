@@ -34,7 +34,13 @@ export class CombatAudio {
     return { sex: look.appearance.sex, index: look.voice ?? DEFAULT_VOICE_INDEX };
   }
 
+  /** Voice lines are off (a replay above 1x: lines would overlap, and their pitch can't follow). */
+  voiceOff = false;
+  /** Nothing plays (a replay's seek runs animations to their end in an instant). */
+  quiet = false;
+
   speak(event: VoiceEvent, u: Unit) {
+    if (this.voiceOff || this.quiet) return;
     this.voice.speak(event, this.voiceFor(u));
   }
 
@@ -48,6 +54,7 @@ export class CombatAudio {
 
   /** A recorded effect when there is one; otherwise a synthesized tone. */
   tone(kind: EffectKind, weapon?: Weapon) {
+    if (this.quiet) return;
     if (this.sfx.play(kind, weapon)) return;
     if (kind === "pin" || kind === "aim") return;
     // Synthesized tones sit on the same effects level as the recordings.
@@ -109,6 +116,7 @@ export class CombatAudio {
 
   /** Silence everything and release the audio context; the next encounter starts fresh. */
   stop() {
+    this.voiceOff = this.quiet = false;
     this.voice.dispose();
     this.sfx.setPaused(true);
     this.voice.setPaused(false);

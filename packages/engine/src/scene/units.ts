@@ -9,6 +9,7 @@ import type { Encounter, Unit } from "../game";
 import type { Cell } from "../map";
 import {
   aimHuman,
+  holdHuman,
   play,
   resetHuman,
   restHuman,
@@ -24,6 +25,14 @@ import { UnitMarkers, type AimReadout } from "./markers";
 import { metal } from "./props";
 import { pickUnit } from "./unit-picking";
 import type { Animator, Space } from "./space";
+
+/** The rig's current clip at full weight with no cross-fade left: a snapped pose, not a blend. */
+function settlePose(r: Rig) {
+  r.fading?.stop();
+  r.fading = undefined;
+  r.action?.stopFading().setEffectiveWeight(1);
+  r.mixer.update(0);
+}
 
 export interface UnitsOptions {
   scene: T.Scene;
@@ -113,6 +122,45 @@ export class Units {
       resetHuman(this.rigs.get(u.id)!);
       this.place(u);
     }
+  }
+
+  /**
+   * Every rig straight into the state the rules hold, with no animation: on its
+   * cell, holding its weapon, at rest in its cover, hunkered or on watch; the
+   * fallen already down (`placeFallen`). A replay's seek; markers and the
+   * lingering smoke follow.
+   */
+  snap(selected: string) {
+    const smoked = new Set(
+      this.game.units.filter((u) => u.hp > 0 && u.effects.some((e) => e.kind === "Smoke" && e.turns > 0)).map((u) => u.id),
+    );
+    this.o.effects.syncLingering(smoked);
+    for (const u of this.game.units) {
+      const r = this.rigs.get(u.id)!;
+      this.nextCoverToken(u.id);
+      resetHuman(r);
+      this.place(u);
+      equipHuman(r, u.weapon);
+      this.markers.sync(u, u.id === selected);
+      if (u.hp <= 0) this.placeFallen(u);
+      else {
+        r.idleBehavior = undefined;
+        this.rest(u);
+        settlePose(r);
+      }
+    }
+  }
+
+  /** A unit already down: the last frame of its fall, at once, and no plate. */
+  placeFallen(u: Unit) {
+    const r = this.rigs.get(u.id)!;
+    r.dead = true;
+    r.busy = false;
+    this.markers.hide(u.id);
+    holdHuman(r, reactionMotion(true, this.game.cover(u) > 0, false));
+    settlePose(r);
+    // Paused, a body is no longer stepped per frame: its hip anchoring is done once here.
+    updateHuman(r, 0, this.map.surfaceHeight);
   }
 
   /** Hit odds and the predicted hp cut on the aimed hostile's plate; null clears. */

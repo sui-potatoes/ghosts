@@ -7,7 +7,11 @@ import { boot } from "../boot";
 import type { Recruit } from "@ghosts/squad/types";
 import type { DriverFactory } from "../driver";
 import type { Scenario } from "../scenario";
-import { newSession } from "../session";
+import type { Encounter as EncounterRules } from "../game";
+import { Playback } from "../replay/playback";
+import { sceneStage } from "../replay/stage";
+import type { RecordSource } from "../replay/timeline";
+import { newSession, type Session } from "../session";
 import { defaultSettings, type EngineSettings } from "../settings";
 import type { EncounterDebrief } from "../aftermath/report";
 import { Briefing, Debrief } from "./Dialogs";
@@ -46,6 +50,50 @@ export interface EncounterProps {
   intel?: IntelSource;
   /** The opposing player in a match: the hostile readout's commander line. */
   opponent?: OpponentIntel | null;
+  /**
+   * Mount with no seat, to watch a game: no orders, both squads as equals, the
+   * camera free. The field plays `source` through a `Playback` handed to the
+   * host once it is up; the host draws the controls. `scenario` and `driver`
+   * are not used.
+   */
+  observer?: ObserverOptions;
+  /**
+   * The encounter's journal as it grows: called with the rules after each
+   * change to their events, and with the new rules after a restart. A host
+   * records a game from it.
+   */
+  onJournal?: (game: EncounterRules) => void;
+}
+
+export interface ObserverOptions {
+  source: RecordSource;
+  /** Open on the game's first event (default) or at its live edge. */
+  start?: "start" | "live";
+  /** Open paused. */
+  paused?: boolean;
+  /** The transport, once the field is ready; disposed with the encounter. */
+  onPlayback?: (playback: Playback) => void;
+}
+
+/** Start the viewer's playback on a session whose field is up. Returns the teardown. */
+function startPlayback(session: Session, options: ObserverOptions): () => void {
+  const stage = sceneStage(options.source);
+  const playback = new Playback(options.source, stage, stage.firstSide);
+  // The live game's clock shows while the viewer follows it.
+  const clock = () => {
+    const deadline = playback.getState().live ? options.source.deadline?.() : undefined;
+    if (session.observer && session.observer.deadline !== deadline) {
+      session.observer.deadline = deadline;
+      session.changed();
+    }
+  };
+  const unsubscribe = playback.subscribe(clock);
+  playback.start({ at: options.start, paused: options.paused });
+  options.onPlayback?.(playback);
+  return () => {
+    unsubscribe();
+    playback.dispose();
+  };
 }
 
 /**
@@ -65,6 +113,8 @@ export function Encounter({
   onDebrief,
   intel,
   opponent = null,
+  observer,
+  onJournal,
 }: EncounterProps) {
   const refs: FieldRefs = {
     viewport: useRef<HTMLDivElement>(null),
@@ -72,37 +122,60 @@ export function Encounter({
     reticle: useRef<HTMLDivElement>(null),
   };
   // The session exists before the first render so the UI subscribes to the one boot fills in.
-  const [session] = useState(() => newSession(scenario, driver));
-  const hooks = useRef({ onPause, onQuit, onDebrief });
-  hooks.current = { onPause, onQuit, onDebrief };
+  const [session] = useState(() =>
+    observer
+      ? newSession(observer.source.scenario, undefined, { sides: observer.source.sides, turn: 1 })
+      : newSession(scenario, driver),
+  );
+  const hooks = useRef({ onPause, onQuit, onDebrief, onJournal });
+  hooks.current = { onPause, onQuit, onDebrief, onJournal };
+  const watching = useRef(observer);
   inspect.source = intel;
   useEffect(() => {
     inspect.opponent = opponent;
     inspect.changed();
   }, [opponent]);
 
-  useEffect(
-    () =>
-      boot({
-        session,
-        squad,
-        settings,
-        viewport: refs.viewport.current!,
-        labels: refs.labels.current!,
-        reticle: refs.reticle.current!,
-        onPause: () => {
-          if (!hooks.current.onPause) return;
-          // Gate input now: the host's `paused` prop lands in a passive
-          // effect, which a busy frame defers past the menu's first paint —
-          // a pad or key pressed in that window must not reach the field.
-          session.paused = true;
-          hooks.current.onPause();
-        },
-      }),
+  // The journal: every change to the rules' events, a restart's fresh rules included.
+  useEffect(() => {
+    let game: EncounterRules | null = null,
+      length = -1;
+    return session.subscribe(() => {
+      if (session.game === game && session.game.events.length === length) return;
+      game = session.game;
+      length = game.events.length;
+      hooks.current.onJournal?.(game);
+    });
+  }, [session]);
+
+  useEffect(() => {
+    let stop: (() => void) | undefined;
+    const teardown = boot({
+      session,
+      squad,
+      settings,
+      viewport: refs.viewport.current!,
+      labels: refs.labels.current!,
+      reticle: refs.reticle.current!,
+      onPause: () => {
+        if (!hooks.current.onPause) return;
+        // Gate input now: the host's `paused` prop lands in a passive
+        // effect, which a busy frame defers past the menu's first paint —
+        // a pad or key pressed in that window must not reach the field.
+        session.paused = true;
+        hooks.current.onPause();
+      },
+      onReady: () => {
+        if (watching.current) stop = startPlayback(session, watching.current);
+      },
+    });
+    return () => {
+      stop?.();
+      teardown();
+    };
     // The encounter is built once per mount; a new scenario or settings source means a new mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
+  }, []);
 
   useEffect(() => {
     session.paused = paused;
@@ -118,16 +191,18 @@ export function Encounter({
       }
     : undefined;
 
-  return <EncounterView refs={refs} onQuit={() => hooks.current.onQuit?.()} hasQuit={!!onQuit} onMenu={menu} onDebrief={onDebrief ? (d) => hooks.current.onDebrief?.(d) : undefined} />;
+  return <EncounterView observer={!!observer} refs={refs} onQuit={() => hooks.current.onQuit?.()} hasQuit={!!onQuit} onMenu={menu} onDebrief={onDebrief ? (d) => hooks.current.onDebrief?.(d) : undefined} />;
 }
 
 function EncounterView({
+  observer,
   refs,
   onQuit,
   hasQuit,
   onMenu,
   onDebrief,
 }: {
+  observer: boolean;
   refs: FieldRefs;
   onQuit: () => void;
   hasQuit: boolean;
@@ -137,13 +212,13 @@ function EncounterView({
   const s = useSession();
   const ready = s.state === "ready";
   return (
-    <div className="encounter">
+    <div className="encounter" data-observer={observer || undefined}>
       <main className="workspace">
         <Field refs={refs} />
         {ready && <HudHeader onMenu={onMenu} />}
         {ready && <SquadRail />}
         {ready && <UnitPanel />}
-        {ready && <CommandBar />}
+        {ready && !observer && <CommandBar />}
       </main>
       {ready &&
         (s.debrief ? (

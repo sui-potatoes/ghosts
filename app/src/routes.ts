@@ -14,7 +14,10 @@
 export function parentOf(pathname: string): string | null {
     if (pathname === "/") return null;
     // The mode screens hang off the Play cards.
-    return pathname.startsWith("/play/") ? "/play" : "/";
+    if (pathname.startsWith("/play/")) return "/play";
+    // A game in the viewer goes back to the list of recorded games.
+    if (pathname.startsWith("/watch/") && pathname !== "/watch/local") return "/watch/local";
+    return "/";
 }
 
 /** Route path by history index, kept by the shell as the player moves. */

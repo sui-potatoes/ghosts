@@ -34,6 +34,8 @@ import { distance, weaponName, type Unit, type UnitOrder } from "../game";
 import { padActive, padGlyph, padKind, subscribePad, type PadButton } from "../gamepad";
 import { pad2 } from "../html";
 import type { CombatAction, PadBindable } from "../keys";
+import { rosters, standing } from "../observer";
+import { sideInPhase } from "../replay/timeline";
 import { timePresets, type TimeOfDay } from "../scene-weather";
 import type { Weather } from "../scene/precipitation";
 import { session } from "../session";
@@ -237,7 +239,8 @@ function Tool({
 export function HudHeader({ onMenu }: { onMenu?: () => void }) {
   const s = useSession();
   const inspect = useInspect();
-  const { game, battlefield } = s;
+  const { game, battlefield, observer } = s;
+  if (observer) return <ObserverHeader />;
   const { objectives } = game.scenario;
   const down = game.hostileCount - game.enemies.length;
   const phase =
@@ -307,12 +310,103 @@ export function HudHeader({ onMenu }: { onMenu?: () => void }) {
   );
 }
 
+/**
+ * A viewer's header: the turn and whose it is by name, the live clock when
+ * there is one, and both sides with the units each has standing; the view
+ * tools as in a game, no menu (the viewer's own controls are the way out).
+ */
+function ObserverHeader() {
+  const s = useSession();
+  const { game, battlefield } = s;
+  const observer = s.observer!;
+  const binds = engineSettings().padCombat();
+  const counts = standing(game.units);
+  const winner = game.result === "victory" ? 0 : game.result === "defeat" ? 1 : null;
+  return (
+    <header className="hud-header">
+      <div className="hud-where">
+        <small>{game.scenario.briefing.title}</small>
+        <strong>
+          Turn {pad2(observer.turn)}{" "}
+          <span>
+            {winner !== null
+              ? `${observer.sides[winner].name} won`
+              : `${observer.sides[sideInPhase(game)].name} to move`}
+          </span>
+        </strong>
+      </div>
+      <div className="hud-centre">
+        {observer.deadline !== undefined && !game.result && <TurnClock deadline={observer.deadline} />}
+      </div>
+      <div className="hud-right">
+        <ul className="hud-objectives" aria-label="Units standing">
+          {observer.sides.map((side, i) => (
+            <li key={i} data-side={i} data-done={!counts[i].alive || undefined}>
+              <i />
+              {side.name} standing
+              <b>
+                {counts[i].alive}/{counts[i].total}
+              </b>
+            </li>
+          ))}
+        </ul>
+        <div className="hud-tools">
+          <SceneMenu />
+          <Tool
+            icon="camera"
+            label={battlefield.cinematic ? "Tactical view" : "Close camera"}
+            command="camera"
+            pressed={battlefield.cinematic}
+          />
+          <Tool icon="map" label="Tactical grid" command="grid" pad={binds.grid} pressed={battlefield.gridVisible} />
+          <Tool icon="focus" label="Focus unit" command="focus" disabled={!s.selected} />
+          <Tool icon="scan" label="Inspect unit" command={INSPECT_COMMAND.action} pad={INSPECT_COMMAND.pad} />
+        </div>
+      </div>
+    </header>
+  );
+}
+
 // === Squad rail and unit panel ===
 
 /** The squad, one tile each: select by click, tap, number key or the bumpers. */
 export function SquadRail() {
   const s = useSession();
   const pad = usePad();
+  if (s.observer) {
+    const sides = rosters(s.game.units);
+    return (
+      <>
+        {sides.map((units, side) => (
+          <nav key={side} className="hud-squad" data-side={side} aria-label={s.observer!.sides[side].name}>
+            <small className="hud-squad-name">{s.observer!.sides[side].name}</small>
+            {units.map((a) => (
+              <button
+                type="button"
+                key={a.id}
+                className="hud-member"
+                data-selected={s.selected === a.id || undefined}
+                data-kia={a.hp <= 0 || undefined}
+                data-enemy={a.enemy || undefined}
+                disabled={a.hp <= 0}
+                aria-pressed={s.selected === a.id}
+                onClick={() => (s.selected === a.id ? deselect() : select(a.id))}
+              >
+                <img src={s.portraits.get(a.id)} alt="" />
+                <span className="hud-member-text">
+                  <strong>{a.name}</strong>
+                  <span className="hud-bar-track">
+                    <i style={{ width: `${(a.hp / a.maxHp) * 100}%` }} />
+                  </span>
+                </span>
+                <Pips filled={a.ap} max={2} />
+              </button>
+            ))}
+          </nav>
+        ))}
+      </>
+    );
+  }
   return (
     <nav className="hud-squad" aria-label="Squad">
       {s.game.units

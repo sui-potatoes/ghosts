@@ -1,0 +1,292 @@
+/* The match viewer: the field fills the screen, the transport and the command
+ * bar stand along its bottom edge in the shared interface language. Tokens
+ * only; scoped by the `watch-` prefix. */
+
+.watch-screen {
+    position: fixed;
+    inset: 0;
+    background: var(--background-color);
+}
+
+/* The engine's unit panel stands clear of the transport and the bar. */
+.watch-screen .encounter {
+    --observer-foot: 124px;
+}
+
+/* Over the field: transparent, and only its own controls take the pointer. */
+.gui.watch-hud {
+    grid-template-rows: minmax(0, 1fr) auto var(--h-l);
+    background: none;
+    pointer-events: none;
+    z-index: 20;
+}
+.watch-hud > * {
+    grid-row: auto;
+}
+.watch-hud .watch-transport,
+.watch-hud .watch-banner,
+.watch-hud .gui-bar,
+.watch-hud .gui-menu {
+    pointer-events: auto;
+}
+.watch-hud .watch-transport {
+    grid-row: 2;
+}
+.watch-hud .gui-bar {
+    grid-row: 3;
+}
+
+/* --- Transport strip --- */
+
+.watch-transport {
+    display: flex;
+    align-items: center;
+    gap: calc(var(--u) * 4);
+    min-width: 0;
+    height: calc(var(--h-m) + var(--u) * 4);
+    padding: 0 calc(var(--u) * 6);
+    border-top: 1px solid var(--line);
+    background: linear-gradient(
+        0deg,
+        color-mix(in srgb, var(--surface-color) 92%, transparent),
+        color-mix(in srgb, var(--background-color) 80%, transparent)
+    );
+}
+.watch-buttons {
+    display: flex;
+    gap: var(--u);
+    flex: none;
+}
+.watch-button {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: calc(var(--u) * 2);
+    min-width: var(--h-m);
+    height: var(--h-m);
+    padding: 0 calc(var(--u) * 2.5);
+    border: 1px solid var(--line);
+    background: var(--fill);
+    font: 500 var(--t-label) / 1 var(--font-mono);
+    letter-spacing: var(--track);
+    text-transform: uppercase;
+    white-space: nowrap;
+    transition: color 60ms linear;
+}
+.watch-button[data-focused] {
+    color: var(--on-band);
+    background: var(--band);
+    border-color: var(--band);
+}
+.watch-button .gui-glyph {
+    flex: none;
+}
+.watch-icon {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.5;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+}
+.watch-speed {
+    min-width: 3.5ch;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+}
+
+.watch-readout {
+    display: grid;
+    gap: var(--u);
+    flex: none;
+    min-width: 0;
+}
+.watch-readout-turn {
+    font: 500 var(--t-label) / 1 var(--font-mono);
+    letter-spacing: var(--track);
+    text-transform: uppercase;
+    font-variant-numeric: tabular-nums;
+}
+.watch-readout-side {
+    overflow: hidden;
+    font: 400 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-secondary);
+}
+
+/* --- Scrubber: one pip per side's turn, scrolling inside itself --- */
+
+.watch-scrubber {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    padding: 0 var(--u);
+    overflow-x: auto;
+    scrollbar-width: none;
+    overscroll-behavior-x: contain;
+}
+.watch-scrubber::-webkit-scrollbar {
+    display: none;
+}
+.watch-pip {
+    position: relative;
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 28px;
+    border: 1px solid var(--line-strong);
+    color: var(--text-secondary);
+    font: 500 var(--t-micro) / 1 var(--font-mono);
+    font-variant-numeric: tabular-nums;
+}
+/* Side 1's turns are hatched: whose turn it was, without a second hue. */
+.watch-pip[data-side="1"] {
+    background: repeating-linear-gradient(
+        135deg,
+        color-mix(in srgb, var(--text-color) 10%, transparent) 0 2px,
+        transparent 2px 5px
+    );
+}
+.watch-pip[data-past] {
+    color: var(--text-color);
+    border-color: var(--line-strong);
+}
+.watch-pip[data-here] {
+    color: var(--on-band);
+    background: var(--band);
+    border-color: var(--band);
+}
+.watch-pip[data-focused]:not([data-here]) {
+    color: var(--text-color);
+    border-color: var(--text-color);
+}
+/* A unit fell in the turn. */
+.watch-pip[data-kill]::after {
+    content: "";
+    position: absolute;
+    top: -3px;
+    right: -3px;
+    width: 6px;
+    height: 6px;
+    background: var(--warn-color);
+    transform: rotate(45deg);
+}
+/* The turn being played now, at the live edge. */
+.watch-pip[data-edge] {
+    border-style: dashed;
+}
+
+/* --- Live chip --- */
+
+.watch-button[data-tone] {
+    flex: none;
+}
+.watch-live-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    border: 1px solid currentColor;
+}
+.watch-button[data-tone="following"] {
+    color: var(--accent-color);
+    border-color: color-mix(in srgb, var(--accent-color) 50%, transparent);
+}
+.watch-button[data-tone="following"] .watch-live-dot {
+    background: var(--accent-color);
+    border-color: var(--accent-color);
+    animation: watch-live 1.6s ease-in-out infinite;
+}
+.watch-button[data-tone="following"][data-focused] {
+    color: var(--on-band);
+}
+.watch-button[data-tone="live"] {
+    border-style: dashed;
+}
+@keyframes watch-live {
+    50% {
+        opacity: 0.35;
+    }
+}
+
+/* --- The end of the game --- */
+
+.watch-banner {
+    position: absolute;
+    left: 50%;
+    top: 28%;
+    translate: -50% 0;
+    display: grid;
+    justify-items: center;
+    gap: calc(var(--u) * 2);
+    width: min(calc(var(--u) * 120), calc(100% - var(--u) * 8));
+    padding: calc(var(--u) * 6);
+    border: 1px solid var(--line-strong);
+    border-top: 2px solid var(--text-color);
+    background: color-mix(in srgb, var(--background-color) 90%, transparent);
+    text-align: center;
+}
+.watch-banner-eyebrow {
+    font: 500 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+.watch-banner-title {
+    font: 400 var(--t-title) / 1.1 var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+.watch-banner-line {
+    color: var(--text-secondary);
+}
+.watch-banner-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: calc(var(--u) * 2);
+    margin-top: calc(var(--u) * 2);
+}
+
+/* --- Phone width: the scrubber gets a row of its own --- */
+
+@media (max-width: 760px) {
+    .watch-screen .encounter {
+        --observer-foot: 168px;
+    }
+    .watch-transport {
+        flex-wrap: wrap;
+        height: auto;
+        row-gap: calc(var(--u) * 2);
+        padding: calc(var(--u) * 2) 16px;
+    }
+    .watch-readout {
+        flex: 1;
+    }
+    .watch-scrubber {
+        order: 3;
+        flex: 1 0 100%;
+        height: 32px;
+        padding: 0;
+    }
+    .watch-button .gui-glyph {
+        display: none;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .watch-button[data-tone="following"] .watch-live-dot {
+        animation: none;
+    }
+}
+:root[data-reduce-motion="on"] .watch-button[data-tone="following"] .watch-live-dot {
+    animation: none;
+}

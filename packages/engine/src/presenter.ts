@@ -7,6 +7,7 @@ import type { PropDamage } from "./environment";
 import { pad2 } from "./html";
 import type { GameEvent } from "./events";
 import type { Cell, Unit } from "./game";
+import { turnLine } from "./observer";
 import { session } from "./session";
 
 /**
@@ -62,12 +63,14 @@ export async function presentThrow(
  * announces it. Nothing here changes the encounter; the rules already have.
  */
 export async function present(event: GameEvent) {
-  const { game, battlefield } = session;
+  const { game, battlefield, observer } = session;
+  // A viewer has no side: what the player hears of their own squad, it hears of both.
+  const ours = (u: Unit) => !!observer || !u.enemy;
   const notify: typeof session.notify = (message, tone) => session.notify(message, tone);
   const unit = "unit" in event ? game.unit(event.unit)! : undefined;
   switch (event.type) {
     case "move":
-      if (event.vault && !unit!.enemy) notify("TRAVERSING LOW COVER");
+      if (event.vault && ours(unit!)) notify("TRAVERSING LOW COVER");
       audio.speak(event.cover ? "cover" : "move", unit!);
       await battlefield.play(event);
       return;
@@ -76,7 +79,7 @@ export async function present(event: GameEvent) {
       if (event.reaction) {
         notify(`${unit!.name} / OVERWATCH`);
         audio.speak("overwatch", unit!);
-      } else if (!unit!.enemy) {
+      } else if (ours(unit!)) {
         await battlefield.aimReady;
         audio.speak("fire", unit!);
       }
@@ -89,7 +92,7 @@ export async function present(event: GameEvent) {
     case "reload":
       audio.tone("reload", unit!.weapon);
       await battlefield.play(event);
-      if (!unit!.enemy) notify(`${unit!.name} / MAGAZINE READY`);
+      if (ours(unit!)) notify(`${unit!.name} / MAGAZINE READY`);
       return;
     case "grenade":
     case "flashbang":
@@ -119,10 +122,12 @@ export async function present(event: GameEvent) {
       notify(game.scenario.lines.securedStamp);
       return;
     case "hostile-phase":
-      notify("HOSTILE ACTIVITY / STAND BY", "miss");
+      if (observer) notify(turnLine(observer.turn, observer.sides[1]));
+      else notify("HOSTILE ACTIVITY / STAND BY", "miss");
       return;
     case "turn":
-      notify(`TURN ${pad2(event.turn)} / YOUR INITIATIVE`);
+      if (observer) notify(turnLine(observer.turn, observer.sides[0]));
+      else notify(`TURN ${pad2(event.turn)} / YOUR INITIATIVE`);
       return;
   }
 }

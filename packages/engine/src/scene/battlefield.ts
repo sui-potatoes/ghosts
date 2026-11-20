@@ -17,6 +17,7 @@ import { aimHuman, holdHuman, play } from "../humans";
 import { createPortraitStudio } from "../portrait-studio";
 import { renderCadence, renderPixelRatio, type RenderMode } from "../render-policy";
 import { applyTimeOfDay, type TimeOfDay } from "../scene-weather";
+import { SceneClock } from "./clock";
 import { Effects } from "./effects";
 import { Destruction } from "./destruction";
 import { mapView } from "./maps";
@@ -116,7 +117,8 @@ export class Battlefield {
   private readonly pacer = new FramePacer();
   private readonly resizeObserver: ResizeObserver;
   private readonly chestPoints: T.Vector3[] = [];
-  private jobs: ((dt: number) => boolean)[] = [];
+  /** Every tween runs on it; `timeScale` sets the pace of scene animation. */
+  private readonly clock = new SceneClock();
   private raf = 0;
   private activeUntil = 0;
   private viewportWidth = 1;
@@ -569,7 +571,7 @@ export class Battlefield {
     this.tween(0.6, (t) => {
       this.controls.target.copy(from).lerp(target, t);
       this.camera.position.copy(this.controls.target).add(offset);
-    });
+    }, true, true);
   }
 
   rotate(angle: number) {
@@ -650,7 +652,7 @@ export class Battlefield {
     this.tween(0.85, (t) => {
       this.camera.position.copy(start).lerp(position, t);
       this.controls.target.copy(startTarget).lerp(target, t);
-    });
+    }, true, true);
   }
 
   /** Over the shoulder of `u`, aiming at `point`; resolves with `aimReady`. */
@@ -785,19 +787,58 @@ export class Battlefield {
 
   // === Animation ===
 
-  tween(seconds: number, fn: (t: number) => void, smooth = true) {
+  /**
+   * Run `fn` from 0 to 1 over `seconds` of scene time, eased unless `smooth` is
+   * false. `real` runs on frame time whatever `timeScale` is: the viewer's own
+   * camera moves (focus, the view toggle), never an event's animation.
+   */
+  tween(seconds: number, fn: (t: number) => void, smooth = true, real = false) {
     this.invalidate();
-    return new Promise<void>((resolve) => {
-      let elapsed = 0;
-      this.jobs.push((dt) => {
-        elapsed += dt;
-        const t = Math.min(1, elapsed / seconds);
-        fn(smooth ? t * t * (3 - 2 * t) : t);
-        if (t < 1) return false;
-        resolve();
-        return true;
-      });
-    });
+    return this.clock.tween(seconds, fn, smooth, real);
+  }
+
+  /**
+   * Scene time per frame time, for every animation an event plays (bodies,
+   * effects, debris, the action camera); rain, mist and the viewer's own camera
+   * keep real time. 1 as played; a replay sets 0.5–4, and 0 holds the field.
+   */
+  get timeScale() {
+    return this.clock.timeScale;
+  }
+
+  set timeScale(scale: number) {
+    this.clock.timeScale = Math.max(0, scale);
+    this.pacer.reset();
+    this.invalidate();
+  }
+
+  /** Every animation running now played to its end at once, until `done` settles (a replay's seek). */
+  async finish(done: Promise<unknown>) {
+    await this.clock.finish(done);
+    this.invalidate();
+  }
+
+  /** Out of the shoulder camera at once, back to the camera saved before it: a seek leaves no aim behind. */
+  dropAim() {
+    const saved = this.savedCamera;
+    this.savedCamera = null;
+    this.aimKey = "";
+    this.aimUnit = "";
+    this.aimPoint = null;
+    ++this.cameraSequence;
+    this.cameraMotion = false;
+    this.aimReady = Promise.resolve();
+    if (saved) {
+      this.camera.position.copy(saved.position);
+      this.controls.target.copy(saved.target);
+      this.camera.fov = saved.fov;
+      this.camera.updateProjectionMatrix();
+    }
+    this.controls.enabled = !shot;
+    this.host.dataset.cameraReady = "true";
+    this.host.dataset.cameraMode = this.cinematic ? "close" : "tactical";
+    this.controls.update();
+    this.invalidate();
   }
 
   /** Animate an event the rules emitted; events with no motion resolve at once. */
@@ -874,6 +915,22 @@ export class Battlefield {
     this.space.map = game.map;
     this.destruction.reset(game.map);
     this.units.redeploy();
+    this.invalidate();
+  }
+
+  /**
+   * Swap in an encounter rebuilt to any point of its game, with no animation:
+   * the props as its map has them, every unit on its cell in its resting pose,
+   * the fallen already down, the smoke where it lingers. A replay's seek.
+   */
+  rebuild(game: Encounter) {
+    this.dropAim();
+    this.game = game;
+    this.space.map = game.map;
+    this.destruction.reset(game.map);
+    this.units.snap(this.selected);
+    this.host.dataset.smoke = this.effects.lingeringIds.join(",");
+    this.reflectionsDirty = true;
     this.invalidate();
   }
 
@@ -988,11 +1045,13 @@ export class Battlefield {
   private animate = (now: number) => {
     this.raf = 0;
     if (this.disposed) return;
+    // A held clock (a paused replay) moves nothing: it draws only when the view changes.
+    const held = this.clock.timeScale === 0;
     const active =
       now < this.activeUntil ||
-      this.jobs.length > 0 ||
-      this.units.busy ||
-      this.destruction.active ||
+      this.clock.moving ||
+      (this.units.busy && !held) ||
+      (this.destruction.active && !held) ||
       this.occlusion.active ||
       this.destruction.fading ||
       (!!shot && this.shotStep <= shot.frames);
@@ -1023,14 +1082,15 @@ export class Battlefield {
     this.mist.update(now / 1000);
     this.air.update(now / 1000);
     // Hidden tabs suspend the timeline; returning resumes the current action without a jump.
-    this.jobs = this.jobs.filter((job) => !job(elapsed));
+    this.clock.step(elapsed);
+    const sceneElapsed = this.clock.scaled(elapsed);
     if (!this.aimKey && !this.cameraMotion) this.controls.update();
     this.precipitation.update(elapsed);
     this.precipitation.follow(this.controls.target);
     wetGround.rippleTime.value = this.precipitation.time;
-    this.destruction.update(elapsed, this.camera);
+    this.destruction.update(sceneElapsed, this.camera);
     this.host.dataset.destruction = JSON.stringify(this.destruction.stats);
-    this.updateUnits(elapsed, now / 1000);
+    this.updateUnits(sceneElapsed, now / 1000);
     for (const hook of this.frameHooks) hook();
     this.updateReticle();
     if ((this.reflectionsDirty || this.roofDirty) && !this.indoors) {

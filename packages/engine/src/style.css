@@ -1561,3 +1561,86 @@
     transition-duration: 1ms !important;
   }
 }
+
+/* === Observer: no seat, both squads as equals ========================= */
+
+/*
+ * The host draws the viewer's controls along the bottom edge instead of the
+ * command bar; `--observer-foot` is how tall they stand (the host may set it).
+ * Side 0's roster is on the left, side 1's on the right.
+ */
+.encounter[data-observer] {
+  --observer-foot: calc(var(--u) * 30);
+}
+.encounter[data-observer] .hud-unit {
+  bottom: calc(var(--observer-foot) + var(--u) * 4);
+}
+.encounter[data-observer] .hud-squad[data-side="1"] {
+  left: auto;
+  right: calc(var(--u) * 6);
+}
+.encounter .hud-squad-name {
+  padding-bottom: var(--u);
+  overflow: hidden;
+  font: 500 var(--t-micro) / 1 var(--font-mono);
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+.encounter .hud-squad[data-side="1"] .hud-squad-name {
+  text-align: right;
+}
+.encounter[data-observer] .hud-member[data-enemy]:not([data-selected]) .hud-bar-track i {
+  background: color-mix(in srgb, var(--red, currentColor) 80%, currentColor);
+}
+.encounter[data-observer] .hud-objectives li[data-done] i {
+  border-color: var(--dim);
+  background: none;
+}
+
+/* Narrow screens: the rosters go compact (portraits and pips), the counts give way. */
+@media (max-width: 760px) {
+  .encounter[data-observer] .hud-squad {
+    width: auto;
+  }
+  .encounter[data-observer] .hud-member {
+    grid-template-columns: 32px auto;
+  }
+  .encounter[data-observer] .hud-member-text,
+  .encounter[data-observer] .hud-squad-name,
+  .encounter[data-observer] .hud-objectives {
+    display: none;
+  }
+  .encounter[data-observer] .hud-unit {
+    left: calc(var(--u) * 4);
+    right: calc(var(--u) * 4);
+    width: auto;
+  }
+  .encounter[data-observer] .hud-squad[data-side="1"] {
+    right: calc(var(--u) * 4);
+  }
+  .encounter[data-observer] .hud-squad[data-side="0"] {
+    left: calc(var(--u) * 4);
+  }
+  /* The header keeps the turn, whose it is, the clock and the camera; the rest give way. */
+  .encounter[data-observer] .hud-header {
+    gap: calc(var(--u) * 3);
+    padding: 0 calc(var(--u) * 4);
+  }
+  .encounter[data-observer] .hud-where small,
+  .encounter[data-observer] .hud-clock small,
+  .encounter[data-observer] .hud-scene,
+  .encounter[data-observer] .hud-tools > .hud-tool:not(:first-of-type) {
+    display: none;
+  }
+  .encounter[data-observer] .hud-tool .hud-glyph {
+    display: none;
+  }
+}
+@media (orientation: landscape) and (max-height: 500px) {
+  .encounter[data-observer] .hud-unit {
+    bottom: calc(var(--observer-foot) / var(--ui-scale, 1) + var(--u) * 2);
+  }
+}

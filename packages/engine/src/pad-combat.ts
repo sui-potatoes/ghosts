@@ -179,6 +179,30 @@ function freeCamera(pad: PadInput, binds: PadCombatBindings, dt: number) {
   if (zoom) battlefield.dolly(1 + zoom * ZOOM_SPEED * dt);
 }
 
+/**
+ * A viewer's pad: the sticks are the camera (the right one orbits and zooms,
+ * the left one pans) and L3 inspects; every button is the viewer's own
+ * controls', so the frame passes on unless the left stick is panning (it
+ * would otherwise also walk the menu cursor).
+ */
+function observerPad(pad: PadInput, dt: number): boolean {
+  const { battlefield } = session;
+  const rx = pad.axis(2);
+  if (rx) battlefield.rotate(rx * TURN_SPEED * dt);
+  const ry = pad.axis(3);
+  if (ry) battlefield.dolly(1 + ry * ZOOM_SPEED * dt);
+  let x = pad.axis(0),
+    y = pad.axis(1);
+  const push = Math.hypot(x, y);
+  if (push > 1) [x, y] = [x / push, y / push];
+  if (push) battlefield.pan(x * PAN_SPEED * dt, -y * PAN_SPEED * dt);
+  if (pad.pressed("l3")) {
+    runCombatAction("inspect");
+    return true;
+  }
+  return push > 0;
+}
+
 /** Take the pad while the encounter owns the screen. Returns the unbind. */
 export function bindPadCombat({ onPause }: ControlOptions = {}): () => void {
   /** The move cursor, and the operator it belongs to. */
@@ -198,6 +222,7 @@ export function bindPadCombat({ onPause }: ControlOptions = {}): () => void {
       return true;
     }
     const { game, battlefield } = s;
+    if (s.observer) return observerPad(pad, dt);
 
     // The bindable buttons, from the player's settings; the fixed grammar
     // (A, B, start, the d-pad, the sticks) stays literal below.

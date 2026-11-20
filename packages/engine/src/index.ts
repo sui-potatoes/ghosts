@@ -14,7 +14,18 @@ import { session } from "./session";
 
 export { correctEncounter, followOpponent } from "./actions";
 
-export { Encounter, type EncounterProps } from "./ui/Encounter";
+export { Encounter, type EncounterProps, type ObserverOptions } from "./ui/Encounter";
+export { Playback, SPEEDS, type PlaybackState, type Speed } from "./replay/playback";
+export {
+  opensTurn,
+  recordedSource,
+  turnAt,
+  turnsOf,
+  type RecordSource,
+  type TurnMark,
+  type WatchOutcome,
+  type WatchSide,
+} from "./replay/timeline";
 export type { EncounterDebrief, EncounterReport, RecruitReport } from "./aftermath/report";
 export { blackRain, type Scenario, type UnitSpec } from "./scenario";
 export { scenarioById, scenarios } from "./scenarios";

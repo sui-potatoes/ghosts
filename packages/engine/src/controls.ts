@@ -5,6 +5,7 @@ import { action, cancelTargeting, deselect, endTurn, fire, pick, select, throwGr
 import { GRENADE_RANGE, hasKind, isThrowOrder, specOf, THROW_ORDERS, type ThrowOrder } from "./action-registry";
 import { allows, distance } from "./game";
 import { isCameraCommand } from "./camera-input";
+import { cycleUnit, observerAllows } from "./observer";
 import { combatActionOf, isEditable as typing, type CombatAction } from "./keys";
 import { session } from "./session";
 import { engineSettings } from "./settings";
@@ -48,6 +49,13 @@ export function carriedThrow(): ThrowOrder | undefined {
  */
 export function runCombatAction(command: CombatAction, { onPause, reverse }: ControlOptions = {}) {
   const s = session;
+  // A viewer has the camera and the readouts, never an order.
+  if (s.observer && !observerAllows(command)) return;
+  if (s.observer && command === "next-operator") {
+    const next = cycleUnit(s.game.units, s.selected, reverse ? -1 : 1);
+    if (next) select(next.id);
+    return;
+  }
   // Cancel steps back: out of targeting, then off the selected operator, and
   // what nothing here wants (or anything mid-animation) to the host's pause menu.
   if (command === "cancel" && s.mode === "move") {
@@ -102,6 +110,10 @@ export function bindControls({ onPause }: ControlOptions = {}): () => void {
     const target = e.target instanceof Element ? e.target : null;
     const scene = target?.closest<HTMLDetailsElement>("#scene-controls");
     const command = combatActionOf(e, engineSettings().combatKeys());
+    if (s.observer && !scene) {
+      observerKey(e, command, onPause);
+      return;
+    }
     if (scene) {
       if (command === "cancel") {
         // Consumed here, or the menu bus beneath would also act on the Escape.
@@ -162,6 +174,31 @@ export function bindControls({ onPause }: ControlOptions = {}): () => void {
   return () => document.removeEventListener("keydown", onKey);
 }
 
+/**
+ * A viewer's keys: only the camera, the grid and the readouts are the
+ * engine's, and each one it takes is consumed so the viewer's own controls
+ * beneath (the same letters may be menu keys there) never see it. Everything
+ * else passes through, Escape included once there is nothing to let go of.
+ */
+function observerKey(e: KeyboardEvent, command: CombatAction | null, onPause?: () => void) {
+  const s = session;
+  const target = e.target instanceof Element ? e.target : null;
+  if (!observerAllows(command) || typing(target)) return;
+  if (command === "cancel") {
+    if (closeInspect()) e.preventDefault();
+    else if (s.selected) {
+      e.preventDefault();
+      deselect();
+    } else if (onPause) {
+      e.preventDefault();
+      onPause();
+    }
+    return;
+  }
+  e.preventDefault();
+  runCombatAction(command, { reverse: e.shiftKey });
+}
+
 /** Picks and hovers on the 3D field. */
 function bindField() {
   const { battlefield } = session;
@@ -178,7 +215,7 @@ function bindField() {
   battlefield.onUnitHold = pinUnit;
   battlefield.onHover = (p) => {
     const s = session;
-    if (s.busy) return;
+    if (s.busy || s.observer) return;
     const u = s.selectedUnit();
     if (!u) return;
     if (s.mode === "move" && u.ap && allows(u, "move")) {
@@ -193,6 +230,7 @@ function bindField() {
   // A throw already aimed stays on the field while the pointer goes for its confirm button.
   battlefield.onLeave = () => {
     const s = session;
+    if (s.observer) return;
     const u = s.selectedUnit();
     if (u && isThrowOrder(s.mode) && s.grenadeTarget) battlefield.showPath([u.pos, s.grenadeTarget], true);
   };

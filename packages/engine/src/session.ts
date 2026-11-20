@@ -4,6 +4,7 @@
 import type { ThrowOrder } from "./action-registry";
 import { localDriver, type DriverFactory, type EncounterDriver } from "./driver";
 import { Encounter, type Cell, type Unit } from "./game";
+import type { ObserverView } from "./observer";
 import type { Scenario } from "./scenario";
 import type { Battlefield } from "./scene/battlefield";
 
@@ -50,10 +51,17 @@ export class Session {
   paused = false;
   /** The status line over the field; `at` tells repeats of the same message apart. */
   feedback: { message: string; tone: Tone; at: number } | null = null;
+  /**
+   * Set when the encounter is mounted with no seat, for a viewer: nobody gives
+   * orders, both squads are equals and the copy names the sides (`observer.ts`).
+   * Null in a game someone plays.
+   */
+  readonly observer: ObserverView | null;
   version = 0;
   private readonly listeners = new Set<() => void>();
 
-  constructor(scenario?: Scenario, makeDriver: DriverFactory = localDriver) {
+  constructor(scenario?: Scenario, makeDriver: DriverFactory = localDriver, observer: ObserverView | null = null) {
+    this.observer = observer;
     this.game = new Encounter(scenario);
     this.makeDriver = makeDriver;
     this.driver = makeDriver(this.game);
@@ -95,7 +103,9 @@ export class Session {
   /** Keep the selection on the living: a fallen operator is deselected, the aim moves to the first hostile left. */
   settleSelection() {
     const { game } = this;
-    if (this.selected && !game.allies.some((u) => u.id === this.selected)) {
+    // A viewer may hold any unit standing, either side.
+    const holdable = this.observer ? game.units.filter((u) => u.hp > 0) : game.allies;
+    if (this.selected && !holdable.some((u) => u.id === this.selected)) {
       this.selected = "";
       this.mode = "move";
       this.grenadeTarget = null;
@@ -119,8 +129,8 @@ export class Session {
 /** The mounted encounter's session. One encounter runs at a time; `newSession` starts the next. */
 export let session = new Session();
 
-export function newSession(scenario?: Scenario, driver?: DriverFactory): Session {
-  session = new Session(scenario, driver);
+export function newSession(scenario?: Scenario, driver?: DriverFactory, observer: ObserverView | null = null): Session {
+  session = new Session(scenario, driver, observer);
   return session;
 }
 
