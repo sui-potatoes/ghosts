@@ -71,6 +71,21 @@ export interface RecentReads {
     origin(gameId: string): Promise<GameOrigin | null>;
 }
 
+/**
+ * A page read, with "nothing there" for a scan that ran into the start of what the node
+ * keeps: a descending scan for an event type with no events in that window (a type no
+ * package emits yet, or the page past the oldest one) fails `OUT_OF_RANGE` instead of
+ * coming back empty. Any other failure is the read's own.
+ */
+export async function orEnd<T>(read: () => Promise<EventPage<T>>): Promise<EventPage<T>> {
+    try {
+        return await read();
+    } catch (error) {
+        if ((error as { code?: string } | null)?.code !== "OUT_OF_RANGE") throw error;
+        return { items: [], next: null };
+    }
+}
+
 /** A finished game for the list: who played, what for, and how it ended. */
 export interface RecentGame {
     gameId: string;

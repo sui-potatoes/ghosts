@@ -27,6 +27,7 @@ import {
     decodeEnded,
     decodeStarted,
     latestStarts,
+    orEnd,
     recentGames,
     RECENT_CAP,
     RECENT_FIRST,
@@ -486,4 +487,24 @@ test("a failed read names no cause but being offline, and only when the device s
     assert.equal(offlineLine(false), "You are offline");
     assert.equal(offlineLine(true), null);
     assert.equal(offlineLine(undefined), null);
+});
+
+test("recent games: a scan that runs into the start of the node's history is an empty list, any other failure is an error", async () => {
+    const outOfRange = Object.assign(new Error("requested data below earliest available"), {
+        code: "OUT_OF_RANGE",
+    });
+    const unavailable = Object.assign(new Error("unavailable"), { code: "UNAVAILABLE" });
+    const reads = (fail: Error): RecentReads => ({
+        ended: () => orEnd(() => Promise.reject(fail)),
+        started: () => orEnd(() => Promise.reject(fail)),
+        origin: async () => null,
+    });
+    assert.deepEqual(await recentGames(reads(outOfRange), RECENT_FIRST), {
+        games: [],
+        more: false,
+    });
+    await assert.rejects(recentGames(reads(unavailable), RECENT_FIRST), unavailable);
+    await assert.rejects(recentGames(reads(new Error("boom")), RECENT_FIRST), /boom/);
+    const page: EventPage<number> = { items: [1], next: "c" };
+    assert.equal(await orEnd(async () => page), page, "a page that reads is passed through");
 });

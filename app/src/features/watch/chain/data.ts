@@ -62,6 +62,7 @@ import {
     decodeEnded,
     decodeStarted,
     latestStarts,
+    orEnd,
     recentGames,
     RECENT_FIRST,
     type EndedEvent,
@@ -353,8 +354,8 @@ export function useRecentFinished(limit: number = RECENT_FIRST, enabled = true) 
             const arch = archiveOf(client);
             const { games, more } = await recentGames(
                 {
-                    ended: (cursor) => endedPage(client, cursor),
-                    started: (cursor) => startedPage(client, cursor),
+                    ended: (cursor) => orEnd(() => endedPage(client, cursor)),
+                    started: (cursor) => orEnd(() => startedPage(client, cursor)),
                     origin: (gameId) => originOf(arch, gameId),
                 },
                 limit,
