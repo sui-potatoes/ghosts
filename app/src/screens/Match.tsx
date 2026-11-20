@@ -33,17 +33,19 @@ import {
 } from "../chain/game";
 import {
     activeSide,
+    deployCap,
     deployUntil,
     experienceFor,
     fallenOf,
     isDeploying,
+    isFriendly,
     isOver,
     MAX_MISSED_TURNS,
     missedTurns,
     outcomeFor,
+    podiumsFor,
     rankWith,
     squadOf,
-    squadSize,
     turnStartedAt,
     turnLimitMs,
     unitsOnMap,
@@ -146,7 +148,7 @@ function SquadPick({
     action: Action;
     onAbandon: () => void;
 }) {
-    const size = squadSize(game, side);
+    const size = deployCap(game, side);
     const remaining = useRemaining(deployUntil(game));
     const deployed = squadOf(game, side).length > 0;
     const opponentDeployed = squadOf(game, 1 - side).length > 0;
@@ -598,6 +600,7 @@ function ResultScreen({
         const homeReady = gone && alive.every((id) => byId.has(id));
         const result: MatchResult = {
             outcome,
+            friendly: isFriendly(game),
             earned: over ? experienceFor(game, side) : null,
             rating,
             squad: squad.map((r, i) => ({
@@ -794,7 +797,8 @@ export default function Match() {
                 !finished &&
                 (PODIUM_SQUAD_SELECT ? (
                     <SquadSelect
-                        podiums={squadSize(game.data, side) + mine.length}
+                        podiums={podiumsFor(game.data, side, mine.length)}
+                        friendly={isFriendly(game.data)}
                         roster={recruits.data ?? []}
                         deployed={
                             mine.length
@@ -863,8 +867,9 @@ export default function Match() {
                     abandonNow();
                 }}
             >
-                Your opponent wins and your squad comes home, but you can't search for a match for a
-                minute.
+                {isFriendly(game.data)
+                    ? "Your opponent wins and your squad comes home."
+                    : "Your opponent wins and your squad comes home, but you can't search for a match for a minute."}
             </ConfirmDialog>
         </>
     );

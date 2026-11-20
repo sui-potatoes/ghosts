@@ -48,6 +48,11 @@ export type ResultRecord = {
 
 export type MatchResult = {
     outcome: ResultOutcome;
+    /**
+     * A friendly game (`Game.mode` is `Friendly`): no rating, experience or
+     * suspension comes out of it, and the fallen go home with the survivors.
+     */
+    friendly?: boolean;
     /** What a survivor earns; null when the game was gone before it could be read. */
     earned: number | null;
     rating: [before: number, after: number] | null;
@@ -132,6 +137,8 @@ export type Plate =
           gained: number | null;
           /** Null at the top rank: nothing left to fill. */
           band: XpBand | null;
+          /** What the plate says in place of the experience line (a friendly game's). */
+          hint?: string;
       }
     | {
           kind: "kia";
@@ -245,11 +252,61 @@ function survivorAfter(
     return { rank: rankWith(r.rank, xp), xp, gained: result.earned };
 }
 
+/**
+ * The notes a friendly game keeps: how it ended, never a suspension, which a
+ * friendly game does not give.
+ */
+const FRIENDLY_NOTES: Partial<Record<ResultOutcome, string>> = {
+    stalemate: "Turn limit reached",
+    forfeited: `Missed ${MAX_MISSED_TURNS} turns in a row`,
+    "opponent-abandoned": "Opponent abandoned the match",
+    "opponent-forfeited": "Opponent stopped playing",
+    "opponent-no-show": "Opponent never deployed",
+};
+
+/** A friendly game's result: the outcome, and everyone deployed back home as they went in. */
+function friendlyDebrief(result: MatchResult, podiums: number): Debrief {
+    const [title, tone] = HEADLINES[result.outcome];
+    const fallen = new Set(result.fallen);
+    const turns = fallTurns(result.history);
+    const plates: Plate[] = Array.from({ length: podiums }, (_, i) => {
+        const r = result.squad[i];
+        if (!r) return { kind: "vacant" };
+        const turn = turns.get(r.objectId);
+        return {
+            kind: "home",
+            id: r.objectId,
+            name: r.name,
+            rankBefore: r.rank,
+            rankAfter: r.rank,
+            promoted: false,
+            xpBefore: r.xp,
+            xpAfter: r.xp,
+            gained: null,
+            band: null,
+            hint: fallen.has(r.objectId)
+                ? `${turn ? `Fell on turn ${turn} · ` : "Fell · "}Home`
+                : "Home",
+        };
+    });
+    return {
+        title,
+        tone,
+        note: FRIENDLY_NOTES[result.outcome] ?? null,
+        lines: ["Friendly match · Everyone comes home"],
+        opponent: result.opponent ?? null,
+        rating: null,
+        plates,
+        replacement: null,
+    };
+}
+
 /** A match result as the debrief shows it: one plate per podium, left to right. */
 export function debriefOf(
     result: MatchResult,
     podiums = Math.max(3, result.squad.length),
 ): Debrief {
+    if (result.friendly) return friendlyDebrief(result, podiums);
     const [title, tone, note] = HEADLINES[result.outcome];
     const fallen = new Set(result.fallen);
     const turns = fallTurns(result.history);

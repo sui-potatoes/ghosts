@@ -52,6 +52,10 @@ const RecruitQa = import.meta.env.VITE_RECRUIT_QA
     : null;
 // QA only: the find-match screen over fixtures, registered in `VITE_FIND_QA=1` builds.
 const FindQa = import.meta.env.VITE_FIND_QA ? lazy(() => import("./features/find-match/qa")) : null;
+// QA only: the friendly screen over fixtures, registered in `VITE_FRIENDLY_QA=1` builds.
+const FriendlyQa = import.meta.env.VITE_FRIENDLY_QA
+    ? lazy(() => import("./features/play/friendly/qa"))
+    : null;
 import { FundsOnSignIn, SquadPreload, TransactionSender } from "./chain";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { LoadingSpinner } from "./components/LoadingSpinner";
@@ -260,6 +264,16 @@ export function App() {
                         element={
                             <Suspense fallback={<LoadingSpinner />}>
                                 <FindQa />
+                            </Suspense>
+                        }
+                    />
+                )}
+                {FriendlyQa && (
+                    <Route
+                        path="/qa/friendly"
+                        element={
+                            <Suspense fallback={<LoadingSpinner />}>
+                                <FriendlyQa />
                             </Suspense>
                         }
                     />

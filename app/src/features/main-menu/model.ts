@@ -29,6 +29,8 @@ export type MenuState = {
         playing: boolean;
         /** In the queue. */
         searching: boolean;
+        /** Hosting or waiting in a friendly game's lobby (never the queue as well). */
+        lobby?: boolean;
         /** Free recruits being hired on the way into the queue. */
         hiring: boolean;
         /** Whole minutes left of a matchmaking suspension; 0 when none. */
@@ -77,6 +79,16 @@ export function matchRow(state: MenuState): MenuRow {
             verb: "Resume",
             primary: true,
             instant: true,
+        };
+    if (match.lobby)
+        return {
+            id: "match",
+            label: "Find Match",
+            tag: "Lobby",
+            tagTone: "accent",
+            verb: "Find match",
+            locked: "Leave your friendly game first",
+            instant: false,
         };
     if (match.suspendedMin > 0)
         return {
@@ -130,14 +142,25 @@ export function menuRows(state: MenuState): MenuRow[] {
     const rows: MenuRow[] = [
         // The way into every mode: three cards on `/play`. Find Match stays
         // below under its own name; it is the real on-chain queue.
-        {
-            id: "play",
-            label: "Play",
-            hint: "Ranked, friendly, faction wars",
-            verb: "Play",
-            primary: true,
-            instant: true,
-        },
+        state.match.lobby
+            ? {
+                  id: "play",
+                  label: "Play",
+                  tag: "Lobby",
+                  tagTone: "accent",
+                  hint: "Back to your friendly game",
+                  verb: "Play",
+                  primary: true,
+                  instant: true,
+              }
+            : {
+                  id: "play",
+                  label: "Play",
+                  hint: "Ranked, friendly, faction wars",
+                  verb: "Play",
+                  primary: true,
+                  instant: true,
+              },
         // The playable contracts, named like the briefings name them; the
         // location is what the bar says about each.
         {
@@ -246,11 +269,12 @@ export function backTarget(rows: MenuRow[]): RowId | null {
 export type MatchChipState = { value: string; state?: "live"; tone?: "warn" } | null;
 
 export function matchChip(
-    match: { playing: boolean; searchingSinceMs: number | null },
+    match: { playing: boolean; searchingSinceMs: number | null; lobby?: boolean },
     nowMs: number,
     timeoutMs: number,
 ): MatchChipState {
     if (match.playing) return { value: "In progress", state: "live" };
+    if (match.lobby) return { value: "Friendly lobby", state: "live" };
     if (match.searchingSinceMs === null) return null;
     const elapsed = Math.max(0, nowMs - match.searchingSinceMs);
     if (elapsed > timeoutMs) return { value: "None found", tone: "warn" };

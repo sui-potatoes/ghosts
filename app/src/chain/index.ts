@@ -51,6 +51,36 @@ export {
     useMatchSearch,
     type ChainSeat,
 } from "./matchmaking";
+export {
+    closeLobbyTx,
+    fetchLobby,
+    findInviteHost,
+    joinLobbyTx,
+    joinOpenTx,
+    keepCode,
+    keptCode,
+    kickGuestTx,
+    leaveLobbyTx,
+    lobbiesEnabled,
+    openLobbyTx,
+    startFriendlyTx,
+    useLobbyPlace,
+    useOpenLobbies,
+    usePresetSide,
+    type InviteHost,
+    type OpenLobby,
+} from "./lobby";
+export {
+    codeHash,
+    codeText,
+    droppedWhy,
+    DROPPED_LINES,
+    expiresAt,
+    isExpired,
+    protectedKey,
+    randomCode,
+    type Place,
+} from "./lobby-core";
 export { useAssignedName, useSubmitNameChange } from "./names";
 export { canSendTransactions, sendTransaction, TransactionSender } from "./sender";
 export { trackSaving, useSaving } from "./saving";

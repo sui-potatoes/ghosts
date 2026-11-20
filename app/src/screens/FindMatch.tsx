@@ -36,6 +36,7 @@ export default function FindMatchScreen() {
                     signedIn: !!account,
                     playing: !!match.playing,
                     searching: !!match.searching,
+                    lobby: !!match.lobby,
                     hiring: match.hiring,
                     funding: preparing,
                     suspendedMin:
@@ -51,6 +52,7 @@ export default function FindMatchScreen() {
                 cancel: match.cancel,
                 signIn: requestSignIn,
                 resume: () => navigate("/match"),
+                lobby: () => navigate("/play/friendly"),
                 leave,
             }}
         />

@@ -12,6 +12,7 @@
 import { useLayoutEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
+import { useMatchSearch } from "../../chain";
 import { useGoUp } from "../../hooks/useGoUp";
 import { usePlayerName } from "../../hooks/usePlayerName";
 import {
@@ -34,6 +35,7 @@ export default function PlayScreen() {
     const glyphs = useGlyphSet();
     const rating = useRating();
     const { name } = usePlayerName();
+    const { lobby } = useMatchSearch();
     const back: Command = { action: "back", label: "Menu", run: leave };
     return (
         <FocusRoot back={back}>
@@ -52,7 +54,7 @@ export default function PlayScreen() {
                 columns="minmax(0, 1fr)"
                 commands={<FocusCommandBar glyphs={glyphs} />}
             >
-                <Cards rating={rating.rating} />
+                <Cards rating={rating.rating} lobby={!!lobby} />
             </ScreenFrame>
         </FocusRoot>
     );
@@ -60,16 +62,16 @@ export default function PlayScreen() {
 
 const NAV: Command = { action: "nav", label: "Move", glyph: "lr" };
 
-function Cards({ rating }: { rating: number }) {
+function Cards({ rating, lobby }: { rating: number; lobby: boolean }) {
     const store = useFocusStore();
     useLayoutEffect(() => {
-        store.focus("play-ranked", false);
+        store.focus(lobby ? "play-friendly" : "play-ranked", false);
         // Once, on arrival.
     }, [store]);
     return (
         <div className="gui-play">
             <div className="gui-play-cards" role="list">
-                {modeCards().map((card) => (
+                {modeCards(lobby).map((card) => (
                     <Card key={card.id} card={card} rating={rating} />
                 ))}
             </div>

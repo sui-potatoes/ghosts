@@ -43,6 +43,7 @@ import {
     WeaponUpgrade,
 } from "./bcs";
 import { movedOn, noteOwned, type ExecutedOrder } from "./fast-lane";
+import { lobbyRefusal } from "./lobby-core";
 import { ensureGas } from "./funds";
 import { absorbWrites, current, useBcsObject } from "./objects";
 import { trackSaving } from "./saving";
@@ -386,7 +387,7 @@ export function friendlyError(e: unknown): string {
         return "Connection lost. Try again.";
     if (/function_name: Some\("cancel_search"\).*, 25\)/.test(message))
         return "A match was just found: joining it.";
-    return message;
+    return lobbyRefusal(message) ?? message;
 }
 
 const target = (fn: string) => `${GHOSTS.package}::account::${fn}`;

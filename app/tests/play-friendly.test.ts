@@ -1,398 +1,259 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
+/**
+ * The friendly screen's pure rules (`src/features/play/friendly/model.ts`): the
+ * code's text as the screen takes it, the share link, the sizes the level
+ * allows, what keeps a player out, and when Start and Join can run; and how the
+ * rest of the app treats a player in a lobby (title, Play cards, Find Match)
+ * and a friendly game's result. The chain side is `tests/lobby-chain.test.ts`.
+ */
+
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { debriefOf, type MatchResult } from "../src/features/debrief/result.ts";
+import { findView, type FindState } from "../src/features/find-match/model.ts";
+import { matchChip, matchRow, menuRows, type MenuState } from "../src/features/main-menu/model.ts";
 import {
     CODE_ALPHABET,
-    ageLabel,
-    asksBeforeClosing,
-    ANY_RULE,
-    bringSquad,
-    budgetOptions,
-    buildsSquad,
-    codeFromId,
-    defaultRule,
-    matchRule,
-    parseRule,
-    readiness,
-    ruleBudget,
-    ruleLabel,
-    ruleRating,
-    ruleShort,
+    CODE_LENGTH,
     formatCode,
+    gateOf,
+    joinBlock,
     linkCode,
+    LOBBY_LIFETIME_MS,
     parseCode,
+    personLine,
     shareLink,
-    typingProblem,
-    withCheck,
-} from "../src/features/play/friendly/model.ts";
-import { defaultSquad, TIERS, tierOf } from "../src/features/play/economy/index.ts";
-import {
-    FIXTURES,
-    arriveNow,
-    hostLobby,
-    hostedLobbies,
-    joinLobby,
-    leaveSession,
-    lookupCode,
-    NEVER,
-    openGames,
-    opponentState,
-    phaseOf,
-    readSession,
-    recentCodes,
+    sizeBlock,
+    sizeLabel,
     startBlock,
-    updateSquad,
-    type KV,
-} from "../src/features/play/friendly/lobbies.ts";
+    timeLeft,
+    typingProblem,
+    type GateInput,
+    type LobbyState,
+    type OpenGame,
+} from "../src/features/play/friendly/model.ts";
+import { modeCards } from "../src/features/play/model.ts";
 
-function memory(): KV {
-    const map = new Map<string, string>();
-    return {
-        getItem: (k) => map.get(k) ?? null,
-        setItem: (k, v) => void map.set(k, v),
-        removeItem: (k) => void map.delete(k),
-    };
-}
-
-const YOU = { name: "you", rating: 1500 };
-const T0 = 1_700_000_000_000;
-const seq = (...v: number[]) => {
-    let i = 0;
-    return () => v[i++ % v.length];
+const FREE: GateInput = {
+    signedIn: true,
+    loading: false,
+    hasAccount: true,
+    recruits: 4,
+    playing: false,
+    queued: false,
+    suspendedMin: 0,
 };
 
-test("codes are 8 characters from the unambiguous alphabet and deterministic", () => {
+test("the code is 13 characters of the unambiguous alphabet, grouped 4-4-5", () => {
+    assert.equal(CODE_LENGTH, 13);
     assert.ok(!/[01OIL]/.test(CODE_ALPHABET));
-    for (let i = 0; i < 200; i++) {
-        const code = codeFromId(`id-${i}`);
-        assert.equal(code.length, 8);
-        for (const ch of code) assert.ok(CODE_ALPHABET.includes(ch));
-        assert.equal(code, codeFromId(`id-${i}`));
-        assert.ok(parseCode(code).ok);
-    }
-    assert.notEqual(codeFromId("a"), codeFromId("b"));
-});
-
-test("formatting groups four and four, also while typing", () => {
-    assert.equal(formatCode("abcdefgh"), "ABCD-EFGH");
-    assert.equal(formatCode("abc"), "ABC");
-    assert.equal(formatCode("abcde"), "ABCD-E");
+    assert.equal(formatCode("24vmt8ut43yr9"), "24VM-T8UT-43YR9");
+    assert.equal(formatCode("24V"), "24V");
+    assert.equal(formatCode("24VMT8"), "24VM-T8");
 });
 
 test("parsing is tolerant of case, spaces, dashes and a pasted link", () => {
-    const code = codeFromId("x");
-    const dashed = formatCode(code);
     for (const text of [
-        code,
-        code.toLowerCase(),
-        dashed,
-        ` ${dashed.toLowerCase().replace("-", " ")} `,
+        "24VMT8UT43YR9",
+        "24vmt8ut43yr9",
+        "24VM-T8UT-43YR9",
+        " 24vm t8ut 43yr9 ",
+        shareLink("24VMT8UT43YR9", "https://ghosts.test"),
+        // An invite as the agent tools write it: the host's Account ID, then the code.
+        `0x${"b2".repeat(32)}:24VM-T8UT-43YR9`,
     ]) {
         const parsed = parseCode(text);
-        assert.ok(parsed.ok && parsed.code === code, text);
+        assert.ok(parsed.ok, text);
+        assert.deepEqual([...parsed.bytes], [1, 2, 3, 4, 5, 6, 7, 8]);
     }
-    const link = parseCode(shareLink(code, "https://x.test"));
-    assert.ok(link.ok && link.code === code);
 });
 
-test("parsing refuses what is malformed, with a reason", () => {
+test("parsing refuses what is malformed, with a reason; typing waits for a short code", () => {
     const reason = (t: string) => {
         const p = parseCode(t);
         return p.ok ? "ok" : p.problem;
     };
     assert.equal(reason(""), "empty");
-    assert.equal(reason("  - "), "empty");
-    assert.equal(reason("ABC"), "short");
-    assert.equal(reason("ABCDEFGHJ"), "long");
-    assert.equal(reason("ABCD-EF0H"), "chars");
-    assert.equal(reason("ABCD-EFIH"), "chars");
+    assert.equal(reason("24VM"), "short");
+    assert.equal(reason("24VMT8UT43YR92"), "long");
+    assert.equal(reason("24VM-T8UT-43YR0"), "chars");
+    assert.equal(typingProblem("24VM"), null);
+    assert.equal(typingProblem("24VMO"), "Codes use letters and digits, never 0, O, 1, I or L");
 });
 
-test("the check character catches a typo and a swap", () => {
-    const code = withCheck("HARBER2");
-    const p = (t: string) => parseCode(t);
-    assert.ok(p(code).ok);
-    const wrong = code.slice(0, 7) + (code[7] === "2" ? "3" : "2");
-    assert.ok(!p(wrong).ok);
-    const swapped = "AHRBER2" + code[7];
-    assert.ok(!p(swapped).ok);
-    assert.equal(typingProblem("ABC"), null);
-    assert.equal(typingProblem(""), null);
-    assert.ok(typingProblem("ABCD-EF0H"));
-});
-
-test("a share link round-trips through the query string", () => {
-    const code = codeFromId("y");
-    const link = shareLink(code, "https://x.test");
-    assert.equal(link, `https://x.test/play/friendly?code=${formatCode(code)}`);
-    assert.equal(linkCode(new URL(link).search), formatCode(code));
-    assert.equal(linkCode(""), null);
+test("the share link carries the grouped code and reads back", () => {
+    const link = shareLink("24VMT8UT43YR9", "https://ghosts.test");
+    assert.equal(link, "https://ghosts.test/play/friendly?code=24VM-T8UT-43YR9");
+    assert.equal(linkCode(new URL(link).search), "24VM-T8UT-43YR9");
     assert.equal(linkCode("?code="), null);
+    assert.equal(linkCode(""), null);
 });
 
-test("ages read in plain units", () => {
-    assert.equal(ageLabel(2000), "just now");
-    assert.equal(ageLabel(40_000), "40s");
-    assert.equal(ageLabel(190_000), "3m");
-    assert.equal(ageLabel(7_300_000), "2h");
+test("4x4 opens only on a level with 4 spawn positions a side", () => {
+    assert.equal(sizeBlock(3, 3), null);
+    assert.equal(sizeBlock(4, 3), "No 4x4 level yet");
+    assert.equal(sizeBlock(4, 4), null);
+    // Before the level is read, the one level there is holds 3.
+    assert.equal(sizeBlock(4, null), "No 4x4 level yet");
+    assert.equal(sizeBlock(3, null), null);
+    assert.equal(sizeLabel(4), "4 x 4");
 });
 
-test("the squad brought is the default without a saved one, and sized to the mode", () => {
-    const none = bringSquad("saved", null, "4x4");
-    assert.equal(none.kind, "default");
-    assert.equal(none.squad.length, 4);
-    const saved = bringSquad("saved", [{ role: "Assault", callsign: "VEX" }], "3x3");
-    assert.equal(saved.kind, "saved");
-    assert.equal(saved.squad.length, 3);
-    assert.deepEqual(saved.names, ["VEX", "Unit 2", "Unit 3"]);
+test("the gate: signed out, no squad, in a match, queued, suspended, free", () => {
+    assert.equal(gateOf({ ...FREE, signedIn: false })?.reason, "Sign in to play");
+    assert.equal(gateOf({ ...FREE, signedIn: false })?.action?.id, "sign-in");
+    assert.equal(gateOf({ ...FREE, hasAccount: false, recruits: 0 })?.reason, "Hire a squad first");
+    assert.equal(gateOf({ ...FREE, recruits: 0 })?.action?.id, "headquarters");
+    assert.equal(gateOf({ ...FREE, playing: true })?.action?.id, "resume");
+    assert.equal(gateOf({ ...FREE, queued: true })?.reason, "You are in the match queue");
+    assert.equal(gateOf({ ...FREE, suspendedMin: 2 })?.reason, "Suspended for 2 min");
+    assert.equal(gateOf(FREE), null);
 });
 
-test("the open list is deterministic, ages out and is never in the future", () => {
-    const a = openGames(T0);
-    assert.deepEqual(a, openGames(T0));
-    for (const l of a) assert.ok(l.openedAt <= T0);
-    let seen = 0;
-    let empty = 0;
-    for (let t = T0; t < T0 + 3_600_000; t += 10_000) {
-        const list = openGames(t);
-        seen += list.length;
-        if (list.length === 0) empty++;
-        for (const l of openGames(t, "3x3")) assert.equal(l.mode, "3x3");
-    }
-    assert.ok(seen > 0);
-    assert.ok(empty < 360);
-    // Something open now is gone later.
-    const first = openGames(T0)[0];
-    if (first) assert.ok(!openGames(T0 + 400_000).some((l) => l.id === first.id));
-    assert.notDeepEqual(openGames(T0, "any", 1), openGames(T0, "any", 2));
+const host = (over: Partial<Extract<LobbyState, { kind: "host" }>> = {}): LobbyState => ({
+    kind: "host",
+    listed: true,
+    size: 3,
+    sinceMs: 0,
+    code: null,
+    guest: null,
+    ...over,
 });
 
-test("hosting: code, arrival, ready, cancel", () => {
-    const kv = memory();
-    const s = hostLobby(
-        kv,
-        {
-            mode: "3x3",
-            visibility: "invite",
-            rule: ANY_RULE,
-            squad: [],
-            names: [],
-            builds: false,
-            ready: true,
-            you: YOU,
-        },
-        T0,
-        seq(0.1, 0.5),
+test("Start waits for a guest, refuses an invite-only game and an expired one", () => {
+    const guest = { id: "0x9", name: "vesper", rating: 1544 };
+    assert.equal(startBlock(host(), 1000, LOBBY_LIFETIME_MS), "Nobody has joined yet");
+    assert.equal(startBlock(host({ guest }), 1000, LOBBY_LIFETIME_MS), null);
+    assert.equal(
+        startBlock(host({ listed: false }), 1000, LOBBY_LIFETIME_MS),
+        "The match starts when your friend joins",
     );
-    assert.ok(parseCode(s.lobby.code).ok);
-    assert.equal(phaseOf(s, T0), "waiting");
-    assert.equal(phaseOf(s, s.resolvesAt), "ready");
-    assert.equal(readSession(kv)?.lobby.id, s.lobby.id);
-    // Skipping the wait.
-    const early = arriveNow(kv, T0 + 100);
-    assert.equal(phaseOf(early!, T0 + 100), "ready");
-    // The code is known in this session, as the host's own.
-    const hit = lookupCode(kv, s.lobby.code, T0);
-    assert.ok(hit.ok && hit.own);
-    leaveSession(kv);
-    assert.equal(readSession(kv), null);
-    assert.equal(hostedLobbies(kv).length, 1);
-    const gone = lookupCode(kv, s.lobby.code, T0);
-    assert.ok(!gone.ok && gone.reason === "closed");
+    // Startable up to the lifetime inclusive, as the contract has it.
+    assert.equal(startBlock(host({ guest }), LOBBY_LIFETIME_MS, LOBBY_LIFETIME_MS), null);
+    assert.equal(
+        startBlock(host({ guest }), LOBBY_LIFETIME_MS + 1, LOBBY_LIFETIME_MS),
+        "This game has expired",
+    );
 });
 
-test("lookup: malformed, unknown, full, fixtures and the open feed", () => {
-    const kv = memory();
-    const bad = lookupCode(kv, "nope", T0);
-    assert.ok(!bad.ok && bad.reason === "malformed");
-    const unknown = lookupCode(kv, withCheck("AAAAAAA"), T0);
-    assert.ok(!unknown.ok && unknown.reason === "unknown");
-    for (const f of FIXTURES) {
-        const r = lookupCode(kv, f.code, T0);
-        if (f.full) assert.ok(!r.ok && r.reason === "full");
-        else assert.ok(r.ok && !r.own && r.lobby.id === f.id);
-    }
-    const open = openGames(T0)[0];
-    if (open) {
-        const r = lookupCode(kv, open.code, T0);
-        assert.ok(r.ok && r.lobby.id === open.id);
-        const later = lookupCode(kv, open.code, T0 + 500_000);
-        assert.ok(!later.ok);
-    }
+test("Join on the list: the gate first, then full, then the level", () => {
+    const game: OpenGame = {
+        hostId: "0x1",
+        owner: "0xa",
+        rating: 1500,
+        size: 3,
+        sinceMs: 0,
+        full: false,
+    };
+    assert.equal(joinBlock(game, null, 3), null);
+    assert.equal(joinBlock({ ...game, full: true }, null, 3), "This game is full");
+    assert.equal(joinBlock({ ...game, size: 4 }, null, 3), "No 4x4 level yet");
+    assert.equal(
+        joinBlock({ ...game, full: true }, { reason: "Sign in to play" }, 3),
+        "Sign in to play",
+    );
 });
 
-test("joining: the host starts after a moment, or closes the lobby", () => {
-    const kv = memory();
-    const ok = FIXTURES.find((f) => !f.full && !f.cancels)!;
-    const g = joinLobby(kv, ok, { squad: [], names: [] }, T0);
-    assert.equal(g.role, "guest");
-    assert.equal(phaseOf(g, T0), "waiting");
-    assert.equal(phaseOf(g, g.resolvesAt), "starting");
-    assert.deepEqual(recentCodes(kv), [ok.code]);
-    const cancels = FIXTURES.find((f) => f.cancels)!;
-    const c = joinLobby(kv, cancels, { squad: [], names: [] }, T0);
-    assert.equal(phaseOf(c, c.resolvesAt), "cancelled");
-    assert.deepEqual(recentCodes(kv), [cancels.code, ok.code]);
+test("time left counts down to 0:00, and players read with their rating", () => {
+    assert.equal(timeLeft(0, 0), "10:00");
+    assert.equal(timeLeft(0, 61_000), "8:59");
+    assert.equal(timeLeft(0, 700_000), "0:00");
+    assert.equal(personLine({ name: "kestrel", rating: 1520 }), "kestrel · Rating 1520");
+    assert.equal(personLine({ name: null, rating: null }), "Unnamed");
 });
 
-test("a host's lobby asks before closing once an opponent is in or the code went out", () => {
-    assert.equal(asksBeforeClosing("host", "waiting", false), false);
-    assert.equal(asksBeforeClosing("host", "waiting", true), true);
-    assert.equal(asksBeforeClosing("host", "ready", false), true);
-    assert.equal(asksBeforeClosing("host", "ready", true), true);
-    assert.equal(asksBeforeClosing("guest", "waiting", true), false);
-    assert.equal(asksBeforeClosing("guest", "starting", false), false);
+// === The rest of the app ====================================================
+
+const menu = (match: Partial<MenuState["match"]>): MenuState => ({
+    signedIn: true,
+    match: { playing: false, searching: false, hiring: false, suspendedMin: 0, ...match },
+    install: "none",
 });
 
-// === The squad rule ===
-
-test("standard budgets come from the tiers, per size, lowest first", () => {
-    for (const mode of ["3x3", "4x4"] as const) {
-        const options = budgetOptions(mode);
-        assert.equal(options.length, TIERS.length);
-        options.forEach(([id, label], i) => {
-            assert.equal(id, TIERS[i].id);
-            assert.equal(label, `${TIERS[i].budget[mode]} cr · ${TIERS[i].name}`);
-        });
-    }
-});
-
-test("a rule maps to a budget, a rating and a label; changing size keeps the tier", () => {
-    const rule = { kind: "budget", tier: "contractor" } as const;
-    assert.equal(ruleBudget(rule, "3x3"), TIERS[1].budget["3x3"]);
-    assert.equal(ruleBudget(rule, "4x4"), TIERS[1].budget["4x4"]);
-    assert.equal(ruleRating(rule), TIERS[1].min);
-    assert.equal(ruleLabel(rule, "3x3"), `Budget ${TIERS[1].budget["3x3"]} cr · Contractor`);
-    assert.equal(ruleBudget(ANY_RULE, "3x3"), null);
-    assert.equal(ruleLabel(ANY_RULE, "4x4"), "Any squad");
-    // Any unlocks everything: the top tier's rating.
-    assert.equal(tierOf(ruleRating(ANY_RULE)).id, TIERS[TIERS.length - 1].id);
-    assert.equal(defaultRule(1500).tier, tierOf(1500).id);
-    assert.deepEqual(parseRule({ kind: "budget", tier: "nope" }), ANY_RULE);
-    assert.deepEqual(matchRule(rule, "3x3"), {
-        budget: TIERS[1].budget["3x3"],
-        rating: TIERS[1].min,
-        label: ruleLabel(rule, "3x3"),
+test("the title: Find Match is inactive in a lobby, Play leads back to it", () => {
+    const row = matchRow(menu({ lobby: true }));
+    assert.equal(row.label, "Find Match");
+    assert.equal(row.locked, "Leave your friendly game first");
+    const play = menuRows(menu({ lobby: true })).find((r) => r.id === "play")!;
+    assert.equal(play.hint, "Back to your friendly game");
+    assert.equal(
+        menuRows(menu({})).find((r) => r.id === "play")!.hint,
+        "Ranked, friendly, faction wars",
+    );
+    assert.deepEqual(matchChip({ playing: false, searchingSinceMs: null, lobby: true }, 0, 1), {
+        value: "Friendly lobby",
+        state: "live",
     });
+    // A game in progress still wins.
+    assert.equal(matchRow(menu({ lobby: true, playing: true })).label, "Resume Match");
 });
 
-test("readiness: a squad is ready when it fits the rule", () => {
-    const rookie = { kind: "budget", tier: "rookie" } as const;
-    const fit = bringSquad("build", null, "3x3", rookie);
-    assert.equal(fit.kind, "build");
-    assert.deepEqual(readiness(fit.squad, rookie, "3x3"), []);
-    // The same squad on a bigger table is fine; a rookie squad is over a too-small budget.
-    const rich = defaultSquad(TIERS[3].min, "3x3");
-    assert.ok(readiness(rich, rookie, "3x3").length > 0);
-    assert.deepEqual(readiness(rich, ANY_RULE, "3x3"), []);
-    assert.equal(buildsSquad(rookie, "saved"), true);
-    assert.equal(buildsSquad(ANY_RULE, "saved"), false);
-    assert.equal(buildsSquad(ANY_RULE, "build"), true);
+test("Find Match sends a player in a lobby back to it, never into the queue", () => {
+    const state: FindState = {
+        signedIn: true,
+        playing: false,
+        searching: false,
+        lobby: true,
+        hiring: false,
+        suspendedMin: 0,
+        error: null,
+        elapsedMs: 0,
+        timeoutMs: 120_000,
+        starting: false,
+    };
+    const view = findView(state);
+    assert.equal(view.phase, "lobby");
+    assert.equal(view.action.id, "lobby");
+    assert.notEqual(view.action.id, "cancel");
 });
 
-test("fixtures and the feed carry rules, deterministic from the seed", () => {
-    assert.equal(FIXTURES.find((f) => f.code.startsWith("HARBER2"))!.rule.kind, "any");
-    assert.ok(FIXTURES.some((f) => f.rule.kind === "budget"));
-    const feed = openGames(T0 + 600_000);
-    assert.deepEqual(
-        feed.map((l) => l.rule),
-        openGames(T0 + 600_000).map((l) => l.rule),
+test("the Play cards: the friendly card leads back to the lobby", () => {
+    const friendly = modeCards(true).find((c) => c.id === "friendly")!;
+    assert.equal(friendly.tag, "In lobby");
+    assert.equal(friendly.route, "/play/friendly");
+    assert.equal(modeCards().find((c) => c.id === "friendly")!.tag, "Open");
+});
+
+test("a friendly result claims no rating, experience or loss: the fallen are home", () => {
+    const result: MatchResult = {
+        outcome: "defeat",
+        friendly: true,
+        earned: 0,
+        rating: [1500, 1500],
+        squad: [
+            { objectId: "0x1", name: "Kira", rank: "Rookie", xp: 2 },
+            { objectId: "0x2", name: "Vex", rank: "Squaddie", xp: 5 },
+        ],
+        fallen: ["0x2"],
+        history: [
+            { $kind: "NextTurn", NextTurn: 2 },
+            { $kind: "UnitKIA", UnitKIA: ["0x2", 0, 0] },
+        ],
+        recruitsHome: 4,
+        opponent: "kestrel",
+    };
+    const d = debriefOf(result, 3);
+    assert.equal(d.title, "Defeat");
+    assert.equal(d.rating, null);
+    assert.equal(d.replacement, null);
+    assert.deepEqual(d.lines, ["Friendly match · Everyone comes home"]);
+    assert.equal(d.plates.filter((p) => p.kind === "kia").length, 0);
+    const [kira, vex, empty] = d.plates;
+    assert.ok(kira.kind === "home" && kira.gained === null && kira.hint === "Home");
+    assert.ok(
+        vex.kind === "home" && vex.rankAfter === "Squaddie" && vex.hint === "Fell on turn 3 · Home",
     );
-    const kinds = new Set(
-        Array.from({ length: 40 }, (_, i) =>
-            openGames(T0 + i * 20_000).flatMap((l) => l.rule.kind),
-        ).flat(),
+    assert.equal(empty.kind, "vacant");
+
+    // Walking out of a friendly game suspends nobody.
+    assert.equal(debriefOf({ ...result, outcome: "abandoned" }).note, null);
+    assert.equal(debriefOf({ ...result, outcome: "forfeited" }).note, "Missed 3 turns in a row");
+    // A rated one still says it.
+    assert.equal(
+        debriefOf({ ...result, friendly: false, outcome: "abandoned" }).note,
+        "No new match for a minute",
     );
-    assert.deepEqual([...kinds].sort(), ["any", "budget"]);
-    for (const l of openGames(T0, "any", 7, "budget")) assert.equal(l.rule.kind, "budget");
-    for (const l of openGames(T0, "any", 7, "any")) assert.equal(l.rule.kind, "any");
-});
-
-test("lobby lifecycle under a budget: ready follows the squad, Start waits for both", () => {
-    const kv = memory();
-    const rule = defaultRule(1500);
-    const bring = bringSquad("build", null, "3x3", rule);
-    const s = hostLobby(
-        kv,
-        {
-            mode: "3x3",
-            visibility: "open",
-            rule,
-            squad: bring.squad,
-            names: bring.names,
-            builds: true,
-            ready: true,
-            you: YOU,
-        },
-        T0,
-        seq(0.1, 0.5, 0.5),
-    );
-    assert.equal(s.lobby.rule, rule);
-    assert.equal(startBlock(s, T0), "Waiting for an opponent");
-    assert.equal(opponentState(s, s.resolvesAt), "building");
-    assert.match(startBlock(s, s.resolvesAt)!, /building a squad/);
-    assert.equal(opponentState(s, s.opponentReadyAt), "ready");
-    assert.equal(startBlock(s, s.opponentReadyAt), null);
-    // The builder reports a squad over budget: not ready, with the reason.
-    const over = defaultSquad(TIERS[3].min, "3x3");
-    const issues = readiness(over, rule, "3x3");
-    const bad = updateSquad(kv, over, issues, T0)!;
-    assert.equal(bad.ready, false);
-    assert.equal(startBlock(bad, bad.opponentReadyAt), issues[0].message);
-    const good = updateSquad(kv, bring.squad, [], T0)!;
-    assert.equal(startBlock(good, good.opponentReadyAt), null);
-    // Skipping the wait moves readiness with the arrival.
-    const early = arriveNow(kv, T0 + 100)!;
-    assert.equal(opponentState(early, T0 + 100), "building");
-    assert.equal(early.opponentReadyAt - early.resolvesAt, s.opponentReadyAt - s.resolvesAt);
-});
-
-test("a guest who is not ready keeps the host from starting until the squad fits", () => {
-    const kv = memory();
-    const lobby = FIXTURES.find((f) => f.rule.kind === "budget" && !f.full && !f.cancels)!;
-    const g = joinLobby(kv, lobby, { squad: [], names: [], builds: true, ready: false }, T0);
-    assert.equal(g.resolvesAt, NEVER);
-    assert.equal(phaseOf(g, T0 + 1e9), "waiting");
-    const ready = updateSquad(kv, [], [], T0 + 5000)!;
-    assert.equal(phaseOf(ready, ready.resolvesAt), "starting");
-    const again = updateSquad(kv, [], [{ message: "over" }], T0 + 6000)!;
-    assert.equal(again.resolvesAt, NEVER);
-    // An any-squad guest bringing a saved squad is ready at once.
-    const any = FIXTURES.find((f) => f.rule.kind === "any")!;
-    const quick = joinLobby(memory(), any, { squad: [], names: [] }, T0);
-    assert.ok(quick.ready && quick.resolvesAt < NEVER);
-});
-
-test("a narrow row reads the rule short, with its units", () => {
-    assert.equal(ruleShort(ANY_RULE, "3x3"), "Any squad");
-    const rule = defaultRule(1500);
-    assert.equal(ruleShort(rule, "3x3"), `${ruleBudget(rule, "3x3")} cr · ${tierOf(1500).name}`);
-    assert.ok(ruleShort(rule, "4x4").length < ruleLabel(rule, "4x4").length);
-});
-
-test("the builder's unit names travel with the session", () => {
-    const kv = memory();
-    const rule = defaultRule(1500);
-    const bring = bringSquad("build", null, "3x3", rule);
-    hostLobby(
-        kv,
-        {
-            mode: "3x3",
-            visibility: "invite",
-            rule,
-            squad: bring.squad,
-            names: bring.names,
-            builds: true,
-            ready: true,
-            you: YOU,
-        },
-        T0,
-        seq(0.1, 0.5, 0.5),
-    );
-    const named = updateSquad(kv, bring.squad, [], T0, ["Marksman", "Runner", "Heavy"])!;
-    assert.deepEqual(named.labels, ["Marksman", "Runner", "Heavy"]);
-    assert.deepEqual(readSession(kv)!.labels, ["Marksman", "Runner", "Heavy"]);
 });

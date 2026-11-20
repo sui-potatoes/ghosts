@@ -13,6 +13,8 @@ export type FindState = {
     playing: boolean;
     /** In the queue (the `Account` says `Searching`). */
     searching: boolean;
+    /** Hosting or waiting in a friendly game's lobby: the queue refuses until it is left. */
+    lobby?: boolean;
     /** Free recruits are being hired on the way into the queue. */
     hiring: boolean;
     /** Whole minutes of a matchmaking suspension left; 0 when none. */
@@ -33,6 +35,7 @@ export type FindState = {
 export type FindPhase =
     | "signed-out"
     | "playing"
+    | "lobby"
     | "suspended"
     | "failed"
     | "timeout"
@@ -41,7 +44,7 @@ export type FindPhase =
     | "hiring"
     | "starting";
 
-export type FindAction = "sign-in" | "resume" | "retry" | "cancel" | "menu";
+export type FindAction = "sign-in" | "resume" | "lobby" | "retry" | "cancel" | "menu";
 
 export type FindView = {
     phase: FindPhase;
@@ -73,6 +76,14 @@ export function findView(s: FindState): FindView {
             headline: "Match in progress",
             note: "Your squad is on the field.",
             action: { id: "resume", label: "Resume match" },
+            pending: false,
+        };
+    if (s.lobby)
+        return {
+            phase: "lobby",
+            headline: "Friendly game open",
+            note: "Leave or close your friendly game to queue for a rated match.",
+            action: { id: "lobby", label: "Open friendly game" },
             pending: false,
         };
     if (s.suspendedMin > 0)

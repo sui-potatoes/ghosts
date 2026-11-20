@@ -31,6 +31,36 @@ export const MAX_MISSED_TURNS = 3;
 /** A side's squad on this map: what is left of its spawn positions before it deploys. */
 export const squadSize = (game: ChainGame, side: number) => game.positions[side].length;
 
+/** A game started from a lobby: no rating, score, experience or losses come out of it. */
+export const isFriendly = (game: Pick<ChainGame, "mode">): boolean =>
+    game.mode?.$kind === "Friendly";
+
+/** The most recruits each side deploys in a friendly game; null in a rated one. */
+export const friendlySize = (game: Pick<ChainGame, "mode">): number | null =>
+    game.mode?.$kind === "Friendly" ? game.mode.Friendly.size : null;
+
+/**
+ * How many recruits a side may deploy, as `deploy_squad` caps it: the spawn
+ * positions it has left, and in a friendly game no more than the lobby's size.
+ */
+export function deployCap(game: ChainGame, side: number): number {
+    const size = friendlySize(game);
+    const positions = squadSize(game, side);
+    return size === null ? positions : Math.min(positions, size);
+}
+
+/**
+ * The podiums the squad selection shows a side: one per recruit it may deploy,
+ * before it deploys (`deployCap`); once deployed, the positions it had in all,
+ * still capped by a friendly game's size.
+ */
+export function podiumsFor(game: ChainGame, side: number, deployed: number): number {
+    if (!deployed) return deployCap(game, side);
+    const all = squadSize(game, side) + deployed;
+    const size = friendlySize(game);
+    return size === null ? all : Math.max(deployed, Math.min(all, size));
+}
+
 export type Cell = [x: number, z: number];
 
 export interface Bounds {
@@ -441,6 +471,8 @@ const MIN_TURNS_TO_EARN = 2;
  * `experience` in `ghosts::ghosts`.
  */
 export function experienceFor(game: ChainGame, side: number): number {
+    // `experience` gives none at all in a friendly game.
+    if (isFriendly(game)) return 0;
     const other = 1 - side;
     const ending = game.state.$kind === "Over" ? game.state.Over : null;
     // who is to blame for how it ended: `misbehaved` in the contract

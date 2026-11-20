@@ -32,6 +32,8 @@ import {
     useGhostsAction,
 } from "./ghosts";
 import { beforeGame } from "./funds";
+import { useLobbyPlace } from "./lobby";
+import type { Place } from "./lobby-core";
 import { useSaving } from "./saving";
 
 type Client = ReturnType<typeof useCurrentClient>;
@@ -169,6 +171,10 @@ export function useMatchSearch() {
     const [lookupError, setLookupError] = useState<string | null>(null);
     const { gameId, seat } = useCurrentGame();
     const search = account?.state;
+    // A `Searching` account is in the queue or in a friendly lobby: its order says which.
+    const place = useLobbyPlace(accountId, account);
+    const lobby: Exclude<Place, { kind: "queue" }> | null =
+        place && place.kind !== "queue" ? place : null;
 
     const send = (build: (id: string) => Transaction) => {
         if (!accountId || busy) return;
@@ -181,7 +187,8 @@ export function useMatchSearch() {
      * Reads what the hooks don't know yet, so a press before they load is safe.
      */
     const find = async () => {
-        if (!owner || busy || hiring) return;
+        // In a lobby, `find_game` refuses: the lobby is left from its own screen.
+        if (!owner || busy || hiring || lobby) return;
         const { client } = action;
         // The balance is topped up for this game in the background; waited for only if the queue could not be paid.
         await beforeGame(owner);
@@ -213,8 +220,13 @@ export function useMatchSearch() {
     return {
         /** A squad is being hired on the way into the queue. */
         hiring,
-        /** The search, while it is in the queue. */
-        searching: search?.$kind === "Searching" && !seat ? search.Searching : null,
+        /** The search, while it is in the queue (not a friendly lobby). */
+        searching:
+            search?.$kind === "Searching" && !seat && place?.kind === "queue"
+                ? search.Searching
+                : null,
+        /** The friendly lobby the player hosts or waits in; null while in none. */
+        lobby,
         /** The game the player is in, or has a seat in. */
         playing: gameId,
         suspendedUntilMs: search?.$kind === "Suspended" ? Number(search.Suspended.untilMs) : 0,
@@ -227,7 +239,10 @@ export function useMatchSearch() {
                 setLookupError(e instanceof Error ? e.message : "Could not reach the network.");
             });
         },
-        cancel: () => send(cancelSearchTx),
+        // `cancel_search` aborts for an `Account` in a lobby: never sent for one.
+        cancel: () => {
+            if (place?.kind === "queue") send(cancelSearchTx);
+        },
     };
 }
 

@@ -3,17 +3,15 @@
 
 /**
  * Friendly matches in the shared interface language: a landing with three ways
- * in (host, join with a code, open games), the host's setup and lobby, the join
- * field and the public list. All mock: the lobbies come from `lobbies.ts`, the
- * match from `stageMockMatch`. A reload in the middle of a lobby restores it
- * (the session lives in sessionStorage); coming back from a match lands on the
- * landing, because starting spends the lobby.
+ * in (host, join with a code, open games), the host's setup, the lobby (as host
+ * or guest) and the list of open games. It draws what it is given: the live
+ * screen (`index.tsx`) feeds it from the chain, the QA harness (`qa.tsx`) from
+ * fixtures. Once a game starts, the shell's matchmaking driver takes both
+ * players to `/match`: the squad pick, the field and the result of a rated game.
  */
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
-import { savedRecruits, SQUAD_STORAGE_KEY } from "@ghosts/squad/model";
 import {
     ActionRow,
     EmptyState,
@@ -35,232 +33,122 @@ import {
     type Command,
 } from "../../../ui";
 import {
-    presetLabel,
-    priceOf,
-    squadPrice,
-    squadSize,
-    tierOf,
-    type Issue,
-    type Loadout,
-    type Mode,
-} from "../economy";
-import { issueText } from "../ranked/model";
-import { SquadBuilder } from "../ranked/SquadBuilder";
-import { stageMockMatch } from "../match";
-import { useRating } from "../rating";
-import {
-    arriveNow,
-    finishSession,
-    hostLobby,
-    joinLobby,
-    leaveSession,
-    lookupCode,
-    openGames,
-    opponentState,
-    phaseOf,
-    readSession,
-    recentCodes,
-    startBlock,
-    updateSquad,
-    type Lobby,
-    type RuleFilter,
-    type Session,
-    type Visibility,
-} from "./lobbies";
-import {
-    ageLabel,
-    asksBeforeClosing,
-    bringSquad,
-    budgetOptions,
-    buildsSquad,
-    defaultRule,
-    matchRule,
-    readiness,
-    ruleBudget,
-    ruleLabel,
-    ruleShort,
-    ruleRating,
-    ruleTierName,
-    type Rule,
     formatCode,
-    FRIENDLY_ROUTE,
-    linkCode,
+    joinBlock,
+    LOBBY_LIFETIME_MS as LIFETIME_MS,
+    personLine,
     shareLink,
+    sizeBlock,
+    sizeLabel,
+    SIZES,
+    startBlock,
+    timeLeft,
     typingProblem,
-    type SquadKind,
+    type Gate,
+    type LobbyState,
+    type OpenGame,
 } from "./model";
 import "./friendly.css";
 
-type View = "landing" | "host" | "join" | "open" | "lobby";
-type Refusal = { message: string } | null;
+type View = "landing" | "host" | "open";
 
-const COLUMNS = "minmax(0, 520px) minmax(0, 420px) minmax(0, 1fr)";
-/** The lobby with the builder gives it the whole body. */
-const WIDE = "minmax(0, 1fr)";
-const TITLES: Record<View, string> = {
-    landing: "Friendly",
-    host: "Host",
-    join: "Join",
-    open: "Open",
-    lobby: "Lobby",
+export type FriendlyData = {
+    /** Why the player cannot open or join a game now; null when they can. */
+    gate: Gate | null;
+    /** Spawn positions a side has on the level: the largest size it holds; null until read. */
+    presetSide: number | null;
+    /** The lobby the player hosts or waits in. */
+    lobby: LobbyState | null;
+    /** The listed games; null while the first read is on its way. */
+    games: OpenGame[] | null;
+    /** A write is in flight. */
+    busy: boolean;
+    /** The last refusal or failure, in plain words. */
+    error: string | null;
+    /** What happened to a game the player was in (removed, closed, expired). */
+    notice: string | null;
+    /** A code to fill the join field with (a followed link), once. */
+    linkCode: string | null;
 };
 
-/** Where the lobby's builder keeps its squad, apart from ranked's. */
-const BUILDER_KEY = "ghosts:friendly-squad";
+export type FriendlyOps = {
+    host: (size: number, listed: boolean) => void;
+    joinCode: (text: string) => void;
+    joinOpen: (hostId: string) => void;
+    leave: () => void;
+    kick: () => void;
+    start: () => void;
+    close: () => void;
+    /** The gate's own action: sign in, resume, the queue, Headquarters. */
+    gateAction: () => void;
+    leaveScreen: () => void;
+    clearError: () => void;
+    clearNotice: () => void;
+    /** The open list is on screen: read it, and keep it fresh. */
+    watchOpen: (on: boolean) => void;
+    /** A player's assigned name by address; a hook, called once per row. */
+    useName: (owner: string | null) => string | null;
+};
 
-/** QA builds only: a button that skips the opponent's arrival wait. */
-const QA_SKIP = Boolean(import.meta.env.VITE_FRIENDLY_QA);
+const COLUMNS = "minmax(0, 520px) minmax(0, 420px) minmax(0, 1fr)";
+const TITLES: Record<View, string> = { landing: "Friendly", host: "Host", open: "Open games" };
 
-const kv = (): Storage => window.sessionStorage;
-
-/** The clock, ticking while `ms` is set. */
-function useNow(ms: number | null): number {
+/** The clock, ticking once a second while `on`. */
+function useNow(on: boolean): number {
     const [now, setNow] = useState(() => Date.now());
     useEffect(() => {
         setNow(Date.now());
-        if (ms === null) return;
-        const id = window.setInterval(() => setNow(Date.now()), ms);
+        if (!on) return;
+        const id = window.setInterval(() => setNow(Date.now()), 1000);
         return () => window.clearInterval(id);
-    }, [ms]);
+    }, [on]);
     return now;
 }
 
-function savedSquad(): { role: string; callsign: string }[] | null {
-    try {
-        return savedRecruits(localStorage.getItem(SQUAD_STORAGE_KEY));
-    } catch {
-        return null;
-    }
-}
-
-export function FriendlyView() {
-    const navigate = useNavigate();
-    const location = useLocation();
-    const { rating } = useRating();
+export function FriendlyView({ data, ops }: { data: FriendlyData; ops: FriendlyOps }) {
     const glyphs = useGlyphSet();
-    const [session, setSession] = useState<Session | null>(() => readSession(kv()));
-    const [view, setView] = useState<View>(() => (readSession(kv()) ? "lobby" : "landing"));
-    const [mode, setMode] = useState<Mode>("3x3");
-    const [visibility, setVisibility] = useState<Visibility>("invite");
-    const [ruleKind, setRuleKind] = useState<Rule["kind"]>("budget");
-    const [tier, setTier] = useState(() => (defaultRule(rating) as { tier: string }).tier);
-    const rule: Rule = ruleKind === "any" ? { kind: "any" } : { kind: "budget", tier };
-    const [squadKind, setSquadKind] = useState<SquadKind>("saved");
-    const [candidate, setCandidate] = useState<Lobby | null>(null);
-    const [refusal, setRefusal] = useState<Refusal>(null);
-    const [typing, setTyping] = useState("");
+    const [view, setView] = useState<View>("landing");
+    const [size, setSize] = useState(3);
+    const [listed, setListed] = useState(true);
     const [prompt, setPrompt] = useState(false);
+    const [typing, setTyping] = useState("");
     const [copied, setCopied] = useState<string | null>(null);
-    // The host shared the code or link, so someone may be on the way.
-    const [shared, setShared] = useState(false);
-    const [leaving, setLeaving] = useState(false);
-    const saved = useMemo(savedSquad, []);
-    const hasSaved = saved !== null && saved.length > 0;
-    const kind: SquadKind = hasSaved ? squadKind : "build";
     const copyTimer = useRef(0);
-    const now = useNow(view === "lobby" ? 500 : view === "open" ? 2000 : null);
+    const now = useNow(true);
+    const { lobby, gate, error } = data;
 
     useEffect(() => () => window.clearTimeout(copyTimer.current), []);
 
+    // A followed link opens the code field, filled in.
+    const linked = useRef(false);
+    useEffect(() => {
+        if (linked.current || data.linkCode === null) return;
+        linked.current = true;
+        setTyping(data.linkCode);
+        // After the screen's first layout, so the prompt opens over a placed frame.
+        window.setTimeout(() => setPrompt(true), 0);
+    }, [data.linkCode]);
+
+    // Removed from a game, or it closed: the open list, with what happened.
+    useEffect(() => {
+        if (data.notice) setView("open");
+    }, [data.notice]);
+
+    const onList = !lobby && (view === "open" || view === "landing");
+    useEffect(() => {
+        ops.watchOpen(onList);
+        // `ops` is new each render; only the visibility matters.
+    }, [onList]);
+
     const goView = (next: View) => {
-        setCandidate(null);
-        setRefusal(null);
+        ops.clearError();
+        ops.clearNotice();
         setPrompt(false);
-        setLeaving(false);
         setView(next);
     };
 
-    const leaveScreen = () => navigate("/play", { replace: true });
-
-    /** Try a code the player typed, pasted or followed; true when it led into a lobby. */
-    const attempt = useCallback((input: string): boolean => {
-        const t = Date.now();
-        const found = lookupCode(kv(), input, t);
-        if (!found.ok) {
-            setRefusal({ message: found.message });
-            return false;
-        }
-        setRefusal(null);
-        setPrompt(false);
-        if (found.own) {
-            const own = readSession(kv());
-            if (own && own.lobby.id === found.lobby.id) {
-                setSession(own);
-                setView("lobby");
-                return true;
-            }
-            setRefusal({ message: "That match is closed" });
-            return false;
-        }
-        // The rule is shown before joining; Join on that screen enters the lobby.
-        setCandidate(found.lobby);
-        setView("join");
-        return true;
-    }, []);
-
-    /** Enter a lobby as the guest, bringing a squad that fits its rule. */
-    const enterLobby = (lobby: Lobby) => {
-        const t = Date.now();
-        const b = bringSquad(kind, saved, lobby.mode, lobby.rule);
-        started.current = false;
-        setSession(
-            joinLobby(
-                kv(),
-                lobby,
-                {
-                    ...b,
-                    builds: buildsSquad(lobby.rule, b.kind),
-                    ready: readiness(b.squad, lobby.rule, lobby.mode).length === 0,
-                },
-                t,
-            ),
-        );
-        setCandidate(null);
-        setRefusal(null);
-        setView("lobby");
-    };
-
-    /** The builder reported the player's squad. */
-    const onSquad = useCallback((squad: Loadout[], issues: Issue[], labels: string[]) => {
-        const s = readSession(kv());
-        if (!s) return;
-        const message = issues[0] ? issueText(issues[0]) : null;
-        if (
-            s.ready === (issues.length === 0) &&
-            s.issue === message &&
-            JSON.stringify(s.labels) === JSON.stringify(labels) &&
-            JSON.stringify(s.squad) === JSON.stringify(squad)
-        )
-            return;
-        setSession(
-            updateSquad(
-                kv(),
-                squad,
-                issues.map((i) => ({ message: issueText(i) })),
-                Date.now(),
-                labels,
-            ),
-        );
-    }, []);
-
-    // A share link opens the join flow with its code; the query is spent.
-    const linked = useRef(false);
-    useEffect(() => {
-        if (linked.current) return;
-        const code = linkCode(location.search);
-        if (code === null) return;
-        linked.current = true;
-        navigate(FRIENDLY_ROUTE, { replace: true });
-        setTyping(code);
-        if (!attempt(code)) {
-            setView("join");
-            setPrompt(true);
-        }
-    }, [location.search, attempt, navigate]);
-
     const copy = (what: string, text: string) => {
         const done = () => {
-            setShared(true);
             setCopied(what);
             window.clearTimeout(copyTimer.current);
             copyTimer.current = window.setTimeout(() => setCopied(null), 2200);
@@ -272,247 +160,107 @@ export function FriendlyView() {
         }
     };
 
-    const startMatch = useCallback(
-        (s: Session) => {
-            const opponent = s.role === "host" ? s.opponent : s.lobby.host;
-            const route = stageMockMatch({
-                kind: "friendly",
-                mode: s.lobby.mode,
-                squad: s.squad,
-                labels: s.labels,
-                opponent: { name: opponent.name, rating: opponent.rating },
-                rule: matchRule(s.lobby.rule, s.lobby.mode),
-                returnTo: FRIENDLY_ROUTE,
-            });
-            finishSession(kv());
-            navigate(route);
-        },
-        [navigate],
-    );
+    const back: Command = lobby
+        ? { action: "back", label: "Play", run: ops.leaveScreen }
+        : view === "landing"
+          ? { action: "back", label: "Play", run: ops.leaveScreen }
+          : { action: "back", label: "Friendly", run: () => goView("landing") };
 
-    // A guest's host starts after a moment, or closes the lobby.
-    const phase = session ? phaseOf(session, now) : null;
-    const started = useRef(false);
-    useEffect(() => {
-        if (!session || session.role !== "guest" || phase !== "starting" || started.current) return;
-        started.current = true;
-        startMatch(session);
-    }, [session, phase, startMatch]);
-
-    const endLobby = () => {
-        leaveSession(kv());
-        setSession(null);
-        goView(session?.role === "guest" ? "open" : "landing");
-    };
-
-    // A host lobby with an opponent in it, or whose code went out, is not closed by a slip:
-    // Esc, Back and Cancel match ask first (the answer to the prompt is Keep lobby by Esc).
-    const asksFirst =
-        view === "lobby" && !!session && !!phase && asksBeforeClosing(session.role, phase, shared);
-    const leaveLobby = () => (asksFirst ? setLeaving(true) : endLobby());
-
-    const back: Command =
-        view === "landing"
-            ? { action: "back", label: "Play", run: leaveScreen }
-            : view === "lobby"
-              ? {
-                    action: "back",
-                    label: session?.role === "host" ? "Cancel match" : "Leave",
-                    run: leaveLobby,
-                }
-              : { action: "back", label: "Friendly", run: () => goView("landing") };
-
-    const bring = bringSquad(kind, saved, mode, rule);
+    const title = lobby ? (lobby.kind === "host" ? "Your game" : "Joined") : TITLES[view];
 
     return (
         <FocusRoot back={back}>
             <ScreenFrame
-                location={["Play", "Friendly", ...(view === "landing" ? [] : [TITLES[view]])]}
+                location={["Play", "Friendly", ...(lobby || view !== "landing" ? [title] : [])]}
                 onLocation={back.run}
                 status={
                     <>
                         {copied && <StatusChip label="Clipboard" value="Copied" />}
-                        {phase === "starting" && (
-                            <StatusChip label="Match" value="Starting" state="live" />
+                        {lobby && (
+                            <StatusChip
+                                label="Time left"
+                                value={
+                                    lobby.sinceMs === null
+                                        ? "Reading"
+                                        : now - lobby.sinceMs > LIFETIME_MS
+                                          ? "Expired"
+                                          : timeLeft(lobby.sinceMs, now)
+                                }
+                                state="live"
+                            />
                         )}
                     </>
                 }
-                columns={
-                    view === "lobby" && session?.builds && phase !== "cancelled" ? WIDE : COLUMNS
-                }
+                columns={COLUMNS}
                 commands={<FocusCommandBar glyphs={glyphs} />}
                 overlay={
-                    leaving && session ? (
-                        <Prompt
-                            id="prompt-leave"
-                            tone="danger"
-                            eyebrow="Friendly match"
-                            title="Cancel this match?"
-                            lines={[
-                                ["Code", formatCode(session.lobby.code)],
-                                [
-                                    "Opponent",
-                                    phase === "waiting" ? "Nobody yet" : session.opponent.name,
-                                ],
-                            ]}
-                            confirm={{
-                                label: "Cancel match",
-                                run: () => {
-                                    setLeaving(false);
-                                    endLobby();
-                                },
-                            }}
-                            cancel={{ label: "Keep lobby", run: () => setLeaving(false) }}
-                            glyphs={glyphs}
-                        >
-                            The code stops working and anyone in the lobby is sent away.
-                        </Prompt>
-                    ) : prompt && view === "join" ? (
+                    prompt && !lobby ? (
                         <CodePrompt
                             value={typing}
                             onChange={(v) => {
                                 setTyping(v);
-                                setRefusal(null);
+                                ops.clearError();
                             }}
-                            refusal={refusal?.message}
-                            onSubmit={() => attempt(typing)}
-                            onClose={() => setPrompt(false)}
+                            refusal={error}
+                            busy={data.busy}
+                            gate={gate}
+                            onSubmit={() => ops.joinCode(typing)}
+                            onClose={() => {
+                                setPrompt(false);
+                                ops.clearError();
+                            }}
                             glyphs={glyphs}
                         />
                     ) : undefined
                 }
             >
-                {view === "landing" && (
-                    <Landing
-                        count={openGames(now).length}
-                        go={goView}
-                        openPrompt={() => {
-                            setTyping("");
-                            setView("join");
-                            setPrompt(true);
-                        }}
-                    />
-                )}
-                {view === "host" && (
-                    <HostSetup
-                        mode={mode}
-                        setMode={setMode}
-                        visibility={visibility}
-                        setVisibility={setVisibility}
-                        rule={rule}
-                        setRuleKind={setRuleKind}
-                        setTier={setTier}
-                        squadKind={kind}
-                        setSquadKind={setSquadKind}
-                        hasSaved={hasSaved}
-                        squad={bring.squad}
-                        names={bring.names}
-                        create={() => {
-                            setSession(
-                                hostLobby(
-                                    kv(),
-                                    {
-                                        mode,
-                                        visibility,
-                                        rule,
-                                        squad: bring.squad,
-                                        names: bring.names,
-                                        builds: buildsSquad(rule, bring.kind),
-                                        ready: readiness(bring.squad, rule, mode).length === 0,
-                                        you: { name: "You", rating },
-                                    },
-                                    Date.now(),
-                                ),
-                            );
-                            started.current = false;
-                            setShared(false);
-                            setView("lobby");
-                        }}
-                    />
-                )}
-                {view === "join" && (
-                    <JoinView
-                        candidate={candidate}
-                        enter={enterLobby}
-                        otherCode={() => {
-                            setCandidate(null);
-                            setPrompt(true);
-                        }}
-                        hasSaved={hasSaved}
-                        squadKind={kind}
-                        setSquadKind={setSquadKind}
-                        typing={typing}
-                        refusal={prompt ? null : refusal}
-                        openPrompt={() => setPrompt(true)}
-                        paste={() => {
-                            try {
-                                navigator.clipboard.readText().then(
-                                    (text) => {
-                                        setTyping(text);
-                                        attempt(text);
-                                    },
-                                    () =>
-                                        setRefusal({
-                                            message: "Paste is blocked here, type the code",
-                                        }),
-                                );
-                            } catch {
-                                setRefusal({ message: "Paste is blocked here, type the code" });
-                            }
-                        }}
-                        pick={(code) => {
-                            setTyping(code);
-                            attempt(code);
-                        }}
-                    />
-                )}
-                {view === "open" && (
-                    <OpenGames
+                {lobby ? (
+                    <LobbyPanel
+                        lobby={lobby}
                         now={now}
-                        join={(lobby) => {
-                            const found = lookupCode(kv(), lobby.code, Date.now());
-                            if (!found.ok || found.own) {
-                                setRefusal({
-                                    message: found.ok ? "That match is closed" : found.message,
-                                });
-                                return;
-                            }
-                            enterLobby(found.lobby);
-                        }}
-                        host={() => goView("host")}
-                        refusal={refusal}
-                    />
-                )}
-                {view === "lobby" && session && (
-                    <LobbyView
-                        session={session}
-                        now={now}
+                        busy={data.busy}
+                        error={error}
                         copy={copy}
                         copied={copied}
-                        skip={() => setSession(arriveNow(kv(), Date.now()))}
-                        onSquad={onSquad}
-                        start={() => startMatch(session)}
-                        end={leaveLobby}
+                        ops={ops}
                     />
-                )}
-                {view === "lobby" && !session && (
-                    <Panel className="gfr-main">
-                        <EmptyState
-                            id="lobby-gone"
-                            group="main"
-                            headline="NO LOBBY"
-                            action="Friendly"
-                            commands={[
-                                {
-                                    action: "confirm",
-                                    label: "Friendly",
-                                    run: () => goView("landing"),
-                                },
-                            ]}
-                        >
-                            There is no lobby to return to.
-                        </EmptyState>
-                    </Panel>
+                ) : view === "landing" ? (
+                    <Landing
+                        gate={gate}
+                        count={data.games?.filter((g) => !g.full).length ?? null}
+                        error={prompt ? null : error}
+                        go={goView}
+                        gateAction={ops.gateAction}
+                        openPrompt={() => {
+                            ops.clearError();
+                            setTyping("");
+                            setPrompt(true);
+                        }}
+                    />
+                ) : view === "host" ? (
+                    <HostSetup
+                        gate={gate}
+                        presetSide={data.presetSide}
+                        size={size}
+                        setSize={setSize}
+                        listed={listed}
+                        setListed={setListed}
+                        busy={data.busy}
+                        error={error}
+                        open={() => ops.host(size, listed)}
+                    />
+                ) : (
+                    <OpenGames
+                        games={data.games}
+                        now={now}
+                        gate={gate}
+                        presetSide={data.presetSide}
+                        busy={data.busy}
+                        line={data.notice ?? error}
+                        join={ops.joinOpen}
+                        host={() => goView("host")}
+                        useName={ops.useName}
+                    />
                 )}
             </ScreenFrame>
         </FocusRoot>
@@ -522,26 +270,58 @@ export function FriendlyView() {
 // === Landing ================================================================
 
 function Landing({
+    gate,
     count,
+    error,
     go,
+    gateAction,
     openPrompt,
 }: {
-    count: number;
+    gate: Gate | null;
+    count: number | null;
+    error: string | null;
     go: (view: View) => void;
+    gateAction: () => void;
     openPrompt: () => void;
 }) {
     return (
         <Panel label="Friendly match" className="gfr-main">
             <List label="Ways in">
+                {gate?.action && (
+                    <ListRow
+                        id="gate"
+                        group="main"
+                        name={gate.action.label}
+                        kind={gate.reason}
+                        title={gate.action.label}
+                        hint={gate.reason}
+                        instant
+                        commands={[
+                            {
+                                action: "confirm",
+                                label: gate.action.label,
+                                tone: "primary",
+                                run: gateAction,
+                            },
+                        ]}
+                    />
+                )}
                 <ListRow
                     id="host"
                     group="main"
-                    name="Host a match"
-                    kind="Invite code or open to anyone"
-                    title="Host a match"
-                    hint="Open a lobby and bring an opponent in"
+                    name="Host a game"
+                    kind="Open to anyone, or invite only"
+                    title="Host a game"
+                    hint={gate?.reason ?? "Open a game with your recruits"}
                     instant
-                    commands={[{ action: "confirm", label: "Host", run: () => go("host") }]}
+                    commands={[
+                        {
+                            action: "confirm",
+                            label: "Host",
+                            deny: gate?.reason,
+                            run: () => go("host"),
+                        },
+                    ]}
                 />
                 <ListRow
                     id="join"
@@ -549,23 +329,36 @@ function Landing({
                     name="Join with a code"
                     kind="Type, paste or follow a link"
                     title="Join with a code"
-                    hint="Enter the code a friend sent you"
+                    hint={gate?.reason ?? "Enter the code a friend sent you"}
                     instant
-                    commands={[{ action: "confirm", label: "Join", run: openPrompt }]}
+                    commands={[
+                        { action: "confirm", label: "Join", deny: gate?.reason, run: openPrompt },
+                    ]}
                 />
                 <ListRow
                     id="open"
                     group="main"
                     name="Open games"
-                    kind="Lobbies anyone can join"
-                    tag={String(count)}
-                    tagTone={count > 0 ? "accent" : "dim"}
+                    kind="Games anyone can join"
+                    tag={count === null ? undefined : String(count)}
+                    tagTone={count ? "accent" : "dim"}
                     title="Open games"
-                    hint={count > 0 ? `${count} waiting for an opponent` : "Nobody is waiting now"}
+                    hint={
+                        count === null
+                            ? "Games anyone can join"
+                            : count > 0
+                              ? `${count} waiting for an opponent`
+                              : "Nobody is waiting now"
+                    }
                     instant
                     commands={[{ action: "confirm", label: "Browse", run: () => go("open") }]}
                 />
             </List>
+            {error && (
+                <ReadoutLine label="Refused">
+                    <span className="gfr-warn">{error}</span>
+                </ReadoutLine>
+            )}
         </Panel>
     );
 }
@@ -573,160 +366,109 @@ function Landing({
 // === Host ===================================================================
 
 function HostSetup({
-    mode,
-    setMode,
-    visibility,
-    setVisibility,
-    rule,
-    setRuleKind,
-    setTier,
-    squadKind,
-    setSquadKind,
-    hasSaved,
-    squad,
-    names,
-    create,
+    gate,
+    presetSide,
+    size,
+    setSize,
+    listed,
+    setListed,
+    busy,
+    error,
+    open,
 }: {
-    mode: Mode;
-    setMode: (m: Mode) => void;
-    visibility: Visibility;
-    setVisibility: (v: Visibility) => void;
-    rule: Rule;
-    setRuleKind: (k: Rule["kind"]) => void;
-    setTier: (tier: string) => void;
-    squadKind: SquadKind;
-    setSquadKind: (k: SquadKind) => void;
-    hasSaved: boolean;
-    squad: Loadout[];
-    names: string[];
-    create: () => void;
+    gate: Gate | null;
+    presetSide: number | null;
+    size: number;
+    setSize: (n: number) => void;
+    listed: boolean;
+    setListed: (v: boolean) => void;
+    busy: boolean;
+    error: string | null;
+    open: () => void;
 }) {
-    const squadOptions: [string, string][] = hasSaved
-        ? [
-              ["saved", "Your recruits"],
-              ["build", "Build one"],
-          ]
-        : [["build", "Build one"]];
-    const budget = ruleBudget(rule, mode);
+    const blocked = sizeBlock(size, presetSide);
+    // The cursor starts on the size the game has.
+    const store = useFocusStore();
+    useLayoutEffect(() => {
+        store.focus(`host-size-${size}`, false);
+        // Once, on arrival.
+    }, [store]);
     return (
         <>
-            <Panel label="Host a match" className="gfr-main">
+            <Panel label="Host a game" className="gfr-main">
+                <Eyebrow>Size</Eyebrow>
+                {SIZES.map((n) => {
+                    const block = sizeBlock(n, presetSide);
+                    return (
+                        <ListRow
+                            key={n}
+                            id={`host-size-${n}`}
+                            group="main"
+                            name={sizeLabel(n)}
+                            kind={`Up to ${n} recruits each`}
+                            selected={size === n}
+                            tag={size === n ? "Chosen" : undefined}
+                            tagTone="accent"
+                            title={sizeLabel(n)}
+                            hint={block ?? `Up to ${n} of your recruits on each side`}
+                            instant
+                            commands={[
+                                {
+                                    action: "confirm",
+                                    label: "Choose",
+                                    deny: block ?? undefined,
+                                    run: () => setSize(n),
+                                },
+                            ]}
+                        />
+                    );
+                })}
                 <Stepper
-                    id="host-size"
+                    id="host-kind"
                     group="main"
-                    label="Size"
-                    title="Size"
-                    hint="Units on each side"
-                    options={[
-                        ["3x3", "3 x 3"],
-                        ["4x4", "4 x 4"],
-                    ]}
-                    value={mode}
-                    onChange={(v) => setMode(v as Mode)}
-                />
-                <Stepper
-                    id="host-visibility"
-                    group="main"
-                    label="Who can join"
-                    title="Who can join"
+                    label="Open to"
+                    title="Open to"
                     hint={
-                        visibility === "invite"
-                            ? "Only people with the code or link"
-                            : "Also listed in Open games"
+                        listed
+                            ? "Listed in Open games for anyone to join"
+                            : "Only someone with the code or the link"
                     }
                     options={[
+                        ["open", "Anyone"],
                         ["invite", "Invite only"],
-                        ["open", "Open to anyone"],
                     ]}
-                    value={visibility}
-                    onChange={(v) => setVisibility(v as Visibility)}
+                    value={listed ? "open" : "invite"}
+                    onChange={(v) => setListed(v === "open")}
                 />
-                <Stepper
-                    id="host-rule"
-                    group="main"
-                    label="Squads"
-                    title="Squads"
-                    hint={
-                        rule.kind === "any"
-                            ? "No credit limit and every item available"
-                            : "Both players build within the budget, with the gear of that rank"
-                    }
-                    options={[
-                        ["any", "Any"],
-                        ["budget", "Budgeted"],
-                    ]}
-                    value={rule.kind}
-                    onChange={(v) => setRuleKind(v as Rule["kind"])}
-                />
-                {rule.kind === "budget" && (
-                    <Stepper
-                        id="host-budget"
-                        group="main"
-                        label="Budget"
-                        title="Budget"
-                        hint="The standard budget of a rank; it also sets the gear"
-                        options={budgetOptions(mode)}
-                        value={rule.tier}
-                        onChange={setTier}
-                    />
-                )}
-                {rule.kind === "any" && (
-                    <Stepper
-                        id="host-squad"
-                        group="main"
-                        label="Squad"
-                        title="Squad"
-                        hint={
-                            hasSaved
-                                ? "Bring your recruits, or build a squad for this match"
-                                : "Build a squad for this match"
-                        }
-                        options={squadOptions}
-                        value={squadKind}
-                        onChange={(v) => setSquadKind(v as SquadKind)}
-                    />
-                )}
                 <ActionRow
                     id="host-create"
                     group="main"
-                    label="Open lobby"
-                    title="Open lobby"
-                    hint="You get a code to share"
+                    label="Open game"
+                    title="Open game"
+                    hint={listed ? "Anyone can take the other side" : "You get a code to share"}
                     instant
-                    commands={[{ action: "confirm", label: "Open lobby", run: create }]}
+                    commands={[
+                        {
+                            action: "confirm",
+                            label: "Open game",
+                            tone: "primary",
+                            deny: gate?.reason ?? blocked ?? (busy ? "Opening" : undefined),
+                            run: open,
+                        },
+                    ]}
                 />
-            </Panel>
-            <Panel label="Rules" meta={ruleLabel(rule, mode)} className="gfr-side">
-                <ReadoutLine label="Size">{`${squadSize(mode)} units each`}</ReadoutLine>
-                <ReadoutLine label="Budget">
-                    {budget === null ? "None" : `${budget} cr`}
-                </ReadoutLine>
-                <ReadoutLine label="Gear">
-                    {ruleTierName(rule) ? `${ruleTierName(rule)} and below` : "Everything"}
-                </ReadoutLine>
-                {squadKind !== "build" && rule.kind === "any" && (
-                    <>
-                        <Eyebrow>Your recruits</Eyebrow>
-                        <SquadLines squad={squad} names={names} />
-                    </>
-                )}
-                {(squadKind === "build" || rule.kind === "budget") && (
-                    <p className="gui-note">You build the squad in the lobby.</p>
+                {error && (
+                    <ReadoutLine label="Refused">
+                        <span className="gfr-warn">{error}</span>
+                    </ReadoutLine>
                 )}
             </Panel>
-        </>
-    );
-}
-
-/** One line per unit: its preset and what it costs. */
-function SquadLines({ squad, names }: { squad: Loadout[]; names: string[] }) {
-    return (
-        <>
-            {squad.map((unit, i) => (
-                <ReadoutLine key={i} label={names[i] ?? `Unit ${i + 1}`}>
-                    {`${presetLabel(unit)} · ${priceOf(unit)} cr`}
-                </ReadoutLine>
-            ))}
+            <Panel label="Rules" className="gfr-side">
+                <ReadoutLine label="Squad">{`1 to ${size} of your recruits`}</ReadoutLine>
+                <ReadoutLine label="Rating">Unchanged</ReadoutLine>
+                <ReadoutLine label="Fallen">Come home</ReadoutLine>
+                <ReadoutLine label="Open for">10 min</ReadoutLine>
+            </Panel>
         </>
     );
 }
@@ -734,17 +476,7 @@ function SquadLines({ squad, names }: { squad: Loadout[]; names: string[] }) {
 // === Lobby ==================================================================
 
 /** The code as a large, copyable block: one press copies it. */
-function CodeBlock({
-    code,
-    copied,
-    copy,
-    compact,
-}: {
-    code: string;
-    copied: boolean;
-    copy: () => void;
-    compact?: boolean;
-}) {
+function CodeBlock({ code, copied, copy }: { code: string; copied: boolean; copy: () => void }) {
     const { props } = useFocusable<HTMLButtonElement>({
         id: "code",
         group: "main",
@@ -754,13 +486,7 @@ function CodeBlock({
         commands: [{ action: "confirm", label: copied ? "Copied" : "Copy code", run: copy }],
     });
     return (
-        <button
-            type="button"
-            tabIndex={-1}
-            className="gui-row gfr-code"
-            data-compact={compact || undefined}
-            {...props}
-        >
+        <button type="button" tabIndex={-1} className="gui-row gfr-code" {...props}>
             <span className="gfr-code-label">Invite code</span>
             <span className="gfr-code-text" aria-label={code.split("").join(" ")}>
                 {formatCode(code)}
@@ -772,262 +498,175 @@ function CodeBlock({
     );
 }
 
-function LobbyView({
-    session,
+function LobbyPanel({
+    lobby,
     now,
+    busy,
+    error,
     copy,
     copied,
-    skip,
-    start,
-    end,
-    onSquad,
+    ops,
 }: {
-    session: Session;
+    lobby: LobbyState;
     now: number;
+    busy: boolean;
+    error: string | null;
     copy: (what: string, text: string) => void;
     copied: string | null;
-    skip: () => void;
-    start: () => void;
-    end: () => void;
-    onSquad: (squad: Loadout[], issues: Issue[], labels: string[]) => void;
+    ops: FriendlyOps;
 }) {
-    const { lobby } = session;
-    const phase = phaseOf(session, now);
-    const host = session.role === "host";
-    const link = shareLink(lobby.code, window.location.origin);
-    const opponent = host ? session.opponent : lobby.host;
-    const tier = tierOf(opponent.rating).name;
-    const them = opponentState(session, now);
-    const block = startBlock(session, now);
-    const budget = ruleBudget(lobby.rule, lobby.mode);
+    const expired = lobby.sinceMs !== null && now - lobby.sinceMs > LIFETIME_MS;
+    const working = busy ? "Saving a change" : undefined;
 
-    if (phase === "cancelled") {
+    if (lobby.kind === "guest") {
         return (
-            <Panel className="gfr-main">
-                <EmptyState
-                    id="cancelled"
+            <Panel label="Joined" meta={sizeLabel(lobby.size)} className="gfr-main">
+                <ReadoutLine label="Host">{personLine(lobby.host)}</ReadoutLine>
+                <ReadoutLine label="Size">{`Up to ${lobby.size} recruits each`}</ReadoutLine>
+                <ReadoutLine label="Status" empty>
+                    {expired ? "This game has expired" : "Waiting for the host to start"}
+                </ReadoutLine>
+                {error && (
+                    <ReadoutLine label="Refused">
+                        <span className="gfr-warn">{error}</span>
+                    </ReadoutLine>
+                )}
+                <ActionRow
+                    id="leave"
                     group="main"
-                    headline="MATCH CANCELLED"
-                    action="Open games"
-                    commands={[{ action: "confirm", label: "Open games", run: end }]}
-                >
-                    {lobby.host.name} closed the lobby before it started.
-                </EmptyState>
+                    label="Leave game"
+                    tone="danger"
+                    title="Leave game"
+                    hint="Back to the open games"
+                    commands={[
+                        {
+                            action: "confirm",
+                            label: "Leave",
+                            tone: "danger",
+                            deny: working,
+                            run: ops.leave,
+                        },
+                    ]}
+                />
             </Panel>
         );
     }
 
-    if (session.builds) {
-        const status = !session.ready
-            ? (session.issue ?? "Build your squad")
-            : host
-              ? (block ?? "Ready to start")
-              : "Waiting for the host to start";
-        return (
-            <SquadBuilder
-                mode={lobby.mode}
-                budget={budget}
-                rating={ruleRating(lobby.rule)}
-                storageKey={BUILDER_KEY}
-                onChange={onSquad}
-                aside={
-                    <div className="gfr-aside">
-                        <CodeBlock
-                            compact
-                            code={lobby.code}
-                            copied={copied === "code"}
-                            copy={() => copy("code", formatCode(lobby.code))}
-                        />
-                        <ListRow
-                            id="link"
-                            group="lobby"
-                            name="Share link"
-                            kind={link.replace(/^https?:\/\//, "")}
-                            tag={copied === "link" ? "Copied" : "Copy"}
-                            tagTone={copied === "link" ? "accent" : "default"}
-                            title="Share link"
-                            hint="Opens the join screen with the code filled in"
-                            instant
-                            commands={[
-                                {
-                                    action: "confirm",
-                                    label: "Copy link",
-                                    run: () => copy("link", link),
-                                },
-                            ]}
-                        />
-                        <div className="gfr-match">
-                            <ReadoutLine label="Match">
-                                {`${lobby.mode} · ${lobby.visibility === "open" ? "Open to anyone" : "Invite only"}`}
-                            </ReadoutLine>
-                        </div>
-                        <ReadoutLine label="Squads">
-                            {ruleLabel(lobby.rule, lobby.mode)}
-                        </ReadoutLine>
-                        <ReadoutLine
-                            label={host ? "Opponent" : "Host"}
-                            empty={host && them === "absent"}
-                        >
-                            {host
-                                ? them === "absent"
-                                    ? "Waiting for someone to join"
-                                    : `${session.opponent.name} · ${tier} · ${them === "ready" ? "Ready" : "Building"}`
-                                : `${lobby.host.name} · ${tier} · Ready`}
-                        </ReadoutLine>
-                        <ReadoutLine label="You" empty={!session.ready}>
-                            {session.ready ? "Ready" : "Building"}
-                        </ReadoutLine>
-                        <ReadoutLine label="Status" empty>
-                            {status}
-                        </ReadoutLine>
-                        {QA_SKIP && host && phase === "waiting" && (
-                            <ActionRow
-                                id="arrive"
-                                group="lobby"
-                                label="Bring in the opponent"
-                                title="Bring in the opponent"
-                                hint="Skips the wait"
-                                instant
-                                commands={[{ action: "confirm", label: "Bring in", run: skip }]}
-                            />
-                        )}
-                    </div>
-                }
-                action={
-                    host ? (
-                        <ActionRow
-                            id="start"
-                            group="start"
-                            label="Start match"
-                            title="Start match"
-                            hint={block ?? "Both squads deploy"}
-                            instant
-                            commands={[
-                                {
-                                    action: "confirm",
-                                    label: "Start match",
-                                    tone: "primary",
-                                    deny: block ?? undefined,
-                                    run: start,
-                                },
-                            ]}
-                        />
-                    ) : undefined
-                }
-            />
-        );
-    }
-
+    const block = startBlock(lobby, now, LIFETIME_MS);
+    const link = lobby.code ? shareLink(lobby.code, window.location.origin) : null;
     return (
         <>
             <Panel
-                label={host ? "Your lobby" : "Joined"}
-                meta={`${lobby.mode} · ${lobby.visibility === "open" ? "Open" : "Invite only"}`}
+                label="Your game"
+                meta={`${sizeLabel(lobby.size)} · ${lobby.listed ? "Open game" : "Invite only"}`}
                 className="gfr-main"
             >
-                <CodeBlock
-                    code={lobby.code}
-                    copied={copied === "code"}
-                    copy={() => copy("code", formatCode(lobby.code))}
-                />
-                <ListRow
-                    id="link"
-                    group="main"
-                    name="Share link"
-                    kind={link.replace(/^https?:\/\//, "")}
-                    tag={copied === "link" ? "Copied" : "Copy"}
-                    tagTone={copied === "link" ? "accent" : "default"}
-                    title="Share link"
-                    hint="Opens the join screen with the code filled in"
-                    instant
-                    commands={[
-                        { action: "confirm", label: "Copy link", run: () => copy("link", link) },
-                    ]}
-                />
-                <Eyebrow>In the lobby</Eyebrow>
-                <ReadoutLine label="Squads">{ruleLabel(lobby.rule, lobby.mode)}</ReadoutLine>
-                <ReadoutLine label="You">
-                    {`${host ? "Host" : "Guest"} · ${session.ready ? "Ready" : "Building"}`}
-                </ReadoutLine>
-                <ReadoutLine label={host ? "Opponent" : "Host"} empty={host && them === "absent"}>
-                    {host
-                        ? them === "absent"
-                            ? "Waiting for someone to join"
-                            : `${session.opponent.name} · ${tier} · ${them === "ready" ? "Ready" : "Building"}`
-                        : `${lobby.host.name} · ${tier} · Ready`}
-                </ReadoutLine>
-                {!host && (
+                {!lobby.listed &&
+                    (lobby.code && link ? (
+                        <>
+                            <CodeBlock
+                                code={lobby.code}
+                                copied={copied === "code"}
+                                copy={() => copy("code", formatCode(lobby.code!))}
+                            />
+                            <ListRow
+                                id="link"
+                                group="main"
+                                name="Share link"
+                                kind={link.replace(/^https?:\/\//, "")}
+                                tag={copied === "link" ? "Copied" : "Copy"}
+                                tagTone={copied === "link" ? "accent" : "default"}
+                                title="Share link"
+                                hint="Opens the join field with the code filled in"
+                                instant
+                                commands={[
+                                    {
+                                        action: "confirm",
+                                        label: "Copy link",
+                                        run: () => copy("link", link),
+                                    },
+                                ]}
+                            />
+                        </>
+                    ) : (
+                        <ReadoutLine label="Code" empty>
+                            On the device that opened this game
+                        </ReadoutLine>
+                    ))}
+                <Eyebrow>In the game</Eyebrow>
+                {lobby.listed ? (
+                    <ReadoutLine label="Guest" empty={!lobby.guest}>
+                        {lobby.guest ? personLine(lobby.guest) : "Waiting for someone to join"}
+                    </ReadoutLine>
+                ) : (
                     <ReadoutLine label="Status" empty>
-                        {session.ready
-                            ? "Waiting for the host to start"
-                            : (session.issue ?? "Build your squad")}
+                        {expired ? "This game has expired" : "Starts when your friend joins"}
                     </ReadoutLine>
                 )}
-                {host && (
+                {error && (
+                    <ReadoutLine label="Refused">
+                        <span className="gfr-warn">{error}</span>
+                    </ReadoutLine>
+                )}
+                {lobby.listed && (
                     <ActionRow
                         id="start"
                         group="main"
                         label="Start match"
                         title="Start match"
-                        hint="Both squads deploy"
+                        hint={block ?? "Both sides pick their squads"}
                         commands={[
                             {
                                 action: "confirm",
                                 label: "Start",
                                 tone: "primary",
-                                deny: block ?? undefined,
-                                run: start,
+                                deny: block ?? working,
+                                run: ops.start,
                             },
                         ]}
                     />
                 )}
-                {QA_SKIP && host && phase === "waiting" && (
+                {lobby.listed && lobby.guest && (
                     <ActionRow
-                        id="arrive"
+                        id="kick"
                         group="main"
-                        label="Bring in the opponent"
-                        title="Bring in the opponent"
-                        hint="Skips the wait"
-                        instant
-                        commands={[{ action: "confirm", label: "Bring in", run: skip }]}
+                        label="Remove guest"
+                        tone="danger"
+                        title="Remove guest"
+                        hint="They cannot join this game again"
+                        commands={[
+                            {
+                                action: "confirm",
+                                label: "Remove",
+                                tone: "danger",
+                                deny: working,
+                                run: ops.kick,
+                            },
+                        ]}
                     />
                 )}
                 <ActionRow
-                    id="cancel"
+                    id="close"
                     group="main"
-                    label={host ? "Cancel match" : "Leave lobby"}
+                    label="Close game"
                     tone="danger"
-                    title={host ? "Cancel match" : "Leave lobby"}
-                    hint={host ? "Closes the lobby and its code" : "Back to open games"}
+                    title="Close game"
+                    hint={lobby.listed ? "Takes it off the list" : "The code stops working"}
                     commands={[
                         {
                             action: "confirm",
-                            label: host ? "Cancel match" : "Leave",
+                            label: "Close",
                             tone: "danger",
-                            run: end,
+                            deny: working,
+                            run: ops.close,
                         },
                     ]}
                 />
             </Panel>
-            <Panel
-                label="Your squad"
-                meta={
-                    budget === null
-                        ? `${squadPrice(session.squad)} cr`
-                        : `${squadPrice(session.squad)} / ${budget} cr`
-                }
-                className="gfr-side"
-            >
-                <SquadLines squad={session.squad} names={session.names} />
-                {session.builds && (
-                    <SquadBuilder
-                        mode={lobby.mode}
-                        budget={budget}
-                        rating={ruleRating(lobby.rule)}
-                        storageKey={BUILDER_KEY}
-                        onChange={onSquad}
-                    />
-                )}
+            <Panel label="Rules" className="gfr-side">
+                <ReadoutLine label="Squad">{`1 to ${lobby.size} of your recruits`}</ReadoutLine>
+                <ReadoutLine label="Rating">Unchanged</ReadoutLine>
+                <ReadoutLine label="Fallen">Come home</ReadoutLine>
             </Panel>
         </>
     );
@@ -1039,19 +678,25 @@ function CodePrompt({
     value,
     onChange,
     refusal,
+    busy,
+    gate,
     onSubmit,
     onClose,
     glyphs,
 }: {
     value: string;
     onChange: (v: string) => void;
-    refusal?: string;
+    refusal: string | null;
+    busy: boolean;
+    gate: Gate | null;
     onSubmit: () => void;
     onClose: () => void;
     glyphs: ReturnType<typeof useGlyphSet>;
 }) {
     const problem = typingProblem(value);
-    const deny = value.trim() === "" ? "Enter the code" : (problem ?? undefined);
+    const deny =
+        gate?.reason ??
+        (busy ? "Joining" : value.trim() === "" ? "Enter the code" : (problem ?? undefined));
     return (
         <Prompt
             id="prompt-code"
@@ -1063,11 +708,12 @@ function CodePrompt({
             cancel={{ label: "Cancel", run: onClose }}
             glyphs={glyphs}
         >
-            Eight characters, with or without the dash. A pasted link works too.
+            Thirteen characters, with or without the dashes. A pasted link works too. The match
+            starts as you join.
             <TextField
                 label="Code"
                 value={value}
-                maxLength={120}
+                maxLength={160}
                 onChange={onChange}
                 onSubmit={() => !deny && onSubmit()}
             />
@@ -1075,161 +721,45 @@ function CodePrompt({
     );
 }
 
-function JoinView({
-    candidate,
-    enter,
-    otherCode,
-    hasSaved,
-    squadKind,
-    setSquadKind,
-    typing,
-    refusal,
-    openPrompt,
-    paste,
-    pick,
-}: {
-    candidate: Lobby | null;
-    enter: (lobby: Lobby) => void;
-    otherCode: () => void;
-    hasSaved: boolean;
-    squadKind: SquadKind;
-    setSquadKind: (k: SquadKind) => void;
-    typing: string;
-    refusal: Refusal;
-    openPrompt: () => void;
-    paste: () => void;
-    pick: (code: string) => void;
-}) {
-    const recent = useMemo(() => recentCodes(kv()), []);
-    if (candidate) {
-        const { rule, mode, host } = candidate;
-        const budget = ruleBudget(rule, mode);
-        return (
-            <Panel label="Match found" meta={formatCode(candidate.code)} className="gfr-main">
-                <ReadoutLine label="Host">{`${host.name} · ${tierOf(host.rating).name}`}</ReadoutLine>
-                <ReadoutLine label="Size">{mode}</ReadoutLine>
-                <ReadoutLine label="Squads">{ruleLabel(rule, mode)}</ReadoutLine>
-                <ReadoutLine label="Gear">
-                    {ruleTierName(rule) ? `${ruleTierName(rule)} and below` : "Everything"}
-                </ReadoutLine>
-                {rule.kind === "any" && hasSaved && (
-                    <Stepper
-                        id="join-squad"
-                        group="main"
-                        label="Squad"
-                        title="Squad"
-                        hint="Bring your recruits, or build a squad for this match"
-                        options={[
-                            ["saved", "Your recruits"],
-                            ["build", "Build one"],
-                        ]}
-                        value={squadKind}
-                        onChange={(v) => setSquadKind(v as SquadKind)}
-                    />
-                )}
-                <ActionRow
-                    id="join-enter"
-                    group="main"
-                    label="Join"
-                    title="Join"
-                    hint={
-                        budget === null ? "Bring any squad" : `Build a squad of up to ${budget} cr`
-                    }
-                    instant
-                    commands={[
-                        {
-                            action: "confirm",
-                            label: "Join",
-                            tone: "primary",
-                            run: () => enter(candidate),
-                        },
-                    ]}
-                />
-                <ActionRow
-                    id="join-other"
-                    group="main"
-                    label="Use another code"
-                    title="Use another code"
-                    hint="Back to the code field"
-                    instant
-                    commands={[{ action: "confirm", label: "Another code", run: otherCode }]}
-                />
-            </Panel>
-        );
-    }
-    return (
-        <Panel label="Join with a code" className="gfr-main">
-            <ReadoutLine label="Code" empty={!typing}>
-                {typing ? formatCode(typing) || typing : "None entered"}
-            </ReadoutLine>
-            {refusal && (
-                <ReadoutLine label="Refused">
-                    <span className="gfr-warn">{refusal.message}</span>
-                </ReadoutLine>
-            )}
-            <ActionRow
-                id="join-type"
-                group="main"
-                label="Enter a code"
-                title="Enter a code"
-                hint="Type it or paste it into the field"
-                instant
-                commands={[{ action: "confirm", label: "Enter code", run: openPrompt }]}
-            />
-            <ActionRow
-                id="join-paste"
-                group="main"
-                label="Paste from clipboard"
-                title="Paste a code"
-                hint="Reads the code or link you copied"
-                instant
-                commands={[{ action: "confirm", label: "Paste", run: paste }]}
-            />
-            {recent.length > 0 && <Eyebrow>Recent</Eyebrow>}
-            {recent.map((code) => (
-                <ListRow
-                    key={code}
-                    id={`recent-${code}`}
-                    group="main"
-                    name={formatCode(code)}
-                    kind="Joined before"
-                    title={formatCode(code)}
-                    hint="Join this code again"
-                    instant
-                    commands={[{ action: "confirm", label: "Join", run: () => pick(code) }]}
-                />
-            ))}
-        </Panel>
-    );
-}
-
 // === Open games =============================================================
 
 function OpenGames({
+    games,
     now,
+    gate,
+    presetSide,
+    busy,
+    line,
     join,
     host,
-    refusal,
+    useName,
 }: {
+    games: OpenGame[] | null;
     now: number;
-    join: (lobby: Lobby) => void;
+    gate: Gate | null;
+    presetSide: number | null;
+    busy: boolean;
+    line: string | null;
+    join: (hostId: string) => void;
     host: () => void;
-    refusal: Refusal;
+    useName: (owner: string | null) => string | null;
 }) {
-    const [size, setSize] = useState<"any" | Mode>("any");
-    const [ruleFilter, setRuleFilter] = useState<RuleFilter>("all");
-    const games = openGames(now, size, undefined, ruleFilter);
+    const [size, setSize] = useState<"any" | "3" | "4">("any");
+    const live = (games ?? []).filter((g) => now - g.sinceMs <= LIFETIME_MS);
+    const shown = live.filter((g) => size === "any" || String(g.size) === size);
     // The cursor starts on the first game, not on the size filter above it.
     const store = useFocusStore();
+    const first = shown[0]?.hostId;
+    const placed = useRef(false);
     useLayoutEffect(() => {
-        const first = openGames(Date.now())[0];
-        if (first) store.focus(`open-${first.id}`, false);
-        // Once, on arrival.
-    }, [store]);
+        if (placed.current || !first) return;
+        placed.current = true;
+        store.focus(`open-${first}`, false);
+    }, [store, first]);
     return (
         <Panel
             label="Open games"
-            meta={games.length > 0 ? String(games.length) : undefined}
+            meta={games === null ? undefined : String(shown.length)}
             className="gfr-main gfr-open"
         >
             <Stepper
@@ -1240,61 +770,90 @@ function OpenGames({
                 hint="Show one size only"
                 options={[
                     ["any", "Any"],
-                    ["3x3", "3 x 3"],
-                    ["4x4", "4 x 4"],
+                    ["3", sizeLabel(3)],
+                    ["4", sizeLabel(4)],
                 ]}
                 value={size}
-                onChange={(v) => setSize(v as "any" | Mode)}
+                onChange={(v) => setSize(v as "any" | "3" | "4")}
             />
-            <Stepper
-                id="open-rule"
-                group="main"
-                label="Squads"
-                title="Squads"
-                hint="Show one rule only"
-                options={[
-                    ["all", "All"],
-                    ["any", "Any squad"],
-                    ["budget", "Budgeted"],
-                ]}
-                value={ruleFilter}
-                onChange={(v) => setRuleFilter(v as RuleFilter)}
-            />
-            {refusal && (
-                <ReadoutLine label="Refused">
-                    <span className="gfr-warn">{refusal.message}</span>
+            {line && (
+                <ReadoutLine label="Game">
+                    <span className="gfr-warn">{line}</span>
                 </ReadoutLine>
             )}
-            {games.length === 0 ? (
+            {games === null ? (
+                <ReadoutLine label="Games" empty>
+                    Reading the list
+                </ReadoutLine>
+            ) : shown.length === 0 ? (
                 <EmptyState
                     id="open-empty"
                     group="main"
                     headline="NO OPEN GAMES"
-                    action="Host a match"
-                    commands={[{ action: "confirm", label: "Host a match", run: host }]}
+                    action="Host a game"
+                    commands={[
+                        {
+                            action: "confirm",
+                            label: "Host a game",
+                            deny: gate?.reason,
+                            run: host,
+                        },
+                    ]}
                 >
                     Nobody is waiting right now. Host one and others can join it.
                 </EmptyState>
             ) : (
                 <List label="Open games">
-                    {games.map((lobby) => (
-                        <ListRow
-                            key={lobby.id}
-                            id={`open-${lobby.id}`}
-                            group="main"
-                            name={lobby.host.name}
-                            kind={`${lobby.mode} · ${ruleShort(lobby.rule, lobby.mode)}`}
-                            tag={ageLabel(now - lobby.openedAt)}
-                            title={lobby.host.name}
-                            hint={`${tierOf(lobby.host.rating).name} host · open ${ageLabel(now - lobby.openedAt)}`}
-                            instant
-                            commands={[
-                                { action: "confirm", label: "Join", run: () => join(lobby) },
-                            ]}
+                    {shown.map((game) => (
+                        <OpenRow
+                            key={game.hostId}
+                            game={game}
+                            now={now}
+                            deny={joinBlock(game, gate, presetSide) ?? (busy ? "Joining" : null)}
+                            join={join}
+                            useName={useName}
                         />
                     ))}
                 </List>
             )}
         </Panel>
+    );
+}
+
+function OpenRow({
+    game,
+    now,
+    deny,
+    join,
+    useName,
+}: {
+    game: OpenGame;
+    now: number;
+    deny: string | null;
+    join: (hostId: string) => void;
+    useName: (owner: string | null) => string | null;
+}) {
+    const name = useName(game.owner) ?? "Unnamed";
+    const left = timeLeft(game.sinceMs, now);
+    return (
+        <ListRow
+            id={`open-${game.hostId}`}
+            group="main"
+            name={name}
+            kind={`${sizeLabel(game.size)} · Rating ${game.rating}`}
+            tag={game.full ? "Full" : `${left} left`}
+            tagTone={game.full ? "dim" : "default"}
+            title={name}
+            hint={deny ?? `${sizeLabel(game.size)} · ${left} left · You wait for the host to start`}
+            commands={[
+                {
+                    action: "confirm",
+                    label: "Join",
+                    tone: "primary",
+                    deny: deny ?? undefined,
+                    run: () => join(game.hostId),
+                },
+            ]}
+        />
     );
 }

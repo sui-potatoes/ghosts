@@ -2,140 +2,27 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Friendly matches, the pure part: the invite code (alphabet, generation from a
- * lobby id, formatting, tolerant parsing, check character), the share link, ages,
- * and the squad a friendly match brings. No React, no storage, no clock; tested in
+ * Friendly matches, the pure part: the invite code's text (from the chain
+ * layer, `src/chain/lobby-core.ts`), the share link, the sizes a lobby offers on
+ * the current level, why the player cannot open or join a game right now, and
+ * the shapes the screen draws. No React, no storage, no clock; tested in
  * `tests/play-friendly.test.ts`.
- *
- * The code is shaped for a future on-chain id: 8 characters, grouped `XXXX-XXXX`,
- * from an alphabet without 0, O, 1, I or L, so it can be read aloud and typed
- * without a second guess. The first 7 characters are the payload (about 34.7 bits),
- * the 8th is a check character so a typo is caught on the device before any lookup.
- * An on-chain version would store the payload as the key of a registry on the
- * lobby (game) object, `code payload -> lobby object id`; the check character
- * stays client-side. The share link carries the formatted code.
  */
 
-import type { Issue, Loadout, Mode, Tier } from "../economy/index.ts";
-import {
-    defaultSquad,
-    presetsFor,
-    squadSize,
-    standardBudgets,
-    TIERS,
-    tierOf,
-    validateSquad,
-} from "../economy/index.ts";
-
-export const CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
-export const CODE_LENGTH = 8;
-const PAYLOAD = CODE_LENGTH - 1;
-
-/** FNV-1a, 32 bits: the deterministic seed for everything the mock derives. */
-export function hash32(text: string): number {
-    let h = 0x811c9dc5;
-    for (let i = 0; i < text.length; i++) {
-        h ^= text.charCodeAt(i);
-        h = Math.imul(h, 0x01000193);
-    }
-    return h >>> 0;
-}
-
-/** A small seeded generator: the same seed gives the same stream. */
-export function rng(seed: number): () => number {
-    let a = seed >>> 0;
-    return () => {
-        a = (a + 0x6d2b79f5) >>> 0;
-        let t = a;
-        t = Math.imul(t ^ (t >>> 15), t | 1);
-        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-}
-
-/** The check character of a 7-character payload (a weighted sum, so swaps are caught). */
-export function checkChar(payload: string): string {
-    let sum = 0;
-    for (let i = 0; i < payload.length; i++) {
-        sum += (CODE_ALPHABET.indexOf(payload[i]) + 1) * (i + 1);
-    }
-    return CODE_ALPHABET[sum % CODE_ALPHABET.length];
-}
-
-/** A canonical code (8 characters, no dash) from a 7-character payload. */
-export const withCheck = (payload: string): string => payload + checkChar(payload);
-
-/** The code of a lobby id: deterministic, so the same lobby always shows the same code. */
-export function codeFromId(id: string): string {
-    const next = rng(hash32(`lobby:${id}`));
-    let payload = "";
-    for (let i = 0; i < PAYLOAD; i++) {
-        payload += CODE_ALPHABET[Math.floor(next() * CODE_ALPHABET.length)];
-    }
-    return withCheck(payload);
-}
-
-/** `ABCD-EFGH`, also for a partial code while it is typed. */
-export function formatCode(code: string): string {
-    const raw = code.replace(/[^A-Z0-9]/gi, "").toUpperCase();
-    return raw.length > 4 ? `${raw.slice(0, 4)}-${raw.slice(4)}` : raw;
-}
-
-export type CodeProblem = "empty" | "chars" | "short" | "long" | "check";
-export type ParsedCode =
-    { ok: true; code: string } | { ok: false; problem: CodeProblem; message: string };
-
-const MESSAGES: Record<CodeProblem, string> = {
-    empty: "Enter the code",
-    chars: "Codes use letters and digits, never 0, O, 1, I or L",
-    short: `A code has ${CODE_LENGTH} characters`,
-    long: `A code has ${CODE_LENGTH} characters`,
-    check: "That code has a typo",
-};
-
-const refuse = (problem: CodeProblem): ParsedCode => ({
-    ok: false,
-    problem,
-    message: MESSAGES[problem],
-});
-
-/** The code inside a pasted share link, or the text itself. */
-function stripLink(input: string): string {
-    const found = /[?&#]code=([^&#\s]+)/i.exec(input);
-    if (!found) return input;
-    try {
-        return decodeURIComponent(found[1]);
-    } catch {
-        return found[1];
-    }
-}
-
-/** Tolerant of case, spaces, dashes, dots and a whole pasted link; strict on the rest. */
-export function parseCode(input: string): ParsedCode {
-    const raw = stripLink(input)
-        .toUpperCase()
-        .replace(/[\s\-_.·]/g, "");
-    if (!raw) return refuse("empty");
-    for (const ch of raw) if (!CODE_ALPHABET.includes(ch)) return refuse("chars");
-    if (raw.length < CODE_LENGTH) return refuse("short");
-    if (raw.length > CODE_LENGTH) return refuse("long");
-    if (checkChar(raw.slice(0, PAYLOAD)) !== raw[PAYLOAD]) return refuse("check");
-    return { ok: true, code: raw };
-}
-
-export const isValidCode = (input: string): boolean => parseCode(input).ok;
-
-/** What the field says while the player types: nothing until there is something to refuse. */
-export function typingProblem(input: string): string | null {
-    const parsed = parseCode(input);
-    if (parsed.ok || parsed.problem === "empty") return null;
-    // Still typing: a short code is not a mistake yet.
-    return parsed.problem === "short" ? null : parsed.message;
-}
+export {
+    CODE_ALPHABET,
+    CODE_LENGTH,
+    formatCode,
+    LOBBY_LIFETIME_MS,
+    parseCode,
+    timeLeft,
+    typingProblem,
+} from "../../../chain/lobby-core.ts";
+import { formatCode } from "../../../chain/lobby-core.ts";
 
 export const FRIENDLY_ROUTE = "/play/friendly";
 
-/** The link that opens the join flow with the code filled in. */
+/** The link that opens the join field with the code filled in. */
 export function shareLink(code: string, origin: string): string {
     return `${origin}${FRIENDLY_ROUTE}?code=${formatCode(code)}`;
 }
@@ -146,168 +33,123 @@ export function linkCode(search: string): string | null {
     return value === null || value === "" ? null : value;
 }
 
-/** How long a lobby has been open, in the words of the list. */
-export function ageLabel(ms: number): string {
-    const s = Math.max(0, Math.floor(ms / 1000));
-    if (s < 10) return "just now";
-    if (s < 60) return `${s}s`;
-    const m = Math.floor(s / 60);
-    if (m < 60) return `${m}m`;
-    return `${Math.floor(m / 60)}h`;
+/** The sizes a lobby can have (`MIN_SIZE`, `MAX_SIZE` in `ghosts::lobby`): the most recruits each side deploys. */
+export const SIZES = [3, 4] as const;
+export type Size = (typeof SIZES)[number];
+
+/** `3 x 3`. */
+export const sizeLabel = (size: number): string => `${size} x ${size}`;
+
+/**
+ * Why a size cannot be opened on the level games start on, null when it can:
+ * a side deploys at most as many recruits as the level has spawn positions for
+ * it, so a lobby larger than that would play smaller than it says.
+ */
+export function sizeBlock(size: number, presetSide: number | null): string | null {
+    if (presetSide === null) return size > 3 ? "No 4x4 level yet" : null;
+    return size > presetSide ? `No ${size}x${size} level yet` : null;
 }
 
-/** Which recruit role takes which preset, by what the preset is called. */
-const ROLE_PRESET: Record<string, string> = {
-    Assault: "assault",
-    Recon: "runner",
-    Support: "heavy",
-    Marksman: "sniper",
+/** What stands between the player and a friendly game, and the one thing that helps. */
+export type Gate = {
+    reason: string;
+    action?: { id: "sign-in" | "resume" | "queue" | "headquarters"; label: string };
 };
 
-/**
- * A saved squad on the device as loadouts: each recruit takes the preset that
- * fits their role (by name, from the economy's own list; the next preset in
- * turn when none fits), and a squad shorter than the size is filled from the
- * default squad. Friendly matches carry no budget in the mock, so nothing is
- * priced or validated here.
- */
-export function squadFromRecruits(
-    recruits: { role: string }[],
-    mode: Mode,
-    rating: number,
-): Loadout[] {
-    const presets = presetsFor(rating);
-    const fill = defaultSquad(rating, mode);
-    if (presets.length === 0) return fill;
-    return Array.from({ length: squadSize(mode) }, (_, i) => {
-        const recruit = recruits[i];
-        if (!recruit) return fill[i];
-        const key = ROLE_PRESET[recruit.role] ?? "";
-        const preset =
-            presets.find(
-                (p) => key !== "" && (p.id.includes(key) || p.name.toLowerCase().includes(key)),
-            ) ?? presets[i % presets.length];
-        return { ...preset.loadout };
-    });
-}
+export type GateInput = {
+    signedIn: boolean;
+    /** The account and its recruits are still being read. */
+    loading: boolean;
+    /** An `Account` is on file for the address. */
+    hasAccount: boolean;
+    /** Recruits at home. */
+    recruits: number;
+    /** In a game (or a seat waits in one). */
+    playing: boolean;
+    /** In the rated match queue. */
+    queued: boolean;
+    /** Whole minutes of a suspension left; 0 when none. */
+    suspendedMin: number;
+};
 
-// === The squad rule =========================================================
-
-/**
- * What a host decides about squads: any squad at all, or ranked rules at a
- * tier (that tier's budget for the size and the gear it unlocks). The tier is
- * stored, not the credits, so changing the size keeps the same tier.
- */
-export type Rule = { kind: "any" } | { kind: "budget"; tier: string };
-
-export const ANY_RULE: Rule = { kind: "any" };
-
-/** Budgeted at the tier of a rating: the host's default. */
-export const defaultRule = (rating: number): Rule => ({ kind: "budget", tier: tierOf(rating).id });
-
-const tierById = (id: string): Tier => TIERS.find((t) => t.id === id) ?? TIERS[0];
-
-/** The credits a squad may cost under the rule, null for no limit. */
-export function ruleBudget(rule: Rule, mode: Mode): number | null {
-    return rule.kind === "any" ? null : tierById(rule.tier).budget[mode];
-}
-
-/** The rating the rule prices gear at: the tier's lowest, or the top tier's for any squad. */
-export const ruleRating = (rule: Rule): number =>
-    rule.kind === "any" ? TIERS[TIERS.length - 1].min : tierById(rule.tier).min;
-
-/** The rank whose gear the rule unlocks, null for any squad (everything). */
-export const ruleTierName = (rule: Rule): string | null =>
-    rule.kind === "any" ? null : tierById(rule.tier).name;
-
-/** "Any squad" or "Budget 150 cr · Contractor". */
-export function ruleLabel(rule: Rule, mode: Mode): string {
-    if (rule.kind === "any") return "Any squad";
-    return `Budget ${ruleBudget(rule, mode)} cr · ${tierById(rule.tier).name}`;
-}
-
-/** The rule for a narrow row: "Any squad" or "150 cr · Contractor". */
-export function ruleShort(rule: Rule, mode: Mode): string {
-    if (rule.kind === "any") return "Any squad";
-    return `${ruleBudget(rule, mode)} cr · ${tierById(rule.tier).name}`;
-}
-
-/** The budget stepper's options for a size: `[tier id, "150 cr · Contractor"]`, lowest first. */
-export const budgetOptions = (mode: Mode): [string, string][] =>
-    standardBudgets(mode).map(({ tier, credits }) => [tier.id, `${credits} cr · ${tier.name}`]);
-
-/** The rule as a match carries it (`MockMatch.rule`). */
-export const matchRule = (rule: Rule, mode: Mode) => ({
-    budget: ruleBudget(rule, mode),
-    rating: ruleRating(rule),
-    label: ruleLabel(rule, mode),
-});
-
-/** What is wrong with a squad under the rule; none means it is ready. */
-export const readiness = (squad: Loadout[], rule: Rule, mode: Mode): Issue[] =>
-    validateSquad(squad, ruleRating(rule), mode, ruleBudget(rule, mode));
-
-/** A rule read back from storage, any when it does not read. */
-export function parseRule(value: unknown): Rule {
-    const r = value as { kind?: unknown; tier?: unknown } | null;
-    if (
-        r &&
-        r.kind === "budget" &&
-        typeof r.tier === "string" &&
-        TIERS.some((t) => t.id === r.tier)
-    )
-        return { kind: "budget", tier: r.tier };
-    return ANY_RULE;
-}
-
-/** Whether the lobby's squad is built in the builder: always when budgeted, on request for any squad. */
-export const buildsSquad = (rule: Rule, kind: SquadKind): boolean =>
-    rule.kind === "budget" || kind === "build";
-
-/** `build` is a default squad edited in the builder. */
-export type SquadKind = "saved" | "default" | "build";
-
-export type Bring = { squad: Loadout[]; names: string[]; kind: SquadKind };
-
-/** The squad a friendly match brings: the saved one when there is one, else the default. */
-export function bringSquad(
-    kind: SquadKind,
-    saved: { role: string; callsign: string }[] | null,
-    mode: Mode,
-    rule: Rule = ANY_RULE,
-): Bring {
-    const size = squadSize(mode);
-    if (rule.kind === "budget") {
-        // Under a budget the squad starts as the default one and is built to fit.
+/** Null when the player may open or join a friendly game: free, with a squad. */
+export function gateOf(s: GateInput): Gate | null {
+    if (!s.signedIn)
+        return { reason: "Sign in to play", action: { id: "sign-in", label: "Sign in" } };
+    if (s.loading) return { reason: "Reading your squad" };
+    if (s.playing)
+        return { reason: "You are in a match", action: { id: "resume", label: "Resume match" } };
+    if (s.queued)
         return {
-            kind: "build",
-            squad: defaultSquad(ruleRating(rule), mode, ruleBudget(rule, mode) ?? undefined),
-            names: Array.from({ length: size }, (_, i) => `Unit ${i + 1}`),
+            reason: "You are in the match queue",
+            action: { id: "queue", label: "Match queue" },
         };
-    }
-    if (kind === "saved" && saved && saved.length > 0) {
+    if (s.suspendedMin > 0) return { reason: `Suspended for ${s.suspendedMin} min` };
+    if (!s.hasAccount || s.recruits === 0)
         return {
-            kind: "saved",
-            squad: squadFromRecruits(saved, mode, ruleRating(rule)),
-            names: Array.from({ length: size }, (_, i) => saved[i]?.callsign ?? `Unit ${i + 1}`),
+            reason: "Hire a squad first",
+            action: { id: "headquarters", label: "Headquarters" },
         };
-    }
-    return {
-        kind: kind === "build" ? "build" : "default",
-        squad: defaultSquad(ruleRating(rule), mode),
-        names: Array.from({ length: size }, (_, i) => `Unit ${i + 1}`),
-    };
+    return null;
 }
 
-/**
- * Whether closing a lobby asks first: a host's lobby with an opponent in it, or
- * whose code or link was copied (so someone may be on the way). A host still
- * alone with nothing shared closes at once; a guest can always rejoin.
- */
-export function asksBeforeClosing(
-    role: "host" | "guest",
-    phase: "waiting" | "ready" | "starting" | "cancelled",
-    shared: boolean,
-): boolean {
-    return role === "host" && (phase !== "waiting" || shared);
+/** A player as a lobby shows them; a name or rating not read yet is null. */
+export type Person = { name: string | null; rating: number | null };
+
+/** "kestrel · Rating 1520", as far as it is known. */
+export function personLine(p: Person): string {
+    const name = p.name ?? "Unnamed";
+    return p.rating === null ? name : `${name} · Rating ${p.rating}`;
+}
+
+/** The lobby the player is in, as the screen draws it. */
+export type LobbyState =
+    | {
+          kind: "host";
+          /** Listed in Open games, or invite only. */
+          listed: boolean;
+          size: number;
+          /** When the host opened it: the lifetime runs from here. */
+          sinceMs: number;
+          /** The invite code's text, on the device that opened it; null elsewhere and for a listed game. */
+          code: string | null;
+          guest: (Person & { id: string }) | null;
+      }
+    | {
+          kind: "guest";
+          size: number;
+          /** The host's `since`, once read. */
+          sinceMs: number | null;
+          host: Person;
+      };
+
+/** A listed game on the open list. */
+export type OpenGame = {
+    hostId: string;
+    /** The host's address, for their name. */
+    owner: string;
+    rating: number;
+    size: number;
+    sinceMs: number;
+    full: boolean;
+};
+
+/** Why the host cannot start yet, null when Start can run. */
+export function startBlock(lobby: LobbyState, now: number, lifetimeMs: number): string | null {
+    if (lobby.kind !== "host") return "Only the host starts the match";
+    if (now - lobby.sinceMs > lifetimeMs) return "This game has expired";
+    if (!lobby.listed) return "The match starts when your friend joins";
+    if (!lobby.guest) return "Nobody has joined yet";
+    return null;
+}
+
+/** Why a listed game cannot be joined, null when it can. */
+export function joinBlock(
+    game: OpenGame,
+    gate: Gate | null,
+    presetSide: number | null,
+): string | null {
+    if (gate) return gate.reason;
+    if (game.full) return "This game is full";
+    return sizeBlock(game.size, presetSide);
 }

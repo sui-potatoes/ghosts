@@ -80,6 +80,8 @@ export type SquadSelectProps = {
     onAbandon: () => void;
     /** Studio-detail figures, for comparing the scene's cost. */
     full?: boolean;
+    /** A friendly game: nobody is lost, and walking out costs nothing but the game. */
+    friendly?: boolean;
 };
 
 /** One inspect step: a quarter turn of the figure. */
@@ -129,6 +131,7 @@ function Screen({
     onTimeUp,
     onAbandon,
     full,
+    friendly,
     prompt,
     setPrompt,
 }: SquadSelectProps & { prompt: PromptKind; setPrompt: (p: PromptKind) => void }) {
@@ -354,7 +357,9 @@ function Screen({
                 glyphs={glyphs}
             >
                 {squadNow.length < count ? `${squadNow.length} of ${count} positions filled. ` : ""}
-                Whoever falls is gone for good, with their gear.
+                {friendly
+                    ? "A friendly match: whoever falls comes home."
+                    : "Whoever falls is gone for good, with their gear."}
             </Prompt>
         ) : prompt === "abandon" ? (
             <Prompt
@@ -372,8 +377,9 @@ function Screen({
                 cancel={{ label: "Stay", run: () => setPrompt(null) }}
                 glyphs={glyphs}
             >
-                Your opponent wins and your squad comes home, but you can't search for a match for a
-                minute.
+                {friendly
+                    ? "Your opponent wins and your squad comes home."
+                    : "Your opponent wins and your squad comes home, but you can't search for a match for a minute."}
             </Prompt>
         ) : null;
 

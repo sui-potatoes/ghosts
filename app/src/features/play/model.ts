@@ -70,7 +70,16 @@ const CARDS: Record<ModeId, ModeCard> = {
     },
 };
 
-export const modeCards = (): ModeCard[] => MODE_ORDER.map((id) => CARDS[id]);
+/**
+ * The cards, top to bottom. `lobby`: the player hosts or waits in a friendly
+ * game, and the friendly card leads back to it.
+ */
+export const modeCards = (lobby = false): ModeCard[] =>
+    MODE_ORDER.map((id) =>
+        id === "friendly" && lobby
+            ? { ...CARDS[id], tag: "In lobby", hint: "Back to your friendly game" }
+            : CARDS[id],
+    );
 
 export const cardOf = (id: ModeId): ModeCard => CARDS[id];
 

@@ -45,6 +45,7 @@ const STANDING_OBJECTS = [
     GHOSTS.registry,
     GHOSTS.matchmaker,
     GHOSTS.preset,
+    GHOSTS.lobbies,
     SUI_CLOCK_OBJECT_ID,
     "0x8",
 ].filter(Boolean);

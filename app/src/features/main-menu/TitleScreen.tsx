@@ -72,6 +72,8 @@ export type TitleOps = {
     signIn: () => void;
     openPlayer: () => void;
     resumeMatch: () => void;
+    /** Back to the friendly game the player hosts or waits in. */
+    openLobby?: () => void;
 };
 
 /**
@@ -216,7 +218,12 @@ function TitleFrame({
                 <BuildLine data={data} />
                 <div className="gui-sections" />
                 <div className="gui-status">
-                    <MatchChipButton data={data} onStop={onStopSearch} onResume={ops.resumeMatch} />
+                    <MatchChipButton
+                        data={data}
+                        onStop={onStopSearch}
+                        onResume={ops.resumeMatch}
+                        onLobby={ops.openLobby}
+                    />
                     <PlayerChipButton
                         signedIn={data.state.signedIn}
                         name={data.playerName}
@@ -376,15 +383,21 @@ function MatchChipButton({
     data,
     onStop,
     onResume,
+    onLobby,
 }: {
     data: TitleData;
     onStop: () => void;
     onResume: () => void;
+    onLobby?: () => void;
 }) {
     const store = useFocusStore();
     const now = useNow(data.searchingSinceMs !== null);
     const chip = matchChip(
-        { playing: data.state.match.playing, searchingSinceMs: data.searchingSinceMs },
+        {
+            playing: data.state.match.playing,
+            searchingSinceMs: data.searchingSinceMs,
+            lobby: data.state.match.lobby,
+        },
         now,
         data.searchTimeoutMs,
     );
@@ -394,6 +407,7 @@ function MatchChipButton({
             onClick={() => {
                 if (!headerClick(store)) return;
                 if (data.state.match.playing) onResume();
+                else if (data.state.match.lobby) onLobby?.();
                 else onStop();
             }}
         >

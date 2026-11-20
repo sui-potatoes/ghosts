@@ -19,19 +19,21 @@ export const NAMES = {
 
 /**
  * Testnet IDs for the published ghosts Move package and what its initializer
- * creates: the Registry, the matchmaking queue and the frozen map preset games
- * start on.
+ * creates: the Registry, the matchmaking queue, the frozen map preset games
+ * start on and the shared friendly-lobbies object.
  */
 export const GHOSTS: {
     package: string;
     registry: string;
     matchmaker: string;
     preset: string;
+    lobbies: string;
 } = {
-    package: "0xd1bba518863711c73ca6203855926233cf7d25466abcca7b22cc31e5d7c3026b",
-    registry: "0x9a8662c0b91147ed2f155ed5a585679bc18b0893ef5a2f815e1f3d7f6d7c2d7d",
-    matchmaker: "0xadddd57165fe63c88ae854ba98d476bac8faa565fa2a5c766f9f59f6d4cc2998",
-    preset: "0x6e834d1a513585caf95dd3a104723b1ad4de19c88e75f47a209dd2e0c96451b9",
+    package: "0xdbd205dbe67b44f721933e20b95010b8e01c7c1316ff32540d7af4cb46b4246e",
+    registry: "0xaa4e35823c515cf91bbcb53311f10d6fccc2d4e4bc148fa8bb7d43f250d79589",
+    matchmaker: "0x93791ca35a785341beff57c4d59647e26da06d923c8666e67d204e401dbd017e",
+    preset: "0x5e37e87da2aca8ce31b0a2ac918ea76fa376ba9d8c02e61e976d5c9c7c2ebff1",
+    lobbies: "0x81afce11aa84fc75c08ebee3565670961002122986396444c32333f7fb72185f",
 };
 
 /** Same Google OAuth client as `app/`; both origins are registered on it. */

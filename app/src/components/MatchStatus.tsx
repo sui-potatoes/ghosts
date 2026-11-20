@@ -71,7 +71,7 @@ export function MatchStatus() {
     const { pathname } = useLocation();
     const pad = usePadActive();
     const navigate = useNavigate();
-    const { searching, playing, busy, error, cancel } = useMatchSearch();
+    const { searching, playing, lobby, busy, error, cancel } = useMatchSearch();
     useMatchmakingDriver();
 
     if (["/demo", "/editor", "/match", "/play/match"].some((path) => pathname.startsWith(path)))
@@ -79,7 +79,9 @@ export function MatchStatus() {
     // Headquarters and the title show the search in their own header.
     if (pathname === "/headquarters" || pathname === "/find") return null;
     if (pathname === "/" && !CLASSIC_TITLE) return null;
-    if (!searching && !playing) return null;
+    // The friendly screen is the lobby itself.
+    if (lobby && pathname === "/play/friendly") return null;
+    if (!searching && !playing && !lobby) return null;
 
     return (
         <div
@@ -89,6 +91,13 @@ export function MatchStatus() {
         >
             {searching ? (
                 <Searching sinceMs={Number(searching.sinceMs)} busy={busy} onCancel={cancel} />
+            ) : !playing && lobby ? (
+                <>
+                    <span className="label text-accent">Friendly lobby</span>
+                    <button className="btn" onClick={() => navigate("/play/friendly")}>
+                        Open
+                    </button>
+                </>
             ) : (
                 <>
                     <span className="label text-accent">Match in progress</span>

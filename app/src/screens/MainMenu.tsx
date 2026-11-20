@@ -56,6 +56,7 @@ function Title() {
             match: {
                 playing: !!match.playing,
                 searching: !!match.searching,
+                lobby: !!match.lobby,
                 hiring: match.hiring,
                 busy: match.busy,
                 suspendedMin: suspendedMs > 0 ? Math.ceil(suspendedMs / 60_000) : 0,
@@ -75,7 +76,7 @@ function Title() {
         run: (id: RowId) => {
             switch (id) {
                 case "play":
-                    return navigate("/play");
+                    return navigate(match.lobby ? "/play/friendly" : "/play");
                 case "demo-black-rain":
                     return navigate("/demo");
                 case "demo-paper-trail":
@@ -84,6 +85,7 @@ function Title() {
                     return requestSignIn();
                 case "match":
                     if (match.playing) return navigate("/match");
+                    if (match.lobby) return navigate("/play/friendly");
                     if (match.searching) return match.cancel();
                     if (!account) return requestSignIn();
                     // The screen does the slow part (lookups, the queue transaction).
@@ -106,6 +108,7 @@ function Title() {
         signIn: requestSignIn,
         openPlayer: () => navigate("/settings"),
         resumeMatch: () => navigate("/match"),
+        openLobby: () => navigate("/play/friendly"),
     };
 
     return <TitleScreen data={data} ops={ops} />;

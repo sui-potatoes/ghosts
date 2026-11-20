@@ -316,6 +316,7 @@ function plateHint(plate: Plate, done: boolean): string | undefined {
     if (plate.kind === "vacant") return "Nobody deployed here";
     if (!done) return undefined;
     if (plate.kind === "home" && plate.field) return fieldHint(plate);
+    if (plate.kind === "home" && plate.hint) return plate.hint;
     if (plate.kind === "kia" && plate.field)
         return (
             plate.field.hint ??

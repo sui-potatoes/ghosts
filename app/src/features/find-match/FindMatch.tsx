@@ -33,6 +33,8 @@ export type FindOps = {
     cancel: () => void;
     signIn: () => void;
     resume: () => void;
+    /** To the friendly game the player is in. */
+    lobby?: () => void;
     leave: () => void;
 };
 
@@ -67,12 +69,19 @@ export function FindMatch({ ops }: { ops: FindOps }) {
     const now = useNow(ops.sinceMs !== null);
     const elapsedMs = ops.sinceMs === null ? 0 : Math.max(0, now - ops.sinceMs);
     // Sent, and nothing to show for it yet: the account has not caught up.
-    const starting = started && !state.searching && !state.hiring && !state.playing && !state.error;
+    const starting =
+        started &&
+        !state.searching &&
+        !state.hiring &&
+        !state.playing &&
+        !state.lobby &&
+        !state.error;
     const view = findView({ ...state, elapsedMs, starting });
 
     const act: Record<FindAction, () => void> = {
         "sign-in": ops.signIn,
         resume: ops.resume,
+        lobby: ops.lobby ?? ops.leave,
         retry: () => {
             setStarted(true);
             ops.find();

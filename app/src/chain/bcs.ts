@@ -285,6 +285,15 @@ export const GameState = bcs.enum("State", {
     Over: Ending,
 });
 
+/**
+ * `ghosts::ghosts::Mode`: what a game is played for. `Rated` (tag 0) came from the queue;
+ * `Friendly` (tag 1) from a lobby, each side deploying up to `size` recruits.
+ */
+export const GameMode = bcs.enum("Mode", {
+    Rated: null,
+    Friendly: bcs.struct("Friendly", { size: bcs.u8() }),
+});
+
 /** `ghosts::ghosts::Game`. */
 export const Game = bcs.struct("Game", {
     id: bcs.Address,
@@ -296,6 +305,35 @@ export const Game = bcs.struct("Game", {
     history: bcs.vector(GameRecord),
     /** `Table<ID, Recruit>`: the recruits on the map, whose each is, its unit says. */
     recruits: Table,
+    mode: GameMode,
+});
+
+/** `ghosts::ghosts::Preset`: the frozen map games start on; `positions` holds both sides' spawns, half each. */
+export const Preset = bcs.struct("Preset", {
+    id: bcs.Address,
+    map: GameMap,
+    name: bcs.string(),
+    positions: bcs.vector(bcs.vector(bcs.u8())),
+});
+
+/**
+ * `ghosts::lobby::Lobby`: a lobby, under either key. A protected lobby only ever has
+ * its size; an open one has the guest in its slot and whoever the host kicked out.
+ */
+export const Lobby = bcs.struct("Lobby", {
+    size: bcs.u8(),
+    guest: bcs.option(bcs.Address),
+    kicked: bcs.vector(bcs.Address),
+});
+
+/**
+ * `sui::dynamic_field::Field<K, Lobby>` on `Lobbies`, for either key: `Open(ID)` (the
+ * host's `Account` ID) and `Protected(address)` (the code hashed twice) are both 32 bytes.
+ */
+export const LobbyField = bcs.struct("Field", {
+    id: bcs.Address,
+    name: bcs.Address,
+    value: Lobby,
 });
 
 export type ChainGame = typeof Game.$inferType;
