@@ -27,13 +27,15 @@ import {
     decodeEnded,
     decodeStarted,
     latestStarts,
-    orEnd,
+    eventsNewestFirst,
     recentGames,
     RECENT_CAP,
     RECENT_FIRST,
     type EndedEvent,
     type EventPage,
     type GameOrigin,
+    type ListEvents,
+    type RawEvent,
     type RecentReads,
     type StartedEvent,
 } from "../src/features/watch/chain/recent.ts";
@@ -489,22 +491,176 @@ test("a failed read names no cause but being offline, and only when the device s
     assert.equal(offlineLine(undefined), null);
 });
 
-test("recent games: a scan that runs into the start of the node's history is an empty list, any other failure is an error", async () => {
-    const outOfRange = Object.assign(new Error("requested data below earliest available"), {
-        code: "OUT_OF_RANGE",
-    });
-    const unavailable = Object.assign(new Error("unavailable"), { code: "UNAVAILABLE" });
-    const reads = (fail: Error): RecentReads => ({
-        ended: () => orEnd(() => Promise.reject(fail)),
-        started: () => orEnd(() => Promise.reject(fail)),
+// === Reading events against the node's retention floor ===
+
+const outOfRange = Object.assign(new Error("requested data below earliest available"), {
+    code: "OUT_OF_RANGE",
+});
+
+/**
+ * A fake node for one event type: `all` oldest first, a page of 50, and the real quirk: a
+ * descending scan that reaches the oldest event without filling its page fails
+ * `OUT_OF_RANGE` (the retention floor), and finding events first does not save it.
+ */
+function fakeNode(all: RawEvent[], calls: string[] = []): ListEvents {
+    return async ({ order, before, after }) => {
+        calls.push(order);
+        if (order === "descending") {
+            const end = before ? Number(before) : all.length;
+            const from = end - 50;
+            if (from <= 0) throw outOfRange;
+            return {
+                events: all.slice(from, end).reverse(),
+                hasNextPage: true,
+                endCursor: String(from),
+            };
+        }
+        const start = after ? Number(after) : 0;
+        const events = all.slice(start, start + 50);
+        const hasNextPage = start + 50 < all.length;
+        return { events, hasNextPage, endCursor: String(start + events.length) };
+    };
+}
+
+const gameAt = (i: number) => hex(i.toString(16).padStart(64, "0"));
+const startedEvent = (i: number, listed = true): RawEvent => ({
+    eventType: GAME_STARTED_TYPE,
+    bcs: GameStarted.serialize({
+        game: gameAt(i),
+        players: [ALICE, BOB],
+        mode: { Ranked: { size: 3, tier: 1 } },
+        listed,
+    } as never).toBytes(),
+    transactionDigest: `S${i}`,
+    checkpoint: String(1000 + i * 2),
+});
+const endedEvent = (i: number): RawEvent => ({
+    eventType: GAME_ENDED_TYPE,
+    bcs: GameEnded.serialize({ game: gameAt(i), ending: { Draw: true } } as never).toBytes(),
+    transactionDigest: `E${i}`,
+    checkpoint: String(1001 + i * 2),
+});
+
+/** `RecentReads` over fake nodes holding games 1..n (every `unlisted`-th one unlisted). */
+function readsFor(n: number, unlisted = 0, calls: string[] = []): RecentReads {
+    const ids = Array.from({ length: n }, (_, i) => i + 1);
+    const starts = fakeNode(
+        ids.map((i) => startedEvent(i, !(unlisted && i % unlisted === 0))),
+        calls,
+    );
+    const ends = fakeNode(ids.map(endedEvent), calls);
+    const page = async <T>(
+        list: ListEvents,
+        decode: (e: RawEvent) => T | null,
+        cursor: string | null,
+    ): Promise<EventPage<T>> => {
+        const { events, next } = await eventsNewestFirst(list, cursor);
+        return { items: events.flatMap((e) => decode(e) ?? []), next };
+    };
+    return {
+        ended: (cursor) => page(ends, decodeEnded, cursor),
+        started: (cursor) => page(starts, decodeStarted, cursor),
         origin: async () => null,
+    };
+}
+
+const idsOf = (games: { gameId: string }[]) => games.map((g) => g.gameId);
+
+test("events newest first: no events at all is an empty page (descending fails, ascending is empty)", async () => {
+    const calls: string[] = [];
+    assert.deepEqual(await eventsNewestFirst(fakeNode([], calls), null), {
+        events: [],
+        next: null,
     });
-    assert.deepEqual(await recentGames(reads(outOfRange), RECENT_FIRST), {
-        games: [],
-        more: false,
-    });
-    await assert.rejects(recentGames(reads(unavailable), RECENT_FIRST), unavailable);
-    await assert.rejects(recentGames(reads(new Error("boom")), RECENT_FIRST), /boom/);
-    const page: EventPage<number> = { items: [1], next: "c" };
-    assert.equal(await orEnd(async () => page), page, "a page that reads is passed through");
+    assert.deepEqual(calls, ["descending", "ascending"]);
+    assert.deepEqual(await recentGames(readsFor(0), RECENT_FIRST), { games: [], more: false });
+});
+
+test("events newest first: a handful of events survive the descending scan that hits the floor", async () => {
+    const ids = [1, 2, 3, 4, 5];
+    const page = await eventsNewestFirst(fakeNode(ids.map(endedEvent)), null);
+    assert.deepEqual(
+        page.events.map((e) => e.transactionDigest),
+        ["E5", "E4", "E3", "E2", "E1"],
+    );
+    assert.equal(page.next, null);
+    const list = await recentGames(readsFor(5), RECENT_FIRST);
+    assert.deepEqual(idsOf(list.games), [5, 4, 3, 2, 1].map(gameAt));
+    assert.equal(list.more, false);
+    assert.deepEqual(list.games[0].players, [ALICE, BOB]);
+    assert.deepEqual(list.games[0].mode, { $kind: "Ranked", Ranked: { size: 3, tier: 1 } });
+});
+
+test("events newest first: many events page newest first, and the page that reaches the floor still yields its events", async () => {
+    const calls: string[] = [];
+    const list = await recentGames(readsFor(130, 0, calls), RECENT_CAP);
+    assert.equal(list.games.length, RECENT_CAP);
+    assert.equal(list.more, true);
+    assert.deepEqual(
+        idsOf(list.games),
+        Array.from({ length: RECENT_CAP }, (_, i) => gameAt(130 - i)),
+    );
+    // reading to the very end: three descending pages then the floor falls back, no event lost or doubled
+    const all = Array.from({ length: 130 }, (_, i) => endedEvent(i + 1));
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    do {
+        const page: { events: RawEvent[]; next: string | null } = await eventsNewestFirst(
+            fakeNode(all),
+            cursor,
+        );
+        seen.push(...page.events.map((e) => e.transactionDigest));
+        cursor = page.next;
+    } while (cursor);
+    assert.deepEqual(new Set(seen).size, 130);
+    assert.ok(
+        seen.length <= 130 + 2 * 50,
+        "the floor's page is one page of the oldest, not the whole type",
+    );
+    assert.deepEqual(seen.slice(0, 3), ["E130", "E129", "E128"]);
+});
+
+test("recent games: 25 rows first, unlisted games left out, and 'more' says whether past them there are", async () => {
+    const first = await recentGames(readsFor(70, 3), RECENT_FIRST);
+    assert.equal(first.games.length, RECENT_FIRST);
+    assert.equal(first.more, true);
+    assert.ok(first.games.every((g) => Number(BigInt(g.gameId)) % 3 !== 0));
+    assert.equal(first.games[0].gameId, gameAt(70));
+    assert.equal(first.games[1].gameId, gameAt(68), "70 is listed, 69 is not");
+    const few = await recentGames(readsFor(6, 2), RECENT_FIRST);
+    assert.deepEqual(idsOf(few.games), [5, 3, 1].map(gameAt));
+    assert.equal(few.more, false);
+});
+
+test("the live list's starts come through the same read: a few starts, newest first, unlisted left out", async () => {
+    const reads = readsFor(8, 4);
+    assert.deepEqual(
+        (await latestStarts(reads.started, 10)).map((s) => s.gameId),
+        [7, 6, 5, 3, 2, 1].map(gameAt),
+    );
+    assert.deepEqual(await latestStarts(readsFor(0).started, 10), []);
+});
+
+test("events newest first: any failure but OUT_OF_RANGE is an error, also from the second read", async () => {
+    const unavailable = Object.assign(new Error("unavailable"), { code: "UNAVAILABLE" });
+    const failing =
+        (error: Error): ListEvents =>
+        async () => {
+            throw error;
+        };
+    await assert.rejects(eventsNewestFirst(failing(unavailable), null), unavailable);
+    await assert.rejects(eventsNewestFirst(failing(new Error("boom")), null), /boom/);
+    const flaky: ListEvents = async ({ order }) => {
+        if (order === "descending") throw outOfRange;
+        throw unavailable;
+    };
+    await assert.rejects(eventsNewestFirst(flaky, null), unavailable);
+    const reads: RecentReads = {
+        ended: async () => {
+            throw unavailable;
+        },
+        started: async () => ({ items: [], next: null }),
+        origin: async () => null,
+    };
+    await assert.rejects(recentGames(reads, RECENT_FIRST), unavailable);
 });

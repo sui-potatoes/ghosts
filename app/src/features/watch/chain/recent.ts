@@ -71,19 +71,59 @@ export interface RecentReads {
     origin(gameId: string): Promise<GameOrigin | null>;
 }
 
+/** What a `listEvents` read returns, as far as this file reads it. */
+export interface RawEventsPage {
+    events: RawEvent[];
+    hasNextPage: boolean;
+    endCursor: string | null;
+}
+
+/** A `listEvents` read of one event type: newest first from `before`, or oldest first from `after`. */
+export type ListEvents = (query: {
+    order: "descending" | "ascending";
+    before?: string;
+    after?: string;
+}) => Promise<RawEventsPage>;
+
+/** Events on a page (`limit` of the reads). */
+export const EVENTS_PAGE = 50;
+/** Pages of an ascending read at most (the node scans in bounded steps and may return a page short). */
+const MAX_ASCENDING_PAGES = 20;
+
+const isOutOfRange = (error: unknown) =>
+    (error as { code?: string } | null)?.code === "OUT_OF_RANGE";
+
 /**
- * A page read, with "nothing there" for a scan that ran into the start of what the node
- * keeps: a descending scan for an event type with no events in that window (a type no
- * package emits yet, or the page past the oldest one) fails `OUT_OF_RANGE` instead of
- * coming back empty. Any other failure is the read's own.
+ * One page of an event type, newest first, from `cursor` (null: the newest).
+ *
+ * A descending scan that runs past the oldest event down to the start of what the node
+ * keeps fails `OUT_OF_RANGE` instead of ending, and takes the events it found with it. That
+ * happens exactly when fewer than a page of events are left below the cursor (a full page
+ * ends the scan before the floor), so then the type is read oldest first from the floor
+ * until a page's worth is in hand: the oldest page of events holds every event below the
+ * cursor. They are handed back newest first, with nothing after them. The oldest events
+ * above the cursor may come with them: callers de-duplicate by game. No events at all is an empty page. Any other failure, or
+ * a failure of that second read, is the read's own.
  */
-export async function orEnd<T>(read: () => Promise<EventPage<T>>): Promise<EventPage<T>> {
+export async function eventsNewestFirst(
+    list: ListEvents,
+    cursor: string | null,
+): Promise<{ events: RawEvent[]; next: string | null }> {
     try {
-        return await read();
+        const page = await list({ order: "descending", ...(cursor ? { before: cursor } : {}) });
+        return { events: page.events, next: page.hasNextPage ? page.endCursor : null };
     } catch (error) {
-        if ((error as { code?: string } | null)?.code !== "OUT_OF_RANGE") throw error;
-        return { items: [], next: null };
+        if (!isOutOfRange(error)) throw error;
     }
+    const events: RawEvent[] = [];
+    let after: string | undefined;
+    for (let page = 0; page < MAX_ASCENDING_PAGES; page++) {
+        const read = await list({ order: "ascending", ...(after ? { after } : {}) });
+        events.push(...read.events);
+        if (events.length > EVENTS_PAGE || !read.hasNextPage || !read.endCursor) break;
+        after = read.endCursor;
+    }
+    return { events: events.reverse(), next: null };
 }
 
 /** A finished game for the list: who played, what for, and how it ended. */

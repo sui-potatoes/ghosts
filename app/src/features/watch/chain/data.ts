@@ -62,7 +62,8 @@ import {
     decodeEnded,
     decodeStarted,
     latestStarts,
-    orEnd,
+    EVENTS_PAGE,
+    eventsNewestFirst,
     recentGames,
     RECENT_FIRST,
     type EndedEvent,
@@ -154,18 +155,17 @@ async function eventPage<T>(
     cursor: string | null,
     decode: (raw: RawEvent) => T | null,
 ): Promise<EventPage<T>> {
-    const page = await client.core.listEvents({
-        filter: { eventType: type },
-        order: "descending",
-        limit: 50,
-        ...(cursor ? { before: cursor } : {}),
-    });
+    const page = await eventsNewestFirst(
+        (query) =>
+            client.core.listEvents({ filter: { eventType: type }, limit: EVENTS_PAGE, ...query }),
+        cursor,
+    );
     return {
         items: page.events.flatMap((event) => {
             const decoded = decode(event);
             return decoded ? [decoded] : [];
         }),
-        next: page.hasNextPage ? page.endCursor : null,
+        next: page.next,
     };
 }
 
@@ -354,8 +354,8 @@ export function useRecentFinished(limit: number = RECENT_FIRST, enabled = true) 
             const arch = archiveOf(client);
             const { games, more } = await recentGames(
                 {
-                    ended: (cursor) => orEnd(() => endedPage(client, cursor)),
-                    started: (cursor) => orEnd(() => startedPage(client, cursor)),
+                    ended: (cursor) => endedPage(client, cursor),
+                    started: (cursor) => startedPage(client, cursor),
                     origin: (gameId) => originOf(arch, gameId),
                 },
                 limit,
