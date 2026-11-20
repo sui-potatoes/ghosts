@@ -61,6 +61,8 @@ const RankedQa = import.meta.env.VITE_RANKED_QA
     : null;
 // QA only: every look a game can be shown in, on Black Rain, registered in `VITE_LOOKS_QA=1` builds.
 const LooksQa = import.meta.env.VITE_LOOKS_QA ? lazy(() => import("./features/looks/qa")) : null;
+// QA only: the first-sign-in name prompt over fakes, registered in `VITE_NAME_QA=1` builds.
+const NameQa = import.meta.env.VITE_NAME_QA ? lazy(() => import("./features/name-step/qa")) : null;
 // The match viewer: `/watch` lists live matches, recent ones and the player's own;
 // `/watch/<game>` a match on chain, live or as a replay.
 const WatchList = lazy(() => import("./features/watch/WatchList"));
@@ -71,6 +73,7 @@ import { FundsOnSignIn, SquadPreload, TransactionSender } from "./chain";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { LoadingSpinner } from "./components/LoadingSpinner";
 import { MatchStatus } from "./components/MatchStatus";
+import { NameStep } from "./features/name-step/NameStep";
 import { RulesPreload } from "./features/play/economy/useEconomy";
 import { forgetDeviceRecordings } from "./features/watch/forget";
 
@@ -305,6 +308,16 @@ export function App() {
                         }
                     />
                 )}
+                {NameQa && (
+                    <Route
+                        path="/qa/name"
+                        element={
+                            <Suspense fallback={<LoadingSpinner />}>
+                                <NameQa />
+                            </Suspense>
+                        }
+                    />
+                )}
                 {FriendlyQa && (
                     <Route
                         path="/qa/friendly"
@@ -355,6 +368,7 @@ export function App() {
             ) : (
                 <SignInDialog open={signInOpen} onClose={closeSignIn} />
             )}
+            <NameStep />
         </>
     );
 }

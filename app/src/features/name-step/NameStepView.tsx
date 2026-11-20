@@ -12,6 +12,7 @@ import {
     type Command,
 } from "../../ui";
 import "../dialogs/dialogs.css";
+import "./name-step.css";
 import { NameField, readDraft } from "./NameField";
 import { nameLine, saveDeny } from "./rules";
 
@@ -89,6 +90,8 @@ function Frame({ deps, initial }: { deps: NameStepDeps; initial: string }) {
 
     return (
         <main ref={root} className="gui ui-zoom gui-dialog">
+            {/* The prompt floats over the first row; the command bar takes the second. */}
+            <div />
             <Prompt
                 id="prompt-first-name"
                 eyebrow="Player"

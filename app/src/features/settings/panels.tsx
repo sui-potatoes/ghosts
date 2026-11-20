@@ -40,7 +40,7 @@ import { previewDialogue, previewEffect } from "../../audio";
 import type { SessionTermination } from "../../chain";
 import { usePad } from "../../components/PadHints";
 import { validateRpcUrl } from "../../rpcUrl";
-import { NAME_MAX, normalizeName, validateName } from "../../player/name";
+import { NameField, readDraft } from "../name-step/NameField";
 import { ControllerDiagram, fieldActions } from "../../settings/ControllerDiagram";
 import { useFullscreen } from "../../settings/fullscreen";
 import { ACTION_LABELS, ACTIONS, type Action } from "../../settings/keys";
@@ -339,8 +339,7 @@ function NamePrompt({ close }: { close: () => void }) {
     const { account, glyphs } = useSettingsContext();
     const [draft, setDraft] = useState(account.name);
     const [error, setError] = useState<string | null>(null);
-    const normalized = normalizeName(draft);
-    const problem = validateName(normalized);
+    const { normalized, problem } = readDraft(draft);
     const deny = account.namePending
         ? "Saving"
         : normalized === account.name
@@ -367,12 +366,10 @@ function NamePrompt({ close }: { close: () => void }) {
             glyphs={glyphs}
         >
             What other players see: lowercase letters, digits and hyphens
-            <TextField
-                label="Name"
+            <NameField
                 value={draft}
-                maxLength={NAME_MAX}
                 onChange={(v) => {
-                    setDraft(v.toLowerCase());
+                    setDraft(v);
                     setError(null);
                 }}
                 onSubmit={save}
