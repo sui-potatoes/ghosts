@@ -79,6 +79,8 @@ const TileType = bcs.enum("TileType", {
     }),
     Unwalkable: null,
     Wall: null,
+    /** A prop to hover over: low cover on every side, never stood on. Tag 4. */
+    Obstacle: null,
 });
 
 const TileBcs = bcs.struct("Tile", { tileType: TileType, unit: bcs.option(UnitBcs) });
@@ -397,8 +399,12 @@ export const GameStartedBcs = bcs.struct("GameStarted", {
     listed: bcs.bool(),
 });
 
-/** `ghosts::ghosts::GameEnded`: emitted once, by `complete_game`. */
-export const GameEndedBcs = bcs.struct("GameEnded", { game: bcs.Address, ending: EndingBcs });
+/** `ghosts::ghosts::GameEnded`: emitted once, by `complete_game`, with the time it did. */
+export const GameEndedBcs = bcs.struct("GameEnded", {
+    game: bcs.Address,
+    ending: EndingBcs,
+    endedMs: bcs.u64(),
+});
 
 // === Decoding ===
 
@@ -457,6 +463,7 @@ export function decodeTiles(map: DecodedMap): Tile[][] {
             if (tileType.$kind === "Cover") return { kind: "cover", ...tileType.Cover };
             if (tileType.$kind === "Unwalkable") return { kind: "unwalkable" };
             if (tileType.$kind === "Wall") return { kind: "wall" };
+            if (tileType.$kind === "Obstacle") return { kind: "obstacle" };
             return { kind: "empty" };
         }),
     );
@@ -591,7 +598,11 @@ export function decodeGameStarted(bytes: Uint8Array): GameStartedEvent {
 /** `GameEnded`, as the plain view. */
 export function decodeGameEnded(bytes: Uint8Array): GameEndedEvent {
     const event = GameEndedBcs.parse(bytes);
-    return { game: event.game, ending: decodeEnding(event.ending) };
+    return {
+        game: event.game,
+        ending: decodeEnding(event.ending),
+        endedMs: Number(event.endedMs),
+    };
 }
 
 function decodeStatus(game: DecodedGame): GameStatus {

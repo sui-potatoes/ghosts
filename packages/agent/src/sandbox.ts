@@ -433,6 +433,22 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
         }
     }
 
+    /**
+     * `place_unit`: the next spawn position of a side, which a unit cannot be placed on if it holds
+     * a unit, is unwalkable, a wall or an obstacle.
+     */
+    function spawnOf(state: GameState, side: number): [number, number] {
+        const [x, y] = state.positions[side].pop()!;
+        const kind = state.tiles[x][y].kind;
+        if (unitAt(state, x, y)) throw abortError("map", 1, "A unit already stands on that tile.");
+        if (kind === "unwalkable") throw abortError("map", 2, "That tile cannot be walked on.");
+        if (kind === "wall") throw abortError("map", 8, "That tile is a wall.");
+        if (kind === "obstacle") {
+            throw abortError("map", 11, "That tile is an obstacle: a unit cannot stand on it.");
+        }
+        return [x, y];
+    }
+
     /** `deploy_squad`: as many recruits as the side has spawn positions, used from the back. */
     function deploy(state: GameState, side: number): GameRecord[] {
         const records: GameRecord[] = [];
@@ -445,7 +461,7 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
               ? [...home].sort((a, b) => Number(b.armed) - Number(a.armed)).slice(0, open)
               : Array.from({ length: open }, () => hire(true, [fragGrenade()]));
         for (const [i, recruit] of squad.entries()) {
-            const [x, y] = state.positions[side].pop()!;
+            const [x, y] = spawnOf(state, side);
             const given = fielded?.[i];
             const stats = given ? given.stats : recruit.armed ? ARMED : UNARMED;
             state.units.push({
@@ -491,7 +507,7 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
         const records: GameRecord[] = [];
         for (const loadout of squad) {
             const unit = unitFromLoadout(loadout)!;
-            const [x, y] = state.positions[side].pop()!;
+            const [x, y] = spawnOf(state, side);
             state.units.push({
                 recruit: hexId("6", ++recruits),
                 owner: state.players[side],
@@ -579,7 +595,8 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
     /** `unit::apply_damage`: a kill takes the unit off its tile, into `fallen` until `bury`. */
     function damage(state: GameState, unit: Unit, amount: number, canDodge: boolean): GameRecord[] {
         const dealt = unit.stats.armor >= amount ? 1 : amount - unit.stats.armor;
-        if (canDodge && rng.inRange(0, 99) < unit.stats.dodge) {
+        // a daze takes the dodge along with the aim
+        if (canDodge && rng.inRange(0, 99) < effectiveStats(unit).dodge) {
             return [{ kind: "dodged" }];
         }
         unit.hp = Math.max(0, unit.hp - dealt);
@@ -609,7 +626,10 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
         if (envDamage) {
             state.tiles.forEach((row, tx) =>
                 row.forEach((tile, ty) => {
-                    if (tile.kind === "cover" && manhattan(tx, ty, x, y) <= radius) {
+                    if (
+                        (tile.kind === "cover" || tile.kind === "obstacle") &&
+                        manhattan(tx, ty, x, y) <= radius
+                    ) {
                         state.tiles[tx][ty] = { kind: "empty" };
                     }
                 }),

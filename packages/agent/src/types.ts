@@ -21,9 +21,12 @@ export interface Stats {
     ammo: number;
 }
 
-/** Cover sides hold 0 (none), 1 (low) or 2 (high). */
+/**
+ * Cover sides hold 0 (none), 1 (low) or 2 (high). An `obstacle` is a prop: low cover on every side,
+ * passed over but never stood on.
+ */
 export type Tile =
-    | { kind: "empty" | "unwalkable" | "wall" }
+    | { kind: "empty" | "unwalkable" | "wall" | "obstacle" }
     | { kind: "cover"; left: number; top: number; right: number; bottom: number };
 
 /**
@@ -221,6 +224,8 @@ export interface GameStartedEvent {
 export interface GameEndedEvent {
     game: string;
     ending: Ending;
+    /** The chain clock when it was wrapped up. */
+    endedMs: number;
 }
 
 /** A `Matchmaker` as far as status needs it. */

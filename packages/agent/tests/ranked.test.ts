@@ -46,6 +46,7 @@ import {
     resetRatingTx,
     revealSquadTx,
     takeSeatTx,
+    TESTNET_DEPLOYMENT,
     type Deployment,
 } from "../src/contract.ts";
 import { computeRatings, defaultRating } from "../src/glicko.ts";
@@ -201,6 +202,7 @@ test("a ranked game waits for the reveal with the finder's squad on the map, the
     assert.deepEqual(decodeGameEnded(bytes(FIXTURES.eventRankedEnded)), {
         game: RANKED.game,
         ending: { kind: "won", by: RANKED.bob },
+        endedMs: 5_000,
     });
 });
 
@@ -243,10 +245,9 @@ test("a ranked no-show loses, is suspended, and the finder wins", () => {
         ending: { kind: "no_show", by: RANKED.alice },
     });
     assert.equal(game.abandonedBy, RANKED.alice);
-    assert.deepEqual(decodeGameEnded(bytes(FIXTURES.eventRankedNoShow)).ending, {
-        kind: "no_show",
-        by: RANKED.alice,
-    });
+    const noShow = decodeGameEnded(bytes(FIXTURES.eventRankedNoShow));
+    assert.deepEqual(noShow.ending, { kind: "no_show", by: RANKED.alice });
+    assert.equal(noShow.endedMs, 60_001, "the clock when the game was wrapped up");
     const alice = decodeAccount(bytes(FIXTURES.accountRankedNoShow));
     const bob = decodeAccount(bytes(FIXTURES.accountRankedNoShowWinner));
     assert.equal(alice.suspendedUntilMs, 60_001 + 60_000);
@@ -824,7 +825,7 @@ test("the environment names the mode and the ranked objects; localnet takes ever
         );
         // testnet defaults to the published package with ranked play
         const testnet = agentFromEnv({ ...base, GHOSTS_NETWORK: "testnet" });
-        assert.equal(testnet.backend.packageId, "0x55020cb734b77cec16c17fa216df136b1d2955f17606549f7d43fcbd461b76db");
+        assert.equal(testnet.backend.packageId, TESTNET_DEPLOYMENT.package);
         assert.equal(testnet.backend.nameService, true);
     } finally {
         rmSync(dir, { recursive: true });

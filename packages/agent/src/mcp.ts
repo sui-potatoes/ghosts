@@ -34,23 +34,26 @@ export const RULES = `Ghosts is a turn-based squad tactics game. Two players tak
 
 COORDINATES: x is the row (0 at the top) and y the column (0 at the left).
 TURN: each unit has 2 AP per turn. Moving costs 1 AP and goes up to the unit's mobility in tiles,
-orthogonally. Reloading costs 1 AP. Throwing a grenade costs 1 AP. Shooting ends the unit's turn.
+orthogonally. An obstacle (o on the map) is passed over, never stood on: every step counts, the one onto
+the obstacle included, the next step must land on open ground (never two obstacles in a row) and
+a move cannot end on one. Reloading costs 1 AP. Throwing a grenade costs 1 AP. Shooting ends the unit's turn.
 SHOTS: distance is |dx|+|dy|. Base chance is aim, +5 per tile inside weapon range, -10 per tile past
 it, up to range+3. Cover at the target facing the shooter subtracts 25 (low) or 50 (high), plus
-the target's defense. Walls and high cover in between block the line of sight.
+the target's defense. An obstacle beside the target is low cover against a shot from across it, not
+diagonally. Walls and high cover in between block the line of sight; obstacles do not.
 DAMAGE: weapon damage ± spread, reduced by armor to at least 1. Dodge can avoid it entirely.
 GRENADES: a unit has a throw only if it carries the utility for it (one utility slot, setup equips a
 frag grenade), once per match. All three have range ${GRENADE_RANGE} and reach a diamond of radius ${GRENADE_RADIUS} around
 the target tile, friend or foe, the thrower included. Only walls block a throw. The frag grenade
-(grenade) deals ${GRENADE_DAMAGE} damage that can't be dodged and destroys cover. The flashbang
+(grenade) deals ${GRENADE_DAMAGE} damage that can't be dodged and destroys cover and obstacles. The flashbang
 (flashbang) dazes everyone it reaches and the smoke grenade (smoke_grenade) puts them in smoke;
 neither deals damage or touches cover, and nothing rolls.
-EFFECTS: a dazed unit's aim is 0. A unit in smoke has 30 less aim and 30 more defense, which
+EFFECTS: a dazed unit's aim is 0 and so is its dodge: nothing it is hit by is dodged. A unit in smoke has 30 less aim and 30 more defense, which
 holds against single-target shots, not blasts. Both last through the rest of the turn they land
 in and the next one: every next_turn, by either side, takes one turn off each effect. The same
 effect again refreshes it to its full length and does not stack; a daze and smoke can be on one
 unit. Moves, reloads and throws still work under an effect. The effects field of a unit and the
-aim and defense shown for it include them.
+aim, dodge and defense shown for it include them.
 WINNING: eliminate the enemy squad. A game still going at turn ${MAX_TURNS} is a draw. Who moves first
 is drawn for every game.
 

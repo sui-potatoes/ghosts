@@ -247,7 +247,7 @@ export interface AgentOptions {
 }
 
 const LEGEND =
-    ". empty, + low cover, = high cover, ~ unwalkable, # wall, A-D your units, w-z enemy units";
+    ". empty, + low cover, = high cover, o obstacle (low cover to its neighbours: pass over it, never stop on it), ~ unwalkable, # wall, A-D your units, w-z enemy units";
 const DEFAULT_LOW_BALANCE_MIST = 100_000_000n;
 /** A search older than the ticket lifetime and this is left and queued again. */
 const STALE_GRACE_MS = 10_000;
@@ -1123,6 +1123,7 @@ export class GhostsAgent {
                     if (mark) return mark;
                     if (tile.kind === "wall") return "#";
                     if (tile.kind === "unwalkable") return "~";
+                    if (tile.kind === "obstacle") return "o";
                     if (tile.kind !== "cover") return ".";
                     const high = [tile.left, tile.top, tile.right, tile.bottom].includes(2);
                     return high ? "=" : "+";

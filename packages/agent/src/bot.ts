@@ -151,8 +151,9 @@ function flashbangThrow(state: GameState, side: number, legal: LegalAction[]): T
  * A frag grenade worth a unit's turn, or undefined. It must hit none of mine (the thrower
  * included). It cannot miss or be dodged, so its worth is sure: the damage to every enemy in the
  * blast after armor (a kill counts `FRAG_KILL_BONUS` more), which is the most when enemies
- * cluster, plus the cover it destroys: every cover tile in the blast is gone, and the shots of
- * my units at the enemies that stood behind it gain what the cover took off them. It is thrown
+ * cluster, plus the cover it destroys: every cover tile and every obstacle in the blast is gone
+ * (an obstacle is low cover to its neighbours), and the shots of my units at the enemies that
+ * stood behind it gain what the cover took off them. It is thrown
  * when that is at least `FRAG_MIN_VALUE` and `FRAG_MARGIN` times the thrower's own best shot, or
  * when the thrower has no shot worth taking; with AP for both it throws first and shoots after.
  */
@@ -178,12 +179,16 @@ function fragThrow(state: GameState, side: number, legal: LegalAction[]): Throw 
             value += Math.min(dealtTo(enemy), enemy.hp) + (killed(enemy) ? FRAG_KILL_BONUS : 0);
         }
 
-        // the cover tiles it takes away, and the enemies they were next to
+        // the cover tiles and obstacles it takes away, and the enemies they were next to
         const gone: [number, number][] = [];
         for (let x = tx - GRENADE_RADIUS; x <= tx + GRENADE_RADIUS; x++) {
             for (let y = ty - GRENADE_RADIUS; y <= ty + GRENADE_RADIUS; y++) {
                 const row = state.tiles[x];
-                if (row?.[y]?.kind === "cover" && manhattan(x, y, tx, ty) <= GRENADE_RADIUS) {
+                const kind = row?.[y]?.kind;
+                if (
+                    (kind === "cover" || kind === "obstacle") &&
+                    manhattan(x, y, tx, ty) <= GRENADE_RADIUS
+                ) {
                     gone.push([x, y]);
                 }
             }

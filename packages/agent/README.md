@@ -219,7 +219,7 @@ chain in one call; a dice roll (`attack`, `grenade`) or `next_turn` goes last.
   damage are the grenade action's own constants, not an item's. The flashbang (`Flashbang`) and
   the smoke grenade (`SmokeGrenade`) are utilities of their own with an action each; the slot
   takes one utility, so a recruit carries one of the three grenades.
-- **Effects:** a flashbang dazes (aim 0) and a smoke grenade smokes (-30 aim, +30 defense) every
+- **Effects:** a flashbang dazes (aim 0, dodge 0) and a smoke grenade smokes (-30 aim, +30 defense) every
   unit within 2 of the target, either side's, the thrower's too, for the rest of the turn and
   the next. Every `next_turn` takes a turn off every effect; the same kind again refreshes it.
   `Unit.effects` has them, `effectiveStats` the stats as a shot counts them, and

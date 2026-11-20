@@ -84,7 +84,7 @@ $ gp state --moves 2
 {"game":"0x…","turn":1,"yourTurn":true,"status":"active","phase":"your_turn","turnMsLeft":89000,
  "you":"…","opponent":"…",
  "map":["#####........#####", …],
- "legend":". empty, + low cover, = high cover, ~ unwalkable, # wall, A-D your units, w-z enemy units",
+ "legend":". empty, + low cover, = high cover, o obstacle (low cover to its neighbours: pass over it, never stop on it), ~ unwalkable, # wall, A-D your units, w-z enemy units",
  "units":[{"mark":"A","mine":true,"at":[3,6],"hp":"10/10","ap":2,"ammo":"3/3","actions":["move","attack","reload","grenade:1"],"mobility":7,"aim":65,"range":4,"damage":"4±2","armor":0,"dodge":0,"defense":0}, … {"mark":"w","mine":false,"at":[4,10], …}],
  "orders":{"3,6":{"attacks":[{"id":"attack:3,6:4,10","to":[4,10],"hitChance":45,"damage":{"min":2,"max":6},"targetHp":10}],
                   "grenades":[{"id":"grenade:3,6:4,9","to":[4,9],"enemiesHit":2,"alliesHit":0}],
@@ -135,18 +135,22 @@ loop:
 ## Rules that matter for decisions
 
 - Each unit has 2 AP per turn. A move costs 1 AP (up to `mobility` tiles, orthogonal), a reload 1.
+  An obstacle (`o` on the map) is passed over, never stood on: each step counts, the one onto the
+  obstacle too, the step after it must land on open ground (two obstacles in a row cannot be
+  crossed), and a move cannot end on one. A frag grenade turns obstacles in its blast to open ground.
   An attack takes all the unit's AP: it ends that unit's turn. Move first, shoot last.
 - A grenade has one use per match (`grenade:1` in `actions`), range 5 (|dx|+|dy|), damage 4 in
   a radius-2 diamond, friend and foe, cannot be dodged, and walls block the throw (`A wall blocks
   the throw`). Use it when `enemiesHit` is 2+ and `alliesHit` is 0.
 - A flashbang or a smoke grenade (`flashbang:1`, `smoke_grenade:1`) has the same range and radius
-  but no damage and no dice: it can be followed by other orders. A dazed unit has aim 0. A unit in
+  but no damage and no dice: it can be followed by other orders. A dazed unit has aim 0 and dodge 0. A unit in
   smoke has 30 less aim and 30 more defense. Either lasts the rest of the turn it lands in and
   the next; the same one again refreshes it. Units show `effects` with the turns left, and
-  their `aim` and `defense` count them. A unit carries one grenade of the three.
+  their `aim`, `dodge` and `defense` count them. A unit carries one grenade of the three.
 - Shot chance is aim, +5 per tile inside range, -10 per tile past it (up to range+3), minus cover at
-  the target (-25 low `+`, -50 high `=`) and the target's defense. Walls and high cover in between
-  block the line. Dodge can still avoid damage.
+  the target (-25 low `+`, -50 high `=`; an obstacle `o` next to the target is low cover against a
+  shot from across it, not diagonally) and the target's defense. Walls and high cover in between
+  block the line, obstacles do not. Dodge can still avoid damage, except a dazed target's.
 - Ammo is limited (`ammo` 3/3): reload costs 1 AP.
 - Clock: 120 s to deploy, 90 s per turn (`turnMsLeft`). Past the limit only `end` is open.
   If the opponent's turn runs out you may `end` to take yours; that counts as their miss, and

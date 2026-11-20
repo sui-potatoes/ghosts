@@ -29,6 +29,7 @@ export const DOWN = 4;
 export const LEFT = 8;
 
 const NO_DIRECTION = 0;
+const LOW_COVER = 1;
 const HIGH_COVER = 2;
 const DEFENSE_BONUS = 25;
 const MAX_RANGE_OFFSET = 3;
@@ -71,22 +72,23 @@ export const SMOKE_DEFENSE = 30;
 const MODIFIED_MAX = 127;
 
 /** `effect::modifier`: the signed change an effect makes to the stats it touches. */
-const MODIFIERS: Record<EffectKind, Partial<Record<"aim" | "defense", number>>> = {
-    daze: { aim: -127 },
+const MODIFIERS: Record<EffectKind, Partial<Record<"aim" | "dodge" | "defense", number>>> = {
+    daze: { aim: -127, dodge: -127 },
     smoke: { aim: -SMOKE_AIM_PENALTY, defense: SMOKE_DEFENSE },
 };
 
 /**
  * `unit::effective_stats`: the base stats with the modifier of each effect added in order, as
  * `stats::add` does it: a stat never goes below 0, and one a modifier touches is capped at 127.
- * Only aim and defense change today. A daze takes all the aim, which smoke does not give back.
+ * Only aim, dodge and defense change today. A daze takes all the aim and all the dodge, which
+ * smoke does not give back.
  */
 export function effectiveStats(unit: Pick<Unit, "stats" | "effects">): Stats {
     if (unit.effects.length === 0) return unit.stats;
     const stats = { ...unit.stats };
     for (const { kind } of unit.effects) {
         for (const [name, change] of Object.entries(MODIFIERS[kind])) {
-            const stat = name as "aim" | "defense";
+            const stat = name as "aim" | "dodge" | "defense";
             const base = stats[stat];
             const value = change < 0 ? base - Math.min(-change, base) : base + change;
             stats[stat] = Math.min(value, MODIFIED_MAX);
@@ -174,7 +176,12 @@ function inBounds(state: GameState, x: number, y: number): boolean {
     return x >= 0 && y >= 0 && x < state.rows && y < state.cols;
 }
 
-const isWalkable = (tile: Tile) => tile.kind === "empty" || tile.kind === "cover";
+/** `is_walkable!`: a step may go onto the tile, an obstacle (passed over) included. */
+const isWalkable = (tile: Tile) =>
+    tile.kind === "empty" || tile.kind === "cover" || tile.kind === "obstacle";
+
+/** `is_standable!`: a unit may stand on the tile, or end a path there. Never an obstacle. */
+export const isStandable = (tile: Tile) => tile.kind === "empty" || tile.kind === "cover";
 
 /** `side_cover!`: the cover a tile holds on its side facing `direction`. */
 function sideCover(tile: Tile, direction: number): number {
@@ -203,6 +210,40 @@ export function manhattan(x0: number, y0: number, x1: number, y1: number): numbe
 
 // === Movement ===
 
+/** `map::EPathUnwalkable`, `ETileIsObstacle` and `EObstaclesInARow`: why a path is refused. */
+export const PATH_BLOCKED = 3;
+export const TILE_IS_OBSTACLE = 11;
+export const OBSTACLES_IN_A_ROW = 12;
+
+/** `trace_path`: the end tile of a walkable path, or the abort code Move would give. */
+export function tracePath(
+    state: GameState,
+    x0: number,
+    y0: number,
+    directions: number[],
+): { end: [number, number] } | { abort: number } {
+    if (!inBounds(state, x0, y0)) return { abort: PATH_BLOCKED };
+    let [x, y] = [x0, y0];
+    let source = state.tiles[x][y];
+    let over = false;
+    if (directions.length > 0 && !isStandable(source)) return { abort: PATH_BLOCKED };
+
+    for (const direction of directions) {
+        const step = STEPS[direction];
+        if (!step) return { abort: PATH_BLOCKED };
+        const [nx, ny] = [x + step[0], y + step[1]];
+        if (!inBounds(state, nx, ny)) return { abort: PATH_BLOCKED };
+        const target = state.tiles[nx][ny];
+        if (unitAt(state, nx, ny) || !isWalkable(target)) return { abort: PATH_BLOCKED };
+        if (edgeHighCover(source, target, direction)) return { abort: PATH_BLOCKED };
+        // a unit passing over an obstacle lands on the next tile
+        const obstacle = target.kind === "obstacle";
+        if (over && obstacle) return { abort: OBSTACLES_IN_A_ROW };
+        [x, y, source, over] = [nx, ny, target, obstacle];
+    }
+    return over ? { abort: TILE_IS_OBSTACLE } : { end: [x, y] };
+}
+
 /** `check_path`: the end tile of a walkable path, or null. Directions are orthogonal. */
 export function checkPath(
     state: GameState,
@@ -210,25 +251,15 @@ export function checkPath(
     y0: number,
     directions: number[],
 ): [number, number] | null {
-    if (!inBounds(state, x0, y0)) return null;
-    let [x, y] = [x0, y0];
-    let source = state.tiles[x][y];
-    if (directions.length > 0 && !isWalkable(source)) return null;
-
-    for (const direction of directions) {
-        const step = STEPS[direction];
-        if (!step) return null;
-        const [nx, ny] = [x + step[0], y + step[1]];
-        if (!inBounds(state, nx, ny)) return null;
-        const target = state.tiles[nx][ny];
-        if (unitAt(state, nx, ny) || !isWalkable(target)) return null;
-        if (edgeHighCover(source, target, direction)) return null;
-        [x, y, source] = [nx, ny, target];
-    }
-    return [x, y];
+    const traced = tracePath(state, x0, y0, directions);
+    return "end" in traced ? traced.end : null;
 }
 
-/** Every tile the unit can walk to in one move, with a shortest path to each. */
+/**
+ * Every tile the unit can stand on after one move, with a shortest path to each. Every step is a
+ * tile of distance, the one onto an obstacle included; an obstacle is only passed over: the next
+ * step must land on ground to stand on, and obstacles are searched through but never listed.
+ */
 export function reachable(state: GameState, unit: Unit): Map<string, number[]> {
     const paths = new Map<string, number[]>();
     let frontier: { x: number; y: number; path: number[] }[] = [{ x: unit.x, y: unit.y, path: [] }];
@@ -237,15 +268,18 @@ export function reachable(state: GameState, unit: Unit): Map<string, number[]> {
     for (let distance = 0; distance < effectiveStats(unit).mobility; distance++) {
         const next: typeof frontier = [];
         for (const { x, y, path } of frontier) {
+            const from = state.tiles[x][y];
             for (const direction of [UP, RIGHT, DOWN, LEFT]) {
                 const [nx, ny] = [x + STEPS[direction][0], y + STEPS[direction][1]];
                 const key = `${nx},${ny}`;
                 if (seen.has(key) || !inBounds(state, nx, ny)) continue;
-                if (unitAt(state, nx, ny) || !isWalkable(state.tiles[nx][ny])) continue;
-                if (edgeHighCover(state.tiles[x][y], state.tiles[nx][ny], direction)) continue;
+                const target = state.tiles[nx][ny];
+                if (unitAt(state, nx, ny) || !isWalkable(target)) continue;
+                if (from.kind === "obstacle" && target.kind === "obstacle") continue;
+                if (edgeHighCover(from, target, direction)) continue;
                 seen.add(key);
                 const longer = [...path, direction];
-                paths.set(key, longer);
+                if (isStandable(target)) paths.set(key, longer);
                 next.push({ x: nx, y: ny, path: longer });
             }
         }
@@ -344,11 +378,11 @@ function direction(x0: number, y0: number, x1: number, y1: number): number {
     return vertical | horizontal;
 }
 
-/** `tile_cover!`: a `Wall` counts as high cover on every side. */
+/** `tile_cover!`: a `Wall` counts as high cover on every side, an `Obstacle` as low. */
 function tileCover(state: GameState, x: number, y: number) {
     const tile = state.tiles[x][y];
     if (tile.kind === "cover") return tile;
-    const side = tile.kind === "wall" ? HIGH_COVER : 0;
+    const side = tile.kind === "wall" ? HIGH_COVER : tile.kind === "obstacle" ? LOW_COVER : 0;
     return { top: side, bottom: side, left: side, right: side };
 }
 
@@ -515,9 +549,15 @@ export function refusal(
         case "move": {
             if (action.path.length > effectiveStats(unit).mobility)
                 return "The path exceeds the unit's mobility.";
-            return checkPath(state, action.x, action.y, action.path)
-                ? null
-                : "The path is blocked.";
+            const traced = tracePath(state, action.x, action.y, action.path);
+            if ("end" in traced) return null;
+            if (traced.abort === TILE_IS_OBSTACLE) {
+                return "The path ends on an obstacle: a unit passes over one, it cannot stand on it.";
+            }
+            if (traced.abort === OBSTACLES_IN_A_ROW) {
+                return "The path steps from one obstacle onto another: the step after an obstacle must land on open ground.";
+            }
+            return "The path is blocked.";
         }
         case "reload":
             return unit.ammo < unit.ammoMax ? null : "The weapon is already full.";
