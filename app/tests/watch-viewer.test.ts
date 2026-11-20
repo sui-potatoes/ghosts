@@ -21,11 +21,14 @@ import {
     banner,
     cycleSpeed,
     focusOrder,
+    jumpTarget,
     keyCap,
     liveChip,
     pipHint,
     pipsOf,
     pipTitle,
+    scrubWindow,
+    SCRUB_WINDOW,
     speedLabel,
     turnReadout,
     WATCH_KEYS,
@@ -75,10 +78,10 @@ function state(patch: Partial<PlaybackState> = {}): PlaybackState {
         cursor: 0,
         total: EVENTS.length,
         turns: [
-            { start: 0, side: 0, kills: 0 },
-            { start: 2, side: 1, kills: 1 },
-            { start: 4, side: 0, kills: 1 },
-            { start: 6, side: 1, kills: 0 },
+            { start: 0, side: 0, round: 1, kills: 0 },
+            { start: 2, side: 1, round: 1, kills: 1 },
+            { start: 4, side: 0, round: 2, kills: 1 },
+            { start: 6, side: 1, round: 2, kills: 0 },
         ],
         turn: 0,
         playing: true,
@@ -182,13 +185,13 @@ test("speeds read as 0.5x to 4x and the control cycles through them", () => {
     assert.equal(cycleSpeed(4), 0.5);
 });
 
-test("the readout names the turn of how many, and whose it is", () => {
+test("the readout names the turn as the players count it, of how many, and whose go it is", () => {
     assert.deepEqual(turnReadout(state({ turn: 1 }), SIDES), {
-        turn: "Turn 02 of 04",
+        turn: "Turn 01 of 02",
         side: "Hostiles",
     });
     assert.deepEqual(turnReadout(state({ turn: 2 }), SIDES), {
-        turn: "Turn 03 of 04",
+        turn: "Turn 02 of 02",
         side: "Ghosts",
     });
 });
@@ -199,12 +202,12 @@ test("the scrubber: a pip per turn with its side, the viewer's place, the kills 
         pips.map((p) => [p.number, p.side, p.past, p.current, p.kills, p.edge]),
         [
             [1, 0, true, false, 0, false],
-            [2, 1, true, false, 1, false],
-            [3, 0, false, true, 1, false],
-            [4, 1, false, false, 0, true],
+            [1, 1, true, false, 1, false],
+            [2, 0, false, true, 1, false],
+            [2, 1, false, false, 0, true],
         ],
     );
-    assert.equal(pipTitle(pips[1], SIDES), "Turn 02 · Hostiles");
+    assert.equal(pipTitle(pips[1], SIDES), "Turn 01 · Hostiles");
     assert.equal(pipHint(pips[1]), "1 unit fell");
     assert.equal(pipHint(pips[0]), "Nobody fell");
     assert.match(pipHint(pips[3]), /being played/);
@@ -231,8 +234,16 @@ test("the banner names the winner, or why there is none, with the record in labe
     assert.equal(banner(state(), SIDES), null);
     assert.deepEqual(banner(state({ finished: true, outcome: { winner: 1 } }), SIDES), {
         title: "Hostiles won",
-        line: "4 turns · 2 units fell",
+        line: "2 turns · 2 units fell",
     });
+    assert.deepEqual(
+        banner(
+            state({ finished: true, outcome: { winner: 0, reason: "Hostiles left the game" } }),
+            SIDES,
+        ),
+        { title: "Ghosts won", line: "Hostiles left the game · 2 turns · 2 units fell" },
+        "a game won off the field says why",
+    );
     assert.equal(
         banner(
             state({ finished: true, outcome: { winner: null, reason: "Left before the end" } }),
@@ -253,6 +264,59 @@ test("player-facing copy reads as finished: no preview, beta or soon", () => {
         readFileSync(new URL("../src/features/watch/WatchList.tsx", import.meta.url), "utf8"),
     ].join(" ");
     assert.doesNotMatch(copy, /preview|beta|\bsoon\b|for now|mock/i);
+});
+
+test("a long game's strip is a window around the viewer's turn, with jumps of ten turns either side", () => {
+    // 60 turns of both sides: 120 goes, rounds 0 to 59 as a chain game counts them
+    const turns = Array.from({ length: 120 }, (_, i) => ({
+        start: i * 3,
+        side: (i % 2) as 0 | 1,
+        round: Math.floor(i / 2),
+        kills: 0,
+    }));
+    const long = (turn: number) => state({ turns, turn, total: 360 });
+    const at = (turn: number) => scrubWindow(pipsOf(long(turn)), turn);
+
+    const start = at(0);
+    assert.equal(start.pips.length, SCRUB_WINDOW);
+    assert.deepEqual([start.earlier, start.later], [0, 100]);
+    assert.equal(start.pips[0].index, 0);
+
+    const middle = at(61);
+    assert.ok(
+        middle.pips.some((p) => p.current),
+        "the viewer's turn is always on the strip",
+    );
+    assert.deepEqual([middle.earlier, middle.later], [51, 49]);
+
+    const end = at(119);
+    assert.deepEqual([end.earlier, end.later], [100, 0]);
+    assert.equal(end.pips.at(-1)?.index, 119);
+
+    // a short game shows whole, no jumps
+    assert.deepEqual(scrubWindow(pipsOf(state()), 0), {
+        pips: pipsOf(state()),
+        earlier: 0,
+        later: 0,
+    });
+
+    // ten turns as the players count them: the first go of that round, clamped at the ends
+    assert.equal(turns[jumpTarget(turns, 61, 1)].round, 40);
+    assert.equal(turns[jumpTarget(turns, 61, 1)].side, 0);
+    assert.equal(turns[jumpTarget(turns, 61, -1)].round, 20);
+    assert.equal(jumpTarget(turns, 4, -1), 0);
+    assert.equal(jumpTarget(turns, 115, 1), 119);
+
+    // focus walks the window, with the jumps at its ends, then Live and Copy link
+    const ids = focusOrder({ ...long(61), growing: true }, { link: true });
+    assert.equal(ids.filter((id) => id.startsWith("watch-pip-")).length, SCRUB_WINDOW);
+    assert.equal(ids[4], "watch-back");
+    assert.deepEqual(ids.slice(-3), ["watch-ahead", "watch-live", "watch-link"]);
+    assert.deepEqual(
+        focusOrder({ ...long(119), finished: true }, { replay: true }).slice(0, 3),
+        ["watch-replay", "watch-again", "watch-leave"],
+        "a live game that ended offers its replay first",
+    );
 });
 
 // === Keys ===
@@ -348,8 +412,9 @@ test("a finished game puts its banner first: Watch again, then Leave, above the 
     );
 });
 
-test("Back from a game in the viewer goes to the recorded games, and from there to the menu", () => {
-    assert.equal(parentOf("/watch/local/abc"), "/watch/local");
-    assert.equal(parentOf("/watch/qa/abc"), "/watch/local");
-    assert.equal(parentOf("/watch/local"), "/");
+test("Back from a game in the viewer goes to the watch screen, and from there to the menu", () => {
+    assert.equal(parentOf("/watch/local/abc"), "/watch");
+    assert.equal(parentOf("/watch/qa/abc"), "/watch");
+    assert.equal(parentOf(`/watch/0x${"a".repeat(64)}`), "/watch");
+    assert.equal(parentOf("/watch"), "/");
 });

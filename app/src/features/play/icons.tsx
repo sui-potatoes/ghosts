@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * The three mode illustrations, drawn in the interface's line style: a 96-unit
+ * The mode illustrations (and Watch's), drawn in the interface's line style: a 96-unit
  * grid, thin square-capped strokes in `currentColor` (the card sets it to the
  * accent), no fills but the faint `gui-play-ink` wash. They hold at 48px.
  */
@@ -78,6 +78,21 @@ function FactionsArt() {
     );
 }
 
+/** Watch: a monitor showing the field, a play mark and a strip of turns beneath. */
+function WatchArt() {
+    return (
+        <svg {...SVG}>
+            <path d="M10 14h76v50H10z" />
+            <path className="gui-play-ink" d="M15 19h66v40H15z" opacity=".35" />
+            <path d="M42 30l14 9-14 9z" />
+            <path d="M36 64l-6 10h36l-6-10" opacity=".5" />
+            <path d="M14 84h8M26 84h8M38 84h8M50 84h8M62 84h8M74 84h8" />
+            <path d="M50 80v8" opacity=".5" />
+        </svg>
+    );
+}
+
 export function ModeArt({ id }: { id: ModeId }) {
+    if (id === "watch") return <WatchArt />;
     return id === "ranked" ? <RankedArt /> : id === "friendly" ? <FriendlyArt /> : <FactionsArt />;
 }

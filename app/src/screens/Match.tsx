@@ -589,6 +589,7 @@ function ResultScreen({
     onHire: () => void;
 }) {
     const opponent = useOpponentName(game, side);
+    const navigate = useNavigate();
     const wins = WINS.includes(outcome);
     const wrapUp = useWrapUp({ gone, wins, gameId, players: game.players, action });
 
@@ -638,6 +639,7 @@ function ResultScreen({
             clearError={action.clearError}
             onWrapUp={wrapUp}
             onHire={onHire}
+            onReplay={() => navigate(`/watch/${gameId}`)}
         />
     );
 }

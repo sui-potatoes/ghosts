@@ -56,9 +56,12 @@ const FindQa = import.meta.env.VITE_FIND_QA ? lazy(() => import("./features/find
 const FriendlyQa = import.meta.env.VITE_FRIENDLY_QA
     ? lazy(() => import("./features/play/friendly/qa"))
     : null;
-// The match viewer on games recorded on this device; `/watch/qa` plays one as if live (`VITE_WATCH_QA=1`).
+// The match viewer: `/watch` lists live games, the player's own and those recorded on this device;
+// `/watch/<game>` a game on chain, live or as a replay; `/watch/local/:id` a recorded demo game;
+// `/watch/qa` plays one as if live (`VITE_WATCH_QA=1`).
 const WatchList = lazy(() => import("./features/watch/WatchList"));
 const WatchScreen = lazy(() => import("./features/watch/WatchScreen"));
+const ChainWatch = lazy(() => import("./features/watch/ChainWatch"));
 const WATCH_QA = import.meta.env.VITE_WATCH_QA === "1";
 import { FundsOnSignIn, SquadPreload, TransactionSender } from "./chain";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -79,6 +82,7 @@ function MenuMusic() {
         pathname === "/menu-classic" ||
         pathname === "/find" ||
         pathname === "/play" ||
+        pathname === "/watch" ||
         (pathname.startsWith("/play/") && pathname !== "/play/match") ||
         pathname.startsWith("/settings") ||
         pathname.startsWith("/headquarters");
@@ -283,10 +287,19 @@ export function App() {
                     />
                 )}
                 <Route
-                    path="/watch/local"
+                    path="/watch"
                     element={
                         <Suspense fallback={<LoadingSpinner />}>
                             <WatchList />
+                        </Suspense>
+                    }
+                />
+                <Route path="/watch/local" element={<Navigate to="/watch" replace />} />
+                <Route
+                    path="/watch/:gameId"
+                    element={
+                        <Suspense fallback={<LoadingSpinner />}>
+                            <ChainWatch />
                         </Suspense>
                     }
                 />

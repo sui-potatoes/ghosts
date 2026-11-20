@@ -93,6 +93,8 @@ function Title() {
                     return navigate("/find");
                 case "headquarters":
                     return navigate("/headquarters");
+                case "watch":
+                    return navigate("/watch");
                 case "editor":
                     return navigate("/editor");
                 case "install":

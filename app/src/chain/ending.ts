@@ -14,11 +14,9 @@
 
 import type { ClientWithCoreApi } from "@mysten/sui/client";
 
-import type { ChainGame } from "./bcs.ts";
+import type { ChainGame, Ending } from "./bcs.ts";
 import { activeSide, isDeploying, isOver, squadOf, type Outcome } from "./match-rules.ts";
-
-/** `MAX_TURNS` in `ghosts::ghosts`: the turn a game that goes nowhere ends on. */
-const MAX_TURNS = 60;
+import { CALLS, MAX_TURNS } from "./watch-layout.ts";
 
 /** The transaction that wrapped a game up: who sent it and which `ghosts` calls it made, in order. */
 export type EndingTx = { sender: string; calls: readonly string[] };
@@ -105,4 +103,39 @@ export function vanishedOutcome(
     }
     if (calls.length === 0) return null;
     return mine ? "victory" : "defeat";
+}
+
+/** `ghosts::ghosts::Ending` as decoded: how a game ended, a player named by their `Account` ID. */
+export type GameEnding = typeof Ending.$inferType;
+
+/**
+ * How a game ended, as the contract would have written it, for anyone watching: the
+ * game's state when it is `Over`, else (deleted in the transaction that ended it, so no
+ * `Over` was ever written) worked out from that transaction as `vanishedOutcome` does for
+ * a player. `senderSide` is the player who sent it, null when neither did (anyone may
+ * wrap a game up). Null when that cannot be told.
+ */
+export function endingOf(
+    game: ChainGame,
+    ending: Pick<EndingTx, "calls"> | null,
+    senderSide: number | null,
+): GameEnding | null {
+    if (game.state.$kind === "Over") return game.state.Over;
+    if (!ending) return null;
+    const player = (side: number) => game.players[side];
+    const calls = ending.calls.filter((call) => call !== CALLS.complete);
+    if (calls.includes(CALLS.abandon))
+        return senderSide === null ? null : { $kind: "Abandoned", Abandoned: player(senderSide) };
+    if (calls.includes(CALLS.nextTurn)) {
+        if (isDeploying(game)) {
+            const [first, second] = [0, 1].map((side) => squadOf(game, side).length > 0);
+            if (!first && !second) return { $kind: "NobodyShowed", NobodyShowed: true };
+            if (!first || !second) return { $kind: "NoShow", NoShow: player(first ? 1 : 0) };
+            return null;
+        }
+        if (game.turn + 1 >= MAX_TURNS) return { $kind: "Stalemate", Stalemate: true };
+        return { $kind: "Forfeited", Forfeited: player(activeSide(game)) };
+    }
+    if (calls.length === 0 || senderSide === null) return null;
+    return { $kind: "Won", Won: player(senderSide) };
 }

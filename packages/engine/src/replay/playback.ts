@@ -111,11 +111,14 @@ export class Playback {
   private readonly stage: PlaybackStage;
   /** The side whose turn the game opens on. */
   private readonly firstSide: 0 | 1;
+  /** The turn number the game opens on, as a player's HUD shows it. */
+  private readonly firstRound: number;
 
-  constructor(source: RecordSource, stage: PlaybackStage, firstSide: 0 | 1 = 0) {
+  constructor(source: RecordSource, stage: PlaybackStage, firstSide: 0 | 1 = 0, firstRound = 1) {
     this.source = source;
     this.stage = stage;
     this.firstSide = firstSide;
+    this.firstRound = firstRound;
     this.unsubscribe = source.subscribe(() => {
       this.turnCache = null;
       this.wake?.();
@@ -141,7 +144,7 @@ export class Playback {
   private turns(): TurnMark[] {
     const events = this.source.events();
     if (this.turnCache?.length !== events.length)
-      this.turnCache = { length: events.length, turns: turnsOf(events, this.firstSide) };
+      this.turnCache = { length: events.length, turns: turnsOf(events, this.firstSide, this.firstRound) };
     return this.turnCache.turns;
   }
 

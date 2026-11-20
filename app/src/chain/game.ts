@@ -43,7 +43,7 @@ const RecruitField = bcs.struct("Field", { id: bcs.Address, name: bcs.Address, v
  * `size` is the table's length as the game reports it: a listing a moment behind
  * is read again until it catches up.
  */
-async function fetchGameRecruits(
+export async function fetchGameRecruits(
     client: Client,
     tableId: string,
     size: number,

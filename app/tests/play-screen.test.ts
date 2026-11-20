@@ -12,7 +12,7 @@ import { parentOf } from "../src/routes.ts";
 test("three cards in order: ranked, friendly, faction wars", () => {
     assert.deepEqual(
         modeCards().map((c) => c.id),
-        ["ranked", "friendly", "factions"],
+        ["ranked", "friendly", "factions", "watch"],
     );
     for (const card of modeCards()) {
         assert.ok(card.name && card.verb && card.hint && card.tag);

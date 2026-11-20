@@ -32,6 +32,7 @@ test("signed out: a Sign In row after the demos; Find Match asks to sign in firs
         "demo-paper-trail",
         "sign-in",
         "match",
+        "watch",
         "headquarters",
         "editor",
         "leaderboard",

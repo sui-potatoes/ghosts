@@ -22,22 +22,29 @@ export function cycleSpeed(speed: Speed): Speed {
 
 const two = (n: number) => String(n).padStart(2, "0");
 
-/** The turn readout: "Turn 07 of 18" and whose it is. */
+/** The turn number of the newest turn so far, as the players see it. */
+const lastRound = (turns: PlaybackState["turns"]) => turns[turns.length - 1]?.round ?? 0;
+
+/**
+ * The turn readout: the turn number a player sees ("Turn 07 of 18": both
+ * sides' goes in a round share it) and whose go it is.
+ */
 export function turnReadout(
     state: Pick<PlaybackState, "turns" | "turn">,
     sides: readonly [WatchSide, WatchSide],
 ) {
     const mark = state.turns[state.turn];
     return {
-        turn: `Turn ${two(state.turn + 1)} of ${two(state.turns.length)}`,
+        turn: `Turn ${two(mark?.round ?? 0)} of ${two(lastRound(state.turns))}`,
         side: mark ? sides[mark.side].name : "",
     };
 }
 
-/** One turn on the scrubber. */
+/** One side's go on the scrubber. */
 export interface Pip {
-    /** Its index into `turns`; the number shown is one more. */
+    /** Its index into `turns`. */
     index: number;
+    /** The turn number shown: the round, as the players count it. */
     number: number;
     side: 0 | 1;
     /** Units that fell in it. */
@@ -53,7 +60,7 @@ export interface Pip {
 export function pipsOf(state: Pick<PlaybackState, "turns" | "turn" | "growing">): Pip[] {
     return state.turns.map((mark, index) => ({
         index,
-        number: index + 1,
+        number: mark.round,
         side: mark.side,
         kills: mark.kills,
         current: index === state.turn,
@@ -70,6 +77,33 @@ export function pipTitle(pip: Pip, sides: readonly [WatchSide, WatchSide]) {
 export function pipHint(pip: Pip) {
     const fell = pip.kills ? `${pip.kills} unit${pip.kills === 1 ? "" : "s"} fell` : "Nobody fell";
     return pip.edge ? `${fell} so far · the turn being played` : fell;
+}
+
+/** How many sides' goes the scrubber shows at once: ten turns of both sides. */
+export const SCRUB_WINDOW = 20;
+
+/** How far the jump buttons go, in turns as the players count them. */
+export const JUMP_TURNS = 10;
+
+/**
+ * The scrubber's visible pips: a window of `size` around the viewer's turn, so a
+ * long game stays one short strip; `earlier` and `later` count the goes left out.
+ */
+export function scrubWindow(pips: readonly Pip[], turn: number, size = SCRUB_WINDOW) {
+    const from = Math.max(0, Math.min(turn - Math.floor(size / 2), pips.length - size));
+    const shown = pips.slice(from, from + size);
+    return { pips: shown, earlier: from, later: pips.length - from - shown.length };
+}
+
+/**
+ * The go `JUMP_TURNS` turns before (`dir` -1) or after (1) the viewer's: the first
+ * go of that round, clamped to the game's first and newest.
+ */
+export function jumpTarget(turns: PlaybackState["turns"], turn: number, dir: 1 | -1): number {
+    if (!turns.length) return 0;
+    const round = (turns[turn]?.round ?? 0) + dir * JUMP_TURNS;
+    const at = turns.findIndex((t) => t.round >= round);
+    return dir > 0 ? (at < 0 ? turns.length - 1 : at) : Math.max(0, at);
 }
 
 /** The Live chip: absent on a finished game, lit while following, the way back when behind. */
@@ -91,7 +125,10 @@ export function liveChip(
     };
 }
 
-/** The end of a game: who won, or why there is no winner, and the record in labelled numbers. */
+/**
+ * The end of a game: who won, or why there is no winner; the line says why a
+ * game was won off the field (a player left) and the record in labelled numbers.
+ */
 export function banner(
     state: Pick<PlaybackState, "finished" | "outcome" | "turns">,
     sides: readonly [WatchSide, WatchSide],
@@ -99,23 +136,31 @@ export function banner(
     if (!state.finished) return null;
     const fell = state.turns.reduce((n, t) => n + t.kills, 0);
     const outcome = state.outcome;
-    const title =
-        outcome && outcome.winner !== null
-            ? `${sides[outcome.winner].name} won`
-            : (outcome?.reason ?? "No winner");
-    const turns = state.turns.length;
-    return {
-        title,
-        line: `${turns} turn${turns === 1 ? "" : "s"} · ${fell} unit${fell === 1 ? "" : "s"} fell`,
-    };
+    const won = outcome && outcome.winner !== null;
+    const title = won ? `${sides[outcome.winner!].name} won` : (outcome?.reason ?? "No winner");
+    const turns = new Set(state.turns.map((t) => t.round)).size;
+    const record = `${turns} turn${turns === 1 ? "" : "s"} · ${fell} unit${fell === 1 ? "" : "s"} fell`;
+    return { title, line: won && outcome.reason ? `${outcome.reason} · ${record}` : record };
 }
 
-/** The transport's targets in focus order, left to right: the scrubber's pips between the buttons and Live. */
-export function focusOrder(state: Pick<PlaybackState, "turns" | "growing" | "finished">): string[] {
+/**
+ * The transport's targets in focus order, left to right: the buttons, the
+ * scrubber's window (with the jumps either side when goes are left out), Live,
+ * and the extras (Copy link). The banner's choices come first once the game is over.
+ */
+export function focusOrder(
+    state: Pick<PlaybackState, "turns" | "turn" | "growing" | "finished">,
+    extras: { link?: boolean; replay?: boolean } = {},
+): string[] {
     const ids = ["watch-prev", "watch-play", "watch-next", "watch-speed"];
-    state.turns.forEach((_, i) => ids.push(`watch-pip-${i}`));
+    const window = scrubWindow(pipsOf({ ...state, growing: state.growing }), state.turn);
+    if (window.earlier) ids.push("watch-back");
+    window.pips.forEach((pip) => ids.push(`watch-pip-${pip.index}`));
+    if (window.later) ids.push("watch-ahead");
     if (state.growing) ids.push("watch-live");
-    if (state.finished) ids.unshift("watch-again", "watch-leave");
+    if (extras.link) ids.push("watch-link");
+    if (state.finished)
+        ids.unshift(...(extras.replay ? ["watch-replay"] : []), "watch-again", "watch-leave");
     return ids;
 }
 

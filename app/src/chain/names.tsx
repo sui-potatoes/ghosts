@@ -46,7 +46,7 @@ async function leafTarget(client: Client, name: string): Promise<string | null> 
 }
 
 /** The name `address` assigned to itself: its default name under the domain. */
-async function assignedName(client: Client, address: string): Promise<string | null> {
+export async function assignedName(client: Client, address: string): Promise<string | null> {
     const { data } = await client.core.defaultNameServiceName({ address });
     return data.name ? nameUnderDomain(data.name) : null;
 }
@@ -104,8 +104,7 @@ function refusal(message: string): string | null {
         if (abort[1] === "5") return "That name belongs to another address.";
         return null;
     }
-    if (/gas/i.test(message))
-        return "Not enough SUI for this action. Try again shortly.";
+    if (/gas/i.test(message)) return "Not enough SUI for this action. Try again shortly.";
     return null;
 }
 

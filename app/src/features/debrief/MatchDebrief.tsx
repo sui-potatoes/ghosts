@@ -9,7 +9,8 @@
  * `Game` and the `Account`; this only presents it.
  *
  * Commands: the primary is Wrap up while the game is still on the `Account`
- * (the survivors are not home yet), then Continue to the menu. Back leaves for
+ * (the survivors are not home yet), then Continue to the menu; Watch replay
+ * opens the game in the viewer. Back leaves for
  * the menu too (`useGoUp`: hierarchical, see `routes.ts`). There is no
  * "play again" here: a new match starts from the menu's Find Match.
  */
@@ -37,6 +38,8 @@ export type MatchDebriefProps = {
     onWrapUp: () => void;
     /** Top the roster up (`hire_recruits`). */
     onHire: () => void;
+    /** Open the game in the viewer, as a replay (`/watch/<game>`). */
+    onReplay?: () => void;
 };
 
 export function MatchDebrief(props: MatchDebriefProps) {
@@ -57,6 +60,7 @@ function Screen({
     clearError,
     onWrapUp,
     onHire,
+    onReplay,
     leave,
 }: MatchDebriefProps & { leave: () => void }) {
     const glyphs = useGlyphSet();
@@ -75,6 +79,11 @@ function Screen({
         <DebriefView
             debrief={debrief}
             figures={figures}
+            extras={
+                onReplay
+                    ? [{ action: "reset", label: "Watch replay", short: "Replay", run: onReplay }]
+                    : []
+            }
             frame={{
                 location: ["Match", "Result"],
                 onLeave: leave,

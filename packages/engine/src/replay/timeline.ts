@@ -82,6 +82,11 @@ export interface TurnMark {
   start: number;
   /** Whose turn it is. */
   side: 0 | 1;
+  /**
+   * The turn number a player's HUD shows during it (the encounter's `turn`):
+   * both sides' goes in one round share it.
+   */
+  round: number;
   /** Units that fell in it. */
   kills: number;
 }
@@ -91,13 +96,16 @@ export const opensTurn = (event: GameEvent) => event.type === "turn" || event.ty
 
 /**
  * The turns of a game: one per side's go, the first at index 0 (whoever the
- * prepared encounter opens with, `firstSide`), then one after every `turn`
- * (side 0) or `hostile-phase` (side 1) event.
+ * prepared encounter opens with, `firstSide`, in its turn `firstRound`), then
+ * one after every `turn` (side 0, the round it names) or `hostile-phase`
+ * (side 1, the same round) event.
  */
-export function turnsOf(events: readonly GameEvent[], firstSide: 0 | 1 = 0): TurnMark[] {
-  const turns: TurnMark[] = [{ start: 0, side: firstSide, kills: 0 }];
+export function turnsOf(events: readonly GameEvent[], firstSide: 0 | 1 = 0, firstRound = 1): TurnMark[] {
+  const turns: TurnMark[] = [{ start: 0, side: firstSide, round: firstRound, kills: 0 }];
   events.forEach((event, i) => {
-    if (opensTurn(event)) turns.push({ start: i + 1, side: event.type === "turn" ? 0 : 1, kills: 0 });
+    if (event.type === "turn") turns.push({ start: i + 1, side: 0, round: event.turn, kills: 0 });
+    else if (event.type === "hostile-phase")
+      turns.push({ start: i + 1, side: 1, round: turns[turns.length - 1].round, kills: 0 });
     const current = turns[turns.length - 1];
     if (event.type === "shot" && event.killed) current.kills++;
     if (event.type === "grenade") current.kills += event.casualties.filter((c) => c.killed).length;

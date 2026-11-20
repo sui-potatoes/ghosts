@@ -1,7 +1,7 @@
 /* Copyright (c) Sui Potatoes */
 /* SPDX-License-Identifier: MIT */
 
-/* The Play screen: three mode cards. Scoped by the gui-play prefix. */
+/* The Play screen: three mode cards and Watch. Scoped by the gui-play prefix. */
 
 /* The body is a grid item of the frame: let it shrink below its content's width. */
 .gui-body:has(> .gui-play) {
@@ -21,7 +21,7 @@
 
 .gui-play-cards {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: calc(var(--u) * 4);
     min-height: 0;
     align-items: stretch;

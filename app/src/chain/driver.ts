@@ -18,7 +18,6 @@ import {
     type EncounterRules,
     type GameEvent,
     type Scenario,
-    type UnitSpec,
 } from "@ghosts/engine";
 import { unpack } from "@ghosts/squad/stats";
 import { useCurrentClient } from "@mysten/dapp-kit-react";
@@ -38,13 +37,11 @@ import {
 } from "./game";
 import {
     activeSide,
-    blastCells,
     turnLimitMs,
     turnStartedAt,
     canDo,
     effectBytes,
     effectiveStats,
-    effectsOf,
     encodePath,
     gameEvents,
     hitChance,
@@ -56,12 +53,16 @@ import {
     toCell,
     toTile,
     coverBonus,
-    unitActions,
     unitsOnMap,
     type Bounds,
     type Cell,
     type FieldView,
 } from "./match-rules";
+import {
+    restoreBlasts as restoreSceneBlasts,
+    scenarioFor,
+    syncUnits as syncSceneUnits,
+} from "./match-scene";
 import { prepareOrders, sendOrder } from "./sender";
 
 type Client = ReturnType<typeof useCurrentClient>;
@@ -69,82 +70,23 @@ type Client = ReturnType<typeof useCurrentClient>;
 /** How often the opponent's turn is re-read. */
 const POLL_MS = 400;
 
-const HOSTILE_COLOR = blackRain.units.find((u) => u.enemy)?.color ?? "#e77469";
-
 /** The scene games are shown in, and where its cells sit on the chain's grid. */
 export const MATCH_BOUNDS: Bounds = blackRain.map.bounds;
-
-const callsign = (name: string) => (name.split(" ").pop() ?? name).toUpperCase();
 
 /**
  * The encounter a game starts as for `side`: Black Rain's scene with the units
  * the map holds right now, so it also picks a game up after a reload.
  */
 export function matchScenario(game: ChainGame, side: number, names: Map<string, string>): Scenario {
-    const allyColors = blackRain.units.filter((u) => !u.enemy).map((u) => u.color);
-    let allies = 0;
-    // By side and recruit, not by tile: a player's cards stay in order wherever the
-    // units stand.
-    const sideOf = (owner: string) => game.players.indexOf(owner);
-    const onMap = unitsOnMap(game).sort(
-        (a, b) =>
-            sideOf(a.unit.owner) - sideOf(b.unit.owner) ||
-            a.unit.recruit.localeCompare(b.unit.recruit),
-    );
-    const units: UnitSpec[] = onMap.map(({ row, col, unit }) => {
-        const enemy = unit.owner !== game.players[side];
-        const name = names.get(unit.recruit) ?? "Operative";
-        return {
-            id: unit.recruit,
-            name: callsign(name),
-            full: name,
-            role: "ASSAULT",
-            pos: toCell([row, col], MATCH_BOUNDS),
-            color: enemy ? HOSTILE_COLOR : allyColors[allies++ % allyColors.length],
-            enemy,
-        };
-    });
-    return { ...blackRain, id: "match", versus: true, units };
+    return scenarioFor(blackRain, game, side, names);
 }
 
-/**
- * What the blasts of a game did to its scene, for an encounter opened after them:
- * the same damage in the same order, so it stands as if it had been there.
- */
-function restoreBlasts(rules: EncounterRules, game: ChainGame) {
-    for (const cell of blastCells(game, MATCH_BOUNDS))
-        rules.map.applyPropDamage(rules.map.blastProps(cell));
-}
+const restoreBlasts = (rules: EncounterRules, game: ChainGame) =>
+    restoreSceneBlasts(rules, game, MATCH_BOUNDS);
 
 /** Bring the rules in line with the chain: it decides, the rules only show. */
-function syncUnits(rules: EncounterRules, game: ChainGame) {
-    const onMap = new Map(unitsOnMap(game).map((entry) => [entry.unit.recruit, entry]));
-    for (const u of rules.units) {
-        const entry = onMap.get(u.id);
-        if (!entry) {
-            u.hp = 0;
-            continue;
-        }
-        const { unit, row, col } = entry;
-        const stats = unpack(BigInt(unit.stats.value));
-        u.pos = toCell([row, col], MATCH_BOUNDS);
-        u.hp = unit.hp.value;
-        u.maxHp = unit.hp.maxValue;
-        // the contract gives a side its AP back as its turn begins
-        u.ap = unit.ap.value;
-        u.ammo = unit.ammo.value;
-        u.clip = unit.ammo.maxValue;
-        u.armor = stats.armor;
-        u.aim = stats.aim;
-        u.range = stats.range;
-        u.mobility = stats.mobility;
-        u.damage = stats.damage;
-        // what the unit carries, with the uses left: the command bar offers exactly these
-        u.actions = unitActions(unit.actions);
-        // daze and smoke as the chain has them; the base stats above stay as they are
-        u.effects = effectsOf(unit.effects);
-    }
-}
+const syncUnits = (rules: EncounterRules, game: ChainGame) =>
+    syncSceneUnits(rules, game, MATCH_BOUNDS);
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 

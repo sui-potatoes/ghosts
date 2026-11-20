@@ -256,6 +256,36 @@
     margin-top: calc(var(--u) * 2);
 }
 
+/* Jumps of ten turns at the ends of a long game's strip. */
+.watch-jump {
+    min-width: 3ch;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+}
+.watch-scrubber .watch-button {
+    flex: none;
+    height: 28px;
+    min-width: 0;
+}
+
+/* --- The watch screen: live games, your games, this device --- */
+
+.watch-hub {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+    grid-auto-rows: minmax(0, 1fr);
+    gap: calc(var(--u) * 3);
+    min-height: 0;
+    height: 100%;
+}
+.watch-hub-live {
+    grid-row: span 2;
+}
+.watch-hub > .gui-panel:only-child,
+.watch-hub-live:nth-last-child(2) {
+    grid-row: auto;
+}
+
 /* --- Phone width: the scrubber gets a row of its own --- */
 
 @media (max-width: 760px) {
@@ -279,6 +309,15 @@
     }
     .watch-button .gui-glyph {
         display: none;
+    }
+    .watch-link-label {
+        display: none;
+    }
+    .watch-hub {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .watch-hub-live {
+        grid-row: auto;
     }
 }
 

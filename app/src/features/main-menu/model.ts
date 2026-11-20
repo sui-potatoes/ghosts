@@ -15,6 +15,7 @@ export type RowId =
     | "demo-paper-trail"
     | "sign-in"
     | "match"
+    | "watch"
     | "headquarters"
     | "editor"
     | "leaderboard"
@@ -193,6 +194,13 @@ export function menuRows(state: MenuState): MenuRow[] {
         });
     rows.push(
         matchRow(state),
+        {
+            id: "watch",
+            label: "Watch",
+            hint: "Live games and replays",
+            verb: "Open",
+            instant: true,
+        },
         {
             id: "headquarters",
             label: "Headquarters",

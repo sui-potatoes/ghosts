@@ -7,7 +7,9 @@
  * The field plays a record source; the controls drive its playback: play and
  * pause, four speeds, previous and next turn, the scrubber's turns, restart,
  * and Live for a game still being played. `/watch/local/:id` replays a game
- * recorded on the device; `/watch/qa/:id` (QA builds) plays one as if live.
+ * recorded on the device; `/watch/qa/:id` (QA builds) plays one as if live;
+ * `/watch/<game>` (`ChainWatch.tsx`) a game on chain, live or finished, in the
+ * same `Viewer`.
  *
  * Input: the cursor runs over the transport (arrows, d-pad, mouse, touch);
  * the bumpers step turns and the triggers the speed; the keyboard's own keys
@@ -15,7 +17,14 @@
  * a game: the engine takes those keys first.
  */
 
-import { deployedIntel, Encounter, type Playback, type RecordSource } from "@ghosts/engine";
+import {
+    deployedIntel,
+    Encounter,
+    type IntelSource,
+    type Playback,
+    type RecordSource,
+} from "@ghosts/engine";
+import type { Recruit } from "@ghosts/squad/types";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useParams } from "react-router-dom";
 
@@ -42,11 +51,14 @@ import { deviceStorage, journalById, type LocalJournal } from "./journal";
 import {
     banner,
     cycleSpeed,
+    JUMP_TURNS,
+    jumpTarget,
     keyCap,
     liveChip,
     pipHint,
     pipsOf,
     pipTitle,
+    scrubWindow,
     speedLabel,
     turnReadout,
     WATCH_KEYS,
@@ -79,34 +91,59 @@ export default function WatchScreen({ live = false }: { live?: boolean }) {
     }, [opened]);
 
     if (!opened) return <Missing leave={leave} />;
-    return <Viewer opened={opened} live={live} leave={leave} />;
+    return (
+        <Viewer
+            source={opened.source}
+            start={live ? "live" : "start"}
+            squad={opened.journal.squad}
+            intel={deployedIntel}
+            leave={leave}
+        />
+    );
 }
 
-function Viewer({ opened, live, leave }: { opened: Opened; live: boolean; leave: () => void }) {
+/** What the viewer can do besides playing: share the game, open its replay once it is over. */
+export interface ViewerExtras {
+    /** The link to share (`/watch/<game>`): a Copy link control. */
+    link?: string;
+    /** Open the game's replay, offered once a live game is over. */
+    onReplay?: () => void;
+}
+
+/** The field playing a record source, and the transport over it. */
+export function Viewer({
+    source,
+    start,
+    squad,
+    intel,
+    leave,
+    extras = {},
+}: {
+    source: RecordSource;
+    start: "start" | "live";
+    /** Side 0's recruits, for their faces, names and armor. */
+    squad: readonly Recruit[] | null;
+    intel: IntelSource;
+    leave: () => void;
+    extras?: ViewerExtras;
+}) {
     const [playback, setPlayback] = useState<Playback | null>(null);
-    const observer = useMemo(
-        () => ({
-            source: opened.source,
-            start: live ? ("live" as const) : ("start" as const),
-            onPlayback: setPlayback,
-        }),
-        [opened, live],
-    );
+    const observer = useMemo(() => ({ source, start, onPlayback: setPlayback }), [source, start]);
     return (
         <div className="watch-screen">
-            <Encounter
-                observer={observer}
-                squad={opened.journal.squad}
-                intel={deployedIntel}
-                settings={engineSettings}
-            />
+            <Encounter observer={observer} squad={squad} intel={intel} settings={engineSettings} />
             <FocusRoot
                 back={{ action: "back", label: "Leave", run: leave }}
                 onTab={(step) => (step > 0 ? playback?.nextTurn() : playback?.prevTurn())}
                 onSection={(step) => playback?.stepSpeed(step)}
             >
                 {playback && (
-                    <Controls playback={playback} sides={opened.source.sides} leave={leave} />
+                    <Controls
+                        playback={playback}
+                        sides={source.sides}
+                        leave={leave}
+                        extras={extras}
+                    />
                 )}
             </FocusRoot>
         </div>
@@ -130,6 +167,7 @@ const PATHS = {
     prev: "M3.5 3.5v9M12.5 3.5l-6.5 4.5 6.5 4.5z",
     next: "M12.5 3.5v9M3.5 3.5l6.5 4.5-6.5 4.5z",
     again: "M3 8a5 5 0 1 0 1.5-3.5M3 2.5v3h3",
+    link: "M6.5 9.5l3-3M7 4.5l1.2-1.2a2.6 2.6 0 0 1 3.6 3.6L10.6 8M9 11.5l-1.2 1.2a2.6 2.6 0 0 1-3.6-3.6L5.4 8",
 };
 
 function Pictogram({ name }: { name: keyof typeof PATHS }) {
@@ -220,10 +258,12 @@ function Controls({
     playback,
     sides,
     leave,
+    extras,
 }: {
     playback: Playback;
     sides: RecordSource["sides"];
     leave: () => void;
+    extras: ViewerExtras;
 }) {
     const state = useSyncExternalStore(playback.subscribe, playback.getState);
     const glyphs = useGlyphSet();
@@ -232,7 +272,22 @@ function Controls({
     const readout = turnReadout(state, sides);
     const chip = liveChip(state);
     const end = banner(state, sides);
-    const pips = pipsOf(state);
+    const strip = scrubWindow(pipsOf(state), state.turn);
+    /** Whether the last Copy link landed on the clipboard; refused, the bar shows the link to copy by hand. */
+    const [copied, setCopied] = useState<"idle" | "copied" | "refused">("idle");
+    useEffect(() => {
+        if (copied !== "copied") return;
+        const timer = window.setTimeout(() => setCopied("idle"), 2000);
+        return () => window.clearTimeout(timer);
+    }, [copied]);
+    const link = extras.link;
+    const copy = () => {
+        if (!link) return;
+        const done = () => setCopied("copied");
+        const refused = () => setCopied(copyByHand(link) ? "copied" : "refused");
+        if (navigator.clipboard) void navigator.clipboard.writeText(link).then(done, refused);
+        else refused();
+    };
 
     // The keyboard's transport keys, above the menu actions (Space plays and pauses from anywhere).
     useEffect(
@@ -251,9 +306,10 @@ function Controls({
     );
 
     // The game over: the cursor goes to the banner's first choice.
+    const firstChoice = extras.onReplay ? "watch-replay" : "watch-again";
     useEffect(() => {
-        if (state.finished) store.focus("watch-again", false);
-    }, [state.finished, store]);
+        if (state.finished) store.focus(firstChoice, false);
+    }, [state.finished, store, firstChoice]);
 
     const restart: Command = { action: "reset", label: "Restart", run: () => playback.restart() };
     return (
@@ -264,6 +320,25 @@ function Controls({
                     <strong className="watch-banner-title">{end.title}</strong>
                     <span className="watch-banner-line">{end.line}</span>
                     <div className="watch-banner-actions">
+                        {extras.onReplay && (
+                            <TransportButton
+                                id="watch-replay"
+                                group="banner"
+                                title="Watch replay"
+                                hint="The whole game from its first turn"
+                                commands={[
+                                    {
+                                        action: "confirm",
+                                        label: "Watch replay",
+                                        tone: "primary",
+                                        run: extras.onReplay,
+                                    },
+                                ]}
+                            >
+                                <Pictogram name="again" />
+                                <span>Watch replay</span>
+                            </TransportButton>
+                        )}
                         <TransportButton
                             id="watch-again"
                             group="banner"
@@ -371,7 +446,25 @@ function Controls({
                     <span className="watch-readout-side">{readout.side}</span>
                 </div>
                 <div className="watch-scrubber" role="group" aria-label="Turns">
-                    {pips.map((pip) => (
+                    {strip.earlier > 0 && (
+                        <TransportButton
+                            id="watch-back"
+                            group="scrubber"
+                            title={`Back ${JUMP_TURNS} turns`}
+                            hint={`${strip.earlier} earlier goes off the strip`}
+                            commands={[
+                                {
+                                    action: "confirm",
+                                    label: `Back ${JUMP_TURNS} turns`,
+                                    run: () =>
+                                        playback.jump(jumpTarget(state.turns, state.turn, -1)),
+                                },
+                            ]}
+                        >
+                            <span className="watch-jump">−{JUMP_TURNS}</span>
+                        </TransportButton>
+                    )}
+                    {strip.pips.map((pip) => (
                         <PipButton
                             key={pip.index}
                             pip={pip}
@@ -380,6 +473,24 @@ function Controls({
                             run={() => playback.jump(pip.index)}
                         />
                     ))}
+                    {strip.later > 0 && (
+                        <TransportButton
+                            id="watch-ahead"
+                            group="scrubber"
+                            title={`Ahead ${JUMP_TURNS} turns`}
+                            hint={`${strip.later} later goes off the strip`}
+                            commands={[
+                                {
+                                    action: "confirm",
+                                    label: `Ahead ${JUMP_TURNS} turns`,
+                                    run: () =>
+                                        playback.jump(jumpTarget(state.turns, state.turn, 1)),
+                                },
+                            ]}
+                        >
+                            <span className="watch-jump">+{JUMP_TURNS}</span>
+                        </TransportButton>
+                    )}
                 </div>
                 {chip && (
                     <TransportButton
@@ -408,12 +519,49 @@ function Controls({
                         {!chip.following && <Shortcut keyName="live" glyphs={glyphs} />}
                     </TransportButton>
                 )}
+                {link && (
+                    <TransportButton
+                        id="watch-link"
+                        group="share"
+                        title={copied === "copied" ? "Link copied" : "Copy link"}
+                        hint={
+                            copied === "refused"
+                                ? link
+                                : "A link that opens this game, live or as a replay"
+                        }
+                        tone={copied === "copied" ? "following" : undefined}
+                        commands={[{ action: "confirm", label: "Copy link", run: copy }]}
+                    >
+                        <Pictogram name="link" />
+                        <span className="watch-link-label">
+                            {copied === "copied" ? "Copied" : "Link"}
+                        </span>
+                    </TransportButton>
+                )}
             </section>
             <FocusCommandBar glyphs={glyphs} />
             <ContextMenu root={root} />
             <FocusCursor root={root} />
         </main>
     );
+}
+
+/** The older way to copy, for a browser that refuses the clipboard API: true when it took. */
+function copyByHand(text: string): boolean {
+    const field = document.createElement("textarea");
+    field.value = text;
+    field.setAttribute("readonly", "");
+    field.style.position = "fixed";
+    field.style.opacity = "0";
+    document.body.appendChild(field);
+    field.select();
+    try {
+        return document.execCommand("copy");
+    } catch {
+        return false;
+    } finally {
+        field.remove();
+    }
 }
 
 /** The recording asked for is not on this device (cleared, or a link from elsewhere). */

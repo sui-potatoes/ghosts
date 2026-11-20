@@ -17,11 +17,13 @@ import { present } from "../presenter";
 import { session } from "../session";
 import { applyDeploymentNames, applyLoadouts } from "../squad-bridge";
 import type { PlaybackStage } from "./playback";
-import { opensTurn, rebuildEncounter, sideInPhase, type RecordSource } from "./timeline";
+import { rebuildEncounter, sideInPhase, type RecordSource } from "./timeline";
 
 export interface SceneStage extends PlaybackStage {
   /** The side whose turn the game opens on. */
   readonly firstSide: 0 | 1;
+  /** The turn number it opens on, as a player's HUD shows it. */
+  readonly firstRound: number;
 }
 
 export function sceneStage(source: RecordSource): SceneStage {
@@ -32,15 +34,18 @@ export function sceneStage(source: RecordSource): SceneStage {
     source.prepare?.(game);
   };
   const s = session;
+  const first = rebuildEncounter(s.game.scenario, [], 0, prepare);
   return {
-    firstSide: sideInPhase(rebuildEncounter(s.game.scenario, [], 0, prepare)),
+    firstSide: sideInPhase(first),
+    firstRound: first.turn,
 
     rebuild(events, index) {
       audio.stopVoice();
       const game = rebuildEncounter(s.game.scenario, events, index, prepare);
       s.game = game;
       s.driver = s.makeDriver(game);
-      if (s.observer) s.observer.turn = 1 + events.slice(0, index).filter(opensTurn).length;
+      // The turn number a player sees: the encounter's own.
+      if (s.observer) s.observer.turn = game.turn;
       s.busy = false;
       s.mode = "move";
       s.grenadeTarget = null;
@@ -51,7 +56,7 @@ export function sceneStage(source: RecordSource): SceneStage {
 
     async present(event) {
       s.game.ingest(event);
-      if (s.observer && opensTurn(event)) s.observer.turn++;
+      if (s.observer) s.observer.turn = s.game.turn;
       s.busy = true;
       refresh();
       try {

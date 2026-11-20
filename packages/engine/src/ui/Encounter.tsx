@@ -69,8 +69,6 @@ export interface ObserverOptions {
   source: RecordSource;
   /** Open on the game's first event (default) or at its live edge. */
   start?: "start" | "live";
-  /** Open paused. */
-  paused?: boolean;
   /** The transport, once the field is ready; disposed with the encounter. */
   onPlayback?: (playback: Playback) => void;
 }
@@ -78,7 +76,7 @@ export interface ObserverOptions {
 /** Start the viewer's playback on a session whose field is up. Returns the teardown. */
 function startPlayback(session: Session, options: ObserverOptions): () => void {
   const stage = sceneStage(options.source);
-  const playback = new Playback(options.source, stage, stage.firstSide);
+  const playback = new Playback(options.source, stage, stage.firstSide, stage.firstRound);
   // The live game's clock shows while the viewer follows it.
   const clock = () => {
     const deadline = playback.getState().live ? options.source.deadline?.() : undefined;
@@ -88,7 +86,7 @@ function startPlayback(session: Session, options: ObserverOptions): () => void {
     }
   };
   const unsubscribe = playback.subscribe(clock);
-  playback.start({ at: options.start, paused: options.paused });
+  playback.start({ at: options.start });
   options.onPlayback?.(playback);
   return () => {
     unsubscribe();

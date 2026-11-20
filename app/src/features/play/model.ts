@@ -3,13 +3,13 @@
 
 /**
  * The Play screen's pure rules, tested in `tests/play-screen.test.ts`: the three
- * mode cards, what each opens, which are open, and the ranked card's facts read
+ * mode cards and the way to watch games, what each opens, which are open, and the ranked card's facts read
  * from the economy. Nothing about tiers or budgets is written here.
  */
 
 import { budgetOf, tierOf, type Mode } from "./economy/index.ts";
 
-export type ModeId = "ranked" | "friendly" | "factions";
+export type ModeId = "ranked" | "friendly" | "factions" | "watch";
 
 export type ModeCard = {
     id: ModeId;
@@ -28,7 +28,7 @@ export type ModeCard = {
     locked?: string;
 };
 
-export const MODE_ORDER: ModeId[] = ["ranked", "friendly", "factions"];
+export const MODE_ORDER: ModeId[] = ["ranked", "friendly", "factions", "watch"];
 
 const CARDS: Record<ModeId, ModeCard> = {
     ranked: {
@@ -67,6 +67,18 @@ const CARDS: Record<ModeId, ModeCard> = {
         hint: "Missions for three corporations, with influence and standing",
         verb: "Open",
         locked: "Not open",
+    },
+    watch: {
+        id: "watch",
+        name: "Watch",
+        route: "/watch",
+        lines: [
+            "Follow a game being played, turn by turn, or replay a finished one.",
+            "Pause, rewind and change the speed at any time.",
+        ],
+        tag: "Open",
+        hint: "Live games and replays",
+        verb: "Open",
     },
 };
 

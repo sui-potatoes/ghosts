@@ -131,10 +131,15 @@ test("turns: one per side's go, the side named by the event that opens it, kills
   ];
   const turns = turnsOf(events);
   assert.deepEqual(turns, [
-    { start: 0, side: 0, kills: 0 },
-    { start: 2, side: 1, kills: 1 },
-    { start: 5, side: 0, kills: 1 },
+    { start: 0, side: 0, round: 1, kills: 0 },
+    { start: 2, side: 1, round: 1, kills: 1 },
+    { start: 5, side: 0, round: 2, kills: 1 },
   ]);
+  assert.deepEqual(
+    turnsOf(events, 0, 0).map((t) => t.round),
+    [0, 0, 2],
+    "a chain game opens on round 0 (the number its players see), and a turn event names its round",
+  );
   assert.equal(turnAt(turns, 0), 0);
   assert.equal(turnAt(turns, 1), 0);
   assert.equal(turnAt(turns, 2), 1);

@@ -19,7 +19,7 @@ import type { WatchSide } from "./replay/timeline.ts";
 export interface ObserverView {
   /** The two sides, in seat order, as the record names them. */
   sides: readonly [WatchSide, WatchSide];
-  /** The turn on the viewer's timeline (each side's go is one), from 1. */
+  /** The turn number a player's HUD shows (the encounter's `turn`): both sides' goes in a round share it. */
   turn: number;
   /** When the live game's turn runs out (epoch ms), while the viewer follows it; absent otherwise. */
   deadline?: number;
