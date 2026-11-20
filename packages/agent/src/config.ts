@@ -59,6 +59,7 @@ export function agentFromEnv(env: NodeJS.ProcessEnv = process.env): GhostsAgent 
         owner: env.GHOSTS_OWNER,
         rpcUrl: env.GHOSTS_RPC_URL,
         maxGasMist: env.GHOSTS_MAX_GAS_MIST ? BigInt(env.GHOSTS_MAX_GAS_MIST) : undefined,
+        faucetUrl: env.GHOSTS_FAUCET_URL,
     });
 
     let known: string | null = null;

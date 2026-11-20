@@ -26,6 +26,8 @@ import {
     type LobbyView,
     type SearchRole,
 } from "./lobby.ts";
+import { FaucetError } from "./faucet.ts";
+import { ensureFunds, GAS_FLOOR, TRIGGER_BALANCE, type FundsOutcome } from "./funds.ts";
 import { nameProblem, normalizeName } from "./names.ts";
 import {
     effectiveStats,
@@ -474,6 +476,7 @@ export class GhostsAgent {
 
     /** Open the account, fill the squad and arm it, whichever of those is still missing. */
     async setup(): Promise<Situation> {
+        await this.funded();
         if (!(await this.backend.account())) await this.backend.createAccount();
         const account = await this.backend.account();
         if (account && this.recovery && !account.recovery) {
@@ -493,6 +496,7 @@ export class GhostsAgent {
         if (!this.ownName) {
             throw new ActionError("no_name", "Pick your name before your first game.");
         }
+        await this.funded();
         await this.backend.findGame();
         return this.advance();
     }
@@ -520,6 +524,7 @@ export class GhostsAgent {
             );
         }
         await this.named();
+        await this.funded();
         const code = options.invite ? newInviteCode() : undefined;
         await this.backend.openLobby(size, code);
         const situation = await this.situation();
@@ -553,6 +558,7 @@ export class GhostsAgent {
             throw new ActionError("bad_action", "The host is an Account ID, 0x and 64 hex digits.");
         }
         await this.named();
+        await this.funded();
         await this.backend.joinLobby(normalizeSuiAddress(account), parsed.code);
         return this.advance();
     }
@@ -586,6 +592,7 @@ export class GhostsAgent {
             throw new ActionError("bad_action", "The host is an Account ID, 0x and 64 hex digits.");
         }
         await this.named();
+        await this.funded();
         await this.backend.joinOpen(normalizeSuiAddress(host));
         return this.advance();
     }
@@ -623,6 +630,67 @@ export class GhostsAgent {
     /** The listed lobby of `host`, if it exists. */
     async lobby(host: string): Promise<LobbyView | null> {
         return this.backend.lobby(normalizeSuiAddress(host));
+    }
+
+    /** The balance in MIST and whether it is under the top-up trigger. */
+    async balance(): Promise<{ network: string; address: string; balanceMist: string; balanceSui: number; belowTrigger: boolean }> {
+        const balance = await this.backend.balanceMist();
+        return {
+            network: this.backend.network,
+            address: this.backend.address,
+            balanceMist: balance.toString(),
+            balanceSui: Number(balance) / 1e9,
+            belowTrigger: balance < TRIGGER_BALANCE,
+        };
+    }
+
+    /**
+     * Ask the testnet faucet for SUI under the top-up rule: nothing happens at or above 1 SUI,
+     * otherwise requests go on until the balance is 2 SUI (at most three). Testnet only. A refusal
+     * or a rate limit comes back as `error` with the faucet's `retryAfterSeconds`, never as a throw.
+     */
+    async requestFunds() {
+        const { balance, requests, error } = await this.topUp();
+        return {
+            network: this.backend.network,
+            address: this.backend.address,
+            requested: requests > 0,
+            requests,
+            balanceMist: balance === null ? null : balance.toString(),
+            balanceSui: balance === null ? null : Number(balance) / 1e9,
+            error: error ? error.message : null,
+            kind: error instanceof FaucetError ? error.kind : null,
+            retryAfterSeconds: error instanceof FaucetError ? (error.retryAfterSeconds ?? null) : null,
+        };
+    }
+
+    private async topUp(): Promise<FundsOutcome> {
+        if (this.backend.network !== "testnet") {
+            throw new ActionError(
+                "rejected",
+                `The faucet is testnet only; this agent is on ${this.backend.network}.`,
+            );
+        }
+        return ensureFunds({
+            balance: () => this.backend.balanceMist(),
+            request: () => this.backend.requestFaucet(),
+        });
+    }
+
+    /**
+     * Before an Account is made or a game starts: on testnet, top the balance up when it is under
+     * the trigger. A failed request stops nothing while the balance can still pay for gas.
+     */
+    private async funded(): Promise<void> {
+        if (this.backend.network !== "testnet") return;
+        const { balance, error } = await this.topUp();
+        if (error && (balance === null || balance < GAS_FLOOR)) {
+            throw new ActionError(
+                "low_balance",
+                `Not enough SUI for gas and the faucet did not help: ${error.message}`,
+                true,
+            );
+        }
     }
 
     private async named(): Promise<void> {

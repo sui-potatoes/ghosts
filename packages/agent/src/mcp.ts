@@ -130,6 +130,29 @@ export function createMcpServer(agent: GhostsAgent): McpServer {
     );
 
     server.registerTool(
+        "ghosts_balance",
+        {
+            description:
+                "Your SUI balance, and belowTrigger: true when it is under 1 SUI and a top-up is due.",
+            annotations: READ_ONLY,
+        },
+        () => answer(() => agent.balance()),
+    );
+
+    server.registerTool(
+        "ghosts_request_sui",
+        {
+            description:
+                "Testnet only: ask the faucet for SUI when your balance is under 1 SUI (it tops up to " +
+                "2). Does nothing at or above 1 SUI. Takes up to a minute while the faucet's proof of " +
+                "work is solved. If it reports a rate limit, wait the seconds it names; do not repeat. " +
+                "Setup and finding a game already do this when the balance is low.",
+            annotations: { ...WRITE, idempotentHint: true },
+        },
+        () => answer(() => agent.requestFunds()),
+    );
+
+    server.registerTool(
         "ghosts_set_name",
         {
             description:

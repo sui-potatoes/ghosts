@@ -1,6 +1,7 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
+import type { FaucetResult } from "./faucet.ts";
 import type { InviteLobbyView, LobbyView, SearchRole } from "./lobby.ts";
 import type { AccountView, Action, GameState, Receipt } from "./types.ts";
 
@@ -17,6 +18,12 @@ export interface Backend {
     readonly signer: string;
 
     balanceMist(): Promise<bigint>;
+    /**
+     * One request to the testnet faucet for this address, resolved once the balance shows the
+     * funds. Testnet only: any other backend throws. Callers go through `GhostsAgent.requestFunds`,
+     * which applies the top-up rule.
+     */
+    requestFaucet(): Promise<FaucetResult>;
     /** The owner's name; null until one is picked. */
     name(): Promise<string | null>;
     /** The name of an `Account`'s owner, which anyone can look up; null if they have none. */

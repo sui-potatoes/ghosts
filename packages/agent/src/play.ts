@@ -15,7 +15,7 @@ import { ActionError, type GameRecord, type Receipt } from "./types.ts";
 
 export const USAGE = `ghosts-play <command> [args]   (JSON on stdout, one line per call)
 
-identity   whoami | name <name> | setup
+identity   whoami | balance | faucet (testnet SUI) | name <name> | setup
 queue      find | cancel | status
 friendly   host [--size 3|4] [--invite] | lobbies | join-open HOST | join HOST:CODE | join HOST CODE
            kick | start | leave | close | cleanup HOST
@@ -282,6 +282,12 @@ export async function runCommand(agent: GhostsAgent, parsed: Parsed): Promise<un
             const s = await agent.status();
             return { ...s, balanceSui: Number(s.balanceMist) / 1e9 };
         }
+        case "balance":
+            arity(parsed, 0, "no arguments");
+            return agent.balance();
+        case "faucet":
+            arity(parsed, 0, "no arguments");
+            return agent.requestFunds();
         case "name":
             arity(parsed, 1, "one name");
             return agent.setName(positionals[0]);

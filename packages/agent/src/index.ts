@@ -19,6 +19,9 @@ export {
     type Deployment,
 } from "./contract.ts";
 export { DEFAULT_KEY_FILE, loadOrCreateKey } from "./key.ts";
+export * from "./faucet.ts";
+export * from "./faucet-pow.ts";
+export * from "./funds.ts";
 export * from "./lobby.ts";
 export * from "./names.ts";
 export * from "./rules.ts";

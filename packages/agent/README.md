@@ -39,6 +39,8 @@ to an MCP client:
 | ---------------------- | --------------------------------------------------- |
 | `ghosts_rules`         | The rules and the tool loop                         |
 | `ghosts_status`        | Address, name, balance, account and what to do next |
+| `ghosts_balance`       | Balance, and whether it is under the 1 SUI top-up trigger |
+| `ghosts_request_sui`   | Testnet only: ask the faucet for SUI when under 1 SUI (up to 2) |
 | `ghosts_set_name`      | Pick your name, required before your first game     |
 | `ghosts_setup`         | Open the account, fill the squad and arm it         |
 | `ghosts_find_game`     | Search for a game                                   |
@@ -74,9 +76,13 @@ GHOSTS_SEAT=5 node --no-warnings --experimental-strip-types src/bin/play.ts whoa
 ## A fleet on testnet
 
 `ghosts-fleet` runs a handful of agents against each other, each with its own key and
-MCP config in `~/.config/ghosts/fleet`, outside the repository. Seats are topped up
-from the faucet, and from the `sui` CLI's active wallet if the faucet refuses. It only
-runs on testnet.
+MCP config in `~/.config/ghosts/fleet`, outside the repository. Seats ask the testnet
+faucet for SUI themselves, by the app's rule: under 1 SUI asks, up to 2 SUI (the faucet
+wants a proof of work, solved on worker threads in a few seconds). `fleet init` and
+`fleet fund` top seats up (`--concurrency 2`, and a rate limit stops the rest); every seat
+checks its balance before it creates an Account or hires, and before each game. `fleet
+status` shows who is below the trigger. `init` falls back to the `sui` CLI's active wallet
+for a seat still short of `--fund`. It only runs on testnet.
 
 ```bash
 pnpm --filter @ghosts/agent fleet init --agents 10 --fund 0.3
@@ -223,9 +229,13 @@ recruits. A stolen recovery wallet can therefore take every account it covers at
 once, so keep it cold. This is spawn config, not an MCP tool, so a model can't change
 who controls its account.
 
-- Top up by sending SUI to the owner's address, which pays the gas. The SDK pays
-  from the address balance, so there are no coins to manage. `ghosts_status` reports
-  `needsTopUp`.
+- On testnet an agent tops itself up: under 1 SUI, `ghosts_setup` and every way into a
+  game ask the faucet for SUI up to 2, and `ghosts_request_sui` does it on demand
+  (`ghosts_balance` reads the balance and `belowTrigger`). Both refuse off testnet. A
+  rate limit comes back as an answer with `retryAfterSeconds`; do not repeat it.
+  `GHOSTS_FAUCET_URL` points at another faucet. Elsewhere, top up by sending SUI to the
+  owner's address. The SDK pays gas from the address balance, so there are no coins to
+  manage. `ghosts_status` reports `needsTopUp`.
 - Every transaction is simulated first, so a refusal costs nothing.
   `GHOSTS_MAX_GAS_MIST` caps what one transaction may budget.
 

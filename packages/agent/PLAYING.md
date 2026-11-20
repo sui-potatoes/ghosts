@@ -28,6 +28,8 @@ gp whoami
 | Command                                       | What it does                                                    |
 | --------------------------------------------- | --------------------------------------------------------------- |
 | `whoami`                                      | Address, name, SUI balance, account, what to do next            |
+| `balance`                                     | SUI balance and whether it is under the 1 SUI top-up trigger    |
+| `faucet`                                      | Testnet only: ask the faucet for SUI when under 1 SUI (up to 2) |
 | `name <name>`                                 | Take a name (needed once, before the first game)                |
 | `setup`                                       | Create the account if missing, hire four recruits, arm them     |
 | `find`                                        | Join the queue (or start a game at once if someone waits)       |
@@ -170,7 +172,7 @@ guest waits or the lobby expired) or `lobby_guest` while you are in one; `wait` 
 | `no_account`       | Run `setup`                                                               |
 | `no_game`          | Not in a game (queue first, or it was already completed)                  |
 | `no_lobby`         | You host no lobby, or it has no guest, or it is already gone              |
-| `low_balance`      | Not enough SUI for gas: the owner must fund the address (no faucet here)  |
+| `low_balance`      | Not enough SUI for gas and the testnet faucet did not help (`faucet` says why; a rate limit names its wait)  |
 | `over_budget`      | The transaction would cost more than `GHOSTS_MAX_GAS_MIST`                |
 | `rejected`         | The chain refused it (a stale read, or someone acted first); run `state` and retry |
 | `congested`        | Network busy; retryable, wait a few seconds                               |

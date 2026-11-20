@@ -662,6 +662,9 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
         signer: YOU,
 
         balanceMist: async () => balance,
+        requestFaucet: async () => {
+            throw new ActionError("rejected", "The faucet is testnet only; this is the sandbox.");
+        },
         name: async () => name,
         playerName: async (id) => (id === ACCOUNT ? name : OPPONENT_NAME),
 

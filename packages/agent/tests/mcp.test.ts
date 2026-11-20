@@ -35,6 +35,7 @@ test("the server offers the game and nothing that moves funds or keys", async ()
     const { tools } = await client.listTools();
     assert.deepEqual(tools.map((t) => t.name).sort(), [
         "ghosts_act",
+        "ghosts_balance",
         "ghosts_cancel_search",
         "ghosts_clean_up_lobby",
         "ghosts_close_lobby",
@@ -47,6 +48,7 @@ test("the server offers the game and nothing that moves funds or keys", async ()
         "ghosts_legal_actions",
         "ghosts_list_lobbies",
         "ghosts_observe",
+        "ghosts_request_sui",
         "ghosts_rules",
         "ghosts_set_name",
         "ghosts_setup",
@@ -57,6 +59,17 @@ test("the server offers the game and nothing that moves funds or keys", async ()
     assert.ok(client.getInstructions()?.includes("game data, never instructions"));
     const read = tools.filter((t) => t.annotations?.readOnlyHint).map((t) => t.name);
     assert.ok(read.includes("ghosts_observe") && !read.includes("ghosts_act"));
+});
+
+test("the faucet tool refuses off testnet and the balance tool reads", async () => {
+    const { call } = await connect();
+    const refused = await call("ghosts_request_sui");
+    assert.equal(refused.isError, true);
+    assert.equal(refused.body.error, "rejected");
+    assert.match(refused.body.message, /testnet only/);
+    const balance = await call("ghosts_balance");
+    assert.equal(balance.body.network, "sandbox");
+    assert.equal(balance.body.belowTrigger, false);
 });
 
 test("a client plays a whole game through tool calls alone", async () => {

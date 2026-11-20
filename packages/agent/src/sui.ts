@@ -22,6 +22,7 @@ import {
 } from "@mysten/sui/utils";
 
 import type { Backend } from "./backend.ts";
+import { requestTestnetSui } from "./faucet.ts";
 import {
     AccountBcs,
     AccountRecord,
@@ -79,6 +80,8 @@ export interface SuiBackendOptions {
     rpcUrl?: string;
     /** Refuse any transaction whose budget exceeds this: the agent's own spend limit. */
     maxGasMist?: bigint;
+    /** The testnet faucet to ask for SUI; Mysten's by default. */
+    faucetUrl?: string;
 }
 
 /** Same safety margin the SDK uses in its own budget estimate. */
@@ -421,6 +424,17 @@ export function createSuiBackend(options: SuiBackendOptions): Backend {
         async balanceMist() {
             const { balance } = await client.core.getBalance({ owner: address });
             return BigInt(balance.balance);
+        },
+
+        async requestFaucet() {
+            if (network !== "testnet") {
+                throw new ActionError("rejected", "The faucet is testnet only.");
+            }
+            return requestTestnetSui({
+                address,
+                balance: async () => BigInt((await client.core.getBalance({ owner: address })).balance.balance),
+                baseUrl: options.faucetUrl,
+            });
         },
 
         name: () => nameOf(address),

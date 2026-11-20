@@ -5,8 +5,9 @@
 /**
  * A handful of agents on testnet, each with its own key and MCP config.
  *
- *   ghosts-fleet init --agents 10 --fund 0.15   keys, configs and gas from the CLI wallet
- *   ghosts-fleet status --agents 10             names, balances and scores
+ *   ghosts-fleet init --agents 10 --fund 0.15   keys, configs and funds: the faucet, then the CLI wallet
+ *   ghosts-fleet fund --agents 10               top up from the testnet faucet (under 1 SUI asks, up to 2)
+ *   ghosts-fleet status --agents 10             names, balances (below trigger?) and scores
  *   ghosts-fleet bots --agents 2 --games 1      the reference bot in every seat
  *   ghosts-fleet clients --agents 10 --games 1  a scripted MCP client in every seat
  *   ghosts-fleet play --agents 10 --games 1     an LLM in every seat, through its MCP server
@@ -22,6 +23,7 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
 import { agentFromEnv } from "../config.ts";
+import { TRIGGER_BALANCE } from "../funds.ts";
 
 const DIR = join(homedir(), ".config", "ghosts", "fleet");
 const BIN = dirname(fileURLToPath(import.meta.url));
@@ -33,6 +35,7 @@ const { values, positionals } = parseArgs({
         agents: { type: "string", default: "2" },
         games: { type: "string", default: "1" },
         fund: { type: "string", default: "0.15" },
+        concurrency: { type: "string", default: "2" },
         model: { type: "string", default: "claude-haiku-5-5" },
         claude: { type: "string", default: "/opt/homebrew/bin/claude" },
     },
@@ -56,10 +59,47 @@ function writeMcpConfig(seat: number) {
     writeFileSync(mcpFile(seat), JSON.stringify({ mcpServers: { ghosts: server } }, null, 2));
 }
 
-/** Bring every seat up to `--fund` SUI from the CLI's active address, on testnet only. */
+const sui = (mist: bigint | string | null) =>
+    mist === null ? "unknown" : `${Number(mist) / MIST_PER_SUI} SUI`;
+
+/** One seat through the faucet rule: under 1 SUI asks for SUI, up to 2. Never throws on a refusal. */
+async function fundSeat(seat: number) {
+    const agent = agentFromEnv({ ...process.env, ...env(seat) });
+    const before = await agent.backend.balanceMist();
+    const result = await agent.requestFunds();
+    const note = result.error ? ` (${result.error})` : "";
+    console.log(
+        `agent-${seat} ${sui(before)} -> ${sui(result.balanceMist)}, ${result.requests} request(s)${note}`,
+    );
+    return result;
+}
+
+/** Top up the seats from the faucet, `--concurrency` at a time; a rate limit stops the rest. */
+async function fund() {
+    const queue = [...seats];
+    let limited: number | undefined;
+    const worker = async () => {
+        for (let seat = queue.shift(); seat !== undefined; seat = queue.shift()) {
+            if (limited !== undefined) {
+                console.log(`agent-${seat} skipped: the faucet is rate limiting, wait ${limited} s`);
+                continue;
+            }
+            try {
+                const result = await fundSeat(seat);
+                if (result.kind === "rate_limited") limited = result.retryAfterSeconds ?? 60;
+                if (result.error) process.exitCode = 1;
+            } catch (error) {
+                console.log(`agent-${seat} failed: ${(error as Error).message}`);
+                process.exitCode = 1;
+            }
+        }
+    };
+    const width = Math.max(1, Math.min(seats.length, Number(values.concurrency) || 2));
+    await Promise.all(Array.from({ length: width }, worker));
+}
+
+/** Keys, configs and funds for every seat: the faucet first, the CLI wallet for what is still short of `--fund`. */
 async function init() {
-    const network = execFileSync("sui", ["client", "active-env"], { encoding: "utf8" }).trim();
-    if (network !== "testnet") throw new Error(`The sui CLI is on ${network}, not testnet.`);
     mkdirSync(DIR, { recursive: true, mode: 0o700 });
 
     const target = BigInt(Math.round(Number(values.fund) * MIST_PER_SUI));
@@ -67,31 +107,21 @@ async function init() {
     for (const seat of seats) {
         const { address, balanceMist } = agentFromEnv({ ...process.env, ...env(seat) }).backend;
         writeMcpConfig(seat);
-        let balance = await balanceMist();
-        console.log(`agent-${seat} ${address} ${Number(balance) / MIST_PER_SUI} SUI`);
-        if (balance >= target) continue;
-
-        // The faucet first: it pays the seat directly and leaves the CLI wallet alone.
-        try {
-            execFileSync("sui", ["client", "faucet", "--address", address], { stdio: "ignore" });
-            for (let i = 0; i < 20 && balance < target; i++) {
-                await new Promise((done) => setTimeout(done, 1_000));
-                balance = await balanceMist();
-            }
-            console.log(`agent-${seat} from the faucet: ${Number(balance) / MIST_PER_SUI} SUI`);
-        } catch {
-            console.log(`agent-${seat}: the faucet refused, using the CLI wallet`);
-        }
+        console.log(`agent-${seat} ${address} ${sui(await balanceMist())}`);
+        await fundSeat(seat);
+        const balance = await balanceMist();
         if (balance < target) topUps.push({ address, amount: target - balance });
     }
     if (topUps.length === 0) return;
 
+    const network = execFileSync("sui", ["client", "active-env"], { encoding: "utf8" }).trim();
+    if (network !== "testnet") throw new Error(`The sui CLI is on ${network}, not testnet.`);
     const amounts = topUps.map((t) => t.amount.toString()).join(",");
     const args = ["client", "ptb", "--split-coins", "gas", `[${amounts}]`, "--assign", "coins"];
     topUps.forEach((t, i) => args.push("--transfer-objects", `[coins.${i}]`, `@${t.address}`));
     args.push("--gas-budget", "50000000", "--json");
     const out = JSON.parse(execFileSync("sui", args, { encoding: "utf8" }));
-    console.log(`funded ${topUps.length} seats: ${out.digest}`);
+    console.log(`funded ${topUps.length} seats from the CLI wallet: ${out.digest}`);
 }
 
 async function status() {
@@ -101,7 +131,8 @@ async function status() {
         console.log(
             `agent-${seat}`,
             name ?? "(no name)",
-            `${Number(balanceMist) / MIST_PER_SUI} SUI`,
+            sui(balanceMist),
+            BigInt(balanceMist) < TRIGGER_BALANCE ? "below trigger" : "funded",
             situation.phase,
             JSON.stringify(account?.score ?? null),
         );
@@ -204,7 +235,7 @@ function play() {
     });
 }
 
-const commands: Record<string, () => void | Promise<void>> = { init, status, bots, clients, play };
+const commands: Record<string, () => void | Promise<void>> = { init, fund, status, bots, clients, play };
 const run = commands[positionals[0]];
 if (!run) throw new Error(`Usage: ghosts-fleet ${Object.keys(commands).join("|")}`);
 await run();
