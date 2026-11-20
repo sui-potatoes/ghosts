@@ -5,7 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { GameEvent } from "../events.ts";
 import { blackRain } from "../scenario.ts";
-import { Playback, type PlaybackStage } from "./playback.ts";
+import { beatSeconds, Playback, type PlaybackStage } from "./playback.ts";
 import type { RecordSource } from "./timeline.ts";
 
 const move = (unit: string): GameEvent => ({ type: "move", unit, path: [[0, 0], [0, 1]], vault: false, cover: false });
@@ -47,7 +47,7 @@ function growing(initial: GameEvent[], done = false) {
 }
 
 /** A stage whose animations last until the test lets them go (`release`), or no time at all (`instant`). */
-function stage({ instant = false } = {}) {
+function stage({ instant = false, manualWait = false, reduced = false } = {}) {
   const log: string[] = [];
   let pending: (() => void)[] = [];
   const s = {
@@ -59,6 +59,15 @@ function stage({ instant = false } = {}) {
     release() {
       const now = pending;
       pending = [];
+      for (const go of now) go();
+    },
+    /** The pauses asked for (in scene seconds) and the ones still running. */
+    waits: [] as number[],
+    pendingWaits: [] as (() => void)[],
+    /** Let the pauses going now run out. */
+    endWaits() {
+      const now = s.pendingWaits;
+      s.pendingWaits = [];
       for (const go of now) go();
     },
     get animating() {
@@ -74,10 +83,16 @@ function stage({ instant = false } = {}) {
         if (instant) return Promise.resolve();
         return new Promise<void>((resolve) => pending.push(resolve));
       },
-      wait: () => Promise.resolve(),
+      wait(seconds) {
+        s.waits.push(seconds);
+        if (!manualWait) return Promise.resolve();
+        return new Promise<void>((resolve) => s.pendingWaits.push(resolve));
+      },
+      reduced: () => reduced,
       async finish(done) {
         log.push("finish");
         s.release();
+        s.endWaits();
         await done;
       },
       setTimeScale(scale) {
@@ -320,4 +335,182 @@ test("the outcome at the end: the field's winner first, else the source's word",
   await tick(40);
   assert.deepEqual(won.getState().outcome, { winner: 1 });
   assert.equal(new Playback(growing(GAME).source, st.stage).getState().outcome, null, "none before the end");
+});
+
+/** The last event of GAME, then the end of the game, in a source that was open until now. */
+const LAST = GAME.length - 1;
+
+test("the result waits for the last animation and the beat, not for the last event to start", async () => {
+  const st = stage({ manualWait: true });
+  const pb = new Playback(growing(GAME.slice(0, LAST + 1), true).source, st.stage);
+  pb.start();
+  await tick();
+  // Play up to the last event.
+  for (let i = 0; i < 40 && pb.getState().cursor < GAME.length; i++) {
+    st.release();
+    st.endWaits();
+    await tick();
+  }
+  assert.equal(pb.getState().cursor, GAME.length, "the last event has started");
+  assert.equal(pb.getState().finished, false, "not finished while its animation runs");
+  assert.equal(pb.getState().playing, true, "the transport still plays");
+  assert.equal(pb.getState().outcome, null);
+  st.release();
+  await tick();
+  assert.equal(pb.getState().finished, false, "the animation is done, the beat is not");
+  assert.equal(st.waits.at(-1), beatSeconds(1, false));
+  assert.equal(st.pendingWaits.length, 1, "the beat is a pause on the scene clock");
+  st.endWaits();
+  await tick();
+  assert.equal(pb.getState().finished, true);
+  assert.equal(pb.getState().playing, false);
+  pb.dispose();
+});
+
+test("the beat replaces the gap after the last event, and follows speed with a real-time floor", () => {
+  assert.equal(beatSeconds(1, false), 0.9);
+  assert.equal(beatSeconds(0.5, false), 0.9);
+  assert.equal(beatSeconds(2, false), 0.9);
+  assert.ok(Math.abs(beatSeconds(4, false) / 4 - 0.3) < 1e-9, "300 ms of real time at 4x");
+  assert.equal(beatSeconds(1, true), 0.4, "Reduce motion keeps a short beat");
+  assert.ok(Math.abs(beatSeconds(4, true) / 4 - 0.3) < 1e-9);
+});
+
+test("the last beat is asked at the playing speed and at the reduced length", async () => {
+  for (const [speed, reduced, want] of [
+    [4, false, beatSeconds(4, false)],
+    [1, true, 0.4],
+  ] as const) {
+    const st = stage({ instant: true, reduced });
+    const pb = new Playback(growing(GAME, true).source, st.stage);
+    pb.setSpeed(speed);
+    pb.start();
+    await tick(40);
+    assert.equal(st.waits.at(-1), want);
+    assert.equal(pb.getState().finished, true);
+  }
+});
+
+test("a pause during the final animation or the beat holds the result; play goes on", async () => {
+  const st = stage({ manualWait: true });
+  const pb = new Playback(growing(GAME, true).source, st.stage);
+  pb.start({ paused: false });
+  for (let i = 0; i < 40 && pb.getState().cursor < GAME.length; i++) {
+    st.release();
+    st.endWaits();
+    await tick();
+  }
+  pb.pause();
+  await tick();
+  assert.equal(pb.getState().finished, false, "paused in the last animation");
+  pb.play();
+  assert.equal(pb.getState().finished, false, "play resumes it, it does not restart");
+  st.release();
+  await tick();
+  pb.pause();
+  assert.equal(pb.getState().finished, false, "paused in the beat");
+  pb.play();
+  st.endWaits();
+  await tick();
+  assert.equal(pb.getState().finished, true);
+  assert.equal(st.presented.filter((e) => e === GAME[LAST]).length, 1);
+  pb.dispose();
+});
+
+test("seeking shows the end at once: jump, next past the end, and a restart during the beat", async () => {
+  const st = stage({ manualWait: true });
+  const pb = new Playback(growing(GAME, true).source, st.stage);
+  pb.start({ paused: true });
+  await tick();
+  pb.jump(2);
+  await tick();
+  assert.equal(pb.getState().finished, false);
+  pb.nextTurn();
+  await tick();
+  assert.equal(pb.getState().finished, true, "next turn past the end");
+  assert.equal(st.pendingWaits.length, 0, "no beat for a seek");
+  pb.prevTurn();
+  await tick();
+  assert.equal(pb.getState().finished, false, "stepping back hides it at once");
+  pb.nextTurn();
+  await tick();
+  pb.nextTurn();
+  await tick();
+  assert.equal(pb.getState().finished, true);
+  // Play to the end, then restart in the beat.
+  pb.jump(2);
+  await tick();
+  pb.play();
+  for (let i = 0; i < 40 && pb.getState().cursor < GAME.length; i++) {
+    st.release();
+    st.endWaits();
+    await tick();
+  }
+  st.release();
+  await tick();
+  assert.equal(pb.getState().finished, false, "in the beat");
+  pb.restart();
+  await tick();
+  assert.equal(pb.getState().finished, false);
+  assert.equal(pb.getState().cursor, 1, "starts over cleanly");
+  pb.dispose();
+});
+
+test("a live game that ends while watched plays its last events, then the beat, then the result", async () => {
+  const st = stage({ manualWait: true });
+  const game = growing(GAME.slice(0, 5));
+  const pb = new Playback(game.source, st.stage);
+  pb.start({ at: "live" });
+  await tick();
+  game.push(GAME[5], GAME[6]);
+  game.end();
+  await tick();
+  assert.equal(pb.getState().finished, false);
+  for (let i = 0; i < 20 && pb.getState().cursor < GAME.length; i++) {
+    st.release();
+    st.endWaits();
+    await tick();
+  }
+  assert.equal(pb.getState().finished, false, "the last event is playing");
+  st.release();
+  await tick();
+  assert.equal(pb.getState().finished, false, "the beat");
+  st.endWaits();
+  await tick();
+  assert.equal(pb.getState().finished, true);
+  pb.dispose();
+});
+
+test("a game with no last animation (a forfeit) still gets the beat after its last played event", async () => {
+  const st = stage({ instant: true, manualWait: true });
+  const game = growing(GAME);
+  const pb = new Playback(game.source, st.stage);
+  pb.start({ at: "live" });
+  await tick();
+  game.push(move("z"));
+  await tick();
+  game.end();
+  await tick();
+  assert.equal(pb.getState().finished, false, "the beat runs after the last event");
+  st.endWaits();
+  await tick();
+  st.endWaits();
+  await tick();
+  assert.equal(pb.getState().finished, true);
+  pb.dispose();
+});
+
+test("a viewer paused at the live edge when the game ends sees the result at once", async () => {
+  const st = stage({ instant: true });
+  const game = growing(GAME);
+  const pb = new Playback(game.source, st.stage);
+  pb.start({ at: "live" });
+  await tick();
+  game.push(move("z"));
+  await tick();
+  pb.pause();
+  game.end();
+  await tick();
+  assert.equal(pb.getState().finished, true);
+  pb.dispose();
 });

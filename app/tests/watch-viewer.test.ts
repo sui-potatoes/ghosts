@@ -10,6 +10,7 @@ import type { EndingOutcome } from "../src/features/watch/chain/phrases.ts";
 import { COMBAT_ACTIONS, DEFAULT_COMBAT_BINDINGS } from "../../packages/engine/src/keys.ts";
 import {
     banner,
+    bannerAction,
     cycleSpeed,
     finalLine,
     focusOrder,
@@ -154,6 +155,11 @@ test("the Live chip: none on a replay, lit while following, the way back with ho
     assert.equal(behind?.following, false);
     assert.equal(behind?.label, "Live · 2 turns behind");
     assert.equal(liveChip(state({ growing: true, behind: 1 }))?.label, "Live · 1 turn behind");
+});
+
+test("the banner's primary action: a replay at its end starts over, a live match that ended opens its recording", () => {
+    assert.equal(bannerAction(false), "Start over");
+    assert.equal(bannerAction(true), "Watch replay");
 });
 
 test("the banner has two lines: who won, and why under it, then the record in labelled numbers", () => {
@@ -357,7 +363,7 @@ test("a long game's strip is a window around the viewer's turn, with jumps of te
     assert.deepEqual(
         focusOrder({ ...long(119), finished: true }).slice(0, 2),
         ["watch-replay", "watch-leave"],
-        "the banner offers one Watch replay, then Leave",
+        "the banner offers its primary action, then Leave",
     );
 });
 

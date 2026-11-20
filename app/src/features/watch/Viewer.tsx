@@ -45,6 +45,7 @@ import {
 import type { Action } from "../../settings/keys";
 import {
     banner,
+    bannerAction,
     cycleSpeed,
     JUMP_TURNS,
     jumpTarget,
@@ -374,6 +375,7 @@ function Controls({
     const readout = turnReadout(state, sides);
     const chip = liveChip(state);
     const end = banner(state, sides);
+    const again = bannerAction(!!extras.onReplay);
     const note = readoutNote(state, sides, outcome(), extras.missed);
     const strip = scrubWindow(pipsOf(state), state.turn);
     const { copied, run: copyLink } = copy;
@@ -400,11 +402,11 @@ function Controls({
                         <TransportButton
                             id="watch-replay"
                             group="banner"
-                            title="Watch replay"
+                            title={again}
                             commands={[
                                 {
                                     action: "confirm",
-                                    label: "Watch replay",
+                                    label: again,
                                     tone: "primary",
                                     // A live match that ended opens its recording; a replay starts over.
                                     run: extras.onReplay ?? (() => playback.restart()),
@@ -412,7 +414,7 @@ function Controls({
                             ]}
                         >
                             <Pictogram name="again" />
-                            <span>Watch replay</span>
+                            <span>{again}</span>
                         </TransportButton>
                         <TransportButton
                             id="watch-leave"

@@ -168,6 +168,14 @@ export function banner(
 }
 
 /**
+ * The banner's primary action: a live match that ended opens its recording ("Watch replay"),
+ * a replay that reached its end starts over.
+ */
+export function bannerAction(opensRecording: boolean): string {
+    return opensRecording ? "Watch replay" : "Start over";
+}
+
+/**
  * The scene's last beat for an ending that left units standing: the reason and the verdict
  * ("ai-pia missed 3 turns in a row · Match forfeited"). Null for the rest.
  */

@@ -14,6 +14,7 @@ import type { Encounter } from "../game";
 // @ts-ignore Native editor adapter is shared JavaScript.
 import { deployment } from "../mpfb-characters.js";
 import { present } from "../presenter";
+import { reducedMotion } from "../scene/effects";
 import { session } from "../session";
 import { applyDeploymentNames, applyLoadouts } from "../squad-bridge";
 import type { PlaybackStage } from "./playback";
@@ -85,6 +86,8 @@ export function sceneStage(source: RecordSource): SceneStage {
       // A held field holds its sound too: the voice line playing stops with it.
       if (scale === 0) audio.stopVoice();
     },
+
+    reduced: reducedMotion,
 
     outcome() {
       const { result } = s.game;

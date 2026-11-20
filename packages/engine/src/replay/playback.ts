@@ -13,6 +13,11 @@
  * from there; the camera stays free. A seek mid-animation first runs what is
  * playing to its end at once (`finish`), then rebuilds.
  *
+ * The result waits for the last thing played: when the game is over and the
+ * cursor reached its end by playing, `finished` turns true only after the
+ * final event's animation is done and a short beat has passed (`beatSeconds`),
+ * so a kill's fall is seen before the banner. A seek shows the result at once.
+ *
  * Pure: the stage is an interface, so the state machine is tested in node.
  */
 
@@ -36,6 +41,8 @@ export interface PlaybackStage {
   setTimeScale(scale: number): void;
   /** Voice lines on or off: they overlap and can't follow the pitch above 1x. */
   setVoice(on: boolean): void;
+  /** The player asked for less motion: the beat before the result is shorter. */
+  reduced?(): boolean;
   /** How the field says the game ended, at its end: a side with nobody standing lost. */
   outcome?(): WatchOutcome | null;
 }
@@ -60,6 +67,14 @@ export interface PlaybackState {
   finished: boolean;
   /** How it ended, once finished: the source's word first, else the field's; null when neither says. */
   outcome: WatchOutcome | null;
+}
+
+/**
+ * Scene seconds between the last event's animation ending and the result showing:
+ * 0.9 at 1x, 0.4 with Reduce motion. Never under 0.3 s of real time, so 4x is not instant.
+ */
+export function beatSeconds(speed: number, reduced: boolean): number {
+  return Math.max(reduced ? 0.4 : 0.9, 0.3 * speed);
 }
 
 /** Scene seconds between one event and the next, at 1x. */
@@ -100,6 +115,11 @@ export class Playback {
   private loopGen = -1;
   /** The event being played and the pause after it. */
   private step: Promise<void> | null = null;
+  /**
+   * The field shows its end as it stands: false from an event played until the beat after the
+   * last one has passed (a seek, or a pause with nothing animating, settles it).
+   */
+  private settled = true;
   private wake: (() => void) | null = null;
   private turnCache: { length: number; turns: TurnMark[] } | null = null;
   private readonly listeners = new Set<() => void>();
@@ -121,6 +141,7 @@ export class Playback {
     this.firstRound = firstRound;
     this.unsubscribe = source.subscribe(() => {
       this.turnCache = null;
+      this.settleIfIdle();
       this.wake?.();
       this.changed();
     });
@@ -164,8 +185,8 @@ export class Playback {
       growing,
       live: growing && this.playing && this.following,
       behind: turns.length - 1 - turn,
-      finished: !growing && atEdge,
-      outcome: !growing && atEdge ? fieldOutcome(this.source, this.stage) : null,
+      finished: !growing && atEdge && this.settled,
+      outcome: !growing && atEdge && this.settled ? fieldOutcome(this.source, this.stage) : null,
     };
   }
 
@@ -198,6 +219,7 @@ export class Playback {
     this.playing = false;
     this.following = false;
     this.applyClock();
+    this.settleIfIdle();
     this.wake?.();
     this.changed();
   }
@@ -280,6 +302,7 @@ export class Playback {
     const events = this.source.events();
     this.cursor = Math.max(0, Math.min(index, events.length));
     this.following = this.cursor >= events.length;
+    this.settled = true;
     this.stage.rebuild(events, this.cursor);
     this.applyClock();
     this.changed();
@@ -289,6 +312,23 @@ export class Playback {
   /** Start the play loop when playing and none runs for the current gen. */
   private kick() {
     if (this.playing && !this.disposed && this.loopGen !== this.gen) void this.loop(this.gen);
+  }
+
+  /** A paused viewer at the end of a finished game with nothing animating owes no beat: the result shows. */
+  private settleIfIdle() {
+    if (this.settled || this.playing || this.step || !this.source.ended()) return;
+    if (this.cursor >= this.source.events().length) this.settled = true;
+  }
+
+  /** The pause after the last event, in scene time: held while paused, run out by a seek. */
+  private async beat(gen: number) {
+    const step = this.stage.wait(beatSeconds(this.speed, this.stage.reduced?.() ?? false));
+    this.step = step;
+    await step;
+    if (this.step === step) this.step = null;
+    if (gen !== this.gen) return;
+    this.settled = true;
+    this.changed();
   }
 
   /** Resolves on the next change of the source, or when woken (a pause, a seek). */
@@ -312,6 +352,10 @@ export class Playback {
             this.changed();
           }
           if (this.source.ended()) {
+            if (!this.settled) {
+              await this.beat(gen);
+              continue;
+            }
             this.playing = false;
             this.applyClock();
             this.changed();
@@ -321,10 +365,13 @@ export class Playback {
           continue;
         }
         const event = events[this.cursor++];
+        this.settled = false;
         this.changed();
         const step = (async () => {
           await this.stage.present(event);
-          if (gen === this.gen) await this.stage.wait(gapAfter(event));
+          // After the game's last event the beat stands in for the gap.
+          const last = this.source.ended() && this.cursor >= this.source.events().length;
+          if (gen === this.gen && !last) await this.stage.wait(gapAfter(event));
         })();
         this.step = step;
         await step;
