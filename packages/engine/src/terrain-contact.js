@@ -10,6 +10,14 @@ export function restoreTerrainPose(model){
  const saved=model.userData.terrainPose;if(!saved)return;
  for(const[b,q,p]of saved){b.quaternion.copy(q);b.position.copy(p);}model.userData.terrainPose=null;
 }
+/**
+ * The mixer's pose on the bones now, outside the frame loop (a snapped or held pose).
+ * The last frame's foot fit is undone first, as every frame does: the mixer writes a
+ * bone only when its value changed since its previous update, so a fit undone after
+ * this would put the old frame's hips and legs back on the new pose, and keep them
+ * there for as long as the pose holds (a body lying at hip height).
+ */
+export function applyPose(model,mixer){restoreTerrainPose(model);mixer.update(0);}
 /** Feet sample their own pavement height; the grid-cell centre is not a foot contact. */
 export function fitTerrainFeet(model,root,height){
  const mesh=model.getObjectByName('Blackline_Face');if(!mesh?.isSkinnedMesh)return;

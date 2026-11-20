@@ -11,6 +11,7 @@ import {
   aimHuman,
   holdHuman,
   play,
+  poseNow,
   resetHuman,
   restHuman,
   setWeapon as equipHuman,
@@ -31,7 +32,7 @@ function settlePose(r: Rig) {
   r.fading?.stop();
   r.fading = undefined;
   r.action?.stopFading().setEffectiveWeight(1);
-  r.mixer.update(0);
+  poseNow(r);
 }
 
 export interface UnitsOptions {

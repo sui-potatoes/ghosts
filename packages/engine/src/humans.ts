@@ -6,7 +6,7 @@ import {WeaponCarry} from "@ghosts/squad/motion/weapon-carry";
 import {coverStepClips} from './cover-step';
 import {demoAsset} from './demo-assets';
 // @ts-ignore Native contact helpers.
-import {restoreTerrainPose,fitTerrainFeet} from './terrain-contact.js';
+import {applyPose,restoreTerrainPose,fitTerrainFeet} from './terrain-contact.js';
 // @ts-ignore Shared native skinning contact helper.
 import {soleMinimum} from './sole-contact.js';
 // @ts-ignore Native editor adapter is shared JavaScript.
@@ -209,7 +209,7 @@ export function soldier(u: Unit): Rig {
     hipAnchor: root.worldToLocal(hips.getWorldPosition(new T.Vector3())),
   };
   model.userData.refreshNativeRig=()=>{
-    const motion=rig.action?.getClip().name??'rifle_idle';mixer.stopAllAction();mixer.uncacheRoot(model);clips.clear();
+    const motion=rig.action?.getClip().name??'rifle_idle';restoreTerrainPose(model);mixer.stopAllAction();mixer.uncacheRoot(model);clips.clear();
     const native=nativeAnimations(model.userData.mpfbSex,rig.weapon);for(const clip of [...native,...combatClips(native),...coverStepClips(model,native)])clips.set(clip.name,clip);
     rig.action=null;rig.fading=undefined;play(rig,motion);mixer.update(0);root.updateMatrixWorld(true);
   };
@@ -314,7 +314,11 @@ export function holdHuman(r: Rig, name: string, time = -1) {
   play(r, name, true);
   r.action!.time = time < 0 ? r.action!.getClip().duration : time;
   r.action!.paused = true;
-  r.mixer.update(0);
+  poseNow(r);
+}
+/** The mixer's pose on the bones now, outside the frame loop: last frame's foot fit undone first (`applyPose`). */
+export function poseNow(r: Rig) {
+  applyPose(r.model, r.mixer);
 }
 function chooseIdle(r: Rig, context: IdleContext, previous = "") {
   const choice = idleDirector.next(context, previous);
