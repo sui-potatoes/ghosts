@@ -138,6 +138,15 @@ export const turnLimitMs = (turn: number) => (turn === 0 ? FIRST_TURN_MS : TURN_
 export const DEPLOY_LIMIT_MS = 120_000;
 /** `ghosts::account`: the squad an account can always hold for free. */
 export const FREE_RECRUITS = 4;
+/**
+ * How many recruits a side deploys: as many as it has spawn positions left, and in a friendly game
+ * no more than its size (`deploy_squad`: `ENoPositions`, `ESquadTooLarge`).
+ */
+export function deployLimit(state: Pick<GameState, "mode" | "positions">, side: number): number {
+    const open = state.positions[side]?.length ?? 0;
+    return state.mode.kind === "friendly" ? Math.min(open, state.mode.size) : open;
+}
+
 /** `ghosts::ghosts`: how long a search stays in the queue. */
 export const SEARCH_TIMEOUT_MS = 120_000;
 /** `ghosts::ghosts`: how long an account can't search after misbehaving. */
@@ -613,7 +622,7 @@ export function throwEffect(state: GameState, action: EffectThrowAction): GameRe
 }
 
 /**
- * `ghosts::next_turn` as it changes the map: the fallen are buried, the turn passes, and in a
+ * `ghosts::next_turn` as it changes the map: the fallen are buried (in a rated game), the turn passes, and in a
  * single walk of `Map.units` every unit gets one turn off each effect, those at zero going,
  * while the units of the side whose turn begins get their AP back. Changes `state`.
  *
@@ -622,7 +631,8 @@ export function throwEffect(state: GameState, action: EffectThrowAction): GameRe
  * on this turn change (`MAX_TURNS`): the chain stops before the walk.
  */
 export function passTurn(state: GameState, last = false): GameRecord[] {
-    state.fallen = [];
+    // a friendly game keeps its fallen on the map until `complete_game` (`bury_fallen` is a no-op)
+    if (state.mode.kind === "rated") state.fallen = [];
     state.turn += 1;
     state.active = state.turn % state.players.length;
     if (last) return [];

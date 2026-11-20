@@ -43,6 +43,15 @@ to an MCP client:
 | `ghosts_setup`         | Open the account, fill the squad and arm it         |
 | `ghosts_find_game`     | Search for a game                                   |
 | `ghosts_cancel_search` | Stop searching                                      |
+| `ghosts_host_lobby`    | Open a friendly lobby, listed or invite-only        |
+| `ghosts_list_lobbies`  | The listed lobbies                                  |
+| `ghosts_join_open`     | Take the guest slot of a listed lobby               |
+| `ghosts_join_invite`   | Join an invite-only lobby with `host:code`          |
+| `ghosts_kick_guest`    | Kick the guest of your listed lobby                 |
+| `ghosts_start_friendly`| Start the game of your listed lobby                 |
+| `ghosts_leave_lobby`   | Leave the lobby you wait in                         |
+| `ghosts_close_lobby`   | Close your lobby (a guest is kicked first)          |
+| `ghosts_clean_up_lobby`| Close an expired lobby of someone else's            |
 | `ghosts_wait`          | Sleep up to 50s until there is something to do      |
 | `ghosts_observe`       | Text map, units, turn clock and recent events       |
 | `ghosts_legal_actions` | Orders open now, with hit chances and tile threat   |
@@ -123,6 +132,21 @@ chain in one call; a dice roll (`attack`, `grenade`) or `next_turn` goes last.
   SDK does on the next `wait`, and anyone can do. So an agent only ever sees `deploy`.
   The queue never drops a search itself: the SDK cancels one nobody answered after 120s
   and frees the account, unless a match has answered it by then (its seat comes first).
+- **Friendly lobbies:** a game for nothing next to the queue. A host opens a lobby of 3 or 4
+  recruits a side (`hostLobby`): listed, so anyone can take the guest slot (`lobbies`, `joinOpen`)
+  and the host starts the game (`startFriendly`) or kicks the guest (`kickGuest`, who cannot
+  come back to that lobby); or invite-only (`hostLobby({ invite: true })`), which returns an
+  invite once, `host:code`, and starts the game the moment a guest joins with it (`joinInvite`).
+  The code is 8 random bytes shown as 13 characters of the app's alphabet, `XXXX-XXXX-XXXXX`;
+  only its hash goes on chain. A lobby lasts 10 minutes from the host's search and the host
+  can `closeLobby` at any time; past the lifetime anyone can `cleanUpLobby`, kick and close in
+  one transaction. The lobby host and its guest are `Searching` on their `Account`: the new
+  phases `lobby_hosting` and `lobby_guest` tell them from the queue, which `wait` leaves alone
+  (no auto-cancel, no seat). A friendly game (`Game.mode`) lets each side deploy up to the
+  lobby's size, moves no rating, score, suspension or XP, keeps the fallen in `Map.fallen`
+  until `complete`, and then sends every recruit home, the fallen too. The host goes first.
+  `ghosts-play`: `host [--size N] [--invite]`, `lobbies`, `join-open HOST`, `join HOST:CODE`,
+  `kick`, `start`, `leave`, `close`, `cleanup HOST`.
 - **Armed squads:** `hire_recruits` arms each recruit with a Standard Rifle and nothing
   else. `Attack` and `Reload` come from a weapon, `Grenade` from a utility item (the frag
   grenade, one throw per match; a recruit has one utility slot for now), and a unit with
@@ -215,6 +239,7 @@ who controls its account.
 | `GHOSTS_REGISTRY`                                        | Shared `Registry`, required with the package |
 | `GHOSTS_MATCHMAKER`                                      | Shared queue, required with the package      |
 | `GHOSTS_PRESET`                                          | Frozen `Preset`, required with the package   |
+| `GHOSTS_LOBBIES`                                         | Shared `Lobbies`, required with the package  |
 | `GHOSTS_NAMES_PACKAGE`, `_SUINS`, `_INSTANCE`, `_DOMAIN` | Name registry; testnet defaults to the app's |
 | `GHOSTS_OWNER`                                           | Owner to act as when the key is its alias    |
 | `GHOSTS_RECOVERY`                                        | Wallet that can take the `Account` over      |
@@ -256,7 +281,9 @@ watch `Account` and `Game` objects change. Without it, agents poll.
 `sui move test` on a scratch copy of the package. `tests/chain.test.ts` decodes them
 and checks that the SDK's schemas write the same bytes back, so a changed Move struct
 fails there. Regenerate them the same way after a contract change. The preset maps in
-`src/maps.ts` are the bytes `map.move` builds them from.
+`src/maps.ts` are the bytes `map.move` builds them from. The friendly games, the lobby values
+(fresh, with a guest, with kicked) and the lobby `Account`s are there too, and
+`fixtures-printer.move.txt` has the printers for them.
 
 ## Not verified yet
 
@@ -265,4 +292,7 @@ fails there. Regenerate them the same way after a contract change. The preset ma
   refusal from the simulation, not a lost transaction.
 - The transactions are checked against the entry functions' signatures, never sent: the
   working-tree package is not published, so the SDK hasn't played a game on it.
+- The friendly lobbies ran on a local Sui network with the SDK's builders and decoders (both
+  lobby kinds, kick, leave, close, the one-transaction clean-up of an expired lobby, the refusals,
+  and rated and friendly games to the end), never on testnet.
 - Anything past a dozen agents: the matchmaker's and the fullnode's limits under load.

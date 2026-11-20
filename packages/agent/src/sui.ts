@@ -27,6 +27,7 @@ import {
     AccountRecord,
     decodeAccount,
     decodeGame,
+    LobbyField,
     RecruitBcs,
     RegistryHead,
     SeatBcs,
@@ -37,15 +38,32 @@ import {
     actionsTx,
     armSquadTx,
     cancelSearchTx,
+    closeLobbyTx,
+    closeLobbyWithGuestTx,
     findGameTx,
     hireRecruitsTx,
+    joinLobbyTx,
+    joinOpenTx,
+    kickGuestTx,
+    leaveLobbyTx,
     nameChangeTx,
     newAccountTx,
+    openLobbyTx,
     setRecoveryTx,
+    startFriendlyTx,
     type Deployment,
     type PendingSeat,
 } from "./contract.ts";
-import { rollsDice } from "./rules.ts";
+import {
+    classifySearch,
+    openLobbyId,
+    protectedKey,
+    protectedLobbyId,
+    type InviteLobbyView,
+    type LobbyView,
+    type SearchRole,
+} from "./lobby.ts";
+import { deployLimit, rollsDice } from "./rules.ts";
 import { ActionError, type GameState, type ObjectRef, type Receipt } from "./types.ts";
 
 export interface SuiBackendOptions {
@@ -72,6 +90,11 @@ const DEFAULT_MAX_GAS_MIST = 200_000_000n;
  * less than joining the queue, and between simulating and executing that player can go.
  */
 const FIND_GAME_MIN_BUDGET = 20_000_000n;
+/** Starting a friendly game stores the whole `Game`, as a match does: the same floor. */
+const START_GAME_MIN_BUDGET = FIND_GAME_MIN_BUDGET;
+/** Dynamic fields read per page when listing lobbies, and objects per `getObjects` call. */
+const LOBBY_PAGE = 100;
+const LOBBY_CHUNK = 50;
 const LIST_ATTEMPTS = 5;
 const LIST_RETRY_MS = 500;
 
@@ -334,6 +357,62 @@ export function createSuiBackend(options: SuiBackendOptions): Backend {
         return seats.map(({ ref, game }) => ({ account: accountId, seat: ref, game }));
     }
 
+    /** Where the lobbies of this deployment live. */
+    function lobbyHome() {
+        return { package: deployment.package, lobbies: deployment.lobbies };
+    }
+
+    /** The lobby field at `id`, decoded; null if it is gone. */
+    async function lobbyAt(id: string) {
+        try {
+            return LobbyField.parse((await content(id)).content);
+        } catch (error) {
+            if (isNotFound(error)) return null;
+            throw error;
+        }
+    }
+
+    async function lobbyOf(host: string): Promise<LobbyView | null> {
+        const field = openLobbyId(lobbyHome(), host);
+        const found = await lobbyAt(field);
+        return found && lobbyView(found, field);
+    }
+
+    function lobbyView(found: ReturnType<typeof LobbyField.parse>, field: string): LobbyView {
+        return {
+            host: found.name,
+            size: found.value.size,
+            guest: found.value.guest,
+            kicked: found.value.kicked,
+            field,
+        };
+    }
+
+    /** What the `Account` is doing on its search, or null when it is not searching. */
+    async function roleOf(accountId: string): Promise<SearchRole | null> {
+        const { state } = AccountBcs.parse((await content(accountId)).content);
+        if (state.$kind !== "Searching") return null;
+        const home = lobbyHome();
+        return classifySearch(accountId, state.Searching.order, {
+            open: async (order) => {
+                const found = await lobbyAt(openLobbyId(home, order));
+                return found && { guest: found.value.guest };
+            },
+            protectedExists: async (order) => (await lobbyAt(protectedLobbyId(home, order))) !== null,
+            seatWaiting: async () => (await seatsOf(accountId)).length > 0,
+        });
+    }
+
+    /** My own lobby and its host `Account`, for the calls only a host makes. */
+    async function myLobby(): Promise<{ me: string; lobby: LobbyView | null; role: SearchRole }> {
+        const me = await requireAccount();
+        const role = await roleOf(me);
+        if (role?.kind !== "hosting_open" && role?.kind !== "hosting_invite") {
+            throw new ActionError("no_lobby", "This account does not host a lobby.");
+        }
+        return { me, lobby: role.kind === "hosting_open" ? await lobbyOf(me) : null, role };
+    }
+
     return {
         network,
         address,
@@ -369,6 +448,15 @@ export function createSuiBackend(options: SuiBackendOptions): Backend {
             return decodeAccount((await content(accountId)).content);
         },
 
+        async accountById(id) {
+            try {
+                return decodeAccount((await content(id)).content);
+            } catch (error) {
+                if (isNotFound(error)) return null;
+                throw error;
+            }
+        },
+
         game: readGame,
 
         createAccount: () => send(newAccountTx(deployment)),
@@ -378,6 +466,100 @@ export function createSuiBackend(options: SuiBackendOptions): Backend {
         findGame: async () =>
             send(findGameTx(deployment, await requireAccount()), 200n, FIND_GAME_MIN_BUDGET),
         cancelSearch: async () => send(cancelSearchTx(deployment, await requireAccount())),
+
+        async openLobby(size, code) {
+            return send(openLobbyTx(deployment, await requireAccount(), size, code), 130n);
+        },
+
+        async joinLobby(host, code) {
+            const tx = joinLobbyTx(deployment, await requireAccount(), host, code);
+            return send(tx, 200n, START_GAME_MIN_BUDGET);
+        },
+
+        async joinOpen(host) {
+            return send(joinOpenTx(deployment, await requireAccount(), host));
+        },
+
+        leaveLobby: async () => send(leaveLobbyTx(deployment, await requireAccount())),
+
+        async kickGuest() {
+            const { me, lobby } = await myLobby();
+            if (!lobby?.guest) throw new ActionError("no_lobby", "Your lobby has no guest.");
+            return send(kickGuestTx(deployment, me, lobby.guest));
+        },
+
+        async startFriendly() {
+            const { me, lobby } = await myLobby();
+            if (!lobby?.guest) throw new ActionError("no_lobby", "Your lobby has no guest to start with.");
+            return send(startFriendlyTx(deployment, me, lobby.guest), 200n, START_GAME_MIN_BUDGET);
+        },
+
+        async closeLobby() {
+            const { me, lobby } = await myLobby();
+            // a guest is kicked first, in the same transaction
+            return send(
+                lobby?.guest
+                    ? closeLobbyWithGuestTx(deployment, me, lobby.guest)
+                    : closeLobbyTx(deployment, me),
+            );
+        },
+
+        async cleanUpLobby(host) {
+            const lobby = await lobbyOf(host);
+            if (!lobby) throw new ActionError("no_lobby", "That lobby is already gone.");
+            // chain-side, `ELobbyNotExpired` refuses a stranger before the lifetime is out
+            return send(
+                lobby.guest
+                    ? closeLobbyWithGuestTx(deployment, host, lobby.guest)
+                    : closeLobbyTx(deployment, host),
+            );
+        },
+
+        lobby: lobbyOf,
+
+        async inviteLobby(code) {
+            const home = lobbyHome();
+            const key = protectedKey(code);
+            const field = protectedLobbyId(home, key);
+            const found = await lobbyAt(field);
+            return found ? ({ size: found.value.size, field, key } satisfies InviteLobbyView) : null;
+        },
+
+        async listLobbies() {
+            const home = lobbyHome();
+            const fields: string[] = [];
+            let cursor: string | null | undefined;
+            do {
+                const page = await client.core.listDynamicFields({
+                    parentId: home.lobbies,
+                    limit: LOBBY_PAGE,
+                    cursor,
+                });
+                for (const entry of page.dynamicFields) {
+                    if (entry.name.type.endsWith("::lobby::Open")) fields.push(entry.fieldId);
+                }
+                cursor = page.hasNextPage ? page.cursor : null;
+            } while (cursor);
+
+            const lobbies: LobbyView[] = [];
+            for (let i = 0; i < fields.length; i += LOBBY_CHUNK) {
+                const objectIds = fields.slice(i, i + LOBBY_CHUNK);
+                const { objects } = await client.core.getObjects({
+                    objectIds,
+                    include: { content: true },
+                });
+                // a lobby can close between the listing and the read
+                objects.forEach((object, j) => {
+                    if (object instanceof Error) return;
+                    lobbies.push(lobbyView(LobbyField.parse(object.content), objectIds[j]));
+                });
+            }
+            return lobbies;
+        },
+
+        async searchRole() {
+            return roleOf(await requireAccount());
+        },
 
         async armSquad() {
             // a free utility slot too: the contract has one slot for now
@@ -401,7 +583,7 @@ export function createSuiBackend(options: SuiBackendOptions): Backend {
         async submit(game, actions) {
             const me = await requireAccount();
             const side = game.players.indexOf(me);
-            const open = game.positions[side]?.length ?? 0;
+            const open = deployLimit(game, side);
 
             // the armed recruits go first: an unarmed one can't shoot
             const recruits = actions.some((action) => action.kind === "deploy")

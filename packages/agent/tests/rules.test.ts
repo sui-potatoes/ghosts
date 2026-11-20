@@ -52,6 +52,7 @@ function board(hex: string): GameState {
         abandonedBy: null,
         deadlineMs: 1000,
         status: { kind: "active" },
+        mode: { kind: "rated" },
         tiles: decodeTiles(map),
         units: [],
     };

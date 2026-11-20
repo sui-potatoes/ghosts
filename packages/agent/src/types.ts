@@ -100,6 +100,12 @@ export type GameStatus =
     | { kind: "active" }
     | { kind: "finished"; winner: string | null; ending: Ending };
 
+/**
+ * `ghosts::ghosts::Mode`. A friendly game of `size` deploys 1 to `size` recruits a side and
+ * moves no rating, score, suspension, XP or recruit: the fallen are home again at `complete`.
+ */
+export type GameMode = { kind: "rated" } | { kind: "friendly"; size: number };
+
 export interface GameState {
     id: string;
     /** Object version: a state at one version never changes, so it can be cached forever. */
@@ -129,6 +135,7 @@ export interface GameState {
     /** When deployment or the current turn runs out; 0 once the game is over. */
     deadlineMs: number;
     status: GameStatus;
+    mode: GameMode;
     tiles: Tile[][];
     units: Unit[];
 }
@@ -139,6 +146,7 @@ export interface GameState {
  */
 export type Search =
     | { kind: "idle" }
+    /** `order` is a queue ticket, or a lobby's key: `lobbyRole` in `lobby.ts` says which. */
     | { kind: "searching"; order: string; sinceMs: number }
     | { kind: "playing"; game: string };
 
@@ -211,6 +219,7 @@ export type ActionErrorCode =
     | "illegal_action"
     | "no_game"
     | "no_account"
+    | "no_lobby"
     | "not_aliased"
     | "no_name"
     | "bad_name"

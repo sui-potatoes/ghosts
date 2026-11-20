@@ -14,12 +14,22 @@
 import type { Backend } from "./backend.ts";
 import { decodeTiles, gridSize, MapPresetBcs, winnerOf } from "./bcs.ts";
 import { referencePolicy, type Policy } from "./bot.ts";
+import {
+    LOBBY_LIFETIME_MS,
+    MAX_LOBBY_SIZE,
+    MIN_LOBBY_SIZE,
+    protectedKey,
+    type InviteLobbyView,
+    type LobbyView,
+    type SearchRole,
+} from "./lobby.ts";
 import { BLACK_RAIN, BLACK_RAIN_POSITIONS } from "./maps.ts";
 import {
     applyDeterministic,
     blastUnits,
     coverBonus,
     DEPLOY_LIMIT_MS,
+    deployLimit,
     effectiveStats,
     FREE_RECRUITS,
     GRENADE_DAMAGE,
@@ -43,6 +53,7 @@ import {
     type AccountView,
     type Action,
     type Ending,
+    type GameMode,
     type GameRecord,
     type GameState,
     type Stats,
@@ -62,6 +73,16 @@ export interface SandboxOptions {
      * for you to accept, and you go first.
      */
     seated?: boolean;
+    /**
+     * Friendly lobbies. The scripted opponent hosts a listed lobby of size 3 and an invite-only
+     * one (`SANDBOX_INVITE`); if you join its listed lobby it starts the game on the next read of
+     * your account once `peerAnswersMs` has passed, or, with `peerKicks`, kicks you instead. With `guest` it takes the slot of
+     * any lobby you open, and joins any invite you open at once.
+     */
+    guest?: boolean;
+    peerKicks?: boolean;
+    /** How long the scripted host takes to answer a guest, by the `now` clock. Default 5 seconds. */
+    peerAnswersMs?: number;
     /** Time source, so tests can run the clock past a deadline. */
     now?: () => number;
     startingBalanceMist?: bigint;
@@ -96,6 +117,13 @@ export interface SquadUnit {
     stats: Stats;
     actions: UnitActionEntry[];
 }
+
+/** The host the scripted opponent plays in the sandbox's lobbies, and the invite of its invite-only one. */
+export const SANDBOX_PEER_HOST = "0x0000000000000000000000000000000000000000000000000000000000000b02";
+export const SANDBOX_INVITE = {
+    host: SANDBOX_PEER_HOST,
+    code: Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8]),
+} as const;
 
 const YOU = "0x0000000000000000000000000000000000000000000000000000000000000a01";
 const ACCOUNT = "0x0000000000000000000000000000000000000000000000000000000000000a02";
@@ -198,8 +226,14 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
     let current: GameState | null = null;
     /** The game a match started for this account while it waited: the seat's game. */
     let seated: GameState | null = null;
-    /** The waiting player goes first; the one who finds them plays second. */
-    const yourSide = options.seated ? 0 : 1;
+    /** The waiting player goes first; the one who finds them plays second. A lobby host goes first. */
+    let yourSide = options.seated ? 0 : 1;
+    /** My lobby, as a host: `open` is listed, `invite` is keyed by the code. */
+    let mine: { kind: "open" | "invite"; size: number; guest: string | null; kicked: string[]; sinceMs: number; key: string } | null = null;
+    /** The listed lobby of the scripted opponent, while I am its guest. */
+    let guestOf: { kicked: boolean; since: number } | null = null;
+    /** What a recruit was, for when it comes home from a friendly game. */
+    const deployed = new Map<string, Recruit>();
     let [digests, games, version, recruits] = [0, 0, 0, 0];
 
     const theirSide = () => 1 - yourSide;
@@ -219,7 +253,7 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
     }
 
     /** `new_game`: the first half of the spawn positions goes to the first player. */
-    function freshGame(waiting: string, finder: string): GameState {
+    function freshGame(waiting: string, finder: string, mode: GameMode = { kind: "rated" }): GameState {
         const map = MapPresetBcs.parse(Uint8Array.from(Buffer.from(BLACK_RAIN, "hex")));
         const spawns = options.positions ?? BLACK_RAIN_POSITIONS;
         const half = spawns.length / 2;
@@ -240,6 +274,7 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
             abandonedBy: null,
             deadlineMs: now() + DEPLOY_LIMIT_MS,
             status: { kind: "deploying" },
+            mode,
             tiles: options.tiles ? structuredClone(options.tiles) : decodeTiles(map),
             units: [],
         };
@@ -286,7 +321,7 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
     /** `deploy_squad`: as many recruits as the side has spawn positions, used from the back. */
     function deploy(state: GameState, side: number): GameRecord[] {
         const records: GameRecord[] = [];
-        const open = state.positions[side].length;
+        const open = deployLimit(state, side);
         // our recruits come from the account, armed ones first; the opponent's are made up
         const fielded = options.squads?.[side].slice(0, open);
         const squad: Recruit[] = fielded
@@ -321,6 +356,7 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
                       ],
             });
             carried.set(recruit.id, recruit.utilities);
+            if (side === yourSide) deployed.set(recruit.id, recruit);
             records.push({ kind: "placed", x, y });
         }
         if (side === yourSide) {
@@ -438,7 +474,8 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
      * and the side whose turn begins gets its AP back.
      */
     function nextTurn(state: GameState, side: number): GameRecord[] {
-        state.fallen = [];
+        // a friendly game keeps its fallen until `complete`
+        if (state.mode.kind === "rated") state.fallen = [];
         if (state.status.kind === "deploying") {
             beginMatch(state);
             return [];
@@ -468,6 +505,15 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
         const me = requireAccount();
         if (state.status.kind !== "finished") return;
         const { winner, ending } = state.status;
+        if (state.mode.kind === "friendly") {
+            // `complete_game`: nothing moves but the recruits, every one of them home, the fallen too
+            for (const recruit of deployed.values()) home.push(recruit);
+            deployed.clear();
+            me.recruits = home.length;
+            me.search = { kind: "idle" };
+            current = null;
+            return;
+        }
         // nobody showing up isn't a game: it goes on no score
         if (ending.kind !== "nobody_showed") {
             if (winner === null) me.score.draws += 1;
@@ -490,7 +536,49 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
         me.recruits = home.length;
         me.search = { kind: "idle" };
         current = null;
+        deployed.clear();
     }
+
+    /** The checks `find_game`, `open_lobby` and the joins share: free to play. */
+    function checkFree(): AccountView {
+        const me = requireAccount();
+        if (me.search.kind !== "idle") {
+            throw new ActionError("rejected", "This account is already searching or playing.");
+        }
+        if (now() < me.suspendedUntilMs) {
+            throw new ActionError("rejected", "This account is suspended: it left a game behind.");
+        }
+        if (me.recruits === 0) {
+            throw new ActionError("rejected", "This account has no recruits to play with.");
+        }
+        return me;
+    }
+
+    /** `start_friendly_game`: the host goes first; the other side deploys at once. */
+    function startFriendlyGame(host: string, guest: string, size: number): GameRecord[] {
+        yourSide = host === ACCOUNT ? 0 : 1;
+        current = freshGame(host, guest, { kind: "friendly", size });
+        requireAccount().search = { kind: "playing", game: current.id };
+        mine = null;
+        guestOf = null;
+        return apply(current, theirSide(), { kind: "deploy" });
+    }
+
+    const refuse = (message: string) => new ActionError("rejected", message);
+    const peerOpen = () => !guestOf?.kicked;
+    const myView = (): LobbyView | null =>
+        mine?.kind === "open"
+            ? { host: ACCOUNT, size: mine.size, guest: mine.guest, kicked: [...mine.kicked], field: "sandbox-open-me" }
+            : null;
+    const peerView = (): LobbyView => ({
+        host: SANDBOX_PEER_HOST,
+        size: MIN_LOBBY_SIZE,
+        guest: guestOf && !guestOf.kicked ? ACCOUNT : null,
+        kicked: guestOf?.kicked ? [ACCOUNT] : [],
+        field: "sandbox-open-peer",
+    });
+    const sameCode = (code: Uint8Array) =>
+        code.length === 8 && code.every((byte, i) => byte === SANDBOX_INVITE.code[i]);
 
     function apply(state: GameState, side: number, action: Action): GameRecord[] {
         let records: GameRecord[] = [];
@@ -577,6 +665,22 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
         name: async () => name,
         playerName: async (id) => (id === ACCOUNT ? name : OPPONENT_NAME),
 
+        async accountById(id) {
+            if (id === ACCOUNT) return account ? structuredClone(account) : null;
+            if (id !== SANDBOX_PEER_HOST) return null;
+            return {
+                id,
+                owner: "0x0000000000000000000000000000000000000000000000000000000000000b01",
+                rating: 1500,
+                deviation: 350,
+                score: { wins: 0, losses: 0, draws: 0 },
+                recruits: 4,
+                search: { kind: "searching", order: id, sinceMs: now() },
+                suspendedUntilMs: 0,
+                recovery: null,
+            };
+        },
+
         async setRecovery(wallet) {
             const me = requireAccount();
             if (me.recovery) {
@@ -597,7 +701,23 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
             return receipt([]);
         },
 
-        account: async () => (account ? structuredClone(account) : null),
+        async account() {
+            // the scripted host answers a guest between two reads
+            if (
+                guestOf &&
+                account?.search.kind === "searching" &&
+                !guestOf.kicked &&
+                now() - guestOf.since >= (options.peerAnswersMs ?? 5_000)
+            ) {
+                if (options.peerKicks) {
+                    guestOf.kicked = true;
+                    account.search = { kind: "idle" };
+                } else {
+                    startFriendlyGame(SANDBOX_PEER_HOST, ACCOUNT, MIN_LOBBY_SIZE);
+                }
+            }
+            return account ? structuredClone(account) : null;
+        },
         game: async (id) => (current?.id === id ? structuredClone(current) : null),
 
         async createAccount() {
@@ -645,19 +765,8 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
         },
 
         async findGame() {
-            const me = requireAccount();
-            if (me.search.kind !== "idle") {
-                throw new ActionError("rejected", "This account is already searching or playing.");
-            }
-            if (now() < me.suspendedUntilMs) {
-                throw new ActionError(
-                    "rejected",
-                    "This account is suspended: it left a game behind.",
-                );
-            }
-            if (me.recruits === 0) {
-                throw new ActionError("rejected", "This account has no recruits to play with.");
-            }
+            const me = checkFree();
+            yourSide = options.seated ? 0 : 1;
             const order = hexId("7", digests + 1);
             if (options.empty) {
                 me.search = { kind: "searching", order, sinceMs: now() };
@@ -676,10 +785,111 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
             return receipt(apply(current, theirSide(), { kind: "deploy" }));
         },
 
+        async openLobby(size, code) {
+            const me = checkFree();
+            if (!Number.isInteger(size) || size < MIN_LOBBY_SIZE || size > MAX_LOBBY_SIZE) {
+                throw refuse("A lobby has 3 or 4 recruits a side.");
+            }
+            const key = code ? protectedKey(code) : ACCOUNT;
+            me.search = { kind: "searching", order: key, sinceMs: now() };
+            mine = { kind: code ? "invite" : "open", size, guest: null, kicked: [], sinceMs: now(), key };
+            if (options.guest && code) return receipt(startFriendlyGame(ACCOUNT, OPPONENT_ACCOUNT, size));
+            if (options.guest) mine.guest = OPPONENT_ACCOUNT;
+            return receipt([]);
+        },
+
+        async joinLobby(host, code) {
+            const me = checkFree();
+            if (!sameCode(code)) throw refuse("There is no such lobby: check the code and the host.");
+            if (host !== SANDBOX_PEER_HOST) throw refuse("That account does not host the lobby the code opens.");
+            void me;
+            return receipt(startFriendlyGame(SANDBOX_PEER_HOST, ACCOUNT, MIN_LOBBY_SIZE));
+        },
+
+        async joinOpen(host) {
+            const me = checkFree();
+            if (host !== SANDBOX_PEER_HOST) throw refuse("There is no such lobby: check the code and the host.");
+            if (!peerOpen()) throw refuse("The host kicked this account out of that lobby.");
+            me.search = { kind: "searching", order: SANDBOX_PEER_HOST, sinceMs: now() };
+            guestOf = { kicked: false, since: now() };
+            return receipt([]);
+        },
+
+        async leaveLobby() {
+            const me = requireAccount();
+            if (!guestOf || me.search.kind !== "searching") {
+                throw refuse("There is no such lobby: check the code and the host.");
+            }
+            guestOf = null;
+            me.search = { kind: "idle" };
+            return receipt([]);
+        },
+
+        async kickGuest() {
+            if (!mine?.guest) throw new ActionError("no_lobby", "Your lobby has no guest.");
+            mine.kicked.push(mine.guest);
+            mine.guest = null;
+            return receipt([]);
+        },
+
+        async startFriendly() {
+            if (!mine?.guest) throw new ActionError("no_lobby", "Your lobby has no guest to start with.");
+            if (now() - mine.sinceMs > LOBBY_LIFETIME_MS) throw refuse("That lobby has expired.");
+            return receipt(startFriendlyGame(ACCOUNT, mine.guest, mine.size));
+        },
+
+        async closeLobby() {
+            const me = requireAccount();
+            if (!mine) throw new ActionError("no_lobby", "This account does not host a lobby.");
+            mine = null;
+            me.search = { kind: "idle" };
+            return receipt([]);
+        },
+
+        async cleanUpLobby(host) {
+            if (host !== ACCOUNT || !mine) throw new ActionError("no_lobby", "That lobby is already gone.");
+            if (now() - mine.sinceMs <= LOBBY_LIFETIME_MS) {
+                throw refuse("Only the host can do that until the lobby has expired.");
+            }
+            mine = null;
+            requireAccount().search = { kind: "idle" };
+            return receipt([]);
+        },
+
+        async lobby(host) {
+            if (host === ACCOUNT) return myView();
+            return host === SANDBOX_PEER_HOST ? peerView() : null;
+        },
+
+        async inviteLobby(code) {
+            if (sameCode(code)) {
+                return { size: MIN_LOBBY_SIZE, field: "sandbox-invite", key: protectedKey(code) } satisfies InviteLobbyView;
+            }
+            return mine?.kind === "invite" && mine.key === protectedKey(code)
+                ? { size: mine.size, field: "sandbox-invite-me", key: mine.key }
+                : null;
+        },
+
+        async listLobbies() {
+            const listed = [myView(), peerOpen() ? peerView() : null];
+            return listed.filter((lobby): lobby is LobbyView => lobby !== null);
+        },
+
+        async searchRole(): Promise<SearchRole | null> {
+            const me = requireAccount();
+            if (me.search.kind !== "searching") return null;
+            if (mine) return { kind: mine.kind === "open" ? "hosting_open" : "hosting_invite" };
+            if (guestOf) return { kind: "guest", host: SANDBOX_PEER_HOST };
+            return { kind: seated ? "seat_waiting" : "queued" };
+        },
+
         async cancelSearch() {
             const me = requireAccount();
             if (me.search.kind !== "searching") {
                 throw new ActionError("rejected", "This account is not searching.");
+            }
+            if (mine || guestOf) {
+                throw new ActionError("rejected", "This account is not in the queue: leave or close the lobby.");
             }
             if (seated) {
                 throw new ActionError(

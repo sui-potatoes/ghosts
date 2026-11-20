@@ -13,6 +13,7 @@ import { turnLimitMs } from "./rules.ts";
 import type {
     AccountView,
     Ending,
+    GameMode,
     GameRecord,
     GameState,
     GameStatus,
@@ -149,6 +150,15 @@ export const GameStateBcs = bcs.enum("State", {
     Over: EndingBcs,
 });
 
+/**
+ * `ghosts::ghosts::Mode`: how a game is played. `Rated` is a queue match, `Friendly` a lobby game
+ * of `size`, the most recruits each side deploys. New variants are appended.
+ */
+export const ModeBcs = bcs.enum("Mode", {
+    Rated: null,
+    Friendly: bcs.struct("Friendly", { size: bcs.u8() }),
+});
+
 /** `ghosts::ghosts::Game`. Squads and the fallen are not fields: the units say whose they are. */
 export const GameBcs = bcs.struct("Game", {
     id: bcs.Address,
@@ -160,10 +170,29 @@ export const GameBcs = bcs.struct("Game", {
     history: bcs.vector(RecordBcs),
     /** `Table<ID, Recruit>`: the recruits on the map. */
     recruits: Table,
+    /** Last field: how the game is played. */
+    mode: ModeBcs,
 });
 
 /** `ghosts::ghosts::Seat`: a place in `game`, sent to the `Account` a match found waiting. */
 export const SeatBcs = bcs.struct("Seat", { id: bcs.Address, game: bcs.Address });
+
+/**
+ * `ghosts::lobby::Lobby`: a lobby's size, its guest (listed lobbies only) and the `Account`s the
+ * host kicked out of it. An invite-only lobby is always `[size, 0, 0]`.
+ */
+export const LobbyBcs = bcs.struct("Lobby", {
+    size: bcs.u8(),
+    guest: bcs.option(bcs.Address),
+    kicked: bcs.vector(bcs.Address),
+});
+
+/**
+ * `0x2::dynamic_field::Field<ghosts::lobby::Open, Lobby>` and `Field<Protected, Lobby>`: the key
+ * of both is 32 bytes, `Open(ID)` the host's `Account` ID and `Protected(address)` the hash of the
+ * hash of the invite code.
+ */
+export const LobbyField = bcs.struct("Field", { id: bcs.Address, name: bcs.Address, value: LobbyBcs });
 
 const Rank = bcs.enum("Rank", {
     Rookie: null,
@@ -391,6 +420,13 @@ export function winnerOf(ending: Ending, players: string[]): string | null {
     }
 }
 
+/** `Mode`, as the plain view. */
+export function decodeMode(mode: ReturnType<typeof ModeBcs.parse>): GameMode {
+    return mode.$kind === "Friendly"
+        ? { kind: "friendly", size: mode.Friendly.size }
+        : { kind: "rated" };
+}
+
 function decodeStatus(game: DecodedGame): GameStatus {
     const { state } = game;
     if (state.$kind === "Deploying") return { kind: "deploying" };
@@ -463,6 +499,7 @@ export function decodeGame(bytes: Uint8Array, version: string): GameState {
                   ? Number(state.Playing.startedMs) + turnLimitMs(game.turn)
                   : 0,
         status,
+        mode: decodeMode(game.mode),
         tiles: decodeTiles(game.map),
         units,
     };

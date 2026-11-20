@@ -9,7 +9,10 @@
 //
 // Each line is `FIX <name> <hex>`: the name is the key in `fixtures.ts`. `gameScript0` to
 // `gameScript10` are the game after each step of the scripted match `parity.test.ts` plays in the
-// sandbox. Nothing is added to the repo.
+// sandbox. The friendly games (`gameFriendly*`, `account*`) are printed by the two tests at the end of
+// this part. The lobby values (`lobby*`, `accountLobby*` and the ids) come from the second part,
+// which goes at the end of `packages/ghosts/tests/lobby.move` (it extends `ghosts::lobby`, so it can
+// read a lobby's bytes) and runs with `sui move test print_lobbies -s`. Nothing is added to the repo.
 
 use ghosts::effect;
 use grid::direction::{up, left};
@@ -203,3 +206,112 @@ fun name_of(prefix: vector<u8>, suffix: vector<u8>): vector<u8> {
     p.append(suffix);
     p
 }
+
+/// The friendly games and the lobby `Account`s: Alice hosts, Bob comes. On Demo 1, one
+/// recruit a side, the code `CODE` (0102030405060708) and the size in the lobby.
+#[test]
+fun print_friendly_games() {
+    let mut fixture = setup_grenadiers();
+    let f = &mut fixture;
+    fix(b"friendlyLobbiesId", to_bytes(&object::id(&f.lobbies)));
+    fix(b"friendlyAliceId", to_bytes(&object::id(&f.alice)));
+    fix(b"friendlyBobId", to_bytes(&object::id(&f.bob)));
+    fix(b"friendlyCodeHash", to_bytes(&code_hash()));
+    f.open(3, true);
+    fix(b"accountHostingInvite", to_bytes(&f.alice));
+    let mut game = f.join_invite();
+    fix(b"gameFriendlyDeploying", to_bytes(&game));
+    fix(b"accountFriendlyPlaying", to_bytes(&f.bob));
+    f.clock.set_for_testing(1000);
+    f.deploy(&mut game);
+    fix(b"gameFriendlyPlaying", to_bytes(&game));
+    kill(&mut game, vector[f.alice_recruit]);
+    fix(b"gameFriendlyOverFallen", to_bytes(&game));
+    ts::return_shared(game);
+    fixture.finish();
+}
+
+#[test]
+fun print_friendly_listed() {
+    let mut fixture = setup_grenadiers();
+    let f = &mut fixture;
+    f.open(4, false);
+    f.join_listed();
+    fix(b"accountGuestWaiting", to_bytes(&f.bob));
+    let game = f.start_listed();
+    fix(b"gameFriendlyListedDeploying", to_bytes(&game));
+    ts::return_shared(game);
+    fixture.finish();
+}
+
+// ---- second part: the end of `packages/ghosts/tests/lobby.move` (its own `fix` below) ----
+//
+// fun fix(name: vector<u8>, bytes: vector<u8>) {
+//     let mut line = b"FIX ".to_string();
+//     line.append(name.to_string());
+//     line.append(b" ".to_string());
+//     line.append(sui::hex::encode(bytes).to_string());
+//     std::debug::print(&line);
+// }
+//
+// #[test]
+// fun print_lobbies() {
+//     let (alice, bob, carol, dave) = (@0xA11CE, @0xB0B, @0xCA401, @0xDA7E);
+//     let mut ts = ts::begin(@0);
+//     account::init_for_testing(ts.ctx());
+//     ts.next_tx(alice);
+//     let mut registry = ts.take_shared<Registry>();
+//     registry.new_account(ts.ctx());
+//     ts.next_tx(bob);
+//     registry.new_account(ts.ctx());
+//     ts.next_tx(carol);
+//     registry.new_account(ts.ctx());
+//     ts.next_tx(dave);
+//     registry.new_account(ts.ctx());
+//
+//     ts.next_tx(alice);
+//     let mut lobbies = new(ts.ctx());
+//     let mut alice = ts.take_shared_by_id<Account>(registry.account_of(alice));
+//     let mut bob = ts.take_shared_by_id<Account>(registry.account_of(bob));
+//     let mut carol = ts.take_shared_by_id<Account>(registry.account_of(carol));
+//     let mut dave = ts.take_shared_by_id<Account>(registry.account_of(dave));
+//     fix(b"lobbiesId", bcs::to_bytes(&object::id(&lobbies)));
+//     fix(b"aliceId", bcs::to_bytes(&object::id(&alice)));
+//     fix(b"bobId", bcs::to_bytes(&object::id(&bob)));
+//     fix(b"carolId", bcs::to_bytes(&object::id(&carol)));
+//     fix(b"daveId", bcs::to_bytes(&object::id(&dave)));
+//
+//     // an invite-only lobby of 4: code 0102030405060708
+//     let code = x"0102030405060708";
+//     let code_hash = address::from_bytes(hash::blake2b256(&code));
+//     fix(b"codeHash", bcs::to_bytes(&code_hash));
+//     lobbies.open(&mut carol, 4, option::some(code_hash), 5000);
+//     let key = Protected(protected_key(code));
+//     fix(b"protectedKey", bcs::to_bytes(&key.0));
+//     fix(b"lobbyFresh", lobbies.bytes(key));
+//     fix(b"accountLobbyProtectedHost", bcs::to_bytes(&carol));
+//
+//     // a listed lobby of 3 with a guest
+//     let host = object::id(&alice);
+//     lobbies.open(&mut alice, 3, option::none(), 7000);
+//     fix(b"accountLobbyOpenHost", bcs::to_bytes(&alice));
+//     lobbies.join_open(&alice, &mut bob, 8000);
+//     fix(b"accountLobbyGuest", bcs::to_bytes(&bob));
+//     fix(b"lobbyGuest", lobbies.bytes(Open(host)));
+//
+//     // the host kicks the guest, and a second one takes the slot
+//     lobbies.kick(&alice, &mut bob, 8500, ts.ctx());
+//     fix(b"lobbyKicked", lobbies.bytes(Open(host)));
+//     lobbies.join_open(&alice, &mut dave, 9000);
+//     fix(b"lobbyGuestAndKicked", lobbies.bytes(Open(host)));
+//
+//     // the lobbies are left as they are: sui::test_utils destroys them
+//     sui::test_utils::destroy(lobbies);
+//     ts::return_shared(alice);
+//     ts::return_shared(bob);
+//     ts::return_shared(carol);
+//     ts::return_shared(dave);
+//     ts::return_shared(registry);
+//     ts.end();
+// }
+//

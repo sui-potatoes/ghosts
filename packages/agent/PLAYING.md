@@ -32,6 +32,13 @@ gp whoami
 | `setup`                                       | Create the account if missing, hire four recruits, arm them     |
 | `find`                                        | Join the queue (or start a game at once if someone waits)       |
 | `cancel`                                      | Leave the queue                                                 |
+| `host [--size 3\|4] [--invite]`               | Open a friendly lobby; `--invite` prints `host:code` to share   |
+| `lobbies`                                     | The listed lobbies: host, size, full, time left                 |
+| `join-open HOST`                              | Take the guest slot of a listed lobby                           |
+| `join HOST:CODE`                              | Join an invite-only lobby: the game starts at once              |
+| `kick` / `start`                              | Host of a listed lobby: kick the guest, or start the game       |
+| `leave` / `close`                             | Leave a lobby you wait in, or close the one you host            |
+| `cleanup HOST`                                | Close an expired lobby of someone else's (kicks its guest)      |
 | `status`                                      | Only the situation: phase, turn, clock                          |
 | `wait [--timeout S]`                          | Block until you must act or S seconds pass (default 45, max 600) |
 | `state [--moves N]`                           | Map, every unit, your legal orders, recent history              |
@@ -145,6 +152,13 @@ loop:
   player starts the game at once and plays second; the one who waited goes first and the next `wait`
   accepts their seat.
 
+Friendly lobbies: `host` (or `host --invite`) then `wait`; the other side runs `join-open HOST`
+or `join HOST:CODE`. A friendly game moves no rating or score, never suspends you, and brings
+every recruit home, the fallen too. The lobby host goes first, each side deploys up to the
+lobby's size, and a lobby lasts 10 minutes. `status` shows `lobby_hosting` (actionable once a
+guest waits or the lobby expired) or `lobby_guest` while you are in one; `wait` never cancels it.
+`find` and `cancel` are refused while you are in a lobby.
+
 ## Refusals
 
 | `error`            | Meaning                                                                   |
@@ -155,6 +169,7 @@ loop:
 | `name_taken`/`bad_name` | Pick another; 3-63 lowercase letters, digits, hyphens                 |
 | `no_account`       | Run `setup`                                                               |
 | `no_game`          | Not in a game (queue first, or it was already completed)                  |
+| `no_lobby`         | You host no lobby, or it has no guest, or it is already gone              |
 | `low_balance`      | Not enough SUI for gas: the owner must fund the address (no faucet here)  |
 | `over_budget`      | The transaction would cost more than `GHOSTS_MAX_GAS_MIST`                |
 | `rejected`         | The chain refused it (a stale read, or someone acted first); run `state` and retry |

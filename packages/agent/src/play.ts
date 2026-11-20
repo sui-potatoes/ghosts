@@ -17,12 +17,15 @@ export const USAGE = `ghosts-play <command> [args]   (JSON on stdout, one line p
 
 identity   whoami | name <name> | setup
 queue      find | cancel | status
+friendly   host [--size 3|4] [--invite] | lobbies | join-open HOST | join HOST:CODE | join HOST CODE
+           kick | start | leave | close | cleanup HOST
 state      state [--moves N] | legal [--unit X,Y] [--kind K] [--limit N]
 wait       wait [--timeout SECONDS]        (returns when you must act, or the time is up)
 act        move X,Y PATH | attack X,Y TX,TY | reload X,Y
            grenade X,Y TX,TY | flashbang X,Y TX,TY | smoke_grenade X,Y TX,TY
            end | deploy | complete | abandon | act ID [ID...]
 PATH is letters u d l r (up = x-1, down = x+1, left = y-1, right = y+1), e.g. uull.
+HOST is an Account ID. host --invite prints an invite, HOST:CODE, to share; join takes it back.
 Env: GHOSTS_NETWORK (default testnet), GHOSTS_SEAT=N or GHOSTS_KEY_FILE.`;
 
 /** What `wait` may hold the call for, at most. */
@@ -38,6 +41,8 @@ export interface Parsed {
         kind?: LegalAction["kind"];
         limit?: number;
         moves?: number;
+        size?: number;
+        invite?: boolean;
     };
 }
 
@@ -82,6 +87,8 @@ export function parseCommand(argv: string[]): Parsed {
                 kind: { type: "string" },
                 limit: { type: "string" },
                 moves: { type: "string" },
+                size: { type: "string" },
+                invite: { type: "boolean" },
             },
         });
     } catch (error) {
@@ -103,6 +110,8 @@ export function parseCommand(argv: string[]): Parsed {
     }
     if (values.limit !== undefined) flags.limit = count("limit", values.limit, 1, 500);
     if (values.moves !== undefined) flags.moves = count("moves", values.moves, 0, 500);
+    if (values.size !== undefined) flags.size = count("size", values.size, 3, 4);
+    if (values.invite !== undefined) flags.invite = values.invite;
     return { command, positionals, flags };
 }
 
@@ -288,6 +297,37 @@ export async function runCommand(agent: GhostsAgent, parsed: Parsed): Promise<un
         case "status":
             arity(parsed, 0, "no arguments");
             return agent.situation();
+        case "host":
+            arity(parsed, 0, "no arguments");
+            return agent.hostLobby({ size: flags.size, invite: flags.invite });
+        case "lobbies":
+            arity(parsed, 0, "no arguments");
+            return { lobbies: await agent.lobbies() };
+        case "join-open":
+            arity(parsed, 1, "an Account ID: join-open 0xHOST");
+            return agent.joinOpen(positionals[0]);
+        case "join":
+            if (positionals.length !== 1 && positionals.length !== 2) {
+                throw usage("join takes HOST:CODE, or HOST CODE.");
+            }
+            return positionals.length === 1
+                ? agent.joinInvite(positionals[0])
+                : agent.joinInvite(positionals[0], positionals[1]);
+        case "kick":
+            arity(parsed, 0, "no arguments");
+            return agent.kickGuest();
+        case "start":
+            arity(parsed, 0, "no arguments");
+            return agent.startFriendly();
+        case "leave":
+            arity(parsed, 0, "no arguments");
+            return agent.leaveLobby();
+        case "close":
+            arity(parsed, 0, "no arguments");
+            return agent.closeLobby();
+        case "cleanup":
+            arity(parsed, 1, "an Account ID: cleanup 0xHOST");
+            return agent.cleanUpLobby(positionals[0]);
         case "wait": {
             arity(parsed, 0, "no arguments");
             const seconds = flags.timeout ?? DEFAULT_WAIT_SECONDS;
@@ -326,6 +366,7 @@ async function state(agent: GhostsAgent, moves: number) {
         version: obs.version,
         you: obs.you,
         opponent: obs.opponent,
+        mode: obs.mode,
         turn: obs.turn,
         yourTurn: obs.yourTurn,
         status: obs.status,

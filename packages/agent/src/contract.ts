@@ -9,9 +9,11 @@
 
 import { Transaction } from "@mysten/sui/transactions";
 
+import { codeHash } from "./lobby.ts";
 import { ActionError, type Action, type GameState, type ObjectRef } from "./types.ts";
 
 const GAME_MODULE = "ghosts";
+const LOBBY_MODULE = "lobby";
 const ACCOUNT_MODULE = "account";
 
 export interface Deployment {
@@ -20,6 +22,8 @@ export interface Deployment {
     matchmaker: string;
     /** The frozen `Preset` games are played on, created once on publish. */
     preset: string;
+    /** The shared `Lobbies` object friendly games are listed on. */
+    lobbies: string;
     names: NameRegistry;
 }
 
@@ -42,10 +46,11 @@ export const TESTNET_NAMES: NameRegistry = {
 
 /** The package on testnet, the same ids as `GHOSTS` in `app/src/constants.ts`. */
 export const TESTNET_DEPLOYMENT: Deployment = {
-    package: "0xd1bba518863711c73ca6203855926233cf7d25466abcca7b22cc31e5d7c3026b",
-    registry: "0x9a8662c0b91147ed2f155ed5a585679bc18b0893ef5a2f815e1f3d7f6d7c2d7d",
-    matchmaker: "0xadddd57165fe63c88ae854ba98d476bac8faa565fa2a5c766f9f59f6d4cc2998",
-    preset: "0x6e834d1a513585caf95dd3a104723b1ad4de19c88e75f47a209dd2e0c96451b9",
+    package: "0xdbd205dbe67b44f721933e20b95010b8e01c7c1316ff32540d7af4cb46b4246e",
+    registry: "0xaa4e35823c515cf91bbcb53311f10d6fccc2d4e4bc148fa8bb7d43f250d79589",
+    matchmaker: "0x93791ca35a785341beff57c4d59647e26da06d923c8666e67d204e401dbd017e",
+    preset: "0x5e37e87da2aca8ce31b0a2ac918ea76fa376ba9d8c02e61e976d5c9c7c2ebff1",
+    lobbies: "0x81afce11aa84fc75c08ebee3565670961002122986396444c32333f7fb72185f",
     names: TESTNET_NAMES,
 };
 
@@ -142,6 +147,136 @@ export function cancelSearchTx(d: Deployment, account: string): Transaction {
         target: `${d.package}::${GAME_MODULE}::cancel_search`,
         arguments: [tx.object(d.matchmaker), tx.object(account), tx.object(CLOCK)],
     });
+    return tx;
+}
+
+// === Friendly lobbies ===
+
+/**
+ * Open a lobby of `size` (3 or 4) for the `Account`: listed (keyed by the `Account`) without a
+ * `code`, invite-only with the 8-byte invite code, of which only `blake2b256(code)` is sent. The
+ * `Account` is `Searching` in it, for `LOBBY_LIFETIME_MS`, until it starts or closes.
+ */
+export function openLobbyTx(
+    d: Deployment,
+    account: string,
+    size: number,
+    code?: Uint8Array,
+): Transaction {
+    const tx = new Transaction();
+    tx.moveCall({
+        target: `${d.package}::${GAME_MODULE}::open_lobby`,
+        arguments: [
+            tx.object(d.lobbies),
+            tx.object(account),
+            tx.object(CLOCK),
+            tx.pure.u8(size),
+            tx.pure.option("address", code ? codeHash(code) : null),
+        ],
+    });
+    return tx;
+}
+
+/** Join the invite-only lobby of `host` (its `Account` ID) with the invite code: the game starts at once. */
+export function joinLobbyTx(
+    d: Deployment,
+    account: string,
+    host: string,
+    code: Uint8Array,
+): Transaction {
+    const tx = new Transaction();
+    tx.moveCall({
+        target: `${d.package}::${GAME_MODULE}::join_lobby`,
+        arguments: [
+            tx.object(d.lobbies),
+            tx.object(d.preset),
+            tx.object(host),
+            tx.object(account),
+            tx.object(CLOCK),
+            tx.pure.vector("u8", Array.from(code)),
+        ],
+    });
+    return tx;
+}
+
+/** Take the guest slot of the listed lobby of `host`, until its host starts it or kicks the guest. */
+export function joinOpenTx(d: Deployment, account: string, host: string): Transaction {
+    const tx = new Transaction();
+    tx.moveCall({
+        target: `${d.package}::${GAME_MODULE}::join_open`,
+        arguments: [tx.object(d.lobbies), tx.object(host), tx.object(account), tx.object(CLOCK)],
+    });
+    return tx;
+}
+
+/** The guest leaves the listed lobby it waits in. */
+export function leaveLobbyTx(d: Deployment, account: string): Transaction {
+    const tx = new Transaction();
+    tx.moveCall({
+        target: `${d.package}::${GAME_MODULE}::leave_lobby`,
+        arguments: [tx.object(d.lobbies), tx.object(account)],
+    });
+    return tx;
+}
+
+/** `kick_guest`, as a step of a transaction. */
+function kickGuest(d: Deployment, tx: Transaction, host: string, guest: string) {
+    tx.moveCall({
+        target: `${d.package}::${GAME_MODULE}::kick_guest`,
+        arguments: [tx.object(d.lobbies), tx.object(host), tx.object(guest), tx.object(CLOCK)],
+    });
+}
+
+/** `close_lobby`, as a step of a transaction. */
+function closeLobby(d: Deployment, tx: Transaction, host: string) {
+    tx.moveCall({
+        target: `${d.package}::${GAME_MODULE}::close_lobby`,
+        arguments: [tx.object(d.lobbies), tx.object(host), tx.object(CLOCK)],
+    });
+}
+
+/**
+ * Kick `guest` out of the listed lobby of `host`. The host can at any time, and the guest cannot
+ * come back; anyone else once the lobby's lifetime is out, which is not recorded.
+ */
+export function kickGuestTx(d: Deployment, host: string, guest: string): Transaction {
+    const tx = new Transaction();
+    kickGuest(d, tx, host, guest);
+    return tx;
+}
+
+/** The host starts the game of its listed lobby with its guest. */
+export function startFriendlyTx(d: Deployment, host: string, guest: string): Transaction {
+    const tx = new Transaction();
+    tx.moveCall({
+        target: `${d.package}::${GAME_MODULE}::start_friendly`,
+        arguments: [
+            tx.object(d.lobbies),
+            tx.object(d.preset),
+            tx.object(host),
+            tx.object(guest),
+            tx.object(CLOCK),
+        ],
+    });
+    return tx;
+}
+
+/** Close the lobby `host` hosts, of either kind, with nobody in its slot: the host at any time. */
+export function closeLobbyTx(d: Deployment, host: string): Transaction {
+    const tx = new Transaction();
+    closeLobby(d, tx, host);
+    return tx;
+}
+
+/**
+ * Close a lobby with a guest in it: kick, then close, in one transaction. The host can do it at
+ * any time (the guest is recorded as kicked); anyone can once the lobby's lifetime is out (the
+ * guest is not recorded). Both `Account`s end idle and the lobby is gone.
+ */
+export function closeLobbyWithGuestTx(d: Deployment, host: string, guest: string): Transaction {
+    const tx = new Transaction();
+    kickGuest(d, tx, host, guest);
+    closeLobby(d, tx, host);
     return tx;
 }
 
@@ -362,8 +497,22 @@ const ABORTS: Record<string, Record<number, string>> = {
         17: "The game is still running.",
         21: "Your squad is already deployed.",
         22: "This account has no recruits to play with.",
-        25: "A match found this search: accept its seat first.",
+        25: "This account is not in the queue: in a lobby, leave or close it; if a match found its search, accept the seat first.",
         27: "This account has yet to accept its seat in the game.",
+        28: "That squad is larger than the friendly game allows.",
+    },
+    [LOBBY_MODULE]: {
+        0: "A lobby has 3 or 4 recruits a side.",
+        1: "A lobby is already open under that key: close it, or use another code.",
+        2: "There is no such lobby: check the code and the host.",
+        3: "That account does not host the lobby the code opens.",
+        4: "That lobby has expired.",
+        5: "That lobby is full.",
+        6: "The host kicked this account out of that lobby.",
+        7: "There is no guest in that lobby.",
+        8: "That account is not the guest of that lobby.",
+        9: "Only the host can do that until the lobby has expired.",
+        10: "The lobby has a guest: kick them first, in the same transaction.",
     },
     [ACCOUNT_MODULE]: {
         0: "This address already has an account.",

@@ -13,6 +13,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import type { GhostsAgent } from "./agent.ts";
+import { LOBBY_LIFETIME_MS, MAX_LOBBY_SIZE, MIN_LOBBY_SIZE } from "./lobby.ts";
 import { NAME_MAX, NAME_MIN } from "./names.ts";
 import {
     DEPLOY_LIMIT_MS,
@@ -59,6 +60,13 @@ GIVING UP: the abandon action ends the game as a loss and suspends your account 
 never listed as a legal action.
 
 NAME: your name is how every opponent knows you. Pick it yourself before your first game.
+
+FRIENDLY: a friendly game is played for nothing: no rating, score, suspension or XP moves, and the
+fallen recruits come home with the survivors. Host a lobby (ghosts_host_lobby: listed, or invite-only
+with a code to share), or join one (ghosts_list_lobbies then ghosts_join_open, or ghosts_join_invite
+with the host:code you were given). In a listed lobby the host starts the game (ghosts_start_friendly)
+or kicks the guest, who cannot return (ghosts_kick_guest); an invite starts the game as soon as the
+guest joins. A lobby lasts ${LOBBY_LIFETIME_MS / 60_000} minutes. Each side deploys 1 to the lobby's size.
 
 LOOP: ghosts_status, ghosts_set_name, ghosts_setup, ghosts_find_game, then repeat: ghosts_wait,
 ghosts_observe, ghosts_legal_actions, ghosts_act. Use deploy when the game starts. On your turn call
@@ -161,6 +169,119 @@ export function createMcpServer(agent: GhostsAgent): McpServer {
         "ghosts_cancel_search",
         { description: "Stop searching for a game.", annotations: WRITE },
         () => answer(() => agent.cancelSearch()),
+    );
+
+    const accountId = z
+        .string()
+        .max(80)
+        .describe("A host's Account ID: 0x and 64 hex digits.");
+
+    server.registerTool(
+        "ghosts_host_lobby",
+        {
+            description:
+                "Open a friendly lobby, then call ghosts_wait. Listed (default): anyone can take the " +
+                "guest slot and you start the game or kick them. With invite, the lobby is private: " +
+                "the result has an invite to share (host:code, shown once), and the game starts when " +
+                "the guest joins with it.",
+            inputSchema: {
+                size: z
+                    .number()
+                    .int()
+                    .min(MIN_LOBBY_SIZE)
+                    .max(MAX_LOBBY_SIZE)
+                    .default(MIN_LOBBY_SIZE)
+                    .describe("Recruits a side may deploy."),
+                invite: z.boolean().default(false).describe("Private, with a code to share."),
+            },
+            annotations: WRITE,
+        },
+        ({ size, invite }) => answer(() => agent.hostLobby({ size, invite })),
+    );
+
+    server.registerTool(
+        "ghosts_list_lobbies",
+        {
+            description:
+                "The listed friendly lobbies: host Account ID, host name, size, whether it is full " +
+                "and how long it has left.",
+            annotations: READ_ONLY,
+        },
+        () => answer(async () => ({ lobbies: await agent.lobbies() })),
+    );
+
+    server.registerTool(
+        "ghosts_join_open",
+        {
+            description:
+                "Take the guest slot of a listed lobby, then call ghosts_wait: its host starts the " +
+                "game, or kicks you.",
+            inputSchema: { host: accountId },
+            annotations: WRITE,
+        },
+        ({ host }) => answer(() => agent.joinOpen(host)),
+    );
+
+    server.registerTool(
+        "ghosts_join_invite",
+        {
+            description:
+                "Join an invite-only lobby with the invite its host shared (host:code). The game " +
+                "starts at once.",
+            inputSchema: {
+                invite: z
+                    .string()
+                    .max(200)
+                    .describe("host:code, e.g. 0x...:ABCD-EFGH-JKMNP, or the host and the code split by a space."),
+            },
+            annotations: WRITE,
+        },
+        ({ invite }) => answer(() => agent.joinInvite(invite)),
+    );
+
+    server.registerTool(
+        "ghosts_kick_guest",
+        {
+            description: "Kick the guest out of your listed lobby. They cannot join it again.",
+            annotations: WRITE,
+        },
+        () => answer(() => agent.kickGuest()),
+    );
+
+    server.registerTool(
+        "ghosts_start_friendly",
+        {
+            description: "Start the game of your listed lobby with the guest waiting in it.",
+            annotations: WRITE,
+        },
+        () => answer(() => agent.startFriendly()),
+    );
+
+    server.registerTool(
+        "ghosts_leave_lobby",
+        { description: "Leave the listed lobby you wait in.", annotations: WRITE },
+        () => answer(() => agent.leaveLobby()),
+    );
+
+    server.registerTool(
+        "ghosts_close_lobby",
+        {
+            description: "Close the lobby you host, listed or invite-only. A guest is kicked first.",
+            annotations: WRITE,
+        },
+        () => answer(() => agent.closeLobby()),
+    );
+
+    server.registerTool(
+        "ghosts_clean_up_lobby",
+        {
+            description:
+                "Close the lobby of a host who left it open past its lifetime, kicking its guest, " +
+                "so both are free again. Refused until it has expired.",
+            inputSchema: { host: accountId },
+            annotations: WRITE,
+        },
+        ({ host }) => answer(() => agent.cleanUpLobby(host)),
     );
 
     server.registerTool(

@@ -12,6 +12,20 @@ import { isValidSuiAddress, normalizeSuiAddress } from "@mysten/sui/utils";
 
 import type { Backend } from "./backend.ts";
 import type { Policy } from "./bot.ts";
+import {
+    encodeCode,
+    formatCode,
+    formatInvite,
+    lobbyExpired,
+    lobbyExpiresAtMs,
+    MAX_LOBBY_SIZE,
+    MIN_LOBBY_SIZE,
+    newInviteCode,
+    parseCode,
+    parseInvite,
+    type LobbyView,
+    type SearchRole,
+} from "./lobby.ts";
 import { nameProblem, normalizeName } from "./names.ts";
 import {
     effectiveStats,
@@ -26,6 +40,7 @@ import {
     ActionError,
     type AccountView,
     type Ending,
+    type GameMode,
     type GameRecord,
     type GameState,
     type Receipt,
@@ -41,6 +56,10 @@ export type Phase =
     | "suspended"
     | "idle"
     | "searching"
+    /** Hosting a friendly lobby: `lobby` says who is in it. Actionable once a guest waits or it expired. */
+    | "lobby_hosting"
+    /** Waiting in the listed lobby of another host, until it starts the game or kicks you. */
+    | "lobby_guest"
     | "deploy"
     | "deployment_over"
     | "your_turn"
@@ -55,6 +74,8 @@ export interface Situation {
     /** The next step in plain words. */
     next: string;
     game?: string;
+    /** Set in the lobby phases. */
+    lobby?: LobbySituation;
     turn?: number;
     /** Time left to deploy or on the current turn. Past zero, only `next_turn` is open. */
     turnMsLeft?: number;
@@ -62,6 +83,40 @@ export interface Situation {
     result?: "won" | "lost" | "draw";
     /** Set in `game_over`: how the game ended, as the contract names it. */
     ending?: Ending["kind"];
+}
+
+/** What the lobby this agent is in looks like. */
+export interface LobbySituation {
+    role: "hosting_open" | "hosting_invite" | "guest";
+    /** The host's `Account` ID: this agent's own when hosting. */
+    host: string;
+    /** Recruits a side deploys; known for a listed lobby. */
+    size?: number;
+    /** The `Account` in the guest slot of a listed lobby. */
+    guest?: string | null;
+    /** Time left before anyone can close it; 0 once it expired. */
+    expiresInMs: number;
+}
+
+/** A listed lobby, as `lobbies` shows it. */
+export interface OpenLobby {
+    /** The host's `Account` ID: what `joinOpen` takes. */
+    host: string;
+    hostName: string | null;
+    size: number;
+    full: boolean;
+    /** Time left before it expires and can be closed by anyone; 0 if it already has. */
+    expiresInMs: number;
+}
+
+/** What hosting an invite-only lobby hands to its host to share. */
+export interface Invite {
+    /** The code, `XXXX-XXXX-XXXXX`. */
+    code: string;
+    /** The host's `Account` ID, which `join_lobby` needs besides the code. */
+    host: string;
+    /** `host:code`, what `joinInvite` takes as one string. */
+    text: string;
 }
 
 export interface ObservedUnit {
@@ -99,6 +154,8 @@ export interface Observation {
     turn: number;
     yourTurn: boolean;
     status: GameState["status"]["kind"];
+    /** How the game is played: a friendly one deploys up to `size` recruits and moves no rating. */
+    mode: GameMode;
     turnMsLeft: number;
     /** One string per row. `x` is the row index and `y` the column. */
     map: string[];
@@ -185,7 +242,7 @@ export class GhostsAgent {
         };
     }
 
-    async situation(): Promise<Situation> {
+    async situation(role?: SearchRole | null): Promise<Situation> {
         const account = await this.backend.account();
         if (account?.search.kind === "playing") {
             const game = await this.backend.game(account.search.game);
@@ -197,9 +254,10 @@ export class GhostsAgent {
         }
         if (!account) return todo("no_account", "Run setup to open an account and hire a squad.");
         if (account.recruits === 0) return todo("no_squad", "Run setup to hire a squad.");
-        if (account.search.kind === "searching") {
-            return { phase: "searching", actionable: false, next: "Wait for an opponent." };
+        if (account.search.kind === "searching" && role === undefined) {
+            role = await this.backend.searchRole();
         }
+        if (account.search.kind === "searching") return this.searching(account, role ?? null);
         if (this.now() < account.suspendedUntilMs) {
             return {
                 phase: "suspended",
@@ -210,8 +268,76 @@ export class GhostsAgent {
         const short = account.recruits < FREE_RECRUITS;
         return todo(
             "idle",
-            short ? "Run setup to replace the fallen, then find a game." : "Find a game.",
+            short
+                ? "Run setup to replace the fallen, then find a game."
+                : "Find a game, or host or join a friendly lobby.",
         );
+    }
+
+    /** A search that is the queue (or a seat waiting), or a place in a friendly lobby. */
+    private async searching(account: AccountView, role: SearchRole | null): Promise<Situation> {
+        if (account.search.kind !== "searching") return todo("idle", "Find a game.");
+        const sinceMs = account.search.sinceMs;
+        const expiresInMs = Math.max(0, lobbyExpiresAtMs(sinceMs) - this.now());
+        if (role?.kind === "hosting_invite") {
+            const lobby: LobbySituation = { role: role.kind, host: account.id, expiresInMs };
+            if (lobbyExpired(sinceMs, this.now())) {
+                return {
+                    phase: "lobby_hosting",
+                    actionable: true,
+                    lobby,
+                    next: "Your lobby expired: close it. Nobody can join it any more.",
+                };
+            }
+            return {
+                phase: "lobby_hosting",
+                actionable: false,
+                lobby,
+                next: "Wait for your guest to join with the invite: the game starts when they do.",
+            };
+        }
+        if (role?.kind === "hosting_open") {
+            const found = await this.backend.lobby(account.id);
+            const lobby: LobbySituation = {
+                role: role.kind,
+                host: account.id,
+                size: found?.size,
+                guest: found?.guest ?? null,
+                expiresInMs,
+            };
+            if (lobbyExpired(sinceMs, this.now())) {
+                return {
+                    phase: "lobby_hosting",
+                    actionable: true,
+                    lobby,
+                    next: "Your lobby expired: close it. Nobody can join or start it any more.",
+                };
+            }
+            if (lobby.guest) {
+                return {
+                    phase: "lobby_hosting",
+                    actionable: true,
+                    lobby,
+                    next: "A guest waits in your lobby: start the game, or kick them.",
+                };
+            }
+            return {
+                phase: "lobby_hosting",
+                actionable: false,
+                lobby,
+                next: "Wait for a guest to take the slot of your lobby.",
+            };
+        }
+        if (role?.kind === "guest") {
+            const lobby: LobbySituation = { role: role.kind, host: role.host, expiresInMs };
+            return {
+                phase: "lobby_guest",
+                actionable: false,
+                lobby,
+                next: "Wait for the host to start the game, or leave the lobby.",
+            };
+        }
+        return { phase: "searching", actionable: false, next: "Wait for an opponent." };
     }
 
     private inGame(account: AccountView, game: GameState): Situation {
@@ -306,11 +432,19 @@ export class GhostsAgent {
      */
     private async advance(): Promise<Situation> {
         let account = await this.backend.account();
+        let role: SearchRole | null | undefined;
         if (account?.search.kind === "searching") {
-            if (await this.backend.acceptSeat()) account = await this.backend.account();
+            role = await this.backend.searchRole();
+            // a lobby is no queue ticket: nothing to accept, and a lobby lives its own lifetime
+            const queue = !role || role.kind === "queued" || role.kind === "seat_waiting";
+            if (queue && (await this.backend.acceptSeat())) {
+                account = await this.backend.account();
+                role = undefined;
+            }
         }
         if (
             account?.search.kind === "searching" &&
+            (role === undefined || role?.kind === "queued") &&
             this.now() - account.search.sinceMs > SEARCH_TIMEOUT_MS
         ) {
             // Nobody has answered in a while: leave the queue, so a stale ticket doesn't
@@ -322,7 +456,7 @@ export class GhostsAgent {
                 if (!(error instanceof ActionError) || error.code !== "rejected") throw error;
             }
         }
-        return this.situation();
+        return this.situation(role);
     }
 
     /**
@@ -366,6 +500,136 @@ export class GhostsAgent {
     async cancelSearch(): Promise<Situation> {
         await this.backend.cancelSearch();
         return this.situation();
+    }
+
+    // === Friendly lobbies ===
+
+    /**
+     * Host a friendly lobby of `size` (3 or 4 recruits a side, default 3). Listed unless `invite`:
+     * an invite-only lobby is opened with a fresh code, which comes back once for the host to share.
+     * Then `wait`. A friendly game moves no rating and costs no recruit.
+     */
+    async hostLobby(
+        options: { size?: number; invite?: boolean } = {},
+    ): Promise<{ situation: Situation; invite?: Invite }> {
+        const size = options.size ?? MIN_LOBBY_SIZE;
+        if (!Number.isInteger(size) || size < MIN_LOBBY_SIZE || size > MAX_LOBBY_SIZE) {
+            throw new ActionError(
+                "bad_action",
+                `A lobby has ${MIN_LOBBY_SIZE} or ${MAX_LOBBY_SIZE} recruits a side.`,
+            );
+        }
+        await this.named();
+        const code = options.invite ? newInviteCode() : undefined;
+        await this.backend.openLobby(size, code);
+        const situation = await this.situation();
+        if (!code) return { situation };
+        const account = await this.backend.account();
+        const host = account!.id;
+        return {
+            situation,
+            invite: { code: formatCode(encodeCode(code)), host, text: formatInvite(host, code) },
+        };
+    }
+
+    /**
+     * Join the invite-only lobby of `host` (its `Account` ID) with its code, `XXXX-XXXX-XXXXX` in
+     * any case and separators; the game starts at once. Or pass one string, `host:code`.
+     */
+    async joinInvite(host: string, code?: string): Promise<Situation> {
+        let account = host;
+        let text = code;
+        if (text === undefined) {
+            const invite = parseInvite(host);
+            if (!invite) {
+                throw new ActionError("bad_action", "That is not an invite: it is host:code.");
+            }
+            account = invite.host;
+            text = formatCode(encodeCode(invite.code));
+        }
+        const parsed = parseCode(text);
+        if (!parsed.ok) throw new ActionError("bad_action", parsed.message);
+        if (!isValidSuiAddress(normalizeSuiAddress(account))) {
+            throw new ActionError("bad_action", "The host is an Account ID, 0x and 64 hex digits.");
+        }
+        await this.named();
+        await this.backend.joinLobby(normalizeSuiAddress(account), parsed.code);
+        return this.advance();
+    }
+
+    /** The listed lobbies, soonest to expire first, full ones included (they can't be joined). */
+    async lobbies(): Promise<OpenLobby[]> {
+        const listed = await this.backend.listLobbies();
+        const open = await Promise.all(
+            listed.map(async (lobby): Promise<OpenLobby> => {
+                const host = await this.backend.accountById(lobby.host);
+                const since = host?.search.kind === "searching" ? host.search.sinceMs : null;
+                if (!this.names.has(lobby.host) && host) {
+                    this.names.set(lobby.host, await this.backend.playerName(lobby.host));
+                }
+                return {
+                    host: lobby.host,
+                    hostName: this.names.get(lobby.host) ?? null,
+                    size: lobby.size,
+                    full: lobby.guest !== null,
+                    expiresInMs:
+                        since === null ? 0 : Math.max(0, lobbyExpiresAtMs(since) - this.now()),
+                };
+            }),
+        );
+        return open.sort((a, b) => a.expiresInMs - b.expiresInMs);
+    }
+
+    /** Take the guest slot of the listed lobby of `host`: then `wait` for its host to start. */
+    async joinOpen(host: string): Promise<Situation> {
+        if (!isValidSuiAddress(normalizeSuiAddress(host))) {
+            throw new ActionError("bad_action", "The host is an Account ID, 0x and 64 hex digits.");
+        }
+        await this.named();
+        await this.backend.joinOpen(normalizeSuiAddress(host));
+        return this.advance();
+    }
+
+    /** Leave the listed lobby this agent waits in. */
+    async leaveLobby(): Promise<Situation> {
+        await this.backend.leaveLobby();
+        return this.situation();
+    }
+
+    /** Kick the guest out of this agent's listed lobby: they cannot join it again. */
+    async kickGuest(): Promise<Situation> {
+        await this.backend.kickGuest();
+        return this.situation();
+    }
+
+    /** Start the friendly game of this agent's listed lobby with its guest. */
+    async startFriendly(): Promise<Situation> {
+        await this.backend.startFriendly();
+        return this.advance();
+    }
+
+    /** Close this agent's lobby, of either kind. A guest is kicked first. */
+    async closeLobby(): Promise<Situation> {
+        await this.backend.closeLobby();
+        return this.situation();
+    }
+
+    /** Close the expired lobby of `host` for them, kicking its guest: anyone can, once it is out. */
+    async cleanUpLobby(host: string): Promise<Situation> {
+        await this.backend.cleanUpLobby(normalizeSuiAddress(host));
+        return this.situation();
+    }
+
+    /** The listed lobby of `host`, if it exists. */
+    async lobby(host: string): Promise<LobbyView | null> {
+        return this.backend.lobby(normalizeSuiAddress(host));
+    }
+
+    private async named(): Promise<void> {
+        this.ownName ??= await this.backend.name();
+        if (!this.ownName) {
+            throw new ActionError("no_name", "Pick your name before your first game.");
+        }
     }
 
     /** The current game and this agent's side in it. */
@@ -444,6 +708,7 @@ export class GhostsAgent {
             turn: state.turn,
             yourTurn: state.status.kind === "active" && state.active === side,
             status: state.status.kind,
+            mode: state.mode,
             turnMsLeft: Math.max(0, state.deadlineMs - this.now()),
             map,
             legend: LEGEND,

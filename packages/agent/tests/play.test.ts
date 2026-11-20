@@ -154,6 +154,7 @@ test("an alias acts as the owner: the owner's address is the agent's", () => {
         registry: "0x2",
         matchmaker: "0x3",
         preset: "0x4",
+        lobbies: "0x5",
         names: TESTNET_NAMES,
     };
     const signer = Ed25519Keypair.generate();
@@ -489,6 +490,7 @@ const DEPLOYMENT: Deployment = {
     registry: "0x2",
     matchmaker: "0x3",
     preset: "0x4",
+    lobbies: "0x5",
     names: { package: "0x6", suins: "0x7", instance: "0x8", domain: "demo.ghosts.sui" },
 };
 const REF = { objectId: `0x${"cc".repeat(32)}`, version: "5", digest: "1".repeat(32) };
