@@ -468,7 +468,7 @@ function Screen({
                         }}
                     />
                 )}
-                {stage.loading && <div className="gui-stage-status">Bringing the squad in</div>}
+                {stage.loading && <div className="gui-stage-status">Loading the squad</div>}
                 {stage.error && (
                     <div className="gui-stage-status" data-error>
                         The squad could not be shown

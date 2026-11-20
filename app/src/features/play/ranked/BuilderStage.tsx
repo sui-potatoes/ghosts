@@ -189,7 +189,7 @@ export function BuilderStage({
                 );
             })}
             {!stage.ready && !stage.error && (
-                <div className="gui-stage-status">Bringing the squad in</div>
+                <div className="gui-stage-status">Loading the squad</div>
             )}
             {children}
         </section>

@@ -553,7 +553,7 @@ export function Deploy({
                     );
                 })}
                 <DeployPlaque command={deployCommand} over={over} />
-                {stage.loading && <div className="gui-stage-status">Bringing the squad in</div>}
+                {stage.loading && <div className="gui-stage-status">Loading the squad</div>}
                 {picking !== null && (
                     <RecruitPicker
                         index={picking}

@@ -43,7 +43,7 @@ export function Field({ refs }: { refs: FieldRefs }) {
               <span>
                 <Logo />
               </span>
-              <p>Bringing the squad in</p>
+              <p>Loading the match</p>
             </>
           )}
         </div>
