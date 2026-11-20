@@ -466,16 +466,15 @@
 .gui-empty-action[data-focused] {
     background: var(--band);
     color: var(--on-band);
-    animation: gui-band-in 110ms var(--snap);
+    animation: gui-band-in 100ms ease-out;
 }
 
-/* The band wipes in from its leading edge, the cursor's snap made solid. */
+/* The band lands white with readable text from the first frame and only settles in
+   brightness: the fill alone starts a little dim and eases to full. The text is never
+   touched, and no wipe ever leaves the row's old text on a dark ground. */
 @keyframes gui-band-in {
     from {
-        clip-path: inset(0 100% 0 0);
-    }
-    to {
-        clip-path: inset(0 0 0 0);
+        background-color: color-mix(in srgb, var(--band) 93%, var(--background-color));
     }
 }
 
@@ -483,23 +482,20 @@
 .gui-stat,
 .gui-slot,
 .gui-empty-action {
-    transition:
-        color 60ms linear,
-        transform 90ms ease-out,
-        filter 90ms ease-out;
+    transition: transform 90ms ease-out;
 }
 
-/* Pressed: the band sinks for a beat. A transition, so the band's own wipe never replays. */
+/* Pressed: the band sinks for a beat. A transition, so the band's own settle never replays. */
 .gui [data-focused][data-pressed] {
     transform: scale(0.985);
     filter: brightness(0.8);
     transition: none;
 }
 
-/* Refused: a shake. Listed after the wipe, so removing it leaves the wipe finished. */
+/* Refused: a shake. Listed after the settle, so removing it leaves the settle finished. */
 .gui [data-focused][data-denied] {
     animation:
-        gui-band-in 110ms var(--snap),
+        gui-band-in 100ms ease-out,
         gui-deny 220ms linear;
 }
 
@@ -2127,7 +2123,7 @@ span.gui-cmd {
 }
 
 .gui-chooser[data-focused] {
-    animation: gui-band-in 110ms var(--snap);
+    animation: gui-band-in 100ms ease-out;
 }
 
 .gui-action-row {
@@ -2155,7 +2151,7 @@ span.gui-cmd {
     background: var(--band);
     color: var(--on-band);
     border-color: var(--band);
-    animation: gui-band-in 110ms var(--snap);
+    animation: gui-band-in 100ms ease-out;
 }
 
 .gui-action-row[data-focused][data-tone="danger"] {
@@ -2363,7 +2359,7 @@ span.gui-cmd {
     background: var(--band);
     color: var(--on-band);
     border-color: var(--band);
-    animation: gui-band-in 110ms var(--snap);
+    animation: gui-band-in 100ms ease-out;
 }
 
 .gui-tile-chip {
@@ -2419,4 +2415,44 @@ span.gui-cmd {
 .gui-empty > .gui-inline {
     justify-content: center;
     margin-top: calc(var(--u) * 2);
+}
+
+/* A row's colours never animate, in or out: lit, the fill is already white (a fade would
+   pass through grey on white); released, the ground is already dark (a fade would pass
+   through dark on dark). Text, tags, icons and chips take their final colour in the same
+   frame the fill arrives or leaves; only the fill's own brightness settles (gui-band-in).
+   The bars inside a row keep their width and position moves. */
+.gui
+    :is(
+        .gui-row,
+        .gui-stat,
+        .gui-slot,
+        .gui-empty-action,
+        .gui-chooser,
+        .gui-action-row,
+        .gui-menu-item,
+        .gui-tile,
+        .gui-title-row
+    ) {
+    transition-property: transform;
+    transition-duration: 90ms;
+}
+.gui .gui-title-row {
+    transition-property: transform, letter-spacing;
+    transition-duration: 90ms, 160ms;
+}
+.gui
+    :is(
+        .gui-row,
+        .gui-stat,
+        .gui-slot,
+        .gui-empty-action,
+        .gui-chooser,
+        .gui-action-row,
+        .gui-menu-item,
+        .gui-tile,
+        .gui-title-row
+    )
+    *:not(.gui-stat-bar *, .gui-meter-bar *, .gui-list-rail *) {
+    transition: none;
 }
