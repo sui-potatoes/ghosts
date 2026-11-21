@@ -44,5 +44,6 @@ export function engineAudio(): ReturnType<EngineSettings["audio"]> {
         master: 100 * gain(a.master),
         sfx: 100 * gain(a.sfx),
         voice: 100 * gain(a.voice),
+        ambience: 100 * gain(a.ambience),
     };
 }

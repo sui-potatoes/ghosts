@@ -9,3 +9,4 @@
  */
 export { EFFECTS, effectUrl } from "./sfx.ts";
 export { lineUrl, PHRASES, RECORDED } from "./voice.ts";
+export { slotFiles, soundUrl, SLOTS, type AppGeneratorName, type SlotId } from "./audio/manifest.ts";

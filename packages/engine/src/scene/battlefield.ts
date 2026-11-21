@@ -95,6 +95,9 @@ export class Battlefield {
   onUnitHold: (id: string) => void = () => {};
   /** The pointer kind of the last pick: a tap and a click open the readout differently. */
   lastPointer = "mouse";
+  /** Sound design: a shooter settling its aim, and a shot's first tracer, its impact (`audio/field.ts`). */
+  onShotSteady?: () => void;
+  onShotImpact?: () => void;
   /** Run after units and plates are placed each rendered frame (the readout follows its unit). */
   readonly frameHooks = new Set<() => void>();
   private hoveredUnit: string | null = null;
@@ -943,6 +946,7 @@ export class Battlefield {
       aimed: shoulder,
       impact: environment[0]?.impact ? new T.Vector3(...environment[0].impact) :
         environment.length ? this.destruction.impactPoint(environment[0].id, this.space.vec(a.pos, 1)) : undefined,
+      steady: () => this.onShotSteady?.(),
       kick: (t) => {
         if (!shoulder) return;
         this.camera.position.copy(origin);
@@ -950,6 +954,7 @@ export class Battlefield {
         this.camera.lookAt(this.controls.target);
       },
       afterTracer: () => {
+        if (!called) this.onShotImpact?.();
         if (result && !called) {
           // The first tracer is the impact; a result still on its way shows when it arrives.
           called = true;

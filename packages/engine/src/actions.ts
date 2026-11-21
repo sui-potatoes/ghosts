@@ -316,7 +316,7 @@ export async function action(name: string) {
     s.grenadeTarget = isThrowOrder(name) ? defaultGrenadeTarget(s.game, u, name) : null;
     if (name === "fire") {
       s.target = bestShotTarget(s.game, u)?.id ?? "";
-      audio.tone("aim", u.weapon);
+      audio.tone("aim", u.weapon, u);
     }
     refresh();
     return;

@@ -21,9 +21,11 @@ export async function presentShot(
   outcome: Promise<Extract<GameEvent, { type: "shot" }> | null>,
 ) {
   const { battlefield } = session;
+  // Sound design: the world drops away from the order to the impact.
+  audio.beginShot();
   await battlefield.aimReady;
   audio.speak("fire", a);
-  audio.tone(a.weapon);
+  audio.tone(a.weapon, undefined, a);
   await battlefield.fire(a, b, outcome.then((shot) => !!shot?.hit), outcome);
   const shot = await outcome;
   if (shot?.killed) audio.speak("kill", a);
@@ -42,9 +44,9 @@ async function playThrow(u: Unit, at: Cell, kind: ThrowOrder, go: () => Promise<
   const { battlefield, observer } = session;
   await leadIn(battlefield, !!observer, u, at);
   audio.speak(kind === "grenade" ? "grenade" : "utility", u);
-  audio.tone("pin");
+  audio.tone("pin", undefined, u);
   await go();
-  audio.tone(kind === "smoke-grenade" ? "smoke" : "grenade");
+  audio.tone(kind === "smoke-grenade" ? "smoke" : "grenade", undefined, at);
   session.notify(THROW_LINE[kind]);
 }
 
@@ -81,17 +83,19 @@ export async function present(event: GameEvent) {
         notify(`${unit!.name} / OVERWATCH`);
         audio.speak("overwatch", unit!);
       } else if (ours(unit!)) {
+        // Sound design: the world drops away from the order to the impact.
+        audio.beginShot();
         await battlefield.aimReady;
         audio.speak("fire", unit!);
       }
-      audio.tone(unit!.weapon);
+      audio.tone(unit!.weapon, undefined, unit);
       await battlefield.play(event);
       if (event.killed) audio.speak("kill", unit!);
       else if (event.hit) audio.speak("hit", target);
       return;
     }
     case "reload":
-      audio.tone("reload", unit!.weapon);
+      audio.tone("reload", unit!.weapon, unit);
       await battlefield.play(event);
       return;
     case "grenade":

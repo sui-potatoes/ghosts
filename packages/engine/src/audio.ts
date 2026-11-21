@@ -3,7 +3,10 @@
 
 // @ts-ignore Native editor adapter is shared JavaScript.
 import { deployment } from "./mpfb-characters.js";
-import { EffectPlayer, type EffectKind } from "./sfx";
+import { EffectPlayer, effectSlot, type EffectKind } from "./sfx";
+import { Soundscape, type Field } from "./audio/soundscape";
+import { soundscapeEnabled, subscribeSoundscape } from "./audio/switch";
+import { ambienceVolume } from "./audio/levels";
 import {
   DEFAULT_VOICE_INDEX,
   effectVolume,
@@ -12,10 +15,15 @@ import {
   type Voice,
   type VoiceEvent,
 } from "./voice";
-import type { Unit, Weapon } from "./game";
+import type { Cell, Unit, Weapon } from "./game";
 import { engineSettings } from "./settings";
 
 const effects = () => effectVolume(engineSettings().audio());
+
+/** The field as the soundscape hears it, plus where a cell is in the world. */
+export interface HeardField extends Field {
+  locate(cell: Cell): { x: number; y: number; z: number };
+}
 
 /**
  * Everything the encounter plays: recorded effects, operative voice lines and
@@ -23,9 +31,56 @@ const effects = () => effectVolume(engineSettings().audio());
  * come from the shell's saved audio settings on every play.
  */
 export class CombatAudio {
-  private readonly voice = new VoicePlayer(() => voiceVolume(engineSettings().audio()));
+  /** Spatial combat sound, ambience and the reactive mix (`audio/soundscape.ts`), behind the switch. */
+  readonly scape = new Soundscape(() => {
+    const levels = engineSettings().audio();
+    return { combat: effectVolume(levels), ambience: ambienceVolume(levels) };
+  });
+  private readonly voice = new VoicePlayer(
+    () => voiceVolume(engineSettings().audio()),
+    () => {
+      const context = soundscapeEnabled() && this.field ? this.scape.context() : null;
+      return context && this.scape.voiceBus ? { context, destination: this.scape.voiceBus } : null;
+    },
+  );
   private readonly sfx = new EffectPlayer(effects);
   private context: AudioContext | undefined;
+  private field: HeardField | null = null;
+  private unsubscribeSwitch: (() => void) | null = null;
+
+  /** The mounted field: the soundscape starts hearing it (when the switch is on). */
+  attachField(field: HeardField) {
+    this.field = field;
+    if (soundscapeEnabled()) this.scape.attach(field);
+    this.unsubscribeSwitch?.();
+    this.unsubscribeSwitch = subscribeSoundscape(() => {
+      if (!this.field) return;
+      if (soundscapeEnabled()) {
+        this.scape.attach(this.field);
+        this.scape.setEnabled(true);
+      } else this.scape.setEnabled(false);
+    });
+  }
+
+  /** Where a unit's sound comes from: its cell, chest high. */
+  private where(at?: Unit | Cell) {
+    if (!at || !this.field) return null;
+    return this.field.locate("pos" in at ? at.pos : at);
+  }
+
+  /** A shot is about to land: the soundscape dips around it until `shotImpact`. */
+  beginShot() {
+    if (soundscapeEnabled()) this.scape.beginShot();
+  }
+
+  shotImpact() {
+    this.scape.impact();
+  }
+
+  /** The moment is over (a seek, the end of a match): no duck, dip or daze outlives it. */
+  resetMix() {
+    this.scape.resetMix();
+  }
 
   /** The deployed look decides the voice: its sex, and its chosen index when it has one. */
   voiceFor(u: Unit): Voice | null {
@@ -50,11 +105,26 @@ export class CombatAudio {
 
   prepareVoice() { this.voice.preload(); }
 
-  unlockVoice = () => { this.voice.unlock(); };
+  unlockVoice = () => {
+    this.scape.unlock();
+    this.voice.unlock();
+  };
 
-  /** A recorded effect when there is one; otherwise a synthesized tone. */
-  tone(kind: EffectKind, weapon?: Weapon) {
+  /**
+   * A recorded effect when there is one; otherwise a synthesized tone. `at`
+   * places it in the scene when the soundscape is on: the unit (or cell) it
+   * comes from.
+   */
+  tone(kind: EffectKind, weapon?: Weapon, at?: Unit | Cell) {
     if (this.quiet) return;
+    if (soundscapeEnabled() && this.field) {
+      const slot = effectSlot(kind, weapon);
+      if (slot) {
+        this.scape.unlock();
+        this.scape.play(slot, { at: this.where(at) });
+        return;
+      }
+    }
     if (this.sfx.play(kind, weapon)) return;
     if (kind === "pin" || kind === "aim") return;
     // Synthesized tones sit on the same effects level as the recordings.
@@ -96,6 +166,10 @@ export class CombatAudio {
     const now = performance.now();
     if (level <= 0 || this.paused || now - this.lockedAt < 150) return;
     this.lockedAt = now;
+    if (soundscapeEnabled() && this.field) {
+      this.scape.play("combat.lock");
+      return;
+    }
     const audio = (this.context ??= new AudioContext());
     void audio.resume();
     const buffer = audio.createBuffer(1, Math.ceil(audio.sampleRate * 0.03), audio.sampleRate);
@@ -118,6 +192,10 @@ export class CombatAudio {
   stop() {
     this.voiceOff = this.quiet = false;
     this.voice.dispose();
+    this.unsubscribeSwitch?.();
+    this.unsubscribeSwitch = null;
+    this.field = null;
+    this.scape.close();
     this.sfx.setPaused(true);
     this.voice.setPaused(false);
     this.sfx.setPaused(false);
@@ -129,6 +207,7 @@ export class CombatAudio {
     this.paused = paused;
     this.voice.setPaused(paused);
     this.sfx.setPaused(paused);
+    this.scape.setPaused(paused);
     if (!this.context) return;
     if (paused) void this.context.suspend();
     else void this.context.resume();

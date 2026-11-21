@@ -52,6 +52,8 @@ export interface ShotFraming {
   aimed: boolean;
   impact?: T.Vector3;
   kick?: (t: number) => void;
+  /** Sound design: the shooter settles its aim, the beat before the trigger (not called when already aimed). */
+  steady?: () => void;
   afterTracer?: () => void;
 }
 
@@ -301,6 +303,7 @@ export class Units {
       if (wall) await this.exposeCorner(a, b.pos);
       r.root.rotation.y = Math.atan2(r.root.position.x - target.x, r.root.position.z - target.z);
       if (covered && a.weapon !== "pistol") await animator.tween(play(r, "covered_rise", true), () => {});
+      framing.steady?.();
       aimHuman(r, covered);
       await animator.tween(0.28, () => {});
     }

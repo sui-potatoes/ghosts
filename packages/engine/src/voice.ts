@@ -9,6 +9,7 @@
  * asks for its level on every line; `audio.ts` answers from the shell settings.
  */
 
+import { slotFiles, soundUrl, voiceSlot } from "./audio/manifest.ts";
 import type { AudioLevels } from "./settings.ts";
 
 export type Sex = "male" | "female";
@@ -62,8 +63,10 @@ export function isRecorded(v: Voice): boolean {
   return RECORDED.some((r) => r.sex === v.sex && r.index === v.index);
 }
 
+/** A line's URL: the phrase's manifest slot, filled in for the voice. */
 export function lineUrl(phrase: string, voice: Voice): string {
-  return `/sounds/${phrase}-${voiceKey(voice)}.mp3`;
+  const id = voiceSlot(phrase);
+  return soundUrl(id ? slotFiles(id, voiceKey(voice))[0] : `${phrase}-${voiceKey(voice)}`);
 }
 
 /** A phrase for `event` that is not the one used last time, when there is a choice. */
@@ -99,11 +102,24 @@ export class VoicePlayer {
   private paused = false;
 
   private readonly level: () => number;
-  constructor(level: () => number) { this.level = level; }
+  /**
+   * The soundscape's context and voice bus when it is on (`audio/switch.ts`),
+   * so the reactive mix reaches the radio too; null: a context of its own.
+   */
+  private readonly shared: () => { context: AudioContext; destination: AudioNode } | null;
+  private ownsContext = true;
+  constructor(level: () => number, shared: () => { context: AudioContext; destination: AudioNode } | null = () => null) {
+    this.level = level;
+    this.shared = shared;
+  }
 
   private ensure() {
+    const shared = this.shared();
+    // The soundscape was switched on or off (or replaced its context) since: start over on the new output.
+    if (this.context && (shared ? shared.context !== this.context : !this.ownsContext)) this.release();
     if (this.context) return this.context;
-    const context = this.context = new AudioContext();
+    this.ownsContext = !shared;
+    const context = this.context = shared?.context ?? new AudioContext();
     context.onstatechange = () => {
       if (this.current) document.body.dataset.voiceState = this.paused ? "paused" : context.state === "running" ? "playing" : "suspended";
     };
@@ -128,13 +144,27 @@ export class VoicePlayer {
     drive.curve = curve;
     drive.oversample = "2x";
     const output = this.output = context.createGain();
-    high.connect(low).connect(compressor).connect(drive).connect(output).connect(context.destination);
+    high.connect(low).connect(compressor).connect(drive).connect(output).connect(shared?.destination ?? context.destination);
+    this.chain = [high, low, compressor, drive, output];
     // Retain the radio input separately from the volume control.
     this.input = high;
     return context;
   }
 
   private input: AudioNode | null = null;
+  private chain: AudioNode[] = [];
+
+  /** Let go of the context: closed when it is this player's own, unhooked when it is shared. */
+  private release() {
+    this.current?.stop();
+    this.current?.disconnect();
+    this.current = null;
+    if (this.ownsContext) void this.context?.close();
+    else for (const node of this.chain) node.disconnect();
+    this.chain = [];
+    this.context = null;
+    this.input = this.output = null;
+  }
 
   /** Called directly from a pointer/key gesture, before asynchronous combat work. */
   unlock() {
@@ -208,16 +238,15 @@ export class VoicePlayer {
 
   setPaused(paused: boolean) {
     this.paused = paused;
-    if (!this.context) return;
+    // A shared context is the soundscape's to suspend.
+    if (!this.context || !this.ownsContext) return;
     if (paused) void this.context.suspend();
     else this.unlock();
   }
 
   dispose() {
     this.stop();
-    void this.context?.close();
-    this.context = null;
-    this.input = this.output = null;
+    this.release();
     this.buffers.clear();
   }
 }

@@ -63,6 +63,11 @@ const RankedQa = import.meta.env.VITE_RANKED_QA
 const LooksQa = import.meta.env.VITE_LOOKS_QA ? lazy(() => import("./features/looks/qa")) : null;
 // QA only: the first-sign-in name prompt over fakes, registered in `VITE_NAME_QA=1` builds.
 const NameQa = import.meta.env.VITE_NAME_QA ? lazy(() => import("./features/name-step/qa")) : null;
+// Sound design: every sound slot to audition and the soundscape switch, in the dev server or `VITE_SOUNDS_QA=1` builds.
+const SoundsQa =
+    import.meta.env.DEV || import.meta.env.VITE_SOUNDS_QA
+        ? lazy(() => import("./audio/audition/SoundsQa"))
+        : null;
 // The match viewer: `/watch` lists live matches, recent ones and the player's own;
 // `/watch/<game>` a match on chain, live or as a replay.
 const WatchList = lazy(() => import("./features/watch/WatchList"));
@@ -259,6 +264,16 @@ export function App() {
                         </Suspense>
                     }
                 />
+                {SoundsQa && (
+                    <Route
+                        path="/sounds"
+                        element={
+                            <Suspense fallback={<LoadingSpinner />}>
+                                <SoundsQa />
+                            </Suspense>
+                        }
+                    />
+                )}
                 {LooksQa && (
                     <Route
                         path="/qa/looks"

@@ -31,7 +31,7 @@ import type { Settings } from "../src/settings/store.ts";
 
 // A stand-in for the store's defaults: the model only compares and copies.
 const DEFAULTS: Settings = {
-    audio: { master: 50, music: 50, sfx: 80, voice: 80, ui: 80, muted: false },
+    audio: { master: 50, music: 50, sfx: 80, voice: 80, ui: 80, ambience: 70, muted: false },
     display: {
         scanlines: true,
         vignette: true,

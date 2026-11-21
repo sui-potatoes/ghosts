@@ -14,6 +14,8 @@ export interface AudioLevels {
   master: number;
   sfx: number;
   voice: number;
+  /** The world around the field (`audio/soundscape.ts`); absent: the effects level. */
+  ambience?: number;
 }
 
 /**
