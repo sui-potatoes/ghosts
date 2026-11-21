@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * The glass over a menu screen: one fixed, pointer-transparent layer of
- * faint grain, a sheen and (with Display: Scanlines on) the scanlines, so the
- * interface reads as a screen in a device. Static: drawn once, never
- * animated. Under it, while a mouse is the input in use, a soft light
+ * The glass of a menu screen: one fixed, pointer-transparent layer of faint
+ * grain, a sheen and (with Display: Scanlines on) the scanlines, so the
+ * interface reads as a screen in a device. It lies under the content, never
+ * over text. Static: drawn once, never animated. With it, while a mouse is
+ * the input in use, a soft light
  * follows the pointer and catches the panels' edges (`.gui-panel-light`).
  *
  * The light is one pointer listener for every mounted screen, throttled to a
