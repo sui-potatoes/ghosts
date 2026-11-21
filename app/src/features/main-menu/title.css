@@ -450,3 +450,24 @@
         padding: calc(var(--u) * 3) calc(var(--u) * 14);
     }
 }
+
+/* === Phone width ===================================================== */
+
+/* The build line takes what the chips leave and wraps inside the strip,
+   never running under the player chip. */
+@media (max-width: 560px) {
+    .gui-title-header {
+        grid-template-columns: minmax(0, 1fr) 0 auto;
+    }
+    .gui-title-build {
+        flex-wrap: wrap;
+        align-content: center;
+        row-gap: calc(var(--u) * 1.5);
+        column-gap: calc(var(--u) * 3);
+        min-width: 0;
+        white-space: normal;
+    }
+    .gui-title-build > * {
+        white-space: nowrap;
+    }
+}

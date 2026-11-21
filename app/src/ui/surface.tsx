@@ -16,6 +16,8 @@
 
 import { useLayoutEffect, useRef } from "react";
 
+import { getSettings } from "../settings/store";
+
 type Lit = { root: HTMLElement; zoom: number };
 
 const roots = new Set<Lit>();
@@ -47,7 +49,8 @@ function schedule() {
 }
 
 function move(e: PointerEvent) {
-    if (e.pointerType !== "mouse") {
+    // Display: Pointer light off: no light, and nothing written per move.
+    if (e.pointerType !== "mouse" || !getSettings().display.pointerLight) {
         if (at) {
             at = null;
             schedule();

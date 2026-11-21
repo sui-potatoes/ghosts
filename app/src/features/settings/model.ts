@@ -10,6 +10,7 @@
  */
 
 import { validateRpcUrl, type RpcUrlCheck } from "../../rpcUrl.ts";
+import type { MotionLevel } from "../../settings/effects-model.ts";
 import type { Settings } from "../../settings/store.ts";
 
 // === Categories =============================================================
@@ -94,22 +95,48 @@ export function sliderToLevel(value: number): number {
     return Math.max(0, Math.min(100, Math.round(value * 100)));
 }
 
-export type FlagKey = "batterySaver" | "scanlines" | "vignette" | "reduceMotion" | "wireframe";
+export type FlagKey =
+    "batterySaver" | "surface" | "scanlines" | "vignette" | "pointerLight" | "wireframe";
 
-export const FLAG_ROWS: { key: FlagKey; label: string; hint: string }[] = [
+/**
+ * The display switches, in panel order: performance first, then the screen's
+ * own look (surface, scanlines, vignette, the pointer's light), the
+ * development aid last. Interface motion (three levels) sits after Battery
+ * saver (`DISPLAY_ORDER`).
+ */
+export const FLAG_ROWS: { key: FlagKey; label: string; hint?: string }[] = [
     {
         key: "batterySaver",
         label: "Battery saver",
         hint: "Lower frame rate and scene detail to save power",
     },
+    { key: "surface", label: "Screen surface" },
     { key: "scanlines", label: "Scanlines", hint: "Faint CRT scanlines over the picture" },
     { key: "vignette", label: "Vignette", hint: "Darkened frame edges for a low-light read" },
-    { key: "reduceMotion", label: "Reduce motion", hint: "Interface animation kept to a minimum" },
+    { key: "pointerLight", label: "Pointer light" },
     {
         key: "wireframe",
         label: "Wireframe models",
         hint: "Gear and recruit models as wireframes, with a triangle count",
     },
+];
+
+/** The Display panel's rows after Fullscreen: the switches with Interface motion after the first. */
+export const DISPLAY_ORDER: (FlagKey | "motion")[] = [
+    "batterySaver",
+    "motion",
+    "surface",
+    "scanlines",
+    "vignette",
+    "pointerLight",
+    "wireframe",
+];
+
+/** Interface motion's three levels, as a Stepper's options. */
+export const MOTION_OPTIONS: [MotionLevel, string][] = [
+    ["full", "Full"],
+    ["reduced", "Reduced"],
+    ["off", "Off"],
 ];
 
 /** A two-state Stepper's options. */
@@ -127,9 +154,17 @@ export const onOff = (on: boolean) => (on ? "on" : "off");
 /** What a panel's reset restores: its own store keys, nothing else. */
 export const PANEL_KEYS = {
     audio: ["master", "music", "sfx", "voice", "ui", "muted"],
-    display: ["batterySaver", "scanlines", "vignette", "reduceMotion", "wireframe"],
+    display: [
+        "batterySaver",
+        "motion",
+        "surface",
+        "scanlines",
+        "vignette",
+        "pointerLight",
+        "wireframe",
+    ],
     controls: ["combat"],
-    controller: ["padCombat", "vibration"],
+    controller: ["padCombat", "vibration", "holdConfirm"],
 } as const satisfies {
     audio: (keyof Settings["audio"])[];
     display: (keyof Settings["display"])[];

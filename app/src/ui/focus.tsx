@@ -62,29 +62,45 @@ export type { Command, CommandAction, Dir, Pulse } from "./focus-store";
 
 const html = (el: FocusElement | null) => el as HTMLElement | null;
 
+/** Feedback never stops a command: a sound or a buzz that throws is dropped. */
+function safe(...steps: (() => void)[]) {
+    for (const step of steps) {
+        try {
+            step();
+        } catch {
+            // No audio or no motors right now; the command still runs.
+        }
+    }
+}
+
 /** Every gesture's sound and buzz; the store calls these with the element it happened on. */
 const SOUNDS: FocusSounds = {
-    tick: (el) => {
-        uiTick(html(el));
-        haptic("move");
-    },
-    confirm: (el) => {
-        uiConfirm(html(el));
-        haptic("confirm");
-    },
-    back: (el) => {
-        uiBack(html(el));
-        haptic("back");
-    },
-    deny: (el) => {
-        uiDeny(html(el));
-        haptic("deny");
-    },
-    hold: (el, step, progress) => {
-        uiHoldStep(html(el), step);
-        haptic("hold", progress);
-    },
-    holdCancel: (el) => uiHoldCancel(html(el)),
+    tick: (el) =>
+        safe(
+            () => uiTick(html(el)),
+            () => haptic("move"),
+        ),
+    confirm: (el) =>
+        safe(
+            () => uiConfirm(html(el)),
+            () => haptic("confirm"),
+        ),
+    back: (el) =>
+        safe(
+            () => uiBack(html(el)),
+            () => haptic("back"),
+        ),
+    deny: (el) =>
+        safe(
+            () => uiDeny(html(el)),
+            () => haptic("deny"),
+        ),
+    hold: (el, step, progress) =>
+        safe(
+            () => uiHoldStep(html(el), step),
+            () => haptic("hold", progress),
+        ),
+    holdCancel: (el) => safe(() => uiHoldCancel(html(el))),
 };
 
 /**

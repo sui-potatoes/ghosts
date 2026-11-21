@@ -186,10 +186,23 @@ export function createTitleCity(
     const roadInverse = road.matrixWorld.clone().invert();
     const renderReflection = road.onBeforeRender;
     let reflectionStamp = -Infinity;
+    // The view the reflection was last drawn from. The mirror is view-dependent:
+    // drawn for one camera and shown from another it slides off what it reflects
+    // and jumps back at the next refresh. So it is redrawn on every frame the
+    // camera (or its projection) changed, and only on a slow clock for the
+    // scene's own motion while the camera holds still.
+    const reflectedView = new THREE.Matrix4();
+    const reflectedProjection = new THREE.Matrix4();
     road.onBeforeRender = function (...args) {
+        const view = args[2];
         const now = performance.now();
-        if (now - reflectionStamp < 250) return;
+        const moved =
+            !reflectedView.equals(view.matrixWorld) ||
+            !reflectedProjection.equals(view.projectionMatrix);
+        if (!moved && now - reflectionStamp < 250) return;
         reflectionStamp = now;
+        reflectedView.copy(view.matrixWorld);
+        reflectedProjection.copy(view.projectionMatrix);
         // Pavement must not sample the same target while the reflected view is
         // being drawn. Restore it for the main camera immediately afterward.
         groundReflection.texture.value = null;
@@ -469,11 +482,13 @@ export function createTitleCity(
     const aim = { x: 0, y: 0 };
     const leaning = { x: 0, y: 0 };
     let kick = 0;
-    let reflectedLean = 0;
     function steer(dt: number) {
         const k = 1 - Math.exp(-dt * 5);
         leaning.x += (aim.x - leaning.x) * k;
         leaning.y += (aim.y - leaning.y) * k;
+        // Settled is settled: the camera stops changing, so the mirror stops redrawing.
+        if (Math.abs(aim.x - leaning.x) < 0.002) leaning.x = aim.x;
+        if (Math.abs(aim.y - leaning.y) < 0.002) leaning.y = aim.y;
         kick *= Math.exp(-dt * 9);
         if (kick < 0.001) kick = 0;
         camera.position.set(
@@ -488,12 +503,6 @@ export function createTitleCity(
         );
         camera.lookAt(look);
         renderer.toneMappingExposure = EXPOSURE * (1 - kick * 0.09);
-        // The wet road's reflection is refreshed every 250 ms; a lean that has
-        // moved on refreshes it now, so the reflection never slides off its source.
-        if (Math.abs(leaning.x - reflectedLean) > 0.06) {
-            reflectedLean = leaning.x;
-            reflectionStamp = -Infinity;
-        }
     }
     function render() {
         if (!initialized || disposed || failed || document.hidden || !visible) return;
@@ -569,6 +578,8 @@ export function createTitleCity(
     };
     let savedReduceMotion = getSettings().display.reduceMotion;
     const unsubscribeSettings = subscribeSettings(() => {
+        // Interface motion below Full holds the lean; the set settles home.
+        if (getSettings().display.motion !== "full") aim.x = aim.y = kick = 0;
         const value = getSettings().display.reduceMotion;
         if (value !== savedReduceMotion) {
             savedReduceMotion = value;
@@ -630,12 +641,12 @@ export function createTitleCity(
         });
     return {
         lean(x: number, y: number) {
-            if (!motion) return;
+            if (!motion || getSettings().display.motion !== "full") return;
             aim.x = Math.max(-1, Math.min(1, x));
             aim.y = Math.max(-1, Math.min(1, y));
         },
         nudge() {
-            if (motion) kick = 1;
+            if (motion && getSettings().display.motion === "full") kick = 1;
         },
         dispose() {
             if (disposed) return;

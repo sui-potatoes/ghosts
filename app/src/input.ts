@@ -139,12 +139,26 @@ function onMenuPad(pad: PadInput): boolean {
     return false;
 }
 
-/** Bind the keyboard and the controller to the bus, once. Returns the unbind. */
+let bound = 0;
+let unbindPad: (() => void) | null = null;
+
+/**
+ * Bind the keyboard and the controller to the bus. Counted: the shell binds
+ * it, and the crash screen binds it too (the shell may be what broke), so the
+ * listeners are added once and stay while anyone holds them. Returns the unbind.
+ */
 export function bindInput(): () => void {
-    window.addEventListener("keydown", onKeyDown);
-    const unbindPad = onPad(onMenuPad, 0);
+    if (bound++ === 0) {
+        window.addEventListener("keydown", onKeyDown);
+        unbindPad = onPad(onMenuPad, 0);
+    }
+    let released = false;
     return () => {
+        if (released) return;
+        released = true;
+        if (--bound > 0) return;
         window.removeEventListener("keydown", onKeyDown);
-        unbindPad();
+        unbindPad?.();
+        unbindPad = null;
     };
 }

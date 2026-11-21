@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { uiCount } from "../audio";
-import { reducedMotion } from "./motion";
+import { motionLevel } from "./motion";
 import { counterSteps } from "./tactile-model";
 
 type RollingProps = {
@@ -16,8 +16,8 @@ type RollingProps = {
 /**
  * A number that rolls to a new value with a soft click per step instead of
  * appearing (`counterSteps`: whole steps, eased, under 600 ms). The first
- * value shows as it is; only a change rolls. With reduced motion the new
- * value is set at once, with one click.
+ * value shows as it is; only a change rolls. With Interface motion off the
+ * new value is set at once, with one click.
  */
 export function Rolling({ value, format = String }: RollingProps) {
     const [shown, setShown] = useState(value);
@@ -26,7 +26,7 @@ export function Rolling({ value, format = String }: RollingProps) {
     useEffect(() => {
         const from = at.current;
         if (from === value) return;
-        if (reducedMotion()) {
+        if (motionLevel() === "off") {
             at.current = value;
             setShown(value);
             uiCount();

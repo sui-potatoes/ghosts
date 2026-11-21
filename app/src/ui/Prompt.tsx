@@ -3,6 +3,7 @@
 
 import type { ReactNode } from "react";
 
+import { useSettings } from "../settings/store";
 import { CommandHint } from "./CommandBar";
 import { FocusScope, useFocusable, useFocusStore, type Command } from "./focus";
 import type { GlyphSet } from "./glyphs";
@@ -66,6 +67,7 @@ function PromptBlock({
     glyphs,
 }: PromptProps) {
     const store = useFocusStore();
+    const holding = useSettings()[0].controls.holdConfirm;
     const commands: Command[] = [
         ...(alternate
             ? [
@@ -82,7 +84,8 @@ function PromptBlock({
             label: confirm.label,
             tone: tone === "danger" ? "danger" : "primary",
             deny: confirm.deny,
-            hold: confirm.hold,
+            // Controller: Hold to confirm off returns the plain confirm.
+            hold: confirm.hold && holding,
             run: confirm.run,
         },
         { action: "back", label: cancel.label, run: cancel.run },
@@ -119,7 +122,7 @@ function PromptBlock({
                         ))}
                     </dl>
                 )}
-                {confirm.hold && <i className="gui-prompt-hold" aria-hidden />}
+                {confirm.hold && holding && <i className="gui-prompt-hold" aria-hidden />}
                 <div className="gui-prompt-commands">
                     {commands.map((command) => (
                         <CommandHint

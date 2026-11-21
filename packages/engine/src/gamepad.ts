@@ -251,12 +251,27 @@ function frame(now: number) {
     setConnected(false);
     return;
   }
+  // The next frame is booked first: a handler that throws (a screen that
+  // broke mid-action) must not stop the loop, or the pad is dead until reload.
+  raf = requestAnimationFrame(frame);
   const snap: PadSnapshot = { buttons: pad.buttons.map((b) => b.pressed), axes: pad.axes };
   if (snap.buttons.some(Boolean) || snap.axes.some((v) => Math.abs(v) > 0.3)) setActive(true);
-  for (const fn of observers) fn(snap);
+  for (const fn of observers) {
+    try {
+      fn(snap);
+    } catch (error) {
+      console.error("pad observer failed:", error);
+    }
+  }
   const input = tracker.read(snap, now);
-  for (const { fn } of [...handlers]) if (fn(input) === true) break;
-  raf = requestAnimationFrame(frame);
+  for (const { fn } of [...handlers]) {
+    try {
+      if (fn(input) === true) break;
+    } catch (error) {
+      console.error("pad handler failed:", error);
+      break;
+    }
+  }
 }
 
 /**

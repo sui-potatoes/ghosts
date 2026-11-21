@@ -2727,3 +2727,26 @@ html[data-nav="back"] .gui:not(.gui-dialog, .watch-hud) {
         transform: translateX(calc(var(--u) * -3)) scale(0.985);
     }
 }
+
+/* --- The player's choices (Display) ---
+ * Interface motion Reduced: no spring past rest after a press and no bloom
+ * (the cursor's overshoot and the depth between screens are held in code);
+ * Off is `data-reduce-motion`, which stops every animation. Screen surface
+ * off drops the glass and the bevel; Pointer light off drops the light. */
+html[data-motion="reduced"] .gui [data-focus-id] {
+    transition-timing-function: ease-out !important;
+}
+html[data-motion="reduced"] .gui-cursor-frame::after {
+    display: none;
+}
+
+html[data-surface="off"] .gui-surface {
+    display: none;
+}
+html[data-surface="off"] :is(.gui-panel, .gui-prompt, .gui-bar) {
+    box-shadow: none;
+}
+
+html[data-pointer-light="off"] :is(.gui-glow, .gui-panel-light) {
+    display: none !important;
+}

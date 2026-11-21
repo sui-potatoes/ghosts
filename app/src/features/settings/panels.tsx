@@ -44,6 +44,7 @@ import { NameField, readDraft } from "../name-step/NameField";
 import { ControllerDiagram, fieldActions } from "../../settings/ControllerDiagram";
 import { useFullscreen } from "../../settings/fullscreen";
 import { ACTION_LABELS, ACTIONS, type Action } from "../../settings/keys";
+import type { MotionLevel } from "../../settings/effects-model";
 import { DEFAULTS, updateSettings, useSettings, useSettingsSection } from "../../settings/store";
 import {
     ActionRow,
@@ -65,7 +66,9 @@ import {
 } from "../../ui";
 import {
     endpointHost,
+    DISPLAY_ORDER,
     FLAG_ROWS,
+    MOTION_OPTIONS,
     LEVEL_ROWS,
     LEVEL_SEGMENTS,
     levelToSlider,
@@ -782,25 +785,49 @@ export function DisplayPanel() {
                         hint="Take the whole display; the browser forgets it between sessions"
                         commands={[CHANGE]}
                     />
-                    {FLAG_ROWS.map((row) => (
-                        <Stepper
-                            key={row.key}
-                            id={`display-${row.key}`}
-                            group="rows"
-                            label={row.label}
-                            options={switchOptions()}
-                            value={onOff(display[row.key])}
-                            onChange={(id) => setDisplay({ [row.key]: id === "on" })}
-                            title={row.label}
-                            hint={row.hint}
-                            commands={[
-                                CHANGE,
-                                ...toDefault(display[row.key] !== DEFAULTS.display[row.key], () =>
-                                    setDisplay({ [row.key]: DEFAULTS.display[row.key] }),
-                                ),
-                            ]}
-                        />
-                    ))}
+                    {DISPLAY_ORDER.map((key) => {
+                        if (key === "motion")
+                            return (
+                                <Stepper
+                                    key={key}
+                                    id="display-motion"
+                                    group="rows"
+                                    label="Interface motion"
+                                    options={MOTION_OPTIONS}
+                                    value={display.motion}
+                                    onChange={(id) => setDisplay({ motion: id as MotionLevel })}
+                                    title="Interface motion"
+                                    commands={[
+                                        CHANGE,
+                                        ...toDefault(
+                                            display.motion !== DEFAULTS.display.motion,
+                                            () => setDisplay({ motion: DEFAULTS.display.motion }),
+                                        ),
+                                    ]}
+                                />
+                            );
+                        const row = FLAG_ROWS.find((r) => r.key === key)!;
+                        return (
+                            <Stepper
+                                key={row.key}
+                                id={`display-${row.key}`}
+                                group="rows"
+                                label={row.label}
+                                options={switchOptions()}
+                                value={onOff(display[row.key])}
+                                onChange={(id) => setDisplay({ [row.key]: id === "on" })}
+                                title={row.label}
+                                hint={row.hint}
+                                commands={[
+                                    CHANGE,
+                                    ...toDefault(
+                                        display[row.key] !== DEFAULTS.display[row.key],
+                                        () => setDisplay({ [row.key]: DEFAULTS.display[row.key] }),
+                                    ),
+                                ]}
+                            />
+                        );
+                    })}
                     <RestoreRow panel="display" open={() => setRestore(true)} />
                 </List>
             </Panel>
@@ -1102,6 +1129,22 @@ export function ControllerPanel() {
                             CHANGE,
                             ...toDefault(controls.vibration !== DEFAULTS.controls.vibration, () =>
                                 setControls({ vibration: DEFAULTS.controls.vibration }),
+                            ),
+                        ]}
+                    />
+                    <Stepper
+                        id="pad-hold-confirm"
+                        group="rows"
+                        label="Hold to confirm"
+                        options={switchOptions()}
+                        value={onOff(controls.holdConfirm)}
+                        onChange={(id) => setControls({ holdConfirm: id === "on" })}
+                        title="Hold to confirm"
+                        commands={[
+                            CHANGE,
+                            ...toDefault(
+                                controls.holdConfirm !== DEFAULTS.controls.holdConfirm,
+                                () => setControls({ holdConfirm: DEFAULTS.controls.holdConfirm }),
                             ),
                         ]}
                     />

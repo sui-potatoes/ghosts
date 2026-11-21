@@ -18,6 +18,7 @@ import {
     type PadCombatBindings,
 } from "@ghosts/engine/keys";
 import { validateRpcUrl } from "../rpcUrl";
+import { motionOf, settleMotion, type MotionLevel } from "./effects-model";
 import { DEFAULT_BINDINGS, actionOf, type Action, type Bindings } from "./keys";
 
 /** How the Settings screen lays itself out; "auto" follows the connected pad. */
@@ -36,7 +37,14 @@ export type Settings = {
     display: {
         scanlines: boolean;
         vignette: boolean;
+        /** Derived: `motion === "off"`, kept for the screens that read it. */
         reduceMotion: boolean;
+        /** How much the interface moves (`effects-model.ts`). */
+        motion: MotionLevel;
+        /** The glass over menu screens: grain, sheen, the panels' bevel. */
+        surface: boolean;
+        /** The soft light under the mouse and on the panels' edges. */
+        pointerLight: boolean;
         batterySaver: boolean;
         /** Gear and recruit stages draw wireframes (a development aid). */
         wireframe: boolean;
@@ -50,6 +58,8 @@ export type Settings = {
         layoutAnswered: boolean;
         /** Pad rumble and phone vibration on menu gestures (`src/haptics`). */
         vibration: boolean;
+        /** Dangerous answers (reset rating, dismiss) run only once held. */
+        holdConfirm: boolean;
     };
     network: {
         /** Fullnode RPC override; "" is the public default. Read once at startup. */
@@ -63,6 +73,9 @@ export const DEFAULTS: Settings = {
         scanlines: true,
         vignette: true,
         reduceMotion: false,
+        motion: "full",
+        surface: true,
+        pointerLight: true,
         batterySaver: true,
         wireframe: false,
     },
@@ -73,6 +86,7 @@ export const DEFAULTS: Settings = {
         layout: "auto",
         layoutAnswered: false,
         vibration: true,
+        holdConfirm: true,
     },
     network: { rpcUrl: "" },
 };
@@ -126,7 +140,10 @@ function sanitize(raw: unknown): Settings {
         display: {
             scanlines: flag(d.scanlines, DEFAULTS.display.scanlines),
             vignette: flag(d.vignette, DEFAULTS.display.vignette),
-            reduceMotion: flag(d.reduceMotion, DEFAULTS.display.reduceMotion),
+            reduceMotion: motionOf(d) === "off",
+            motion: motionOf(d),
+            surface: flag(d.surface, DEFAULTS.display.surface),
+            pointerLight: flag(d.pointerLight, DEFAULTS.display.pointerLight),
             batterySaver: flag(d.batterySaver, DEFAULTS.display.batterySaver),
             wireframe: flag(d.wireframe, DEFAULTS.display.wireframe),
         },
@@ -137,6 +154,7 @@ function sanitize(raw: unknown): Settings {
             layout: layoutChoice(c.layout),
             layoutAnswered: flag(c.layoutAnswered, DEFAULTS.controls.layoutAnswered),
             vibration: flag(c.vibration, DEFAULTS.controls.vibration),
+            holdConfirm: flag(c.holdConfirm, DEFAULTS.controls.holdConfirm),
         },
         network: { rpcUrl: rpc?.ok ? rpc.url : DEFAULTS.network.rpcUrl },
     };
@@ -159,6 +177,9 @@ function applyDisplay(s: Settings) {
     h.dataset.scanlines = s.display.scanlines ? "on" : "off";
     h.dataset.vignette = s.display.vignette ? "on" : "off";
     h.dataset.reduceMotion = s.display.reduceMotion ? "on" : "off";
+    h.dataset.motion = s.display.motion;
+    h.dataset.surface = s.display.surface ? "on" : "off";
+    h.dataset.pointerLight = s.display.pointerLight ? "on" : "off";
 }
 
 // Keep same-origin game frames and tabs in sync with the shared preferences.
@@ -184,7 +205,8 @@ export function currentAction(e: Parameters<typeof actionOf>[0]): Action | null 
 }
 
 export function updateSettings(patch: (s: Settings) => Settings) {
-    current = sanitize(patch(current));
+    const next = patch(current);
+    current = sanitize({ ...next, display: settleMotion(current.display, next.display) });
     try {
         localStorage.setItem(KEY, JSON.stringify(current));
     } catch (e) {

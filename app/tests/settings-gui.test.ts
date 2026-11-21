@@ -5,7 +5,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+    DISPLAY_ORDER,
     FLAG_ROWS,
+    MOTION_OPTIONS,
+    PANEL_KEYS,
     LEVEL_ROWS,
     levelToSlider,
     panelChanges,
@@ -18,6 +21,12 @@ import {
     TABS,
     type RpcFormInput,
 } from "../src/features/settings/model.ts";
+import {
+    effectiveMotion,
+    MOTION_LEVELS,
+    motionOf,
+    settleMotion,
+} from "../src/settings/effects-model.ts";
 import type { Settings } from "../src/settings/store.ts";
 
 // A stand-in for the store's defaults: the model only compares and copies.
@@ -27,6 +36,9 @@ const DEFAULTS: Settings = {
         scanlines: true,
         vignette: true,
         reduceMotion: false,
+        motion: "full",
+        surface: true,
+        pointerLight: true,
         batterySaver: true,
         wireframe: false,
     },
@@ -37,6 +49,7 @@ const DEFAULTS: Settings = {
         layout: "auto",
         layoutAnswered: false,
         vibration: true,
+        holdConfirm: true,
     },
     network: { rpcUrl: "" },
 };
@@ -73,7 +86,13 @@ test("level rows cover every audio level; flag rows every display flag", () => {
         .filter((k) => k !== "muted")
         .sort();
     assert.deepEqual(levels, audio);
-    assert.deepEqual(FLAG_ROWS.map((r) => r.key).sort(), Object.keys(DEFAULTS.display).sort());
+    // Every display key has a row, Interface motion included; `reduceMotion` is derived from it.
+    assert.deepEqual(
+        [...FLAG_ROWS.map((r) => r.key), "motion", "reduceMotion"].sort(),
+        Object.keys(DEFAULTS.display).sort(),
+    );
+    assert.deepEqual([...DISPLAY_ORDER].sort(), [...FLAG_ROWS.map((r) => r.key), "motion"].sort());
+    assert.deepEqual([...PANEL_KEYS.display].sort(), [...DISPLAY_ORDER].sort());
     // The two channels with a preview sound keep it.
     assert.equal(LEVEL_ROWS.find((r) => r.key === "sfx")?.preview, "effect");
     assert.equal(LEVEL_ROWS.find((r) => r.key === "voice")?.preview, "dialogue");
@@ -255,4 +274,63 @@ test("the panels and the view share their context through a module neither impor
         "../../PauseMenu.tsx",
     ])
         assert.doesNotMatch(read(f), /ResetPrompt|RatingResetRow|RankedBlock|useSettingsContext/);
+});
+
+// === Interface effects ======================================================
+
+test("interface motion migrates from the old Reduce motion switch", () => {
+    assert.equal(motionOf({ reduceMotion: true }), "off");
+    assert.equal(motionOf({ reduceMotion: false }), "full");
+    assert.equal(motionOf({}), "full");
+    assert.equal(motionOf({ motion: "reduced", reduceMotion: true }), "reduced");
+    assert.equal(motionOf({ motion: "sideways", reduceMotion: true }), "off");
+    assert.deepEqual(
+        MOTION_OPTIONS.map(([id]) => id),
+        [...MOTION_LEVELS],
+    );
+});
+
+test("the old switch and the level stay one setting", () => {
+    const base = { motion: "full" as const, reduceMotion: false };
+    // The classic screen flips only reduceMotion: the level follows.
+    assert.deepEqual(settleMotion(base, { ...base, reduceMotion: true }), {
+        motion: "off",
+        reduceMotion: true,
+    });
+    // The level decides, reduceMotion follows it.
+    assert.deepEqual(settleMotion(base, { ...base, motion: "reduced" }), {
+        motion: "reduced",
+        reduceMotion: false,
+    });
+    const off = { motion: "off" as const, reduceMotion: true };
+    assert.deepEqual(settleMotion(off, { ...off, motion: "full" }), {
+        motion: "full",
+        reduceMotion: false,
+    });
+});
+
+test("the system's reduced motion wins over the level", () => {
+    assert.equal(effectiveMotion("full", true), "off");
+    assert.equal(effectiveMotion("reduced", false), "reduced");
+    assert.equal(effectiveMotion("full", false), "full");
+});
+
+test("the effects count toward their panels' changes and restore with them", () => {
+    const s: Settings = {
+        ...DEFAULTS,
+        display: {
+            ...DEFAULTS.display,
+            motion: "reduced",
+            surface: false,
+            pointerLight: false,
+        },
+        controls: { ...DEFAULTS.controls, holdConfirm: false, vibration: false },
+    };
+    assert.equal(panelChanges("display", s, DEFAULTS), 3);
+    assert.equal(panelChanges("controller", s, DEFAULTS), 2);
+    const display = panelReset("display", s, DEFAULTS).display;
+    assert.equal(display.motion, "full");
+    assert.equal(display.surface, true);
+    assert.equal(display.pointerLight, true);
+    assert.equal(panelReset("controller", s, DEFAULTS).controls.holdConfirm, true);
 });
