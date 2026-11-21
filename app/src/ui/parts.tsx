@@ -38,6 +38,7 @@ export function Panel({ label, meta, foot, variant = "solid", className, childre
             )}
             <div className="gui-panel-body">{children}</div>
             {foot && <footer className="gui-panel-foot">{foot}</footer>}
+            <i className="gui-panel-light" aria-hidden />
         </section>
     );
 }

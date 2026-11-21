@@ -7,6 +7,7 @@ import { uiTick } from "../audio";
 import { FocusCursor, headerClick, useFocusStore } from "./focus";
 import { ContextMenu } from "./pointer";
 import { Glyph, type GlyphSet } from "./glyphs";
+import { GuiSurface } from "./surface";
 
 type ScreenFrameProps = {
     /** Breadcrumb, outermost first: `["HQ", "Armory"]`. The last is where you are. */
@@ -97,6 +98,7 @@ export function ScreenFrame({
             {commands}
             <ContextMenu root={root} />
             <FocusCursor root={root} />
+            <GuiSurface />
         </main>
     );
 }

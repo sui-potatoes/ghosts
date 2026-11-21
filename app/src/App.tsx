@@ -81,6 +81,7 @@ import { forgetDeviceRecordings } from "./features/watch/forget";
 forgetDeviceRecordings();
 import { SaveIndicator } from "./components/SaveIndicator";
 import { EscapeBack } from "./EscapeBack";
+import { ScreenMotion } from "./ui/screen-motion";
 import { bindInput } from "./input";
 import { playTheme, stopTheme } from "./audio";
 import { onSignInRequest } from "./signIn";
@@ -363,6 +364,7 @@ export function App() {
             <SaveIndicator />
             <MatchStatus />
             <EscapeBack />
+            <ScreenMotion />
             {CLASSIC_TITLE ? (
                 <SignInModal open={signInOpen} onClose={closeSignIn} />
             ) : (

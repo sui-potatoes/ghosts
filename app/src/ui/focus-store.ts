@@ -14,6 +14,8 @@
  * navigation rules are unit-tested in `tests/gui-focus.test.ts`.
  */
 
+import { HoldMachine } from "./tactile-model.ts";
+
 /**
  * The actions a focused thing can answer; directions and tabs belong to the
  * screen. `nav` is display-only: it names what the directions do while a
@@ -38,6 +40,11 @@ export type Command = {
     short?: string;
     /** For `nav`: which directions it names. */
     glyph?: "lr" | "ud";
+    /**
+     * A dangerous confirm runs only after being held (`HOLD_MS`): a press
+     * starts the hold, releasing early cancels it. Keys, pad, mouse and touch.
+     */
+    hold?: boolean;
     /**
      * A click or tap on the target runs THIS command instead of the primary.
      * For a row whose primary is a commit elsewhere (Apply sends a transaction)
@@ -88,15 +95,26 @@ export type FocusScopeEntry = {
 /** A press or a refusal on the focused node, for the pressed/deny motion. */
 export type Pulse = { id: string; action: CommandAction; kind: "press" | "deny"; n: number };
 
-/** The interface sounds; the React side passes the app's, tests pass nothing. */
+/**
+ * The interface feedback (sounds, haptics); the React side passes the app's,
+ * tests pass nothing. Each gets the element it happened on, for its pan.
+ */
 export type FocusSounds = {
     tick?: (el: FocusElement | null) => void;
-    confirm?: () => void;
-    back?: () => void;
-    deny?: () => void;
+    confirm?: (el: FocusElement | null) => void;
+    back?: (el: FocusElement | null) => void;
+    deny?: (el: FocusElement | null) => void;
+    /** A hold reached step `step` of HOLD_STEPS (`progress` 0 to 1). */
+    hold?: (el: FocusElement | null, step: number, progress: number) => void;
+    /** A hold was let go before it completed. */
+    holdCancel?: (el: FocusElement | null) => void;
 };
 
-const PULSE_MS = 160;
+/** A hold in progress: which target, which command, keyed for the driver. */
+export type Hold = { id: string; command: Command; n: number };
+
+/** How long a press keeps the target pushed in before it springs back. */
+const PULSE_MS = 100;
 /** The least gap between two ticks the pointer's sweep makes; keys are never limited. */
 export const POINTER_TICK_GAP_MS = 90;
 /** The mouse events a touch leaves behind arrive within this long of its release. */
@@ -168,6 +186,14 @@ export class FocusStore {
     motion: { kind: "press" | "deny" | "bump"; dir?: Dir; n: number } | null = null;
     /** Refusals so far; keys the command bar's reason flash. */
     denies = 0;
+    /** The dangerous answer being held, until it completes or is let go. */
+    hold: Hold | null = null;
+    private holding = new HoldMachine();
+    /**
+     * A hold that completed while its press is still down: the same press (a
+     * key's auto-repeat) starts nothing until it is let go.
+     */
+    private spent: string | null = null;
     version = 0;
     private n = 0;
 
@@ -281,6 +307,10 @@ export class FocusStore {
         this.sigs.delete(id);
         if (this.armed === id) this.armed = null;
         if (this.chosen === id) this.chosen = null;
+        if (this.hold?.id === id) {
+            this.hold = null;
+            this.holding.release();
+        }
         if (this.menu?.id === id) this.menu = null;
         if (this.focused === id && node) {
             // The cursor never vanishes: whatever replaces it in the same panel
@@ -568,23 +598,78 @@ export class FocusStore {
         this.emit();
     }
 
-    /** Run a command with its feedback: pressed or refused, and the sound. */
-    run(command: Command, target?: string | null) {
+    /**
+     * Run a command with its feedback: pressed or refused, and the sound. A
+     * `hold` command only starts its hold here; `holdFrame` completes it.
+     */
+    run(command: Command, target?: string | null, now = performance.now()) {
         const id = target ?? this.focused ?? "";
+        const el = this.node(id)?.el ?? null;
         if (command.deny) {
-            this.sounds.deny?.();
+            this.sounds.deny?.(el);
             this.denies++;
             this.flash({ id, action: command.action, kind: "deny", n: ++this.n });
             return;
         }
-        if (command.action === "back") this.sounds.back?.();
-        else this.sounds.confirm?.();
+        if (command.hold && command.action !== "back") {
+            this.beginHold(command, id, now);
+            return;
+        }
+        if (command.action === "back") this.sounds.back?.(el);
+        else this.sounds.confirm?.(el);
         this.flash({ id, action: command.action, kind: "press", n: ++this.n });
         command.run?.();
     }
 
+    /** A press on a hold command: the hold starts (a key's auto-repeat is ignored). */
+    private beginHold(command: Command, id: string, now: number) {
+        const key = `${id}:${command.action}`;
+        if (this.spent === key || !this.holding.begin(key, now)) return;
+        this.hold = { id, command, n: ++this.n };
+        this.sounds.hold?.(this.node(id)?.el ?? null, 0, 0);
+        this.emit();
+    }
+
+    /**
+     * The hold's clock, read once a frame while one runs: a tick per step;
+     * at the end the command runs as a press would. Returns the progress
+     * (0 to 1), or null when nothing is held.
+     */
+    holdFrame(now = performance.now()): number | null {
+        const hold = this.hold;
+        if (!hold) return null;
+        const frame = this.holding.frame(now);
+        const el = this.node(hold.id)?.el ?? null;
+        if (frame.done) {
+            this.hold = null;
+            this.spent = `${hold.id}:${hold.command.action}`;
+            this.sounds.confirm?.(el);
+            this.flash({ id: hold.id, action: hold.command.action, kind: "press", n: ++this.n });
+            hold.command.run?.();
+            return 1;
+        }
+        if (frame.stepped) this.sounds.hold?.(el, frame.step, frame.progress);
+        return frame.progress;
+    }
+
+    /** The held press was let go: before completion the hold is cancelled. */
+    releaseHold() {
+        this.spent = null;
+        const hold = this.hold;
+        if (!hold) return;
+        this.hold = null;
+        if (this.holding.release() === "cancelled")
+            this.sounds.holdCancel?.(this.node(hold.id)?.el ?? null);
+        this.emit();
+    }
+
     invoke(action: CommandAction): boolean {
         if (action === "nav") return false;
+        // Any other answer while a hold runs lets it go first.
+        if (action !== "confirm" && this.hold) {
+            this.releaseHold();
+            if (action === "back") return true;
+        }
         // Back first disarms a target waiting for its second click.
         if (action === "back" && this.armed !== null) {
             this.armed = null;

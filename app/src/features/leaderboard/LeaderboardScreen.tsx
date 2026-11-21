@@ -28,6 +28,7 @@ import {
     Meter,
     Panel,
     ReadoutLine,
+    Rolling,
     ScreenFrame,
     StatusChip,
     useFocusable,
@@ -113,7 +114,9 @@ function Screen({ leave }: { leave: () => void }) {
             location={["Menu", "Leaderboard"]}
             onLocation={leave}
             status={
-                dist ? <StatusChip label="Players ranked" value={String(dist.ranked)} /> : undefined
+                dist ? (
+                    <StatusChip label="Players ranked" value={<Rolling value={dist.ranked} />} />
+                ) : undefined
             }
             columns="minmax(0, 1fr)"
             commands={<FocusCommandBar glyphs={glyphs} />}

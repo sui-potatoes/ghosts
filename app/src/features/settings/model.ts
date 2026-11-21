@@ -129,7 +129,7 @@ export const PANEL_KEYS = {
     audio: ["master", "music", "sfx", "voice", "ui", "muted"],
     display: ["batterySaver", "scanlines", "vignette", "reduceMotion", "wireframe"],
     controls: ["combat"],
-    controller: ["padCombat"],
+    controller: ["padCombat", "vibration"],
 } as const satisfies {
     audio: (keyof Settings["audio"])[];
     display: (keyof Settings["display"])[];
@@ -152,15 +152,19 @@ export function panelChanges<K extends keyof typeof PANEL_KEYS>(
     const keys = PANEL_KEYS[panel] as readonly string[];
     const current = settings[section] as Record<string, unknown>;
     const base = defaults[section] as Record<string, unknown>;
+    const differs = (k: string) => JSON.stringify(current[k]) !== JSON.stringify(base[k]);
     if (panel === "controls" || panel === "controller") {
-        // Bindings count per action, so the prompt can say how many go.
-        const key = keys[0];
+        // Bindings count per action, so the prompt can say how many go; the
+        // panel's plain switches after them count one each.
+        const [key, ...flags] = keys;
         const now = current[key] as Record<string, unknown>;
         const def = base[key] as Record<string, unknown>;
-        return Object.keys(def).filter((a) => JSON.stringify(now[a]) !== JSON.stringify(def[a]))
-            .length;
+        const bindings = Object.keys(def).filter(
+            (a) => JSON.stringify(now[a]) !== JSON.stringify(def[a]),
+        ).length;
+        return bindings + flags.filter(differs).length;
     }
-    return keys.filter((k) => JSON.stringify(current[k]) !== JSON.stringify(base[k])).length;
+    return keys.filter(differs).length;
 }
 
 /** The patch a panel's reset writes: its own keys at their defaults. */

@@ -32,6 +32,7 @@ import {
     ListRow,
     Panel,
     Prompt,
+    Rolling,
     StagePanel,
     StatusChip,
     Tabs,
@@ -242,7 +243,17 @@ export function HeadquartersView({ data, ops }: { data: HqData; ops: HqOps }) {
                 )
             )}
             {mode === "squad" && data.rating !== undefined && (
-                <StatusChip label="Rating" value={data.rating} state="idle" />
+                <StatusChip
+                    label="Rating"
+                    value={
+                        typeof data.rating === "number" ? (
+                            <Rolling value={data.rating} />
+                        ) : (
+                            data.rating
+                        )
+                    }
+                    state="idle"
+                />
             )}
         </>
     );

@@ -1,7 +1,7 @@
 // Copyright (c) Sui Potatoes
 // SPDX-License-Identifier: MIT
 
-import type { MouseEvent } from "react";
+import type { MouseEvent, PointerEvent } from "react";
 
 import { useFocusState, type Command, type CommandAction, type FocusStore } from "./focus";
 import { barModel } from "./bar-model";
@@ -107,7 +107,16 @@ export function CommandHint({ command, glyphs, pressed, onRun }: HintProps) {
             aria-disabled={command.deny ? true : undefined}
             data-pressed={pressed || undefined}
             onMouseDown={(e: MouseEvent) => e.preventDefault()}
-            onClick={() => onRun(command)}
+            // A held answer starts on the press and is let go on release (the
+            // focus root's hold driver); its click is not a second answer.
+            onPointerDown={(e: PointerEvent) => {
+                if (!command.hold || command.deny) return;
+                if (e.pointerType === "mouse" && e.button !== 0) return;
+                onRun(command);
+            }}
+            onClick={() => {
+                if (!command.hold || command.deny) onRun(command);
+            }}
         >
             <Glyph action={command.action} nav={command.glyph} set={glyphs} />
             <span className="gui-cmd-label">{command.label}</span>

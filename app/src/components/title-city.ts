@@ -14,7 +14,16 @@ import { Reflector } from "three/examples/jsm/objects/Reflector.js";
 
 export interface TitleCity {
     dispose(): void;
+    /** Where the player's pointer or stick leans, -1 to 1 each way; the camera follows a degree. */
+    lean(x: number, y: number): void;
+    /** A confirm: the camera dips in a touch and the light flickers, then settles. */
+    nudge(): void;
 }
+
+/** How far the set answers the player's lean: look offset at the far target, camera shift. */
+const LEAN_LOOK = { x: 1.6, y: 0.9 };
+const LEAN_SHIFT = { x: 0.05, y: 0.025 };
+const EXPOSURE = 1.15;
 
 const REFERENCE_ASPECT = 1672 / 941;
 const noiseGLSL = `
@@ -35,7 +44,7 @@ export function createTitleCity(
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "low-power" });
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.15;
+    renderer.toneMappingExposure = EXPOSURE;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFShadowMap;
     renderer.shadowMap.autoUpdate = false;
@@ -46,6 +55,9 @@ export function createTitleCity(
     const camera = new THREE.PerspectiveCamera(46, REFERENCE_ASPECT, 0.2, 700);
     camera.position.set(0, 1.65, 2);
     camera.lookAt(0, 1.65, -100);
+    const cameraHome = camera.position.clone();
+    const lookHome = new THREE.Vector3(0, 1.65, -100);
+    const look = new THREE.Vector3();
     const textures = new Set<THREE.Texture>();
     const geometries = new Set<THREE.BufferGeometry>();
     const materials = new Set<THREE.Material>();
@@ -453,6 +465,36 @@ export function createTitleCity(
         idleResident.update(t * 0.75);
         bridge.update(person.position.x);
     }
+    // The player's lean (pointer or stick) and a confirm's kick, eased per frame.
+    const aim = { x: 0, y: 0 };
+    const leaning = { x: 0, y: 0 };
+    let kick = 0;
+    let reflectedLean = 0;
+    function steer(dt: number) {
+        const k = 1 - Math.exp(-dt * 5);
+        leaning.x += (aim.x - leaning.x) * k;
+        leaning.y += (aim.y - leaning.y) * k;
+        kick *= Math.exp(-dt * 9);
+        if (kick < 0.001) kick = 0;
+        camera.position.set(
+            cameraHome.x + leaning.x * LEAN_SHIFT.x,
+            cameraHome.y + leaning.y * LEAN_SHIFT.y - kick * 0.02,
+            cameraHome.z - kick * 0.05,
+        );
+        look.set(
+            lookHome.x + leaning.x * LEAN_LOOK.x,
+            lookHome.y + leaning.y * LEAN_LOOK.y,
+            lookHome.z,
+        );
+        camera.lookAt(look);
+        renderer.toneMappingExposure = EXPOSURE * (1 - kick * 0.09);
+        // The wet road's reflection is refreshed every 250 ms; a lean that has
+        // moved on refreshes it now, so the reflection never slides off its source.
+        if (Math.abs(leaning.x - reflectedLean) > 0.06) {
+            reflectedLean = leaning.x;
+            reflectionStamp = -Infinity;
+        }
+    }
     function render() {
         if (!initialized || disposed || failed || document.hidden || !visible) return;
         const now = performance.now();
@@ -462,8 +504,10 @@ export function createTitleCity(
         }
         // The poster is captured at time zero. Keep that exact pose until the
         // canvas has faded in, then advance only time after the reveal.
-        if (motion && presented && now > revealUntil)
+        if (motion && presented && now > revealUntil) {
             elapsed += Math.min((now - Math.max(lastTime, revealUntil)) / 1000, 0.1);
+            steer(Math.min((now - lastTime) / 1000, 0.1));
+        }
         lastTime = now;
         animate(elapsed);
         renderer.render(scene, camera);
@@ -514,6 +558,13 @@ export function createTitleCity(
     intersection.observe(host);
     const preferenceChanged = () => {
         motion = !reducedMotion.matches && !getSettings().display.reduceMotion;
+        if (!motion) {
+            // Still: the set holds its home framing.
+            aim.x = aim.y = leaning.x = leaning.y = kick = 0;
+            camera.position.copy(cameraHome);
+            camera.lookAt(lookHome);
+            renderer.toneMappingExposure = EXPOSURE;
+        }
         restart();
     };
     let savedReduceMotion = getSettings().display.reduceMotion;
@@ -578,6 +629,14 @@ export function createTitleCity(
             }
         });
     return {
+        lean(x: number, y: number) {
+            if (!motion) return;
+            aim.x = Math.max(-1, Math.min(1, x));
+            aim.y = Math.max(-1, Math.min(1, y));
+        },
+        nudge() {
+            if (motion) kick = 1;
+        },
         dispose() {
             if (disposed) return;
             disposed = true;

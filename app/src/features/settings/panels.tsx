@@ -55,6 +55,7 @@ import {
     Panel,
     Prompt,
     ReadoutLine,
+    Rolling,
     Slider,
     StatusChip,
     Stepper,
@@ -285,6 +286,7 @@ function ResetPrompt({ record, close }: { record: RatingRecord; close: () => voi
             confirm={{
                 label: "Reset",
                 deny: record.busy ? "Saving" : undefined,
+                hold: true,
                 run: () => {
                     void record.reset().then((done) => done && close());
                 },
@@ -311,7 +313,9 @@ function RankedBlock({ record }: { record: RatingRecord }) {
         <Panel variant="ghost" label="Ranked" className="gset-c3 gset-fit">
             <>
                 <ReadoutLine label="Rank">{r.tier.name}</ReadoutLine>
-                <ReadoutLine label="Rating">{r.rating}</ReadoutLine>
+                <ReadoutLine label="Rating">
+                    <Rolling value={r.rating} />
+                </ReadoutLine>
                 <ReadoutLine label="Ranked matches">{r.games}</ReadoutLine>
                 <ReadoutLine label="Record" empty={!r.games}>
                     {`${r.wins} won · ${r.losses} lost · ${r.draws} drawn`}
@@ -387,7 +391,10 @@ function formatSui(mist: bigint): string {
     return `${whole}.${frac.toString().padStart(4, "0")}`;
 }
 
-type AccountPrompt = { kind: "sign-out" } | { kind: "forget" } | { kind: "terminate"; termination: SessionTermination };
+type AccountPrompt =
+    | { kind: "sign-out" }
+    | { kind: "forget" }
+    | { kind: "terminate"; termination: SessionTermination };
 
 export function AccountPanel() {
     const { account, glyphs } = useSettingsContext();
@@ -1081,6 +1088,21 @@ export function ControllerPanel() {
                                 deny: noPad,
                                 run: () => setTesting(true),
                             },
+                        ]}
+                    />
+                    <Stepper
+                        id="pad-vibration"
+                        group="rows"
+                        label="Vibration"
+                        options={switchOptions()}
+                        value={onOff(controls.vibration)}
+                        onChange={(id) => setControls({ vibration: id === "on" })}
+                        title="Vibration"
+                        commands={[
+                            CHANGE,
+                            ...toDefault(controls.vibration !== DEFAULTS.controls.vibration, () =>
+                                setControls({ vibration: DEFAULTS.controls.vibration }),
+                            ),
                         ]}
                     />
                     <Eyebrow>Menus</Eyebrow>

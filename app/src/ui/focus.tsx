@@ -29,9 +29,14 @@ import {
     type RefObject,
 } from "react";
 
-import { uiBack, uiConfirm, uiDeny, uiTick } from "../audio";
+import { observePad } from "@ghosts/engine/gamepad";
+import { inputMode } from "@ghosts/engine/input-mode";
+
+import { uiBack, uiConfirm, uiDeny, uiHoldCancel, uiHoldStep, uiTick } from "../audio";
+import { haptic } from "../haptics";
 import { onAction } from "../input";
 import type { Action } from "../settings/keys";
+import { currentAction } from "../settings/store";
 import { claimScreenBack } from "./back";
 import {
     FocusStore,
@@ -40,7 +45,11 @@ import {
     secondaryCommands,
     type Command,
     type Dir,
+    type FocusElement,
+    type FocusSounds,
 } from "./focus-store";
+import { reducedMotion } from "./motion";
+import { DETENT_MS, detentFrames, sameBox, type Box } from "./tactile-model";
 
 export {
     clickCommand,
@@ -51,12 +60,143 @@ export {
 } from "./focus-store";
 export type { Command, CommandAction, Dir, Pulse } from "./focus-store";
 
-const SOUNDS = {
-    tick: (el: unknown) => uiTick(el as HTMLElement | null),
-    confirm: uiConfirm,
-    back: uiBack,
-    deny: uiDeny,
+const html = (el: FocusElement | null) => el as HTMLElement | null;
+
+/** Every gesture's sound and buzz; the store calls these with the element it happened on. */
+const SOUNDS: FocusSounds = {
+    tick: (el) => {
+        uiTick(html(el));
+        haptic("move");
+    },
+    confirm: (el) => {
+        uiConfirm(html(el));
+        haptic("confirm");
+    },
+    back: (el) => {
+        uiBack(html(el));
+        haptic("back");
+    },
+    deny: (el) => {
+        uiDeny(html(el));
+        haptic("deny");
+    },
+    hold: (el, step, progress) => {
+        uiHoldStep(html(el), step);
+        haptic("hold", progress);
+    },
+    holdCancel: (el) => uiHoldCancel(html(el)),
 };
+
+/**
+ * Pressed under the pointer: the target sinks while the button or finger is
+ * down (`data-held`), and its action runs on release (the click). A refused
+ * target does not give; a slider's bar is a drag, not a press.
+ */
+function usePressedUnderPointer(store: FocusStore) {
+    useEffect(() => {
+        let held: HTMLElement | null = null;
+        const lift = () => {
+            held?.removeAttribute("data-held");
+            held = null;
+        };
+        const down = (e: globalThis.PointerEvent) => {
+            lift();
+            if (e.pointerType === "mouse" && e.button !== 0) return;
+            if (!(e.target instanceof Element) || e.target.closest(".gui-slider")) return;
+            const hit = e.target.closest<HTMLElement>("[data-focus-id]");
+            const id = hit?.dataset.focusId;
+            if (!hit || !id || store.node(id)?.el !== hit || hit.hasAttribute("data-inactive"))
+                return;
+            held = hit;
+            hit.setAttribute("data-held", "");
+        };
+        // Sliding off before the release springs it back; that press never clicks.
+        const out = (e: globalThis.PointerEvent) => {
+            if (held && !(e.relatedTarget instanceof Node && held.contains(e.relatedTarget)))
+                lift();
+        };
+        document.addEventListener("pointerdown", down, { passive: true });
+        document.addEventListener("pointerout", out, { passive: true });
+        window.addEventListener("pointerup", lift, { passive: true });
+        window.addEventListener("pointercancel", lift, { passive: true });
+        window.addEventListener("blur", lift);
+        return () => {
+            lift();
+            document.removeEventListener("pointerdown", down);
+            document.removeEventListener("pointerout", out);
+            window.removeEventListener("pointerup", lift);
+            window.removeEventListener("pointercancel", lift);
+            window.removeEventListener("blur", lift);
+        };
+    }, [store]);
+}
+
+/**
+ * A hold to confirm, while one runs: the frame clock (no loop otherwise), the
+ * fill on the held target (`--gui-hold`, `data-holding`) and the release,
+ * whichever input started it: the confirm key coming up, the pointer
+ * lifting, the pad's A let go, or the window losing focus.
+ */
+function useHoldDriver(store: FocusStore) {
+    useEffect(() => {
+        let raf = 0;
+        let el: HTMLElement | null = null;
+        let offPad: (() => void) | null = null;
+        const stop = () => {
+            cancelAnimationFrame(raf);
+            raf = 0;
+            el?.style.removeProperty("--gui-hold");
+            el?.removeAttribute("data-holding");
+            el = null;
+            offPad?.();
+            offPad = null;
+        };
+        const frame = () => {
+            raf = 0;
+            const progress = store.holdFrame();
+            if (progress === null || progress >= 1) {
+                stop();
+                return;
+            }
+            el?.style.setProperty("--gui-hold", progress.toFixed(3));
+            raf = requestAnimationFrame(frame);
+        };
+        const start = () => {
+            const hold = store.hold;
+            if (!hold) {
+                if (raf || el) stop();
+                return;
+            }
+            if (raf) return;
+            el = (store.node(hold.id)?.el ?? null) as HTMLElement | null;
+            el?.setAttribute("data-holding", "");
+            el?.style.setProperty("--gui-hold", "0");
+            // A pad hold ends when A comes up; other inputs end on their own events.
+            if (inputMode() === "gamepad")
+                offPad = observePad((snap) => {
+                    if (!snap.buttons[0]) store.releaseHold();
+                });
+            raf = requestAnimationFrame(frame);
+        };
+        const release = () => store.releaseHold();
+        const keyUp = (e: KeyboardEvent) => {
+            if (currentAction(e) === "confirm") store.releaseHold();
+        };
+        const off = store.subscribe(start);
+        window.addEventListener("keyup", keyUp);
+        window.addEventListener("pointerup", release);
+        window.addEventListener("pointercancel", release);
+        window.addEventListener("blur", release);
+        return () => {
+            off();
+            stop();
+            window.removeEventListener("keyup", keyUp);
+            window.removeEventListener("pointerup", release);
+            window.removeEventListener("pointercancel", release);
+            window.removeEventListener("blur", release);
+        };
+    }, [store]);
+}
 
 /** How long a touch must rest on a target to open its command list. */
 const LONG_PRESS_MS = 450;
@@ -105,6 +245,9 @@ export function FocusRoot({ back, onTab, onSection, children }: RootProps) {
 
     // Claimed before paint, so EscapeBack has stepped aside before any key.
     useLayoutEffect(() => claimScreenBack(), []);
+
+    usePressedUnderPointer(store);
+    useHoldDriver(store);
 
     // The cursor follows the pointer: one listener, the target resolved from its
     // data attribute (no measuring). A drag in progress (a button held) and touch
@@ -394,22 +537,30 @@ export function useFocusable<T extends HTMLElement>({
     };
 }
 
+/** A target's own press offset (`translate`, mid-spring included), so the cursor ignores it. */
+function pressOffset(el: HTMLElement): number {
+    const translate = getComputedStyle(el).translate;
+    if (!translate || translate === "none") return 0;
+    return parseFloat(translate.split(" ")[1] ?? "0") || 0;
+}
+
 /**
  * The cursor itself: one bracket frame for the whole screen that snaps to the
  * focused node's box. Measured against the screen root so the screen's zoom
- * (phone landscape, large displays) cancels out.
+ * (phone landscape, large displays) cancels out. Moving to another target it
+ * travels with weight (`detentFrames`: a short run with a slight overshoot
+ * into place); a re-measure of the same target (a scroll, a resize) follows
+ * at once. The press of a target (it sinks a pixel or two) is its own
+ * motion: the frame stays where the target rests.
  */
 export function FocusCursor({ root }: { root: RefObject<HTMLElement | null> }) {
     const store = useFocusState();
-    const [box, setBox] = useState<{
-        x: number;
-        y: number;
-        w: number;
-        h: number;
-        hidden: boolean;
-    } | null>(null);
+    const [box, setBox] = useState<(Box & { hidden: boolean }) | null>(null);
     const node = store.node(store.focused);
     const el = (node?.el ?? null) as HTMLElement | null;
+    const frame = useRef<HTMLDivElement>(null);
+    const last = useRef<{ el: HTMLElement; box: Box & { hidden: boolean } } | null>(null);
+    const travel = useRef<Animation | null>(null);
 
     useLayoutEffect(() => {
         const host = root.current;
@@ -427,13 +578,16 @@ export function FocusCursor({ root }: { root: RefObject<HTMLElement | null> }) {
                 const v = scroller.getBoundingClientRect();
                 hidden = r.bottom < v.top + 2 || r.top > v.bottom - 2;
             }
-            setBox({
+            const next = {
                 x: (r.left - h.left) / scale,
-                y: (r.top - h.top) / scale,
+                y: (r.top - h.top) / scale - pressOffset(el),
                 w: r.width / scale,
                 h: r.height / scale,
                 hidden,
-            });
+            };
+            setBox((prev) =>
+                prev && prev.hidden === next.hidden && sameBox(prev, next) ? prev : next,
+            );
         };
         measure();
         const observer = new ResizeObserver(measure);
@@ -446,10 +600,37 @@ export function FocusCursor({ root }: { root: RefObject<HTMLElement | null> }) {
         };
     }, [el, root, store.version]);
 
+    // The travel: only when the cursor goes to another target, from where it was.
+    useLayoutEffect(() => {
+        if (!box || !el) return;
+        const prev = last.current;
+        // Nothing moved yet (the new target is measured on the next pass): keep where it was.
+        if (prev && prev.box.hidden === box.hidden && sameBox(prev.box, box)) return;
+        last.current = { el, box };
+        const cursor = frame.current;
+        if (!cursor || !prev) return;
+        travel.current?.cancel();
+        travel.current = null;
+        if (prev.el === el || prev.box.hidden || box.hidden || !cursor.animate) return;
+        const frames = detentFrames(prev.box, box, reducedMotion());
+        if (!frames.length) return;
+        travel.current = cursor.animate(
+            frames.map((f) => ({
+                offset: f.offset,
+                easing: f.easing,
+                transform: `translate(${f.x}px, ${f.y}px)`,
+                width: `${f.w}px`,
+                height: `${f.h}px`,
+            })),
+            { duration: DETENT_MS },
+        );
+    }, [box, el]);
+
     if (!box || !el) return null;
     const motion = store.motion;
     return (
         <div
+            ref={frame}
             className="gui-cursor"
             aria-hidden
             data-hidden={box.hidden || undefined}

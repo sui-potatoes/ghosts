@@ -22,8 +22,12 @@ type PromptProps = {
     hint?: string;
     /** `danger` turns the frame and the confirm amber: it destroys something. */
     tone?: "default" | "danger";
-    /** `deny`: shown but refused (an invalid name); the command bar says why, in amber. */
-    confirm: { label: string; run: () => void; deny?: string };
+    /**
+     * `deny`: shown but refused (an invalid name); the command bar says why, in amber.
+     * `hold`: the answer destroys something for good; it runs only once held
+     * (a bar fills along the prompt's foot), and letting go early cancels.
+     */
+    confirm: { label: string; run: () => void; deny?: string; hold?: boolean };
     cancel: { label: string; run: () => void };
     /** A third answer on Reset (X / R): Discard beside Save. Always drawn amber. */
     alternate?: { label: string; run: () => void };
@@ -78,6 +82,7 @@ function PromptBlock({
             label: confirm.label,
             tone: tone === "danger" ? "danger" : "primary",
             deny: confirm.deny,
+            hold: confirm.hold,
             run: confirm.run,
         },
         { action: "back", label: cancel.label, run: cancel.run },
@@ -114,6 +119,7 @@ function PromptBlock({
                         ))}
                     </dl>
                 )}
+                {confirm.hold && <i className="gui-prompt-hold" aria-hidden />}
                 <div className="gui-prompt-commands">
                     {commands.map((command) => (
                         <CommandHint

@@ -36,6 +36,7 @@ const DEFAULTS: Settings = {
         padCombat: { fire: "rt", grenade: "lt" } as unknown as Settings["controls"]["padCombat"],
         layout: "auto",
         layoutAnswered: false,
+        vibration: true,
     },
     network: { rpcUrl: "" },
 };
@@ -120,6 +121,13 @@ test("binding panels count changed actions and keep the layout choice", () => {
     assert.deepEqual(reset.controls.padCombat, DEFAULTS.controls.padCombat);
     assert.deepEqual(reset.controls.combat, s.controls.combat);
     assert.equal(reset.controls.layout, "controller");
+});
+
+test("the controller panel counts and restores Vibration with its bindings", () => {
+    const s: Settings = { ...DEFAULTS, controls: { ...DEFAULTS.controls, vibration: false } };
+    assert.equal(panelChanges("controller", s, DEFAULTS), 1);
+    assert.equal(panelChanges("controls", s, DEFAULTS), 0);
+    assert.equal(panelReset("controller", s, DEFAULTS).controls.vibration, true);
 });
 
 const FALLBACK = "https://fullnode.testnet.example";

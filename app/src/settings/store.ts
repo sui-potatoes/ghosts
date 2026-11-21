@@ -48,6 +48,8 @@ export type Settings = {
         layout: LayoutChoice;
         /** The "controller connected" prompt was answered; never ask again. */
         layoutAnswered: boolean;
+        /** Pad rumble and phone vibration on menu gestures (`src/haptics`). */
+        vibration: boolean;
     };
     network: {
         /** Fullnode RPC override; "" is the public default. Read once at startup. */
@@ -70,6 +72,7 @@ export const DEFAULTS: Settings = {
         padCombat: DEFAULT_PAD_COMBAT_BINDINGS,
         layout: "auto",
         layoutAnswered: false,
+        vibration: true,
     },
     network: { rpcUrl: "" },
 };
@@ -133,6 +136,7 @@ function sanitize(raw: unknown): Settings {
             padCombat: sanitizePadCombatBindings(c.padCombat),
             layout: layoutChoice(c.layout),
             layoutAnswered: flag(c.layoutAnswered, DEFAULTS.controls.layoutAnswered),
+            vibration: flag(c.vibration, DEFAULTS.controls.vibration),
         },
         network: { rpcUrl: rpc?.ok ? rpc.url : DEFAULTS.network.rpcUrl },
     };

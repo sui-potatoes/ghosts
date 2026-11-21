@@ -485,10 +485,19 @@
     transition: transform 90ms ease-out;
 }
 
-/* Pressed: the band sinks for a beat. A transition, so the band's own settle never replays. */
-.gui [data-focused][data-pressed] {
-    transform: scale(0.985);
-    filter: brightness(0.8);
+/* Pressed: the target sinks a pixel and a half and darkens while the button or
+   finger is down (`data-held`) and for a beat after a key or pad press
+   (`data-pressed`), then springs back with a touch of overshoot. `translate`,
+   not `transform`: the refusal shake keeps its own channel, and the cursor
+   subtracts it, so its frame stays where the target rests. Nothing changes
+   size; the text never fades (the darkening is instant both ways). */
+.gui [data-focus-id] {
+    --gui-press: 1.5px;
+}
+.gui [data-focused][data-pressed],
+.gui [data-focus-id][data-held] {
+    translate: 0 var(--gui-press);
+    filter: brightness(0.86);
     transition: none;
 }
 
@@ -1449,16 +1458,15 @@ span.gui-cmd {
 
 /* === The cursor ===================================================== */
 
+/* The cursor travels between targets with weight (focus.tsx runs the detent:
+   a short run with a slight overshoot); it has no transition of its own, so a
+   scroll or a resize moves it with its target at once. */
 .gui-cursor {
     position: absolute;
     top: 0;
     left: 0;
     z-index: 30;
     pointer-events: none;
-    transition:
-        transform 110ms var(--snap),
-        width 110ms var(--snap),
-        height 110ms var(--snap);
 }
 
 .gui-cursor-frame {
@@ -1506,6 +1514,39 @@ span.gui-cmd {
     0% {
         inset: -1px;
     }
+}
+
+/* A confirm blooms from the row: a short light around its edge, outside the
+   row's box only (an outer shadow never paints over the row's text). */
+.gui-cursor-frame::after {
+    content: "";
+    position: absolute;
+    inset: 5px;
+    opacity: 0;
+    pointer-events: none;
+}
+.gui-cursor-frame[data-motion="press"]::after {
+    animation: gui-bloom 280ms ease-out;
+}
+.gui-cursor[data-tone="danger"] .gui-cursor-frame::after {
+    --gui-bloom: var(--warn-color);
+}
+
+@keyframes gui-bloom {
+    0% {
+        opacity: 0.9;
+        box-shadow: 0 0 10px 1px
+            color-mix(in srgb, var(--gui-bloom, var(--text-color)) 32%, transparent);
+    }
+    100% {
+        opacity: 0;
+        box-shadow: 0 0 26px 6px transparent;
+    }
+}
+
+/* No light on glass: a finger gets the press and the sound, not a glow. */
+html[data-input="touch"] .gui-cursor-frame::after {
+    display: none;
 }
 
 .gui-cursor-frame[data-motion="deny"] {
@@ -1559,6 +1600,7 @@ span.gui-cmd {
 /* === Reduced motion: state changes stay, movement goes ============== */
 
 @media (prefers-reduced-motion: reduce) {
+    .gui,
     .gui *,
     .gui *::before,
     .gui *::after {
@@ -2446,6 +2488,31 @@ span.gui-cmd {
     *:not(.gui-stat-bar *, .gui-meter-bar *, .gui-list-rail *) {
     transition: none;
 }
+/* The spring back from a press: listed after the per-part lists above, so
+   every focusable part shares it. Only position moves. */
+.gui
+    :is(
+        .gui-row,
+        .gui-stat,
+        .gui-slot,
+        .gui-empty-action,
+        .gui-chooser,
+        .gui-action-row,
+        .gui-menu-item,
+        .gui-tile,
+        .gui-title-row,
+        .gui-prompt,
+        [data-focus-id]
+    ):not([data-pressed], [data-held]) {
+    transition-property: transform, translate;
+    transition-duration: 90ms, 150ms;
+    transition-timing-function: ease-out, cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+.gui .gui-title-row:not([data-pressed], [data-held]) {
+    transition-property: transform, letter-spacing, translate;
+    transition-duration: 90ms, 160ms, 150ms;
+    transition-timing-function: ease-out, var(--snap), cubic-bezier(0.3, 1.6, 0.5, 1);
+}
 
 /* === Touch ===========================================================
  * `html[data-input="touch"]` (the input in use, `@ghosts/engine/input-mode`):
@@ -2511,5 +2578,152 @@ html[data-input="touch"] .gui-tab {
     }
     .gui-tabs {
         flex: none;
+    }
+}
+
+/* === Tactile: glass, light, depth ======================================
+ * The screen as a display in a device: one static layer of grain, a sheen
+ * and scanlines over everything (`GuiSurface`), a hairline bevel on panels,
+ * a soft light under the mouse that catches the panels' edges, and one
+ * motion between screens. Every tint is a mix of the theme tokens. */
+
+.gui-surface {
+    position: absolute;
+    inset: 0;
+    z-index: 70;
+    pointer-events: none;
+    background:
+        linear-gradient(
+            168deg,
+            color-mix(in srgb, var(--text-color) 3%, transparent) 0,
+            transparent 32%
+        ),
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='2.4 0 0 0 -0.7 2.4 0 0 0 -0.7 2.4 0 0 0 -0.7 0 0 0 0 0.04'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")
+            0 0 / 180px 180px;
+}
+
+/* Display: Scanlines adds the lines to the glass. */
+html[data-scanlines="on"] .gui-surface {
+    background:
+        repeating-linear-gradient(
+            0deg,
+            color-mix(in srgb, var(--background-color) 9%, transparent) 0 1px,
+            transparent 1px 3px
+        ),
+        linear-gradient(
+            168deg,
+            color-mix(in srgb, var(--text-color) 3%, transparent) 0,
+            transparent 32%
+        ),
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='2.4 0 0 0 -0.7 2.4 0 0 0 -0.7 2.4 0 0 0 -0.7 0 0 0 0 0.04'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")
+            0 0 / 180px 180px;
+}
+
+/* A hairline bevel: a lit top edge and a shaded bottom one, inside the border. */
+.gui-panel:not([data-variant="ghost"]) {
+    box-shadow:
+        inset 0 1px 0 color-mix(in srgb, var(--text-color) 6%, transparent),
+        inset 0 -1px 0 color-mix(in srgb, var(--background-color) 55%, transparent);
+}
+.gui-prompt {
+    box-shadow:
+        inset 0 1px 0 color-mix(in srgb, var(--text-color) 7%, transparent),
+        inset 0 -1px 0 color-mix(in srgb, var(--background-color) 55%, transparent),
+        0 18px 40px color-mix(in srgb, var(--background-color) 55%, transparent);
+}
+.gui-bar {
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-color) 4%, transparent);
+}
+
+/* --- Light that follows the mouse ---
+ * `--gx` / `--gy` come from one listener (surface.tsx). The glow moves by
+ * transform only; the panels' edge light is a fixed-attachment gradient
+ * masked to the border, so it lights the edges nearest the pointer. Mouse
+ * only: a finger, keys and a pad get no light. */
+.gui-glow {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 69;
+    width: 440px;
+    height: 440px;
+    pointer-events: none;
+    background: radial-gradient(
+        closest-side,
+        color-mix(in srgb, var(--text-color) 4.5%, transparent),
+        transparent
+    );
+    transform: translate(calc(var(--gx, -999px) - 220px), calc(var(--gy, -999px) - 220px));
+    opacity: 0;
+}
+
+.gui-panel-light {
+    position: absolute;
+    inset: -1px;
+    padding: 1px;
+    pointer-events: none;
+    background: radial-gradient(
+            circle 220px at var(--gx, -999px) var(--gy, -999px),
+            color-mix(in srgb, var(--text-color) 26%, transparent),
+            transparent
+        )
+        fixed;
+    -webkit-mask:
+        linear-gradient(#000 0 0) content-box,
+        linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+        linear-gradient(#000 0 0) content-box exclude,
+        linear-gradient(#000 0 0);
+    display: none;
+}
+
+html[data-input="mouse"] .gui[data-lit] .gui-glow {
+    opacity: 1;
+}
+html[data-input="mouse"] .gui[data-lit] .gui-panel:not([data-variant="ghost"]) > .gui-panel-light {
+    display: block;
+}
+
+/* --- Hold to confirm: the bar along the prompt's foot fills while held --- */
+.gui-prompt-hold {
+    position: absolute;
+    left: -1px;
+    right: -1px;
+    bottom: -1px;
+    height: 2px;
+    background: var(--text-color);
+    transform: scaleX(var(--gui-hold, 0));
+    transform-origin: left center;
+    opacity: 0;
+    pointer-events: none;
+}
+.gui-prompt[data-tone="danger"] .gui-prompt-hold {
+    background: var(--warn-color);
+}
+.gui-prompt[data-holding] .gui-prompt-hold {
+    opacity: 1;
+}
+
+/* --- Depth between screens ---
+ * Going in, the next screen slides over from the right; going back, the
+ * screen returns from behind. Transform only: the screen is whole and
+ * readable from its first frame, and input is never held. `html[data-nav]`
+ * is set for a moment by `ScreenMotion` on a route change. */
+html[data-nav="in"] .gui:not(.gui-dialog, .watch-hud) {
+    animation: gui-screen-in 170ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+html[data-nav="back"] .gui:not(.gui-dialog, .watch-hud) {
+    animation: gui-screen-back 170ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes gui-screen-in {
+    from {
+        transform: translateX(calc(var(--u) * 6));
+    }
+}
+@keyframes gui-screen-back {
+    from {
+        transform: translateX(calc(var(--u) * -3)) scale(0.985);
     }
 }

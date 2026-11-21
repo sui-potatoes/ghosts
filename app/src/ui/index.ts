@@ -44,4 +44,6 @@ export {
 } from "./parts";
 export { ContextMenu, InlineCommands } from "./pointer";
 export { Prompt } from "./Prompt";
+export { Rolling } from "./Rolling";
+export { GuiSurface } from "./surface";
 export { StagePanel, useStageAttach, type StageControl } from "./stage";

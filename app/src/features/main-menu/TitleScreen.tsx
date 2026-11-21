@@ -22,7 +22,7 @@ import {
     type ReactNode,
 } from "react";
 
-import { TitleBackdrop } from "../../components/TitleBackdrop";
+import { nudgeTitleBackdrop, TitleBackdrop } from "../../components/TitleBackdrop";
 import { POTATOES_URL } from "../../reportIssue";
 import { useFitScale } from "../../hooks/useFitScale";
 import { getSettings } from "../../settings/store";
@@ -31,6 +31,7 @@ import {
     FocusCommandBar,
     FocusCursor,
     FocusRoot,
+    GuiSurface,
     headerClick,
     InlineCommands,
     Prompt,
@@ -182,6 +183,17 @@ function TitleFrame({
         [store, rows],
     );
 
+    // A confirm reaches the set behind the menu: a small dip and flicker.
+    useEffect(() => {
+        let seen = store.pulse?.n ?? 0;
+        return store.subscribe(() => {
+            const pulse = store.pulse;
+            if (!pulse || pulse.n === seen) return;
+            seen = pulse.n;
+            if (pulse.kind === "press" && pulse.action === "confirm") nudgeTitleBackdrop();
+        });
+    }, [store]);
+
     // The entrance runs on its own clock; any input skips to its end. Moving the
     // cursor, pressing or opening a list all go through the store, so it is
     // the one place to watch: no key listener of the screen's own.
@@ -251,6 +263,7 @@ function TitleFrame({
             <FocusCommandBar glyphs={glyphs} />
             <ContextMenu root={root} />
             <FocusCursor root={root} />
+            <GuiSurface />
         </main>
     );
 }
