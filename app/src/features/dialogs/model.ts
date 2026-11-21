@@ -60,15 +60,19 @@ export function signInOptions(state: SignInState): SignInOption[] {
                   hint: "Touch ID, a phone or a security key signs. No extension, no seed phrase",
                   verb: "Sign in",
               },
-        {
-            id: "recover",
-            label: hasPasskey ? "Use a Different Passkey" : "I Have a Passkey",
-            kind: "Passkey",
-            hint: hasPasskey
-                ? "Sign twice with another passkey to find its account"
-                : "Sign twice with an existing passkey to find its account",
-            verb: "Sign in",
-        },
+        // Another passkey is an alternative to the remembered one: with none on
+        // the device there is nothing to be different from.
+        ...(hasPasskey
+            ? [
+                  {
+                      id: "recover",
+                      label: "Use a Different Passkey",
+                      kind: "Passkey",
+                      hint: "Sign twice with another passkey to find its account",
+                      verb: "Sign in",
+                  },
+              ]
+            : []),
         {
             id: "google",
             label: "Google",

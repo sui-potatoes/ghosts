@@ -129,9 +129,9 @@ test("sign-in options: Google refused without a key; one ceremony at a time", ()
     const fresh = signInOptions({ hasPasskey: false, canGoogle: false, wallets: [], busy: null });
     assert.deepEqual(
         fresh.map((o) => o.id),
-        ["passkey", "recover", "google"],
+        ["passkey", "google"],
     );
-    assert.ok(fresh[2].locked);
+    assert.ok(fresh[1].locked);
     const known = signInOptions({ hasPasskey: true, canGoogle: true, wallets: ["W"], busy: null });
     assert.equal(known[2].locked, undefined);
     assert.equal(known[3].id, "wallet:W");
@@ -169,19 +169,18 @@ test("sign-in options: a remembered passkey continues as its player, with or wit
 test("sign-in options: nothing remembered reads as a first visit", () => {
     const fresh = signInOptions({ hasPasskey: false, canGoogle: false, wallets: [], busy: null });
     assert.deepEqual(
-        fresh.slice(0, 2).map((o) => [o.label, o.kind, o.hint]),
+        fresh.slice(0, 1).map((o) => [o.label, o.kind, o.hint]),
         [
             [
                 "Create a Passkey",
                 "New",
                 "Touch ID, a phone or a security key signs. No extension, no seed phrase",
             ],
-            [
-                "I Have a Passkey",
-                "Passkey",
-                "Sign twice with an existing passkey to find its account",
-            ],
         ],
+    );
+    assert.equal(
+        fresh.some((o) => o.id === "recover"),
+        false,
     );
 });
 
