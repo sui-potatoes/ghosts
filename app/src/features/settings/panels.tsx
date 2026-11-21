@@ -159,7 +159,7 @@ function SignInGate({ what }: { what: string }) {
     const { account } = useSettingsContext();
     return (
         <SettingsFrame>
-            <Panel className="gset-c2 gset-fit">
+            <Panel className="gset-c2 gset-fit gset-gate">
                 <EmptyState
                     id="gate-sign-in"
                     group="rows"
@@ -193,6 +193,7 @@ export function PlayerPanel() {
     const record = useRatingRecord(!!inMatch);
     const signedIn = record.signedIn;
     const label = signedIn ? "Player" : "Rating";
+    if (!signedIn) return <SignInGate what="your name and rank" />;
     return (
         <SettingsFrame
             status={

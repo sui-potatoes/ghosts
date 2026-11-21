@@ -25,6 +25,12 @@
     max-height: 100%;
 }
 
+/* The signed-out plate stands in the middle of the body, across its columns. */
+.gset-c2.gset-gate {
+    grid-column: 1 / -1;
+    place-self: center;
+}
+
 /* === Rows =========================================================== */
 
 .gset-row {
@@ -165,6 +171,9 @@
     .gui-body:has(> .gset-c2) > .gset-c2,
     .gui-body:has(> .gset-c2) > .gset-c3 {
         grid-column: 1;
+    }
+    .gui-body:has(> .gset-gate) {
+        grid-template-rows: minmax(0, 1fr);
     }
 }
 
