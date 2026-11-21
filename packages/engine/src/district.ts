@@ -16,6 +16,7 @@ import type { StreetKind } from "./environment";
 import type { SceneryKit } from "./scene/maps";
 import { addPuddles, createPuddleExposure } from "./scene/puddles";
 import { LOOK } from "./scene/look";
+import { paintBox } from "./road-paint";
 import { litPanes } from "./scene/street-air";
 
 const textures: Record<string, T.Texture> = {};
@@ -136,6 +137,7 @@ export function buildDistrict(scene: T.Scene, kit: SceneryKit) {
   const steel = material(0x30383f, 0.52, 0.65),
     black = material(0x151c23),
     paint = material(0xb8b5a2),
+    lane = Object.assign(material(0xb8b5a2), { polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }),
     curb = material(0x85888b),
     glass = material(0x1b303b, 0.22, 0.65);
   const colored = new T.MeshStandardMaterial({
@@ -161,6 +163,9 @@ export function buildDistrict(scene: T.Scene, kit: SceneryKit) {
   atlas.emissiveIntensity = LOOK.signs.near;
   for (const m of [glow, windows, atlas])
     m.userData.nightGlow = m.emissiveIntensity;
+  // Road paint is a film on the asphalt (road-paint.ts), never a raised slab.
+  const film = paintBox();
+  const mark = (x:number,z:number,w:number,d:number) => block(scene,x,film.y,z,w,film.height,d,lane);
   const occluders: { group: T.Group; bounds: T.Box3 }[] = [];
   block(scene, 0, -0.11, 0, 90, 0.2, 90, asphalt);
   // Four city blocks: streets stay connected through the whole visible district.
@@ -186,23 +191,23 @@ export function buildDistrict(scene: T.Scene, kit: SceneryKit) {
   }
   // Kerb-side drainage and continuous edge lines, stopping at the junction.
   for(const s of [-1,1]) for(const sign of [-1,1]) {
-    block(scene,s*2.36,.012,sign*23.5,.055,.012,36,paint);
-    block(scene,sign*23.7,.012,s*1.72,36,.012,.055,paint);
+    mark(s*2.36,sign*23.5,.055,36);
+    mark(sign*23.7,s*1.72,36,.055);
     for(let n=0;n<6;n++) {
       const z=sign*(6+n*5);block(scene,s*2.56,.02,z,.22,.025,.65,steel);
       for(let j=0;j<5;j++)block(scene,s*2.56,.037,z-.25+j*.12,.18,.01,.035,black);
     }
   }
   for(let n=-40;n<41;n+=3) if(Math.abs(n)>5) {
-    block(scene,0,.013,n,.07,.012,1.5,paint);
-    block(scene,n,.013,0,1.5,.012,.07,paint);
+    mark(0,n,.07,1.5);
+    mark(n,0,1.5,.07);
   }
   // Four short zebra crossings connect actual sidewalk ramps, never whole blocks.
   for(const s of [-1,1]) {
-    for(let x=-2.3;x<2.6;x+=.63)block(scene,x,.022,s*STREET.cuts.avenue,.34,.018,1.25,paint);
-    for(let z=-1.7;z<1.9;z+=.62)block(scene,s*STREET.cuts.cross,.022,z,1.25,.018,.34,paint);
-    block(scene, s*1.35,.021,s*4.35,2.25,.015,.13,paint);
-    block(scene,s*5.0,.021,-s*1.0,.13,.015,1.65,paint);
+    for(let x=-2.3;x<2.6;x+=.63)mark(x,s*STREET.cuts.avenue,.34,1.25);
+    for(let z=-1.7;z<1.9;z+=.62)mark(s*STREET.cuts.cross,z,1.25,.34);
+    mark(s*1.35,s*4.35,2.25,.13);
+    mark(s*5.0,-s*1.0,.13,1.65);
     for(const r of [-1,1]) {
       block(scene,r*3.1,.165,s*STREET.cuts.avenue,.35,.025,1.15,colored,0xb29b62);
       block(scene,s*STREET.cuts.cross,.165,r*2.42,1.15,.025,.35,colored,0xb29b62);

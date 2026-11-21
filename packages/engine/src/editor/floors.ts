@@ -13,6 +13,7 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { floorByUid, type FloorSpec } from "../catalog.ts";
 import { districtMaps, pavementMaterial } from "../district.ts";
 import { CELL, type Cell } from "../map.ts";
+import { paintBox } from "../road-paint.ts";
 import { FLOOR_UV_SCALE, floorSurfaceMaterial, officeFloorTexture } from "../office/flooring.ts";
 import type { Level } from "./level.ts";
 
@@ -63,6 +64,8 @@ export function floorMeshes(
   origin: Cell = [0, 0],
 ): T.Mesh[] {
   const meshes: T.Mesh[] = [];
+  // Zebra paint is a film on the floor plane (y 0.006), not a slab.
+  const film = paintBox(0.006);
   const cells = new Map<string, Cell[]>();
   for (const tile of level.floors) {
     const list = cells.get(tile.floor) ?? [];
@@ -97,8 +100,8 @@ export function floorMeshes(
       if (spec.stripes)
         for (const offset of [-CELL / 4, CELL / 4]) {
           const along = spec.stripes === "x";
-          const strip = new T.BoxGeometry(along ? 0.34 : CELL - 0.13, 0.012, along ? CELL - 0.13 : 0.34);
-          strip.translate(x * CELL + (along ? offset : 0), 0.013, z * CELL + (along ? 0 : offset));
+          const strip = new T.BoxGeometry(along ? 0.34 : CELL - 0.13, film.height, along ? CELL - 0.13 : 0.34);
+          strip.translate(x * CELL + (along ? offset : 0), film.y, z * CELL + (along ? 0 : offset));
           strips.push(strip);
         }
       return geometry;

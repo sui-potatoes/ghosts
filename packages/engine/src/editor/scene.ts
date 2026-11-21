@@ -80,7 +80,7 @@ export class EditorScene {
   private readonly floorMaterials = new Map<string, T.MeshStandardMaterial>();
   private readonly floorTextures: FloorTextures = new Map();
   // The crosswalks' zebra strips, the street demo's road-paint tone.
-  private readonly paint = new T.MeshStandardMaterial({ color: 0xb8b5a2, roughness: 0.85 });
+  private readonly paint = new T.MeshStandardMaterial({ color: 0xb8b5a2, roughness: 0.85, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
   private readonly bulbMaterials = new Map<number, T.MeshBasicMaterial>();
   private readonly lampLine = new T.LineBasicMaterial({ color: 0x5a6069, transparent: true, opacity: 0.6 });
   private readonly disposable = new Set<T.BufferGeometry>();

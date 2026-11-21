@@ -235,6 +235,11 @@ export class TacticalMap {
       !(this.propBlocks.get(key(p)) ?? []).some(id => this.health(id) > 0);
   }
 
+  /** A building or fixed obstacle tile (plan data): never a prop, whatever its health. */
+  isWall(p: Point) {
+    return this.blocked.has(key(p));
+  }
+
   isCover(p: Point) {
     return this.coverKeys.has(key(p));
   }

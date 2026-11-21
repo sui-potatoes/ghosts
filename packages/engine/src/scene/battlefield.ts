@@ -24,6 +24,7 @@ import { Effects, reducedMotion } from "./effects";
 import { Destruction } from "./destruction";
 import { mapView } from "./maps";
 import { Occlusion } from "./occlusion";
+import { BlastFlash } from "./blast-flash";
 import { Overlays } from "./overlays";
 import { RenderProfiler } from "./profiler";
 import { buildCovers, buildRelay } from "./props";
@@ -99,6 +100,8 @@ export class Battlefield {
   readonly frameHooks = new Set<() => void>();
   private hoveredUnit: string | null = null;
   private threat!: ThreatOverlay;
+  /** The tiles a grenade's burst lights as it goes off. */
+  private blast!: BlastFlash;
 
   private readonly space: Space;
   private readonly units: Units;
@@ -225,6 +228,12 @@ export class Battlefield {
       hostile: tone("--red", "#c98177"),
       friendly: tone("--text-secondary", "#a4b5bc"),
     });
+    this.blast = new BlastFlash(
+      { frag: tone("--red", "#c98177"), flashbang: tone("--text-color", "#dfe9ec"), smoke: tone("--text-secondary", "#a4b5bc") },
+      (job) => this.clock.run(job),
+      () => this.invalidate(),
+    );
+    this.scene.add(this.blast.group);
     this.callouts = new Callouts(
       { create: () => document.createElement("div"), append: (node) => labels.append(node as HTMLElement) },
       this.clock,
@@ -916,6 +925,7 @@ export class Battlefield {
       u,
       at,
       () => {
+        this.blast.fire(this.game.map, at, kind, reducedMotion());
         this.destruction.apply(environment, this.space.vec(at, 0.2));
         for (const c of casualties) this.callout({ hit: true, damage: c.damage }, c.unit);
         this.invalidate();
@@ -989,6 +999,7 @@ export class Battlefield {
     this.game = game;
     this.space.map = game.map;
     this.destruction.reset(game.map);
+    this.blast.clear();
     this.units.redeploy();
     this.callouts.clear();
     this.invalidate();
@@ -1004,6 +1015,7 @@ export class Battlefield {
     this.game = game;
     this.space.map = game.map;
     this.destruction.reset(game.map);
+    this.blast.clear();
     this.units.snap(this.selected);
     this.callouts.clear();
     this.host.dataset.smoke = this.effects.lingeringIds.join(",");
@@ -1193,6 +1205,7 @@ export class Battlefield {
         ...this.overlays.reflectionExcluded,
         this.threat.object,
         this.effects.group,
+        this.blast.group,
         ...this.game.units.flatMap((u) => {
           const rig = this.units.rig(u.id);
           return rig ? [rig.root] : [];
@@ -1316,6 +1329,7 @@ export class Battlefield {
     this.occlusion.dispose();
     this.reflections.dispose();
     this.destruction.dispose();
+    this.blast.dispose();
     this.precipitation.dispose();
     document.removeEventListener("visibilitychange", this.onVisibility);
     const geometries = new Set<T.BufferGeometry>(),
