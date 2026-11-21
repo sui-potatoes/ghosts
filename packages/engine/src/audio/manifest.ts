@@ -40,6 +40,15 @@ export const GENERATORS = {
   "shot.gust": "engine",
   "shot.knock": "engine",
   "shot.relay": "engine",
+  // The field's own sounds.
+  "unit.step": "engine",
+  "unit.vault": "engine",
+  "unit.hit": "engine",
+  "unit.miss": "engine",
+  "unit.down": "engine",
+  "unit.gear": "engine",
+  "field.debris": "engine",
+  "field.turn": "engine",
   // Interface gestures, layered on the tick sample.
   "ui.confirm": "app",
   "ui.back": "app",
@@ -134,6 +143,17 @@ const world = (generator: GeneratorName, gain: number, pitch: number, note: stri
   note,
 });
 
+/** A placeholder sound of the field, positioned at the unit or cell it comes from. */
+const field = (generator: GeneratorName, gain: number, pitch: number, note: string): Slot => ({
+  source: { generator },
+  bus: "combat",
+  gain,
+  pitch,
+  spatial: COMBAT_SPACE,
+  placeholder: true,
+  note,
+});
+
 const gesture = (generator: GeneratorName, note: string): Slot => ({
   source: { generator },
   bus: "interface",
@@ -157,7 +177,7 @@ export const SLOTS = {
   "grenade.smoke": {
     source: { generator: "tone.smoke" },
     bus: "combat",
-    gain: 1,
+    gain: 0.6,
     spatial: COMBAT_SPACE,
     placeholder: true,
     note: "Smoke grenade hiss",
@@ -179,9 +199,23 @@ export const SLOTS = {
   "combat.daze.ring": {
     source: { generator: "tone.ring" },
     bus: "combat",
-    gain: 1,
+    gain: 0.29,
     placeholder: true,
     note: "Ear ring when the held unit is dazed",
+  },
+  "unit.step": field("unit.step", 0.38, 0.08, "Footsteps, one cell"),
+  "unit.vault": field("unit.vault", 0.57, 0.06, "Vaulting low cover"),
+  "unit.hit": field("unit.hit", 2, 0.06, "A round striking a unit"),
+  "unit.miss": field("unit.miss", 0.65, 0.1, "A round missing: snap past and strike behind"),
+  "unit.down": field("unit.down", 1, 0.05, "A unit falling"),
+  "unit.gear": field("unit.gear", 0.21, 0.08, "Kit settling: hunker, overwatch"),
+  "field.debris": field("field.debris", 0.78, 0.06, "Cover broken by fire"),
+  "field.turn": {
+    source: { generator: "field.turn" },
+    bus: "combat",
+    gain: 0.16,
+    placeholder: true,
+    note: "A side's turn starting",
   },
 
   // === Voice ===
@@ -198,20 +232,20 @@ export const SLOTS = {
   "voice.panting-im-hit": voiceLine("panting-im-hit"),
 
   // === Ambience: street ===
-  "ambience.rain.bed.a": bed("bed.rain.a", 0.16, "Rain bed, first layer (left)"),
-  "ambience.rain.bed.b": bed("bed.rain.b", 0.16, "Rain bed, second layer (right)"),
-  "ambience.city.bed": bed("bed.city", 0.2, "Distant city rumble"),
-  "ambience.wind.bed": bed("bed.wind", 0.12, "Wind between the blocks"),
+  "ambience.rain.bed.a": bed("bed.rain.a", 0.23, "Rain bed, first layer (left)"),
+  "ambience.rain.bed.b": bed("bed.rain.b", 0.23, "Rain bed, second layer (right)"),
+  "ambience.city.bed": bed("bed.city", 0.66, "Distant city rumble"),
+  "ambience.wind.bed": bed("bed.wind", 0.33, "Wind between the blocks"),
   "ambience.city.oneshot.siren": world("shot.siren", 0.05, 0.06, "Far siren"),
-  "ambience.city.oneshot.train": world("shot.train", 0.14, 0.05, "Elevated train passing far off"),
-  "ambience.rain.oneshot.thunder": world("shot.thunder", 0.2, 0.08, "Distant thunder"),
-  "ambience.rain.oneshot.drip": world("shot.drip", 0.05, 0.18, "Drip from a gutter"),
-  "ambience.wind.oneshot.gust": world("shot.gust", 0.08, 0.1, "Wind gust"),
+  "ambience.city.oneshot.train": world("shot.train", 0.24, 0.05, "Elevated train passing far off"),
+  "ambience.rain.oneshot.thunder": world("shot.thunder", 0.35, 0.08, "Distant thunder"),
+  "ambience.rain.oneshot.drip": world("shot.drip", 0.09, 0.18, "Drip from a gutter"),
+  "ambience.wind.oneshot.gust": world("shot.gust", 0.06, 0.1, "Wind gust"),
 
   // === Ambience: office ===
-  "ambience.office.bed": bed("bed.room", 0.16, "Office room tone and air handling"),
-  "ambience.office.oneshot.knock": world("shot.knock", 0.06, 0.08, "Pipe knock in the walls"),
-  "ambience.office.oneshot.relay": world("shot.relay", 0.04, 0.05, "Relay clicking in a ceiling unit"),
+  "ambience.office.bed": bed("bed.room", 0.71, "Office room tone and air handling"),
+  "ambience.office.oneshot.knock": world("shot.knock", 0.12, 0.08, "Pipe knock in the walls"),
+  "ambience.office.oneshot.relay": world("shot.relay", 0.15, 0.05, "Relay clicking in a ceiling unit"),
 
   // === Interface ===
   "ui.tick": {

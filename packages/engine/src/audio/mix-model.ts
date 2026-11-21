@@ -36,6 +36,23 @@ export interface MixInputs {
   dazed: boolean;
 }
 
+/** The unit the mix follows, as far as the mix cares. */
+export interface HeldUnit {
+  hp: number;
+  effects: readonly { kind: string }[];
+}
+
+/**
+ * The mix's inputs from the field: aiming while a shot or a throw is being
+ * placed by a held unit, dazed while the held unit carries a Daze.
+ */
+export function mixInputsOf(mode: string, held: HeldUnit | undefined): MixInputs {
+  return {
+    aiming: mode !== "move" && !!held,
+    dazed: !!held && held.hp > 0 && held.effects.some((e) => e.kind === "Daze"),
+  };
+}
+
 export interface MixTargets {
   /** Gain on the ambience and music buses. */
   duck: number;

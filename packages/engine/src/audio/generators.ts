@@ -190,12 +190,16 @@ const city: Rendered = {
         const rumble = brown(n, r);
         lowpass(rumble, 140, rate, 2);
         highpass(rumble, 25, rate);
-        // Far traffic: a band of noise that swells and recedes.
+        // Far traffic: a band of engines and tyres that swells and recedes; it carries on small speakers.
         const traffic = noise(n, r);
-        highpass(traffic, 250, rate, 2);
-        lowpass(traffic, 900, rate, 2);
-        const swell = walk(n, rate, 0.25, 0.2, 1, r);
-        for (let i = 0; i < n; i++) rumble[i] = rumble[i] * 3 + traffic[i] * 0.25 * swell[i];
+        highpass(traffic, 220, rate, 2);
+        lowpass(traffic, 1400, rate, 2);
+        // Wet roads far off: a thin hiss on top.
+        const hiss = noise(n, r);
+        highpass(hiss, 2000, rate, 2);
+        lowpass(hiss, 6000, rate);
+        const swell = walk(n, rate, 0.25, 0.35, 1, r);
+        for (let i = 0; i < n; i++) rumble[i] = rumble[i] * 1.3 + traffic[i] * 1.1 * swell[i] + hiss[i] * 0.12;
         return rumble;
       }),
       BED_RMS,
@@ -227,15 +231,17 @@ const room: Rendered = {
         const r = seeded(5);
         const air = brown(n, r);
         lowpass(air, 260, rate, 2);
+        // The air handling: a broad vent hiss, the part a laptop hears.
         const vent = noise(n, r);
-        lowpass(vent, 1100, rate, 2);
-        highpass(vent, 120, rate);
-        const breathe = walk(n, rate, 0.15, 0.85, 1, r);
-        // Mains hum at 50 Hz and two harmonics, far down; whole cycles, so the loop stays seamless.
+        highpass(vent, 250, rate, 2);
+        lowpass(vent, 2600, rate, 2);
+        const breathe = walk(n, rate, 0.15, 0.8, 1, r);
+        // Mains hum and the harmonics a ballast adds, low in the mix; whole cycles, so the loop stays seamless.
         for (let i = 0; i < n; i++) {
           const t = i / rate;
-          const hum = Math.sin(2 * Math.PI * 50 * t) * 0.012 + Math.sin(2 * Math.PI * 100 * t) * 0.007 + Math.sin(2 * Math.PI * 150 * t) * 0.003;
-          air[i] = (air[i] * 2.2 + vent[i] * 0.12) * breathe[i] + hum;
+          const w = 2 * Math.PI * 50 * t;
+          const hum = Math.sin(w) * 0.01 + Math.sin(2 * w) * 0.008 + Math.sin(3 * w) * 0.005 + Math.sin(4 * w) * 0.004 + Math.sin(6 * w) * 0.003;
+          air[i] = (air[i] * 1 + vent[i] * 0.8) * breathe[i] + hum;
         }
         return air;
       }),
@@ -283,42 +289,70 @@ const siren = shot(9, 6, (x, rate) => {
 const train = shot(10, 7, (x, rate, r) => {
   const rumble = brown(x.length, r);
   lowpass(rumble, 160, rate, 2);
+  // The cars rolling: a band of noise in the midrange, which small speakers keep.
+  const roll = noise(x.length, r);
+  highpass(roll, 250, rate, 2);
+  lowpass(roll, 1600, rate, 2);
   const clacks = new Float32Array(x.length);
   for (let t = 0.3; t < 9.7; t += 0.46) {
     for (const off of [0, 0.11]) {
       const at = Math.round((t + off) * rate),
-        len = Math.round(0.025 * rate);
-      for (let k = 0; k < len && at + k < x.length; k++) clacks[at + k] += (r() * 2 - 1) * (1 - k / len) ** 3;
+        len = Math.round(0.03 * rate);
+      for (let k = 0; k < len && at + k < x.length; k++) {
+        const u = k / rate;
+        // Steel on steel: a knock with a short ring in it.
+        clacks[at + k] += ((r() * 2 - 1) * 0.7 + Math.sin(2 * Math.PI * 1850 * u) * 0.4 + Math.sin(2 * Math.PI * 2730 * u) * 0.25) * (1 - k / len) ** 3;
+      }
     }
   }
-  lowpass(clacks, 700, rate, 2);
+  lowpass(clacks, 3500, rate);
   for (let i = 0; i < x.length; i++) {
     const env = Math.sin((Math.PI * i) / x.length) ** 2;
-    x[i] = (rumble[i] * 4 + clacks[i] * 0.5) * env;
+    x[i] = (rumble[i] * 1.5 + roll[i] * 1.3 + clacks[i] * 0.6) * env;
   }
 }, 0.3, 1);
 
 const thunder = shot(7, 8, (x, rate, r) => {
-  const crack = noise(x.length, r);
-  lowpass(crack, 700, rate, 2);
+  // The strike: a crackle of sparse snaps over the first second and a half.
+  const crack = new Float32Array(x.length);
+  for (let i = 0; i < 1.6 * rate; i++) {
+    if (r() >= 120 / rate) continue;
+    const t = i / rate,
+      amp = Math.exp(-t / 0.5) * (0.3 + r() * 0.7),
+      len = Math.round((0.003 + r() * 0.01) * rate);
+    for (let k = 0; k < len && i + k < x.length; k++) crack[i + k] += (r() * 2 - 1) * amp * (1 - k / len);
+  }
+  lowpass(crack, 2600, rate, 2);
+  highpass(crack, 200, rate);
   const rumble = brown(x.length, r);
   lowpass(rumble, 90, rate, 2);
+  // The roll in the midrange, so it carries on small speakers.
+  const roll = noise(x.length, r);
+  highpass(roll, 150, rate, 2);
+  lowpass(roll, 650, rate, 2);
   const swell = walk(x.length, rate, 3, 0.4, 1, r);
   for (let i = 0; i < x.length; i++) {
     const t = i / rate;
-    const hit = t > 0.15 ? Math.exp(-(t - 0.15) / 0.25) : 0;
-    const roll = Math.min(1, t / 0.6) * Math.exp(-t / 2.4) * swell[i];
-    x[i] = crack[i] * hit * 0.5 + rumble[i] * 5 * roll;
+    const env = Math.min(1, t / 0.6) * Math.exp(-t / 2.4) * swell[i];
+    x[i] = crack[i] * 0.9 + rumble[i] * 2 * env + roll[i] * 1.8 * env;
   }
-}, 0.05, 1);
+}, 0.02, 1);
 
-const drip = shot(0.25, 9, (x, rate, r) => {
+const drip = shot(0.35, 9, (x, rate, r) => {
   let phase = 0;
   for (let i = 0; i < x.length; i++) {
     const t = i / rate;
-    const f = 1100 + 1100 * Math.exp(-t / 0.012);
+    // A drop into a puddle: a click, then a bright plink that falls in pitch.
+    const f = 1300 + 1500 * Math.exp(-t / 0.015);
     phase += (2 * Math.PI * f) / rate;
-    x[i] = Math.sin(phase) * Math.exp(-t / 0.03) + (i < rate * 0.001 ? (r() * 2 - 1) * 0.3 : 0);
+    x[i] = Math.sin(phase) * Math.exp(-t / 0.045) + (i < rate * 0.0015 ? (r() * 2 - 1) * 0.8 : 0);
+  }
+  // A smaller second drop.
+  const at = Math.round(0.12 * rate);
+  for (let i = at, p = 0; i < x.length; i++) {
+    const t = (i - at) / rate;
+    p += (2 * Math.PI * (1700 + 1200 * Math.exp(-t / 0.012))) / rate;
+    x[i] += Math.sin(p) * 0.4 * Math.exp(-t / 0.03);
   }
 }, 0.0005, 0.05);
 
@@ -336,35 +370,189 @@ const knock = shot(0.9, 11, (x, rate, r) => {
     const start = Math.round(at * rate);
     for (let i = start; i < x.length; i++) {
       const t = (i - start) / rate;
-      const env = Math.exp(-t / 0.045) * amp;
-      if (env < 1e-4) break;
-      x[i] += (Math.sin(2 * Math.PI * 118 * t) + 0.35 * Math.sin(2 * Math.PI * 236 * t) + (t < 0.004 ? (r() * 2 - 1) * 0.4 : 0)) * env;
+      const body = Math.exp(-t / 0.05) * amp,
+        ring = Math.exp(-t / 0.09) * amp;
+      if (body < 1e-4 && ring < 1e-4) break;
+      // A water pipe struck from inside: a thud, the pipe's metal ringing, and the strike itself.
+      x[i] +=
+        (Math.sin(2 * Math.PI * 118 * t) + 0.4 * Math.sin(2 * Math.PI * 236 * t)) * body +
+        (0.35 * Math.sin(2 * Math.PI * 640 * t) + 0.25 * Math.sin(2 * Math.PI * 1490 * t) + 0.12 * Math.sin(2 * Math.PI * 2310 * t)) * ring +
+        (t < 0.004 ? (r() * 2 - 1) * 0.8 * amp : 0);
     }
   }
-  lowpass(x, 1500, rate);
+  lowpass(x, 4000, rate);
 }, 0.001, 0.1);
 
-const relay = shot(0.45, 12, (x, rate, r) => {
-  for (const at of [0, 0.07]) {
+const relay = shot(0.5, 12, (x, rate, r) => {
+  // A relay pulling in and its contact bouncing, then the unit's motor starting.
+  for (const [at, amp] of [[0, 1], [0.012, 0.4], [0.075, 0.7]] as const) {
     const start = Math.round(at * rate),
-      len = Math.round(0.003 * rate);
-    for (let k = 0; k < len; k++) x[start + k] += (r() * 2 - 1) * (1 - k / len);
+      len = Math.round(0.006 * rate);
+    for (let k = 0; k < len; k++) {
+      const t = k / rate;
+      x[start + k] += ((r() * 2 - 1) * 0.6 + Math.sin(2 * Math.PI * 2900 * t) * 0.5) * amp * (1 - k / len) ** 2;
+    }
   }
-  highpass(x, 1200, rate);
-  for (let i = Math.round(0.07 * rate); i < x.length; i++) {
-    const t = i / rate - 0.07;
-    x[i] += Math.sin(2 * Math.PI * 100 * t) * 0.08 * Math.exp(-t / 0.12);
+  highpass(x, 600, rate);
+  const motor = Math.round(0.075 * rate);
+  for (let i = motor; i < x.length; i++) {
+    const t = i / rate - 0.075;
+    const env = Math.min(1, t / 0.04) * Math.exp(-t / 0.15);
+    x[i] += (Math.sin(2 * Math.PI * 100 * t) * 0.15 + Math.sin(2 * Math.PI * 200 * t) * 0.12 + Math.sin(2 * Math.PI * 400 * t) * 0.06) * env;
   }
 }, 0.0005, 0.08);
 
-/** The ring in the ears after a flashbang: two close high tones beating slowly, dying away. */
+/** The ring in the ears after a flashbang: high tones near 5.6 kHz, one partial beating slowly against another, dying away. */
 const ring = shot(3.2, 13, (x, rate) => {
   for (let i = 0; i < x.length; i++) {
     const t = i / rate;
     const env = Math.min(1, t / 0.02) * Math.exp(-t / 0.9);
-    x[i] = (Math.sin(2 * Math.PI * 3400 * t) + Math.sin(2 * Math.PI * 3404 * t) * 0.8 + Math.sin(2 * Math.PI * 6810 * t) * 0.1) * env;
+    x[i] = (Math.sin(2 * Math.PI * 5600 * t) + Math.sin(2 * Math.PI * 5606 * t) * 0.7 + Math.sin(2 * Math.PI * 4180 * t) * 0.18) * env;
   }
 }, 0.02, 0.3);
+
+/**
+ * The smoke grenade: a pop as the canister vents, then a hiss that builds
+ * for the second the cloud takes to billow out and dies away as it thins
+ * (`Effects.smokeBurst`).
+ */
+const smoke = shot(4, 14, (x, rate, r) => {
+  const hiss = noise(x.length, r);
+  highpass(hiss, 1500, rate, 2);
+  lowpass(hiss, 7000, rate);
+  const flutter = walk(x.length, rate, 12, 0.75, 1, r);
+  for (let i = 0; i < x.length; i++) {
+    const t = i / rate;
+    const env = Math.min(1, t / 0.08) * (t < 1.1 ? 1 : Math.exp(-(t - 1.1) / 0.9));
+    const pop = t < 0.03 ? (r() * 2 - 1) * (1 - t / 0.03) * 1.5 : 0;
+    x[i] = hiss[i] * env * flutter[i] + pop;
+  }
+}, 0.002, 0.3);
+
+// === The field's own sounds: steps, hits, falls (placeholders) ===
+
+/** A footfall a cell: a heel on wet asphalt and the scuff after it. */
+const step = shot(0.15, 15, (x, rate, r) => {
+  for (const [at, amp] of [[0, 1]] as const) {
+    const start = Math.round(at * rate);
+    for (let i = start; i < x.length; i++) {
+      const t = (i - start) / rate;
+      if (t > 0.09) break;
+      const heel = Math.exp(-t / 0.012),
+        scuff = t > 0.01 ? Math.exp(-(t - 0.01) / 0.03) * 0.4 : 0;
+      x[i] += ((r() * 2 - 1) * (heel * 0.6 + scuff) + Math.sin(2 * Math.PI * 90 * t) * heel * 0.8) * amp;
+    }
+  }
+  highpass(x, 120, rate);
+  lowpass(x, 5000, rate);
+}, 0.001, 0.03);
+
+/** A vault over low cover: a hand and a boot landing, the kit rattling. */
+const vault = shot(0.6, 16, (x, rate, r) => {
+  for (const [at, amp] of [[0, 0.6], [0.32, 1]] as const) {
+    const start = Math.round(at * rate);
+    for (let i = start; i < x.length; i++) {
+      const t = (i - start) / rate;
+      if (t > 0.25) break;
+      const thud = Math.exp(-t / 0.025);
+      x[i] += (Math.sin(2 * Math.PI * 75 * t) * thud + (r() * 2 - 1) * thud * 0.5 + (r() * 2 - 1) * Math.exp(-t / 0.08) * 0.2) * amp;
+    }
+  }
+  highpass(x, 60, rate);
+  lowpass(x, 6000, rate);
+}, 0.001, 0.05);
+
+/** A round striking a body: a sharp crack of armour, a smack, a dull thump under them. */
+const hit = shot(0.4, 17, (x, rate, r) => {
+  const smack = noise(x.length, r);
+  highpass(smack, 300, rate, 2);
+  lowpass(smack, 1400, rate, 2);
+  for (let i = 0; i < x.length; i++) {
+    const t = i / rate;
+    const crack = Math.exp(-t / 0.006),
+      thump = Math.exp(-t / 0.05);
+    x[i] = (r() * 2 - 1) * crack * 0.9 + smack[i] * Math.exp(-t / 0.03) * 3 + Math.sin(2 * Math.PI * (95 + 60 * Math.exp(-t / 0.02)) * t) * thump * 0.7;
+  }
+  lowpass(x, 7000, rate);
+}, 0.0005, 0.08);
+
+/** A miss: the round snapping past and striking something hard behind. */
+const miss = shot(0.5, 18, (x, rate, r) => {
+  const whiz = noise(x.length, r);
+  bandSweep(whiz, Float32Array.from({ length: x.length }, (_, i) => 3800 - 2400 * Math.min(1, i / (0.12 * rate))), 3, rate);
+  for (let i = 0; i < x.length; i++) {
+    const t = i / rate;
+    const snap = t < 0.12 ? Math.sin((Math.PI * t) / 0.12) : 0;
+    const strike = t > 0.13 ? Math.exp(-(t - 0.13) / 0.02) : 0;
+    x[i] = whiz[i] * snap * 1.5 + (r() * 2 - 1) * strike * 0.7;
+  }
+  highpass(x, 300, rate);
+}, 0.002, 0.05);
+
+/** A body going down: knees, then the fall, and the kit settling. */
+const down = shot(1.2, 19, (x, rate, r) => {
+  for (const [at, amp, tone] of [[0, 0.5, 110], [0.38, 1, 70], [0.55, 0.35, 160]] as const) {
+    const start = Math.round(at * rate);
+    for (let i = start; i < x.length; i++) {
+      const t = (i - start) / rate;
+      if (t > 0.5) break;
+      const thud = Math.exp(-t / 0.05);
+      x[i] += (Math.sin(2 * Math.PI * tone * t) * thud + (r() * 2 - 1) * thud * 0.45 + (r() * 2 - 1) * Math.exp(-t / 0.15) * 0.12) * amp;
+    }
+  }
+  highpass(x, 50, rate);
+  lowpass(x, 5000, rate);
+}, 0.002, 0.1);
+
+/** The kit shifting: webbing, a rifle settled against cover. */
+const gear = shot(0.7, 20, (x, rate, r) => {
+  const rustle = noise(x.length, r);
+  highpass(rustle, 1200, rate);
+  lowpass(rustle, 6000, rate);
+  const grain = walk(x.length, rate, 40, 0, 1, r);
+  for (let i = 0; i < x.length; i++) {
+    const t = i / rate;
+    const env = Math.sin(Math.PI * Math.min(1, t / 0.6)) ** 2;
+    const clink = t > 0.42 && t < 0.5 ? Math.sin(2 * Math.PI * 2100 * (t - 0.42)) * Math.exp(-(t - 0.42) / 0.02) * 0.5 : 0;
+    x[i] = rustle[i] * env * grain[i] ** 2 + clink;
+  }
+}, 0.01, 0.05);
+
+/** Cover breaking: a crunch, then debris falling. */
+const debris = shot(1.4, 21, (x, rate, r) => {
+  for (let i = 0; i < x.length; i++) {
+    const t = i / rate;
+    const crunch = Math.exp(-t / 0.06);
+    x[i] = (r() * 2 - 1) * crunch;
+  }
+  for (let k = 0; k < 26; k++) {
+    const start = Math.round((0.08 + r() * 1.1) * rate),
+      amp = 0.15 + r() * 0.35,
+      tone = 500 + r() * 2500;
+    for (let i = start; i < x.length; i++) {
+      const t = (i - start) / rate;
+      if (t > 0.05) break;
+      x[i] += ((r() * 2 - 1) * 0.6 + Math.sin(2 * Math.PI * tone * t) * 0.4) * amp * Math.exp(-t / 0.012);
+    }
+  }
+  highpass(x, 80, rate);
+  lowpass(x, 6500, rate);
+}, 0.001, 0.15);
+
+/** A side's turn starting: two low radio blips. */
+const turn = shot(0.5, 22, (x, rate) => {
+  for (const [at, f] of [[0, 620], [0.16, 820]] as const) {
+    const start = Math.round(at * rate),
+      len = Math.round(0.09 * rate);
+    for (let k = 0; k < len; k++) {
+      const t = k / rate;
+      const env = Math.min(1, t / 0.005) * Math.min(1, (len - k) / (0.02 * rate));
+      x[start + k] += (Math.sin(2 * Math.PI * f * t) + 0.3 * Math.sin(2 * Math.PI * 2 * f * t)) * env;
+    }
+  }
+  highpass(x, 300, rate);
+  lowpass(x, 3400, rate);
+}, 0.002, 0.05);
 
 // === The combat tones that predate the manifest, as they were ===
 
@@ -387,11 +575,15 @@ function burst(seconds: number, env: (i: number, n: number) => number, filter: B
 }
 
 const decay = (i: number, n: number) => Math.pow(1 - i / n, 3);
+/** Measured against the interface tick at default settings (`/sounds`, Measure). */
+const CLICK_LEVEL = 0.19;
+const LOCK_LEVEL = 0.45;
 
 export const ENGINE_GENERATORS = {
-  "tone.click": burst(0.05, decay, { type: "lowpass", frequency: 2800 }, 0.03),
-  "tone.lock": burst(0.03, decay, { type: "bandpass", frequency: 650, Q: 0.7 }, 0.05),
-  "tone.smoke": burst(1.4, (i, n) => Math.sin((Math.PI * i) / n) * 0.6, { type: "highpass", frequency: 2400 }, 0.12),
+  // The click and the lock as they were, brought up to an interface tick's loudness.
+  "tone.click": burst(0.05, decay, { type: "lowpass", frequency: 2800 }, CLICK_LEVEL),
+  "tone.lock": burst(0.03, decay, { type: "bandpass", frequency: 650, Q: 0.7 }, LOCK_LEVEL),
+  "tone.smoke": smoke,
   "tone.ring": ring,
   "bed.rain.a": rain(13.7, 1),
   "bed.rain.b": rain(17.3, 2),
@@ -405,4 +597,12 @@ export const ENGINE_GENERATORS = {
   "shot.gust": gust,
   "shot.knock": knock,
   "shot.relay": relay,
+  "unit.step": step,
+  "unit.vault": vault,
+  "unit.hit": hit,
+  "unit.miss": miss,
+  "unit.down": down,
+  "unit.gear": gear,
+  "field.debris": debris,
+  "field.turn": turn,
 } satisfies Record<EngineGeneratorName, Generator>;

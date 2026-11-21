@@ -12,10 +12,13 @@
 import { audio } from "../audio.ts";
 import { CELL, type Cell } from "../map.ts";
 import type { Session } from "../session.ts";
+import { mixInputsOf } from "./mix-model.ts";
 import { soundscapeEnabled } from "./switch.ts";
 
 /** Where a unit's sound comes from above its cell (m): chest high. */
 const CHEST = 1.2;
+/** From a fatal hit to the body landing (ms). */
+const FALL_MS = 450;
 
 /** `ghosts:soundscape-debug` = `1` on this device: the live soundscape at `window.__ghostsSoundscape`, for QA. */
 function exposeForQa() {
@@ -47,7 +50,21 @@ export function hearField(s: Session): () => void {
   battlefield.frameHooks.add(frame);
   // Any other shot (a reaction, the other side, a viewer's) dips as its shooter settles.
   battlefield.onShotSteady = () => audio.beginShot();
-  battlefield.onShotImpact = () => audio.shotImpact();
+  battlefield.onShotImpact = (at, hit, broke) => {
+    audio.shotImpact();
+    if (broke) audio.cue("field.debris", at);
+    // A hit strikes the target; a miss snaps past it and strikes behind. An outcome still on its way sounds when it comes.
+    void Promise.resolve(hit).then((landed) => audio.cue(landed ? "unit.hit" : "unit.miss", at));
+  };
+  // The blast or the smoke where the throw lands, as it lands.
+  battlefield.onThrowImpact = (kind, at) => audio.tone(kind === "smoke-grenade" ? "smoke" : "grenade", undefined, at);
+  battlefield.onUnitStep = (at, kind) => audio.cue(kind === "vault" ? "unit.vault" : "unit.step", at);
+  // The hit itself sounds at the shot's impact (a frag's in its blast); a fall lands partway through.
+  battlefield.onUnitReaction = (at, down) => {
+    if (!down) return;
+    const point = { x: at.x, y: at.y + 0.3, z: at.z };
+    setTimeout(() => audio.cue("unit.down", point), FALL_MS);
+  };
   const sync = () => {
     const scape = audio.scape;
     scape.setScene(location, s.look);
@@ -56,18 +73,15 @@ export function hearField(s: Session): () => void {
       scape.resetMix();
       return;
     }
-    const u = s.selectedUnit();
-    scape.setField({
-      aiming: s.mode !== "move" && !!u,
-      dazed: !!u && u.hp > 0 && u.effects.some((e) => e.kind === "Daze"),
-    });
+    scape.setField(mixInputsOf(s.mode, s.selectedUnit()));
   };
   const unsubscribe = s.subscribe(sync);
   sync();
   return () => {
     unsubscribe();
     battlefield.frameHooks.delete(frame);
-    battlefield.onShotSteady = battlefield.onShotImpact = undefined;
+    battlefield.onShotSteady = battlefield.onShotImpact = battlefield.onThrowImpact = undefined;
+    battlefield.onUnitStep = battlefield.onUnitReaction = undefined;
     audio.resetMix();
   };
 }

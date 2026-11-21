@@ -5,6 +5,7 @@
 import { deployment } from "./mpfb-characters.js";
 import { EffectPlayer, effectSlot, type EffectKind } from "./sfx";
 import { Soundscape, type Field } from "./audio/soundscape";
+import type { SlotId } from "./audio/manifest";
 import { soundscapeEnabled, subscribeSoundscape } from "./audio/switch";
 import { ambienceVolume } from "./audio/levels";
 import {
@@ -62,10 +63,22 @@ export class CombatAudio {
     });
   }
 
-  /** Where a unit's sound comes from: its cell, chest high. */
-  private where(at?: Unit | Cell) {
+  /** Where a sound comes from: a unit's or a cell's chest height, or a world point as given. */
+  private where(at?: Unit | Cell | { x: number; y: number; z: number }) {
     if (!at || !this.field) return null;
+    if ("x" in at) return { x: at.x, y: at.y, z: at.z };
     return this.field.locate("pos" in at ? at.pos : at);
+  }
+
+  /** The soundscape is hearing a field: the sounds only it has (steps, hits, turns) play. */
+  get spatial(): boolean {
+    return soundscapeEnabled() && !!this.field;
+  }
+
+  /** A sound of the field the old path never had (`audio/manifest.ts`); silent with the soundscape off. */
+  cue(slot: SlotId, at?: Unit | Cell | { x: number; y: number; z: number }) {
+    if (this.quiet || this.paused || !this.spatial) return;
+    this.scape.play(slot, { at: this.where(at) });
   }
 
   /** A shot is about to land: the soundscape dips around it until `shotImpact`. */

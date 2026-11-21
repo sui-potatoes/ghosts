@@ -25,6 +25,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 
 import { APP_GENERATORS } from "../app-generators";
 import { channelLevel } from "../levels";
+import { measureAll, type LevelRow } from "./measure";
 
 /** The level each bus is auditioned at: its own slider under the master. */
 const BUS_LEVEL: Record<Bus, () => number> = {
@@ -72,7 +73,7 @@ export default function SoundsQa() {
         playing.get(id)?.();
         // The engine levels its own buses; the others are scaled to their slider here.
         const own = s.bus === "combat" || s.bus === "ambience";
-        const stopIt = scape.audition(id, side, own ? 1 : BUS_LEVEL[s.bus]());
+        const stopIt = scape.audition(id, { side, gain: own ? 1 : BUS_LEVEL[s.bus]() });
         if (!stopIt) return;
         if (s.loop) setPlaying(new Map(playing).set(id, stopIt));
     };
@@ -83,6 +84,26 @@ export default function SoundsQa() {
     };
 
     const placeholders = SLOT_IDS.filter((id) => SLOTS[id].placeholder).length;
+
+    const [levels, setLevels] = useState<Map<string, LevelRow>>(new Map());
+    const [measuring, setMeasuring] = useState(false);
+    const measureNow = () => {
+        if (measuring) return;
+        setMeasuring(true);
+        const found = new Map<string, LevelRow>();
+        void measureAll((row) => {
+            found.set(row.id, row);
+            setLevels(new Map(found));
+        })
+            .then((rows) => {
+                // For QA scripts reading the table.
+                (window as { __soundLevels?: LevelRow[] }).__soundLevels = rows;
+            })
+            .finally(() => setMeasuring(false));
+    };
+    const lufs = (v: number | undefined) =>
+        v === undefined || !Number.isFinite(v) ? "–" : v.toFixed(1);
+    const tick = levels.get("ui.tick (gesture chain)");
 
     return (
         <main className="fixed inset-0 overflow-y-auto bg-surface p-8 text-foreground">
@@ -102,6 +123,12 @@ export default function SoundsQa() {
                 <button type="button" className="btn" onClick={stopAll}>
                     Stop all
                 </button>
+                <button type="button" className="btn" data-measure onClick={measureNow}>
+                    {measuring ? "Measuring" : "Measure"}
+                </button>
+                {tick && (
+                    <span className="text-muted">Tick {lufs(tick.heard?.momentary)} LUFS</span>
+                )}
             </header>
             {BUSES.map((bus) => (
                 <section key={bus} className="mb-8">
@@ -122,6 +149,13 @@ export default function SoundsQa() {
                                         </td>
                                         <td className="py-1 pr-4 text-secondary">{s.note}</td>
                                         <td className="py-1 pr-4 text-muted">{sourceOf(s)}</td>
+                                        <td
+                                            className="whitespace-nowrap py-1 pr-4 font-mono text-muted"
+                                            title="Momentary max LUFS at default settings: here / in the field / in the field on laptop speakers"
+                                        >
+                                            {levels.has(id) &&
+                                                `${lufs(levels.get(id)!.heard?.momentary)} / ${lufs(levels.get(id)!.game?.momentary)} / ${lufs(levels.get(id)!.game?.laptop)}`}
+                                        </td>
                                         <td className="whitespace-nowrap py-1">
                                             {s.spatial && (
                                                 <button

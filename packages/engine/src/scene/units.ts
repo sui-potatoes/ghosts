@@ -45,6 +45,10 @@ export interface UnitsOptions {
   animator: Animator;
   effects: Effects;
   onPick: (id: string) => void;
+  /** Sound design: a step of a move begins, toward `at`. */
+  onStep?: (at: T.Vector3, kind: "run" | "cover" | "vault") => void;
+  /** Sound design: a unit takes a hit at `at`; `down` when it falls. */
+  onReaction?: (at: T.Vector3, down: boolean) => void;
 }
 
 /** How a shot is framed: whether the shooter is already aimed, and the camera kick per tracer. */
@@ -262,6 +266,7 @@ export class Units {
         } else play(r, "rifle_run", false, 1);
         // Side-stepping keeps the torso facing the cover; running faces travel.
         if (!coveredStep) r.root.rotation.y = Math.atan2(start.x - end.x, start.z - end.z);
+        this.o.onStep?.(end, vault ? "vault" : coveredStep ? "cover" : "run");
         await animator.tween(seconds, (t) => r.root.position.copy(start).lerp(end, vault ? vaultProgress(t) : t), false);
       }
       const stance = this.map.coverStance(u.pos);
@@ -283,6 +288,7 @@ export class Units {
       r.dead = true;
       this.markers.hide(u.id);
     }
+    this.o.onReaction?.(r.root.position, r.dead);
     await this.clip(r, reactionMotion(r.dead, this.game.cover(u) > 0, heavy), 1.35);
     r.busy = false;
     if (!r.dead) this.rest(u);

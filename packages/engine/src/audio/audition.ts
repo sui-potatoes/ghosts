@@ -10,3 +10,6 @@
 export * from "./manifest.ts";
 export { Soundscape } from "./soundscape.ts";
 export { setSoundscapeEnabled, soundscapeEnabled, subscribeSoundscape } from "./switch.ts";
+export { ambiencePlan, type AmbiencePlan } from "./ambience-model.ts";
+export { measure, type Loudness } from "./loudness.ts";
+export { measureSlot } from "./measure.ts";

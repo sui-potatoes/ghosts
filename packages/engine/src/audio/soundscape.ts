@@ -70,6 +70,23 @@ export interface PlayOptions {
   gain?: number;
   /** A file slot's `{voice}`. */
   voice?: string;
+  /** An ambience one-shot in the room with the field: it skips the air filter (the building, the fog). */
+  near?: boolean;
+  /** Which take of a file slot (measurement); default: any but the last. */
+  take?: number;
+}
+
+/** How the audition plays a slot. */
+export interface AuditionOptions {
+  /** −1 left, 0 centre, 1 right. */
+  side?: number;
+  /** Metres ahead of the camera for a positioned slot (default 40: the tactics camera's distance to the field). */
+  distance?: number;
+  /** Extra gain (the screen passes the channel level for buses the engine does not level). */
+  gain?: number;
+  /** Play a bed or one-shot as this plan would (its level and air); default: as is. */
+  plan?: AmbiencePlan;
+  take?: number;
 }
 
 interface Voice {
@@ -100,6 +117,8 @@ const LEVEL_SMOOTH = 0.05;
 const LATE = 0.4;
 /** A mono source through an equal-power panner is 3 dB down at the centre; this brings it back. */
 const MONO_MAKEUP = Math.SQRT2;
+/** The air filter wide open. */
+const OPEN_AIR = 20000;
 /** Voices stolen or stopped fade over this (s). */
 const STEAL_FADE = 0.03;
 
@@ -107,11 +126,13 @@ const STEAL_FADE = 0.03;
 const tc = (seconds: number) => seconds / 3;
 
 export class Soundscape {
-  private ctx: AudioContext | null = null;
+  private ctx: BaseAudioContext | null = null;
   private buses!: Record<Bus, GainNode>;
   private world!: GainNode;
   private duck!: GainNode;
   private air!: BiquadFilterNode;
+  /** The ambience bus's second path, around the air filter, for sounds in the room. */
+  private nearAmbience!: GainNode;
   private daze!: BiquadFilterNode;
   private widthGains!: { ll: GainNode; rl: GainNode; lr: GainNode; rr: GainNode };
   private ring!: GainNode;
@@ -130,6 +151,8 @@ export class Soundscape {
   private moved = true;
 
   private plan: AmbiencePlan | null = null;
+  /** The plan the audition plays a slot under, for its routing. */
+  private auditionPlan: AmbiencePlan | null = null;
   private planKey = "";
   private readonly beds = new Map<BedSlot, Bed>();
   private scheduler: OneShotScheduler | null = null;
@@ -149,9 +172,9 @@ export class Soundscape {
     this.levels = levels;
   }
 
-  /** The context, made on first use; null once torn down until the next attach. */
+  /** The live context, made on first use; null once torn down until the next attach (or when rendering offline). */
   context(): AudioContext | null {
-    return this.ctx;
+    return this.ctx instanceof AudioContext ? this.ctx : null;
   }
 
   /** The voice bus, for the radio chain. */
@@ -161,10 +184,10 @@ export class Soundscape {
 
   // === Lifecycle ===
 
-  /** Make the context and the buses; idempotent. */
-  open(): AudioContext {
+  /** Make the context and the buses; idempotent. `offline` renders into that context instead (measurement). */
+  open(offline?: BaseAudioContext): BaseAudioContext {
     if (this.ctx) return this.ctx;
-    const ctx = (this.ctx = new AudioContext());
+    const ctx = (this.ctx = offline ?? new AudioContext());
     const gain = (value = 1) => new GainNode(ctx, { gain: value });
     this.output = gain();
     this.output.connect(ctx.destination);
@@ -198,6 +221,8 @@ export class Soundscape {
     this.buses.combat.connect(this.world);
     this.buses.voice.connect(this.world);
     this.buses.ambience.connect(this.air);
+    this.nearAmbience = gain(0);
+    this.nearAmbience.connect(this.duck);
     this.buses.music.connect(this.duck);
     // The interface plays through the shell's own context; the bus is here for completeness.
     this.buses.interface.connect(this.output);
@@ -211,8 +236,8 @@ export class Soundscape {
     this.field = field;
     this.moved = true;
     this.enabled = true;
-    const ctx = this.open();
-    if (ctx.state === "suspended" && !this.paused && !this.hidden) void ctx.resume().catch(() => {});
+    this.open();
+    this.unlock();
     window.addEventListener("focus", this.onFocus);
     window.addEventListener("blur", this.onFocus);
     document.addEventListener("visibilitychange", this.onFocus);
@@ -233,7 +258,7 @@ export class Soundscape {
     this.plan = null;
     this.planKey = "";
     this.paused = false;
-    void this.ctx?.close();
+    if (this.ctx instanceof AudioContext) void this.ctx.close();
     this.ctx = null;
     this.buffers.clear();
     this.decoded.clear();
@@ -252,7 +277,7 @@ export class Soundscape {
 
   /** Unlock on a gesture: a context made before one starts suspended. */
   unlock() {
-    const ctx = this.ctx;
+    const ctx = this.context();
     if (ctx && ctx.state === "suspended" && !this.paused && !this.hidden) void ctx.resume().catch(() => {});
   }
 
@@ -264,7 +289,7 @@ export class Soundscape {
   }
 
   private applyRunning() {
-    const ctx = this.ctx;
+    const ctx = this.context();
     if (!ctx) return;
     if (this.paused || this.hidden) void ctx.suspend().catch(() => {});
     else void ctx.resume().catch(() => {});
@@ -295,6 +320,7 @@ export class Soundscape {
     set(this.buses.combat.gain, combat);
     set(this.ring.gain, combat);
     set(this.buses.ambience.gain, this.enabled ? ambience : 0);
+    set(this.nearAmbience.gain, this.enabled ? ambience : 0);
     this.syncAmbience();
   }
 
@@ -341,9 +367,10 @@ export class Soundscape {
   }
 
   /** A take that is not the one used last time. */
-  private take(id: SlotId, voice?: string): string | null {
+  private take(id: SlotId, voice?: string, index?: number): string | null {
     const files = slotFiles(id, voice);
     if (!files.length) return null;
+    if (index !== undefined) return files[index % files.length];
     const last = this.lastTake.get(id);
     const fresh = files.length > 1 ? files.filter((f) => f !== last) : files;
     const file = fresh[Math.floor(Math.random() * fresh.length)];
@@ -352,16 +379,22 @@ export class Soundscape {
   }
 
   /** The buffer for a slot right now, a promise of it, or null when it has none (a shell generator). */
-  private bufferFor(id: SlotId, voice?: string): AudioBuffer | Promise<AudioBuffer> | null {
+  private bufferFor(id: SlotId, voice?: string, index?: number): AudioBuffer | Promise<AudioBuffer> | null {
     const s = SLOTS[id] as Slot;
     if ("generator" in s.source) {
       const g = ENGINE_GENERATORS[s.source.generator as EngineGeneratorName] as Generator | undefined;
       return g?.kind === "render" ? this.render(s.source.generator, g) : null;
     }
-    const file = this.take(id, voice);
+    const file = this.take(id, voice, index);
     if (!file) return null;
     const url = soundUrl(file);
     return this.decoded.get(url) ?? this.load(url);
+  }
+
+  /** Every file a slot may play, fetched and decoded (`{voice}` as the first squad voice). */
+  async ready(id: SlotId, voice = "male-01"): Promise<void> {
+    this.open();
+    await Promise.all(slotFiles(id, voice).map((f) => this.load(soundUrl(f)).catch(() => {})));
   }
 
   /** Play a slot; false when it stays silent (no context, its bus at zero, the switch off). */
@@ -380,7 +413,7 @@ export class Soundscape {
         return true;
       }
     }
-    const buffer = this.bufferFor(id, options.voice);
+    const buffer = this.bufferFor(id, options.voice, options.take);
     if (!buffer) return false;
     const begin = (b: AudioBuffer) =>
       this.start(id, s, options, b.numberOfChannels === 1, (out, at) => {
@@ -413,7 +446,7 @@ export class Soundscape {
     const gain = new GainNode(ctx, { gain: s.gain * (options.gain ?? 1) * (at && mono ? MONO_MAKEUP : 1) });
     let panner: PannerNode | null = null;
     const ring = id === "combat.daze.ring";
-    const bus = ring ? this.ring : this.buses[s.bus];
+    const bus = ring ? this.ring : options.near && s.bus === "ambience" ? this.nearAmbience : this.buses[s.bus];
     if (at && s.spatial && this.field) {
       panner = new PannerNode(ctx, {
         panningModel: "equalpower",
@@ -443,18 +476,33 @@ export class Soundscape {
   // === Audition ===
 
   /**
-   * Play any engine slot on its own, for the audition screen: loops loop
-   * until stopped, positioned slots sit 40 m ahead and `side` × 30 m across
-   * (−1 left, 1 right) of a camera at the origin. `gain` scales it (the
-   * screen passes the channel's level for buses the engine does not level).
-   * Returns the stop, or null when the slot is not the engine's to play.
+   * Play any engine slot on its own, for the audition screen and the loudness
+   * measurement: through the same buses as the field, beds as two layers the
+   * way the ambience plays them, positioned slots `distance` metres ahead of
+   * a camera at the origin and `side` × 30 m across. With a `plan`, a bed or
+   * one-shot gets that plan's level and air. Returns the stop, or null when
+   * the slot is not the engine's to play.
    */
-  audition(id: SlotId, side = 0, gain = 1): (() => void) | null {
+  audition(id: SlotId, options: AuditionOptions = {}): (() => void) | null {
     const ctx = this.open();
-    if (ctx.state === "suspended") void ctx.resume().catch(() => {});
+    this.unlock();
     this.field ??= AUDITION_FIELD;
+    const { side = 0, distance = 40, gain = 1, plan, take } = options;
     const s = SLOTS[id] as Slot;
-    const options: PlayOptions = { at: s.spatial ? { x: side * 30, y: 0, z: -40 } : null, gain, voice: "male-01" };
+    const near = !!plan?.oneShots.find((r) => r.slot === id && r.range === "near");
+    this.auditionPlan = plan ?? null;
+    if (plan) this.air.frequency.value = near ? OPEN_AIR : plan.air;
+    if (s.bus === "ambience" && s.loop) {
+      const slot = id as BedSlot;
+      const old = this.beds.get(slot);
+      if (old) this.endBed(slot, old, 0.05);
+      this.startBed(slot, s.gain * gain * (plan?.beds[slot] ?? 1), 0.05);
+      return () => {
+        const bed = this.beds.get(slot);
+        if (bed) this.endBed(slot, bed, 0.3);
+      };
+    }
+    const play: PlayOptions = { at: s.spatial ? { x: side * 30, y: 0, z: -distance } : null, gain, voice: "male-01", near, take };
     let voice: Voice | null = null;
     let stopped = false;
     const stop = () => {
@@ -465,15 +513,15 @@ export class Soundscape {
       const g = ENGINE_GENERATORS[s.source.generator as EngineGeneratorName] as Generator | undefined;
       if (!g) return null;
       if (g.kind === "play") {
-        voice = this.start(id, s, options, true, (out, at) => g.play(ctx, out, at));
+        voice = this.start(id, s, play, true, (out, at) => g.play(ctx, out, at));
         return stop;
       }
     }
-    const buffer = this.bufferFor(id, options.voice);
+    const buffer = this.bufferFor(id, play.voice, take);
     if (!buffer) return null;
     const begin = (b: AudioBuffer) => {
       if (stopped || this.ctx !== ctx) return;
-      voice = this.start(id, s, options, b.numberOfChannels === 1, (out, at) => {
+      voice = this.start(id, s, play, b.numberOfChannels === 1, (out, at) => {
         const source = new AudioBufferSourceNode(ctx, { buffer: b, loop: !!s.loop });
         if (typeof s.loop === "object") {
           source.loopStart = s.loop.start;
@@ -620,7 +668,7 @@ export class Soundscape {
     const buffer = this.bufferFor(slot);
     if (!buffer) return;
     const gain = new GainNode(ctx, { gain: 0 });
-    gain.connect(this.buses.ambience);
+    gain.connect(this.plan?.dry?.includes(slot) || this.auditionPlan?.dry?.includes(slot) ? this.nearAmbience : this.buses.ambience);
     const bed: Bed = { sources: [], nodes: [], gain, target };
     this.beds.set(slot, bed);
     const begin = (b: AudioBuffer) => {
@@ -696,7 +744,7 @@ export class Soundscape {
     this.oneShotTimer = window.setTimeout(() => {
       let world = 0;
       for (const v of this.voices) if (v.priority === 0) world++;
-      if (this.ambienceOn && world < WORLD_VOICE_CAP) this.play(next.slot, { at: next, rate: next.rate });
+      if (this.ambienceOn && world < WORLD_VOICE_CAP) this.play(next.slot, { at: next, rate: next.rate, near: next.near });
       this.scheduleOneShot();
     }, next.delay * 1000);
   }

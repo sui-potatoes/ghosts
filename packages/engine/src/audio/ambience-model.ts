@@ -30,6 +30,8 @@ export interface AmbiencePlan {
   oneShots: OneShotRule[];
   /** The ambience bus low-pass, Hz: fog and snow muffle the city. */
   air: number;
+  /** Beds in the room with the field, heard without `air` (the building's own hum). */
+  dry?: BedSlot[];
 }
 
 /** Fade-in when ambience starts, fade-out when it stops, and the crossfade when the look changes (s). */
@@ -67,8 +69,9 @@ export function ambiencePlan(location: Location, look: SceneLook | null): Ambien
         { slot: "ambience.office.oneshot.relay", perMinute: 1.5, range: "near" },
         { slot: "ambience.city.oneshot.siren", perMinute: SIRENS[time] * 0.4, range: "far" },
       ],
-      // The building between the field and the city.
+      // The building between the field and the city; the room's own tone is inside it.
       air: 1400,
+      dry: ["ambience.office.bed"],
     };
   }
   const beds: AmbiencePlan["beds"] = {
@@ -118,6 +121,8 @@ export interface OneShot {
   z: number;
   /** Rate multiplier from the slot's pitch variance. */
   rate: number;
+  /** On the field, in the room: heard without the air filter. */
+  near: boolean;
 }
 
 /** No two one-shots closer than this (s): the world never chatters. */
@@ -167,6 +172,6 @@ export class OneShotScheduler {
       y = 6 + r() * 14;
     }
     const variance = pitch(rule.slot);
-    return { slot: rule.slot, delay, x, y, z, rate: 1 + (r() * 2 - 1) * variance };
+    return { slot: rule.slot, delay, x, y, z, rate: 1 + (r() * 2 - 1) * variance, near: rule.range === "near" };
   }
 }

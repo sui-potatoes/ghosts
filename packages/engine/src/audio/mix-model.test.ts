@@ -9,6 +9,7 @@ import {
   DAZE_WIDTH,
   DIP_BACKSTOP,
   MixModel,
+  mixInputsOf,
   NEUTRAL,
   OPEN_CUTOFF,
   RAMPS,
@@ -78,4 +79,15 @@ test("width gains go from identity to mono", () => {
   assert.deepEqual(widthGains(0), { a: 0.5, b: 0.5 });
   const { a, b } = widthGains(DAZE_WIDTH);
   assert.ok(Math.abs(a + b - 1) < 1e-12, "mono content keeps its level");
+});
+
+test("the field's inputs: aiming needs a held unit out of move mode; a Daze on the held unit dazes", () => {
+  const ready = { hp: 5, effects: [] };
+  const dazed = { hp: 5, effects: [{ kind: "Daze" }] };
+  assert.deepEqual(mixInputsOf("move", ready), { aiming: false, dazed: false });
+  assert.deepEqual(mixInputsOf("fire", ready), { aiming: true, dazed: false });
+  assert.deepEqual(mixInputsOf("flashbang", undefined), { aiming: false, dazed: false });
+  assert.deepEqual(mixInputsOf("move", dazed), { aiming: false, dazed: true });
+  assert.deepEqual(mixInputsOf("move", { hp: 0, effects: [{ kind: "Daze" }] }), { aiming: false, dazed: false });
+  assert.deepEqual(mixInputsOf("move", { hp: 5, effects: [{ kind: "Smoke" }] }), { aiming: false, dazed: false });
 });
