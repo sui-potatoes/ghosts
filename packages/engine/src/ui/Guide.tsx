@@ -424,6 +424,7 @@ export function GuideLayer({ guide }: { guide: Guide }) {
       Object.assign(last, { azimuth, distance, x: focus.x, z: focus.z });
       drawPointers();
       placeRelationLabel();
+      declutterLabels();
       if (sim.current?.rise(1 / 60)) battlefield.invalidate();
       const now = performance.now();
       if (now - placedAt > 400) {
@@ -540,6 +541,31 @@ export function GuideLayer({ guide }: { guide: Guide }) {
       room = host.clientWidth;
     const cx = half * 2 >= room ? room / 2 : Math.min(Math.max(x, half), room - half);
     el.style.transform = `translate3d(${cx | 0}px,${y | 0}px,0) translate(-50%, -50%)`;
+  }
+
+  /** Unit name plates that land on each other (two targets side by side on a phone): the later one steps up above the other. */
+  function declutterLabels() {
+    const root = layer.current?.closest<HTMLElement>(".encounter");
+    if (!root) return;
+    const placed: { x: number; y: number; w: number; h: number }[] = [];
+    const labels = [...root.querySelectorAll<HTMLElement>(".unit-label")].filter((el) => !el.hidden && el.style.display !== "none");
+    const boxes = labels.map((el) => {
+      const r = el.getBoundingClientRect();
+      const lift = Number(el.dataset.lift ?? 0);
+      return { el, x: r.left, y: r.top + lift, w: r.width, h: r.height };
+    });
+    boxes.sort((a, b) => b.y - a.y || a.x - b.x);
+    for (const box of boxes) {
+      let lift = 0;
+      for (const other of placed)
+        if (box.x < other.x + other.w && other.x < box.x + box.w && box.y - lift < other.y + other.h && other.y < box.y - lift + box.h)
+          lift = box.y - other.y + box.h + 2;
+      placed.push({ ...box, y: box.y - lift });
+      if (Number(box.el.dataset.lift ?? 0) !== lift) {
+        box.el.dataset.lift = String(lift);
+        box.el.style.translate = lift ? `0 ${-lift}px` : "";
+      }
+    }
   }
 
   // === The camera: each step frames the chapter's arena (looking around leaves it to the player) ===
