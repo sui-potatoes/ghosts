@@ -700,16 +700,12 @@ export default function Editor() {
                 {(["width", "depth"] as const).map((axis) => (
                     <label key={axis} className="ed-chip flex items-center gap-1.5">
                         {axis === "width" ? "W" : "D"}
-                        <input
-                            type="number"
-                            min={6}
-                            max={48}
-                            className="ed-input ed-num w-12"
+                        <SizeField
                             value={level[axis]}
-                            onChange={(e) =>
+                            onCommit={(n) =>
                                 resize(
-                                    axis === "width" ? Number(e.target.value) : level.width,
-                                    axis === "depth" ? Number(e.target.value) : level.depth,
+                                    axis === "width" ? n : level.width,
+                                    axis === "depth" ? n : level.depth,
                                 )
                             }
                         />
@@ -1071,5 +1067,50 @@ export default function Editor() {
                 </div>
             )}
         </main>
+    );
+}
+
+/**
+ * A level dimension. Typing edits a draft, so the field can be emptied and
+ * retyped; the level resizes on Enter or on leaving the field, clamped then.
+ * Escape puts the level's value back.
+ */
+function SizeField({ value, onCommit }: { value: number; onCommit: (n: number) => void }) {
+    const [draft, setDraft] = useState<string | null>(null);
+    // The draft as last typed: blur follows Enter and Escape in the same tick.
+    const typed = useRef<string | null>(null);
+    const edit = (text: string | null) => {
+        typed.current = text;
+        setDraft(text);
+    };
+    const apply = () => {
+        const text = typed.current;
+        if (text === null) return;
+        edit(null);
+        const n = Math.round(Number(text));
+        if (text.trim() === "" || !Number.isFinite(n)) return;
+        const next = Math.max(6, Math.min(48, n));
+        if (next !== value) onCommit(next);
+    };
+    return (
+        <input
+            type="number"
+            min={6}
+            max={48}
+            className="ed-input ed-num w-12"
+            value={draft ?? value}
+            onChange={(e) => edit(e.target.value)}
+            onBlur={apply}
+            onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                    apply();
+                    e.currentTarget.blur();
+                } else if (e.key === "Escape") {
+                    e.stopPropagation();
+                    edit(null);
+                    e.currentTarget.blur();
+                }
+            }}
+        />
     );
 }
