@@ -46,6 +46,7 @@ import {
     SLOT_KEY,
     SLOTS,
 } from "../editorDrafts";
+import { canReset, clampHighlight, isNavKey, moveHighlight } from "../editorSearch";
 import { useBack } from "../hooks/useBack";
 import { onKeys } from "../input";
 import "../editor.css";
@@ -133,6 +134,9 @@ export default function Editor() {
     const hoverRef = useRef(hover);
     hoverRef.current = hover;
     const [search, setSearch] = useState("");
+    // The search field's keyboard highlight: an index into the flat results, shown while it has focus.
+    const [searching, setSearching] = useState(false);
+    const [cursor, setCursor] = useState(0);
     const [notice, setNotice] = useState(() => (initial?.migrated ? MIGRATED : ""));
     // Which side the Deploy tool marks.
     const [deploySide, setDeploySide] = useState<Side>("a");
@@ -301,7 +305,8 @@ export default function Editor() {
     };
 
     const navigate = useNavigate();
-    const [leaving, setLeaving] = useState(false);
+    // The one confirm card: leaving the editor, or resetting the level to its base.
+    const [prompt, setPrompt] = useState<"leave" | "reset" | null>(null);
     // Opens the demo on this slot's draft, saved first so the playtest reads the board as it stands.
     const playtestRef = useRef(() => {});
     playtestRef.current = () => {
@@ -318,7 +323,7 @@ export default function Editor() {
         navigate(playtestPath(slotRef.current));
     };
     // Escape asks before leaving; a second Escape (or the backdrop) stays.
-    useBack(() => setLeaving((open) => !open));
+    useBack(() => setPrompt((open) => (open ? null : "leave")));
 
     useEffect(() => {
         if (!host.current) return;
@@ -376,7 +381,7 @@ export default function Editor() {
     // unbound chords (⌘R, ⌘S) stay the browser's, and the whole map sleeps
     // while the leave prompt is up, so nothing edits the level under it.
     useEffect(() => {
-        if (leaving) return;
+        if (prompt) return;
         return onKeys({
             "Mod+z": () => undoRef.current(),
             "Mod+Shift+z": () => redoRef.current(),
@@ -394,11 +399,14 @@ export default function Editor() {
             i: () => {
                 if (hoverRef.current) pickRef.current(hoverRef.current.cell);
             },
-            "/": () => searchBox.current?.focus(),
+            "/": () => {
+                searchBox.current?.focus();
+                searchBox.current?.select();
+            },
             Delete: () => deleteRef.current(),
             Backspace: () => deleteRef.current(),
         });
-    }, [leaving]);
+    }, [prompt]);
 
     useEffect(() => {
         if (!notice) return;
@@ -423,6 +431,41 @@ export default function Editor() {
         if (floors.length) byCategory.set("Flooring", floors);
         return [...byCategory];
     }, [search]);
+    const results = useMemo(() => groups.flatMap(([, assets]) => assets), [groups]);
+    const active = searching ? results[clampHighlight(cursor, results.length)] : undefined;
+    useEffect(() => {
+        if (active)
+            document.getElementById(`ed-asset-${active.uid}`)?.scrollIntoView({ block: "nearest" });
+    }, [active]);
+
+    const pickResult = (uid: string) => {
+        setBrush(uid);
+        setTool("place");
+    };
+    // Keys in the search field: the highlight moves, Enter picks and hands the keys back to the
+    // board, Escape clears and then leaves the field. Handled here (and defaultPrevented) so the
+    // input bus's Escape never reaches the leave prompt from inside the field.
+    const searchKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.nativeEvent.isComposing) return;
+        if (isNavKey(e.key)) {
+            const to = moveHighlight(cursor, results.length, e.key);
+            if (to === null) return;
+            e.preventDefault();
+            setCursor(to);
+        } else if (e.key === "Enter") {
+            e.preventDefault();
+            const hit = results[clampHighlight(cursor, results.length)];
+            if (!hit) return;
+            pickResult(hit.uid);
+            e.currentTarget.blur();
+        } else if (e.key === "Escape") {
+            e.preventDefault();
+            if (search) {
+                setSearch("");
+                setCursor(0);
+            } else e.currentTarget.blur();
+        }
+    };
 
     const switchSlot = (next: string) => {
         if (next === slot) return;
@@ -442,14 +485,22 @@ export default function Editor() {
         }
     };
 
-    const rebuild = () => {
+    // Reset is available while the board differs from its base; both compared as export text.
+    const baseText = useMemo(() => JSON.stringify(exportLevel(buildBase(slot).level)), [slot]);
+    const resettable = useMemo(
+        () => canReset(JSON.stringify(exportLevel(level)), baseText),
+        [level, baseText],
+    );
+    // One undoable step: the base goes on the history like any edit, so undo brings the work back.
+    const reset = () => {
         const { level: fresh, dropped } = buildBase(slot);
+        setPrompt(null);
         setSelection(null);
         commit(fresh);
         setNotice(
             dropped
-                ? `Rebuilt · ${dropped} piece(s) had no seat`
-                : "Rebuilt from the training level",
+                ? `Reset to the base · ${dropped} piece(s) had no seat`
+                : "Reset to the base level",
         );
     };
 
@@ -640,11 +691,6 @@ export default function Editor() {
                         </option>
                     ))}
                 </select>
-                {slot !== "scratch" && (
-                    <button className="ed-btn" onClick={rebuild} title="Discard the local override">
-                        Rebuild
-                    </button>
-                )}
                 <input
                     aria-label="Level name"
                     className="ed-input w-36"
@@ -675,6 +721,14 @@ export default function Editor() {
                     </button>
                     <button className="ed-btn" onClick={() => redoRef.current()}>
                         Redo
+                    </button>
+                    <button
+                        className="ed-btn"
+                        disabled={!resettable}
+                        title="Discard this base's local draft and start from the shipped level"
+                        onClick={() => setPrompt("reset")}
+                    >
+                        Reset
                     </button>
                     <button className="ed-btn" onClick={() => file.current?.click()}>
                         Import
@@ -772,10 +826,20 @@ export default function Editor() {
                             className="ed-input w-full"
                             placeholder="Search assets · /"
                             value={search}
-                            onChange={(e) => setSearch(e.target.value)}
+                            role="combobox"
+                            aria-expanded="true"
+                            aria-controls="ed-results"
+                            aria-activedescendant={active ? `ed-asset-${active.uid}` : undefined}
+                            onChange={(e) => {
+                                setSearch(e.target.value);
+                                setCursor(0);
+                            }}
+                            onFocus={() => setSearching(true)}
+                            onBlur={() => setSearching(false)}
+                            onKeyDown={searchKey}
                         />
                     </div>
-                    <div className="min-h-0 flex-1 overflow-y-auto pb-4">
+                    <div id="ed-results" className="min-h-0 flex-1 overflow-y-auto pb-4">
                         {groups.length === 0 && (
                             <p className="ed-chip px-3 py-3">No assets match</p>
                         )}
@@ -788,15 +852,13 @@ export default function Editor() {
                                     <button
                                         key={a.uid}
                                         id={`ed-asset-${a.uid}`}
-                                        className={`flex w-full items-baseline gap-2 px-3 py-[5px] text-left text-[11px] leading-tight ${
+                                        data-active={active?.uid === a.uid}
+                                        className={`flex w-full scroll-mt-8 items-baseline gap-2 px-3 py-[5px] text-left text-[11px] leading-tight data-[active=true]:bg-raised data-[active=true]:text-foreground data-[active=true]:shadow-[inset_2px_0_0_var(--accent-color)] ${
                                             brush === a.uid && tool === "place"
                                                 ? "bg-raised text-accent"
                                                 : "text-secondary hover:bg-raised hover:text-foreground"
                                         }`}
-                                        onClick={() => {
-                                            setBrush(a.uid);
-                                            setTool("place");
-                                        }}
+                                        onClick={() => pickResult(a.uid)}
                                     >
                                         <span className="flex-1 truncate">{a.name}</span>
                                         <span className="ed-chip">{a.tag}</span>
@@ -972,30 +1034,37 @@ export default function Editor() {
                 </aside>
             </div>
 
-            {leaving && (
+            {prompt && (
                 <div
                     className="fixed inset-0 z-50 flex items-center justify-center bg-overlay backdrop-blur-sm"
-                    onClick={() => setLeaving(false)}
+                    onClick={() => setPrompt(null)}
                 >
                     <div
                         className="flex w-full max-w-xs flex-col gap-4 border border-line bg-surface px-6 py-5"
                         onClick={(e) => e.stopPropagation()}
                     >
-                        <h2 className="label">Leave the editor?</h2>
+                        <h2 className="label">
+                            {prompt === "reset" ? "Reset the level?" : "Leave the editor?"}
+                        </h2>
                         <p className="text-xs leading-relaxed text-secondary">
-                            The draft is saved on this device and will be here when you come back
+                            {prompt === "reset"
+                                ? "Every change to this level is discarded"
+                                : "The draft is saved on this device and will be here when you come back"}
                         </p>
                         <div className="flex gap-1.5">
                             <button
                                 className="ed-btn"
                                 data-on="true"
                                 autoFocus
-                                onClick={() => setLeaving(false)}
+                                onClick={() => setPrompt(null)}
                             >
-                                Stay
+                                {prompt === "reset" ? "Keep" : "Stay"}
                             </button>
-                            <button className="ed-btn" onClick={() => navigate("/")}>
-                                Leave
+                            <button
+                                className="ed-btn"
+                                onClick={() => (prompt === "reset" ? reset() : navigate("/"))}
+                            >
+                                {prompt === "reset" ? "Reset" : "Leave"}
                             </button>
                         </div>
                     </div>
