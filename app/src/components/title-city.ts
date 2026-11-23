@@ -23,9 +23,14 @@ export interface TitleCity {
     nudge(): void;
 }
 const EXPOSURE = 1.15;
-/** The road mirror's size against the frame's drawing buffer, and its widest. */
-const MIRROR_SCALE = 0.6;
-const MIRROR_MAX = 960;
+/**
+ * The road mirror's size against the frame's drawing buffer, and its widest.
+ * It is drawn once, so its size costs memory and one render, not frame time.
+ */
+const MIRROR_SCALE = 1;
+const MIRROR_MAX = 1600;
+const MIRROR_SCALE_SAVER = 0.6;
+const MIRROR_MAX_SAVER = 960;
 
 const REFERENCE_ASPECT = 1672 / 941;
 const noiseGLSL = `
@@ -135,10 +140,9 @@ export function createTitleCity(
     // Wet asphalt reflects the actual scene (including the moving figure and
     // lights). World-space roughness breaks it into irregular, rippled puddles:
     // the mirror is mip-mapped and read sharper in the pools, softer on the
-    // open asphalt, so it reads as wet road rather than a low-res mirror. With
-    // Display: Battery saver on there is no mirror at all: the road keeps its
-    // wet look from a stand-in (the fog's glow along the street), no extra
-    // scene render.
+    // open asphalt, as the poster shows it: a dark road mirroring the city.
+    // The mirror is drawn once (see `reflect`), so it costs nothing per frame;
+    // Display: Battery saver only draws it smaller.
     const road = new Reflector(geo(new THREE.PlaneGeometry(34, 500)), {
         textureWidth: 640,
         textureHeight: 480,
@@ -154,11 +158,10 @@ export function createTitleCity(
                 asphaltColor: { value: null },
                 asphaltNormal: { value: null },
                 asphaltRough: { value: null },
-                planar: { value: 1 },
             },
             vertexShader: `uniform mat4 textureMatrix;varying vec4 refUv;varying vec3 world;
                 void main(){world=(modelMatrix*vec4(position,1.)).xyz;refUv=textureMatrix*vec4(position,1.);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
-            fragmentShader: `${noiseGLSL} uniform sampler2D tDiffuse,asphaltColor,asphaltNormal,asphaltRough;uniform float time,planar;varying vec4 refUv;varying vec3 world;
+            fragmentShader: `${noiseGLSL} uniform sampler2D tDiffuse,asphaltColor,asphaltNormal,asphaltRough;uniform float time;varying vec4 refUv;varying vec3 world;
                 void main(){vec2 p=world.xz;
                     vec3 asphalt=texture2D(asphaltColor,p*.45).rgb;
                     vec3 surfaceNormal=texture2D(asphaltNormal,p*.45).rgb;
@@ -167,21 +170,20 @@ export function createTitleCity(
                     float grainFreq=fwidth(p.x*230.)+fwidth(p.y*230.);
                     float grain=mix(noise(p*230.),.5,smoothstep(.35,1.1,grainFreq));
                     float rippleFade=1.-smoothstep(.4,1.2,fwidth(p.y*90.));
-                    float pools=smoothstep(.40,.58,fbm(p*.5)+noise(p*10.)*.16)*(1.-rough*.18);
+                    // Puddle edges stay smooth at any distance: the fine edge noise fades where it would alias.
+                    float edgeNoise=noise(p*10.)*.16*(1.-smoothstep(.5,1.5,fwidth(p.y*10.)));
+                    float poolField=fbm(p*.5)+edgeNoise;float poolEdge=max(.09,fwidth(poolField)*1.5);
+                    float pools=smoothstep(.49-poolEdge,.49+poolEdge,poolField)*(1.-rough*.18);
                     vec2 uv=refUv.xy/refUv.w;
                     uv+=(surfaceNormal.xy-.5)*.006*(1.-pools)+vec2(noise(p*25.+time*.3)-.5,sin(p.y*90.+time*1.6)*.3)*.0008*rippleFade;
-                    float blur=mix(2.2,.35,pools)+rough*.8;
-                    // A frozen mirror kept alive: the pools' surface stirs, so the light in them breathes.
-                    vec3 mirrored=texture2D(tDiffuse,uv,blur).rgb*(.9+.1*noise(p*1.7+vec2(time*.35,-time*.2)));
-                    float far=smoothstep(2.,120.,-world.z);float lateral=exp(-abs(world.x+1.5)*.38);
-                    vec3 standIn=vec3(.019,.025,.03)+vec3(.5,.6,.66)*far*far*lateral*(.5+noise(p*vec2(.7,.04)));
-                    vec3 reflection=max(mix(standIn,mirrored,planar)-vec3(.017,.022,.026),vec3(0.));
+                    // Pools mirror sharply, open asphalt a little softer; the stirring keeps a frozen mirror alive.
+                    float blur=mix(.7,0.,pools)+rough*.2;
+                    vec3 mirrored=texture2D(tDiffuse,uv,blur).rgb*(.94+.06*noise(p*1.7+vec2(time*.35,-time*.2)));
+                    vec3 reflection=max(mirrored-vec3(.017,.022,.026),vec3(0.));
                     float fresnel=.02+.98*pow(1.-1.685/sqrt(dot(p,p)+2.84),5.);
                     float crack=smoothstep(.035,.07,abs(sin(p.y*1.7+noise(p*2.)*.8)));
                     vec3 base=asphalt*.028*(grain*.7+.4)*crack;
                     vec3 c=base+reflection*(.025+pools*1.2)*(.68+grain*.32)*fresnel;
-                    // Battery saver: the fog's glow lies along the wet street as one soft sheen.
-                    c+=vec3(.24,.3,.34)*sqrt(far)*lateral*fresnel*(.3+.7*pools)*(1.-planar);
                     float distanceFog=1.-exp(-length(world.xz)*.003);
                     c=mix(c,vec3(.06,.095,.12),distanceFog*.27);
                     gl_FragColor=vec4(c,1.);
@@ -204,12 +206,7 @@ export function createTitleCity(
     const mirror = road.getRenderTarget();
     mirror.texture.generateMipmaps = true;
     mirror.texture.minFilter = THREE.LinearMipmapLinearFilter;
-    // Battery saver: the stand-in a puddle on the pavement shows instead (the fog's tone).
-    const standIn = tex(
-        new THREE.DataTexture(new Uint8Array([10, 14, 17, 255]), 1, 1, THREE.RGBAFormat),
-    );
-    standIn.needsUpdate = true;
-    let planar = !getSettings().display.batterySaver;
+    let saver = getSettings().display.batterySaver;
     // The mirror is drawn by `reflect`, before the frame, from the frame's own
     // camera: never inside the main pass, so everything that samples it (the
     // road, the pavement's puddles) reads the same, current mirror.
@@ -223,11 +220,6 @@ export function createTitleCity(
     const transient: THREE.Object3D[] = [];
     function reflect() {
         const uniforms = (road.material as THREE.ShaderMaterial).uniforms;
-        uniforms.planar.value = planar ? 1 : 0;
-        if (!planar) {
-            groundReflection.texture.value = standIn;
-            return;
-        }
         if (!mirrorDirty && groundReflection.texture.value === mirror.texture) return;
         mirrorDirty = false;
         camera.updateMatrixWorld();
@@ -556,6 +548,18 @@ export function createTitleCity(
         lastTime = deadline = performance.now();
         render();
     }
+    /**
+     * The mirror follows the frame's size (a share of its pixels a side,
+     * capped), so it is neither blocky on a large screen nor wasted on a
+     * small one; Battery saver draws it smaller.
+     */
+    function sizeMirror() {
+        const buffer = renderer.getDrawingBufferSize(new THREE.Vector2());
+        const scale = saver ? MIRROR_SCALE_SAVER : MIRROR_SCALE;
+        const max = saver ? MIRROR_MAX_SAVER : MIRROR_MAX;
+        const mirrorWidth = Math.min(max, Math.round(buffer.x * scale));
+        mirror.setSize(mirrorWidth, Math.round((mirrorWidth * buffer.y) / buffer.x));
+    }
     function resize() {
         // Layout size, not the drawn one: the lean layer above scales the picture.
         const width = host.offsetWidth;
@@ -578,11 +582,7 @@ export function createTitleCity(
             height,
         );
         camera.updateProjectionMatrix();
-        // The mirror follows the frame's size (half its pixels a side, capped), so it
-        // is neither blocky on a large screen nor wasted on a small one.
-        const buffer = renderer.getDrawingBufferSize(new THREE.Vector2());
-        const mirrorWidth = Math.min(MIRROR_MAX, Math.round(buffer.x * MIRROR_SCALE));
-        mirror.setSize(mirrorWidth, Math.round((mirrorWidth * buffer.y) / buffer.x));
+        sizeMirror();
         renderer.shadowMap.needsUpdate = true;
         restart();
     }
@@ -606,10 +606,10 @@ export function createTitleCity(
     const unsubscribeSettings = subscribeSettings(() => {
         // Interface motion below Full holds the lean; the set settles home.
         if (getSettings().display.motion !== "full") kick = 0;
-        // Battery saver drops the mirror (and brings it back) on the next frame.
-        const saver = getSettings().display.batterySaver;
-        if (planar === saver) {
-            planar = !saver;
+        // Battery saver redraws the mirror once, at its own size.
+        if (saver !== getSettings().display.batterySaver) {
+            saver = getSettings().display.batterySaver;
+            sizeMirror();
             restart();
         }
         const value = getSettings().display.reduceMotion;
