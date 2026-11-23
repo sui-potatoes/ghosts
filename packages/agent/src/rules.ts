@@ -861,6 +861,23 @@ function moveOption(
     };
 }
 
+/**
+ * Whether a frag on `(tx, ty)` destroys a cover tile or an obstacle next to an enemy of `side`:
+ * the cover that enemy stands behind (`explode` with environment damage clears both).
+ */
+function blastsCover(state: GameState, side: number, tx: number, ty: number): boolean {
+    for (const enemy of state.units) {
+        if (enemy.side === side) continue;
+        for (const [dx, dy] of Object.values(STEPS)) {
+            const [x, y] = [enemy.x + dx, enemy.y + dy];
+            const kind = inBounds(state, x, y) ? state.tiles[x][y].kind : null;
+            const near = manhattan(x, y, tx, ty) <= GRENADE_RADIUS;
+            if ((kind === "cover" || kind === "obstacle") && near) return true;
+        }
+    }
+    return false;
+}
+
 /** How a move ranks: shots it opens, less danger it walks into, ties to the closer tile. */
 export const moveScore = (move: LegalAction) =>
     (move.bestShot ?? 0) - (move.threat ?? 0) * 0.5 - (move.enemyDistance ?? 0);
@@ -929,8 +946,15 @@ export function legalActions(state: GameState, side: number, nowMs: number): Leg
                 ) {
                     const blast = blastUnits(state, tx, ty, GRENADE_RADIUS);
                     const enemiesHit = blast.filter((other) => other.side !== side).length;
-                    // a smoke grenade is for anyone in it, mine or theirs; the rest are for enemies
-                    if (kind === "smoke_grenade" ? blast.length === 0 : enemiesHit === 0) continue;
+                    // a smoke grenade is for anyone in it, mine or theirs; the rest are for
+                    // enemies, but a frag also for the cover an enemy stands behind, which it
+                    // destroys
+                    const wanted =
+                        kind === "smoke_grenade"
+                            ? blast.length > 0
+                            : enemiesHit > 0 ||
+                              (kind === "grenade" && blastsCover(state, side, tx, ty));
+                    if (!wanted) continue;
                     const action: Action = { kind, x, y, tx, ty };
                     if (refusal(state, side, action, nowMs)) continue;
                     throws.push({

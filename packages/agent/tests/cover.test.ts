@@ -223,12 +223,15 @@ test("a unit flanks a target behind an obstacle: the shot that does not cross it
     const me = place(state, 0, 5, 2);
     const enemy = turret(state, 5, 6);
     obstacle(state, 5, 5);
+    // a flank that ends in cover: (2, 6), behind the obstacle on (3, 6)
+    obstacle(state, 3, 6);
     assert.equal(coverBonus(state, 5, 2, 5, 6), 25, "covered against a shot from here");
 
     const move = next(state);
     assert.equal(move.kind, "move");
     const [x, y] = endOf(state, move);
     assert.equal(coverBonus(state, x, y, enemy.x, enemy.y), 0, `no cover for it from (${x}, ${y})`);
+    assert.ok(coverAgainst(state, enemy, x, y) > 0, "and cover for the flanker");
     const from = shotChance(state, me.stats, x, y, enemy.x, enemy.y, 0)!;
     assert.ok(from > shotChance(state, me.stats, 5, 2, 5, 6, 0)!, "a better shot");
 
