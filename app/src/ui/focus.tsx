@@ -34,7 +34,7 @@ import { inputMode } from "@ghosts/engine/input-mode";
 
 import { uiBack, uiConfirm, uiDeny, uiHoldCancel, uiHoldStep, uiTick } from "../audio";
 import { haptic } from "../haptics";
-import { onAction } from "../input";
+import { onAction, onActionPinned } from "../input";
 import type { Action } from "../settings/keys";
 import { currentAction } from "../settings/store";
 import { claimScreenBack } from "./back";
@@ -242,6 +242,8 @@ type RootProps = {
     onTab?: (step: 1 | -1) => void;
     /** Trigger / PageUp-PageDown section switching (HQ / Squad ⇄ Armory). */
     onSection?: (step: 1 | -1) => void;
+    /** Stays the top input consumer even when a screen mounts after it (first-visit intros). */
+    pinned?: boolean;
     children: ReactNode;
 };
 
@@ -251,7 +253,7 @@ type RootProps = {
  * aside: the root back command is the way out, and dialogs registered with
  * `useBack` above the screen still close first.
  */
-export function FocusRoot({ back, onTab, onSection, children }: RootProps) {
+export function FocusRoot({ back, onTab, onSection, pinned, children }: RootProps) {
     const [store] = useState(() => new FocusStore(back, SOUNDS));
     store.setRootBack(back);
     const tab = useRef(onTab);
@@ -285,7 +287,7 @@ export function FocusRoot({ back, onTab, onSection, children }: RootProps) {
 
     useEffect(
         () =>
-            onAction((action: Action) => {
+            (pinned ? onActionPinned : onAction)((action: Action) => {
                 store.keyInput();
                 switch (action) {
                     case "up":
@@ -313,7 +315,7 @@ export function FocusRoot({ back, onTab, onSection, children }: RootProps) {
                         return true;
                 }
             }),
-        [store],
+        [store, pinned],
     );
 
     return <StoreContext.Provider value={store}>{children}</StoreContext.Provider>;

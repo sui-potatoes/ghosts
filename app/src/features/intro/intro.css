@@ -1,0 +1,80 @@
+/* Copyright (c) Sui Potatoes
+   SPDX-License-Identifier: MIT */
+
+/* A first-visit intro: a dialog frame whose only way out is its one command.
+   Back is refused, so its slot in the bar is not drawn. The block's body
+   scrolls inside it when the viewport is short; the command stays in view. */
+.gui-intro .gui-bar-commands > .gui-cmd[data-action="back"],
+.gui-intro .gui-bar-commands > .gui-bar-rule:nth-last-child(2) {
+    display: none;
+}
+
+.gui-intro .gui-prompt-wrap {
+    grid-template-rows: minmax(0, 1fr);
+    padding: calc(var(--u) * 4) 0;
+}
+
+.gui-intro .gui-prompt {
+    display: flex;
+    flex-direction: column;
+    align-self: center;
+    max-height: 100%;
+}
+
+.gui-intro-body {
+    min-height: 0;
+    overflow-y: auto;
+    scrollbar-width: none;
+}
+
+.gui-intro-body::-webkit-scrollbar {
+    display: none;
+}
+
+.gui-intro-list {
+    margin-top: calc(var(--u) * 5);
+    margin-bottom: calc(var(--u) * 6);
+    border-top: 1px solid var(--line);
+}
+
+.gui-intro-list > div {
+    display: grid;
+    grid-template-columns: calc(var(--u) * 38) minmax(0, 1fr);
+    gap: calc(var(--u) * 4);
+    align-items: baseline;
+    padding: calc(var(--u) * 3) 0;
+    border-bottom: 1px solid var(--line);
+}
+
+.gui-intro-list dt {
+    font: 500 var(--t-label) / 1.4 var(--font-mono);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-color);
+}
+
+.gui-intro-list dd {
+    font: 400 var(--t-body) / 1.5 var(--font-mono);
+    color: var(--text-secondary);
+}
+
+.gui-intro .gui-prompt-commands {
+    flex: none;
+}
+
+@media (max-width: 560px) {
+    .gui-intro .gui-prompt {
+        padding-top: calc(var(--u) * 5);
+    }
+
+    .gui-intro-list {
+        margin-top: calc(var(--u) * 4);
+        margin-bottom: calc(var(--u) * 4);
+    }
+
+    .gui-intro-list > div {
+        grid-template-columns: minmax(0, 1fr);
+        gap: calc(var(--u) * 1);
+        padding: calc(var(--u) * 2) 0;
+    }
+}

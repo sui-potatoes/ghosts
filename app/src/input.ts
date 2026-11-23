@@ -58,12 +58,35 @@ function dispatchKeys(e: KeyboardEvent): boolean {
     return false;
 }
 
+const pinned: ActionHandler[] = [];
+
+function drop(list: ActionHandler[], handler: ActionHandler) {
+    const i = list.lastIndexOf(handler);
+    if (i >= 0) list.splice(i, 1);
+}
+
 /** Subscribe to menu actions; the latest subscriber is asked first. Returns the unbind. */
 export function onAction(handler: ActionHandler): () => void {
     handlers.push(handler);
+    // Pinned consumers stay above whatever mounts later (a lazy screen).
+    for (const p of pinned) {
+        drop(handlers, p);
+        handlers.push(p);
+    }
+    return () => drop(handlers, handler);
+}
+
+/**
+ * Like `onAction`, but the handler stays on top: a consumer that subscribes
+ * after it (a lazy screen finishing its load behind a first-visit intro) is
+ * asked second. For a dialog that must hold every input until answered.
+ */
+export function onActionPinned(handler: ActionHandler): () => void {
+    pinned.push(handler);
+    handlers.push(handler);
     return () => {
-        const i = handlers.lastIndexOf(handler);
-        if (i >= 0) handlers.splice(i, 1);
+        drop(pinned, handler);
+        drop(handlers, handler);
     };
 }
 

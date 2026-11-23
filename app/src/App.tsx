@@ -79,6 +79,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { LoadingSpinner } from "./components/LoadingSpinner";
 import { MatchStatus } from "./components/MatchStatus";
 import { NameStep } from "./features/name-step/NameStep";
+import { IntroHost } from "./features/intro/Intro";
 import { RulesPreload } from "./features/play/economy/useEconomy";
 import { forgetDeviceRecordings } from "./features/watch/forget";
 
@@ -386,6 +387,7 @@ export function App() {
                 <SignInDialog open={signInOpen} onClose={closeSignIn} />
             )}
             <NameStep />
+            <IntroHost />
         </>
     );
 }

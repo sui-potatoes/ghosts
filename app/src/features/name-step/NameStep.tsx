@@ -7,6 +7,7 @@ import { useLocation } from "react-router-dom";
 
 import { useAssignedName, useNameTaken, useSaveFirstName } from "../../chain";
 import { NETWORK } from "../../constants";
+import { useDueIntro } from "../intro/store";
 import { getPlayerName, subscribePlayerName } from "../../player/name";
 import { NameStepView } from "./NameStepView";
 import { askNow, skip, wasSkipped } from "./rules";
@@ -35,6 +36,8 @@ export function NameStep() {
         () => !!address && getPlayerName(address).source === "local",
         () => false,
     );
+    // Intros come first: the welcome, then the screen's own.
+    const intro = useDueIntro() !== null;
     const [skipped, setSkipped] = useState<string | null>(null);
     const ask =
         !!address &&
@@ -43,7 +46,7 @@ export function NameStep() {
             { address, assigned, localName, skipped: wasSkipped(store, NETWORK, address) },
             pathname,
         );
-    if (!ask || !address) return null;
+    if (!ask || !address || intro) return null;
     return (
         <Live
             key={address}
