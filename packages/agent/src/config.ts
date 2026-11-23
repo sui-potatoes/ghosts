@@ -82,6 +82,7 @@ export function agentFromEnv(env: NodeJS.ProcessEnv = process.env): GhostsAgent 
                   registry: required(env, "GHOSTS_REGISTRY"),
                   matchmaker: required(env, "GHOSTS_MATCHMAKER"),
                   preset: required(env, "GHOSTS_PRESET"),
+                  friendlyLevel: env.GHOSTS_FRIENDLY_LEVEL || undefined,
                   lobbies: required(env, "GHOSTS_LOBBIES"),
                   names,
               };

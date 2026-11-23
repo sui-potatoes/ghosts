@@ -308,6 +308,7 @@ who controls its account.
 | `GHOSTS_REGISTRY`                                        | Shared `Registry`, required with the package |
 | `GHOSTS_MATCHMAKER`                                      | Shared queue, required with the package      |
 | `GHOSTS_PRESET`                                          | Frozen `Preset`, required with the package   |
+| `GHOSTS_FRIENDLY_LEVEL`                                  | `Preset` friendly games start on; `GHOSTS_PRESET` by default |
 | `GHOSTS_LOBBIES`                                         | Shared `Lobbies`, required with the package  |
 | `GHOSTS_NAMES_PACKAGE`, `_SUINS`, `_INSTANCE`, `_DOMAIN` | Name registry; testnet defaults to the app's |
 | `GHOSTS_OWNER`                                           | Owner to act as when the key is its alias    |

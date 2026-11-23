@@ -78,6 +78,10 @@ export function scenarioFor(
 const sameId = (a: string, b: string) =>
     a.toLowerCase().replace(/^0x/, "") === b.toLowerCase().replace(/^0x/, "");
 
+/** Whether `mapId` is one of `ids` (a retired level's, say), compared as Sui addresses. */
+export const isListedLevel = (mapId: string, ids: readonly string[]) =>
+    ids.some((id) => id !== "" && sameId(id, mapId));
+
 /**
  * The scene a game is played in, by its map's ID (the level's `Preset` ID,
  * `Map.id`): the listed level's, else `fallback`. A level with no ID yet (not

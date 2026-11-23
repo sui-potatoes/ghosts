@@ -28,6 +28,7 @@ export {
     type PendingSeat,
 } from "./contract.ts";
 export { DEFAULT_KEY_FILE, loadOrCreateKey } from "./key.ts";
+export * from "./maps.ts";
 export * from "./faucet.ts";
 export * from "./faucet-pow.ts";
 export * from "./funds.ts";
@@ -40,7 +41,10 @@ export * from "./rules.ts";
 export {
     createSandbox,
     SANDBOX_INVITE,
+    SANDBOX_LEVEL,
+    SANDBOX_LEVELS,
     SANDBOX_LOBBIES,
+    SANDBOX_NIGHT_SHIFT,
     SANDBOX_PEER_HOST,
     SANDBOX_RANKED_QUEUES,
     SANDBOX_RULES,

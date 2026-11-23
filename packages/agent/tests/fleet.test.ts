@@ -23,7 +23,12 @@ import {
 import { ensureSeat, readSeatRecord, runSeat, settleSeat } from "../src/fleet.ts";
 import { nameProblem } from "../src/names.ts";
 import { ALL_LOADOUTS, loadoutOfUnit, unitFromLoadout } from "../src/ranked.ts";
-import { createSandbox, type SandboxOptions } from "../src/sandbox.ts";
+import {
+    createSandbox,
+    SANDBOX_NIGHT_SHIFT,
+    SANDBOX_RULES,
+    type SandboxOptions,
+} from "../src/sandbox.ts";
 import { ActionError } from "../src/types.ts";
 import { pollingWake } from "../src/wake.ts";
 
@@ -210,6 +215,40 @@ test("the run loop plays games with pauses, logs a line each, and stops settled"
     }
     assert.ok(pauses.every((ms) => ms >= 10 && ms <= 20));
     assert.deepEqual((await agent.backend.account())?.search, { kind: "idle" });
+});
+
+test("ranked games of 3 and of 4 on Night Shift, the level the rules name, play to the end", async () => {
+    const rules = {
+        ...SANDBOX_RULES,
+        sizes: SANDBOX_RULES.sizes.map((size) => ({ ...size, level: SANDBOX_NIGHT_SHIFT })),
+    };
+    for (const size of [3, 4]) {
+        const backend = createSandbox({ seed: 8 + size, rules });
+        const agent = new GhostsAgent(backend, { ...fast, mode: { kind: "ranked", size } });
+        await agent.setName("night-seat");
+        await agent.setup();
+        const levels = new Set<string | undefined>();
+        const read = backend.game.bind(backend);
+        backend.game = async (id) => {
+            const game = await read(id);
+            if (game) levels.add(game.level);
+            return game;
+        };
+        const stop = new AbortController();
+        const games = await runSeat(agent, {
+            signal: stop.signal,
+            size,
+            pauseMs: [1, 1],
+            perHour: 50,
+            log: () => stop.abort(),
+            sleep: async () => {},
+        });
+        assert.equal(games.length, 1, `size ${size}`);
+        assert.equal(games[0].squad.split(" ").length, size);
+        assert.equal(games[0].opponentSquad.split(" ").length, size);
+        assert.ok(["won", "lost", "draw"].includes(games[0].result));
+        assert.deepEqual([...levels], [SANDBOX_NIGHT_SHIFT], "every read of the game is on Night Shift");
+    }
 });
 
 test("the hourly cap holds a seat back until the oldest game is an hour old", async () => {

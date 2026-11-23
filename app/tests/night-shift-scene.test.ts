@@ -12,8 +12,9 @@ import {
     NIGHT_SHIFT_SIZE,
 } from "../../packages/engine/src/night-shift/chain.ts";
 import { nightShiftScenario } from "../../packages/engine/src/night-shift/scenario.ts";
+import { GHOSTS, LEVELS } from "../src/constants.ts";
 import { PresetMap, type ChainGame } from "../src/chain/bcs.ts";
-import { sceneOfLevel } from "../src/chain/match-scene.ts";
+import { isListedLevel, sceneOfLevel } from "../src/chain/match-scene.ts";
 import {
     coverBonus,
     reachable,
@@ -131,4 +132,20 @@ test("a game shows its own level's scene, once the level has an ID", () => {
     assert.equal(sceneOfLevel("0x" + "cd".repeat(32), levels, blackRain), blackRain);
     // not on chain yet: an empty ID matches nothing, not even an empty map ID
     assert.equal(sceneOfLevel("", [["", () => scenario]], blackRain), blackRain);
+});
+
+test("on testnet, a game on Night Shift shows Night Shift and one on Black Rain shows Black Rain", () => {
+    assert.match(LEVELS.nightShift, /^0x[0-9a-f]{64}$/);
+    assert.notEqual(LEVELS.nightShift, GHOSTS.preset);
+    const levels = [[LEVELS.nightShift, () => scenario]] as const;
+    assert.equal(sceneOfLevel(LEVELS.nightShift, levels, blackRain), scenario);
+    assert.equal(sceneOfLevel(GHOSTS.preset, levels, blackRain), blackRain);
+    // a retired revision is told apart, so its replays show the unavailable plate
+    assert.ok(!LEVELS.retired.some((id) => isListedLevel(id, [LEVELS.nightShift])));
+    assert.equal(
+        isListedLevel(LEVELS.nightShift.toUpperCase().slice(2), [LEVELS.nightShift]),
+        true,
+    );
+    assert.equal(isListedLevel(GHOSTS.preset, LEVELS.retired), false);
+    assert.equal(isListedLevel("", [""]), false);
 });

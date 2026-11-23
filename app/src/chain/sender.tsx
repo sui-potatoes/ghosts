@@ -21,7 +21,7 @@ import type { Transaction } from "@mysten/sui/transactions";
 import { SUI_CLOCK_OBJECT_ID } from "@mysten/sui/utils";
 import { useEffect } from "react";
 
-import { GHOSTS } from "../constants";
+import { GHOSTS, LEVELS } from "../constants";
 import { activeSessionSigner, authorizeDevice, expireSessionKey } from "./alias";
 import type { ExecutedTransaction } from "./executor";
 import { afterTransaction } from "./funds";
@@ -45,6 +45,7 @@ const STANDING_OBJECTS = [
     GHOSTS.registry,
     GHOSTS.matchmaker,
     GHOSTS.preset,
+    LEVELS.nightShift,
     GHOSTS.lobbies,
     SUI_CLOCK_OBJECT_ID,
     "0x8",

@@ -20,8 +20,9 @@ export const NAMES = {
 /**
  * Testnet IDs for the published ghosts Move package and what its initializer
  * creates: the Registry, the queue for owned recruits (`Matchmaker<Ghosts>`), the
- * frozen map preset games start on, the shared friendly-lobbies object and the
- * shared ranked `Rules` (which name the ranked queues and their levels).
+ * frozen map preset it starts with (Black Rain, the level stakes games start on),
+ * the shared friendly-lobbies object and the shared ranked `Rules` (which name the
+ * ranked queues and their levels).
  */
 export const GHOSTS: {
     package: string;
@@ -43,12 +44,17 @@ export const GHOSTS: {
  * Levels frozen on chain after publish, by `ghosts::new_level`, besides the one
  * `init` freezes (Black Rain, `GHOSTS.preset`): each level's `Preset` object ID,
  * which is also the ID every game on that level carries in its map (`Map.id`),
- * so a match shows its own level's scene (`chain/levels.ts`). Empty until the
- * level exists on chain; a game on a level this build does not list is shown
- * in Black Rain's scene.
+ * so a match shows its own level's scene (`chain/levels.ts`); a game on a
+ * level this build does not list is shown in Black Rain's scene. Night Shift is
+ * the level of friendly games (`chain/lobby.ts`) and, as `Rules` name it, of
+ * ranked games of both sizes. `retired` lists the presets of earlier revisions of
+ * a level whose scene this build no longer has: their matches show a plate
+ * saying the map is unavailable, never another revision's scene. Re-creating a
+ * level (`packages/agent/src/bin/level.ts`) moves its old ID there.
  */
-export const LEVELS: { nightShift: string } = {
-    nightShift: "",
+export const LEVELS: { nightShift: string; retired: readonly string[] } = {
+    nightShift: "0x95a7813aed0edf3ca2d421471cec34e5766e2a22e43fd3862db0f300b10cfbb5",
+    retired: [],
 };
 
 /** Same Google OAuth client as `app/`; both origins are registered on it. */

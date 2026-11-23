@@ -212,11 +212,14 @@ const FRAG_THREAT = 0.4;
  */
 const RELOAD_STEP_MARGIN = 1;
 /**
- * Turn changes in a row without a shot or a frag, after which the sides are taken to be waiting
- * each other out: units then press on, so a game still ends before the draw at `MAX_TURNS`. A
- * pressure that grows by `PRESS_STEP` for every quiet turn change from here until somebody
- * shoots multiplies the pull of distance and divides the weight of exposure; pressing still ends
- * on a covered tile wherever one is in reach: cover to cover, never into the open. Two rounds.
+ * Turn changes in a row without a hit (a shot or a frag that dealt damage), after which the sides
+ * are taken to be waiting each other out: units then press on, so a game still ends before the
+ * draw at `MAX_TURNS`. A pressure that grows by `PRESS_STEP` for every quiet turn change from here
+ * until somebody hits multiplies the pull of distance and divides the weight of exposure; pressing
+ * still ends on a covered tile wherever one is in reach: cover to cover, never into the open. Two
+ * rounds. Misses do not count: on Night Shift, walls and high cover let two squads trade shots
+ * that cannot land from round one corner for the whole match, and counting those as a fight
+ * left a quarter of mirror games drawn at `MAX_TURNS`.
  */
 const QUIET_TURNS = 4;
 /** How much the pressure grows per quiet turn change from `QUIET_TURNS` on. */
@@ -305,12 +308,12 @@ interface Field {
     steps: Map<string, number>;
 }
 
-/** Turn changes since the last shot or frag of either side, from the history. */
+/** Turn changes since the last hit of either side, a shot's or a frag's, from the history. */
 function quietTurns(state: GameState): number {
     let quiet = 0;
     for (let i = state.history.length - 1; i >= 0; i--) {
         const kind = state.history[i].kind;
-        if (kind === "attack" || kind === "grenade") break;
+        if (kind === "damage" || kind === "critical_hit") break;
         if (kind === "next_turn") quiet += 1;
     }
     return quiet;

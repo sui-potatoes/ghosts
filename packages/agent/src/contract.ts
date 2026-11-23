@@ -22,8 +22,10 @@ export interface Deployment {
     registry: string;
     /** The stakes queue, `Matchmaker<ghosts::Ghosts>`. */
     matchmaker: string;
-    /** The frozen `Preset` games are played on, created once on publish. */
+    /** The frozen `Preset` stakes games are played on, created once on publish (Black Rain). */
     preset: string;
+    /** The `Preset` friendly games are played on; `preset` when absent. */
+    friendlyLevel?: string;
     /** The shared `Lobbies` object friendly games are listed on. */
     lobbies: string;
     /**
@@ -59,13 +61,15 @@ export const TESTNET_NAMES: NameRegistry = {
 
 /**
  * The package on testnet: the publish with ranked play. The ranked queues and their levels are
- * read from the `Rules` (`Rules.sizes`), as the app does.
+ * read from the `Rules` (`Rules.sizes`), as the app does: both sizes play Night Shift, the level
+ * friendly games start on too. Stakes games stay on Black Rain, the preset `init` froze.
  */
 export const TESTNET_DEPLOYMENT: Deployment = {
     package: "0x856ab8a78fae01fb7eb1cc2ca47eb0e95900f300489bacf1ca06d30b2de081f0",
     registry: "0x77b6c9ac252b820fc7415ede00d388b56fa9f7851e7b6eb345a0a5e8c0f2dc3b",
     matchmaker: "0x3030458a71901bf5706e91b43520a41ea3dda0d031b1195f2601dc781f039776",
     preset: "0xf58f2397b910eaa735e7d0675e7f148ee466f549d462e13dab8e379bc3b45153",
+    friendlyLevel: "0x95a7813aed0edf3ca2d421471cec34e5766e2a22e43fd3862db0f300b10cfbb5",
     lobbies: "0x9f1db66b7d7b587f81d943245a349d4c7aaf885e96ef6dba71f96fae81b11f1a",
     rules: "0xd08bf87e9ae0c50680088ecdec506ad02e5588eec66b288db1e8aa4832fdc40f",
     names: TESTNET_NAMES,
@@ -207,7 +211,7 @@ export function joinLobbyTx(
         target: `${d.package}::${GAME_MODULE}::join_lobby`,
         arguments: [
             tx.object(d.lobbies),
-            tx.object(d.preset),
+            tx.object(d.friendlyLevel ?? d.preset),
             tx.object(host),
             tx.object(account),
             tx.object.random(),
@@ -271,7 +275,7 @@ export function startFriendlyTx(d: Deployment, host: string, guest: string): Tra
         target: `${d.package}::${GAME_MODULE}::start_friendly`,
         arguments: [
             tx.object(d.lobbies),
-            tx.object(d.preset),
+            tx.object(d.friendlyLevel ?? d.preset),
             tx.object(host),
             tx.object(guest),
             tx.object.random(),

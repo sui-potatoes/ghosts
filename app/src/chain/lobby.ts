@@ -19,7 +19,7 @@ import { Transaction } from "@mysten/sui/transactions";
 import { normalizeStructTag, normalizeSuiAddress } from "@mysten/sui/utils";
 import { useQuery } from "@tanstack/react-query";
 
-import { GHOSTS } from "../constants";
+import { GHOSTS, LEVELS } from "../constants";
 import { Account, LobbyField, Preset } from "./bcs";
 import type { ChainAccount } from "./ghosts";
 import {
@@ -279,16 +279,19 @@ export async function findInviteHost(
     return none;
 }
 
-/** How many spawn positions a side has on the level games start on: the most a side can deploy. */
+/** The level friendly games start on: Night Shift. */
+export const FRIENDLY_LEVEL = LEVELS.nightShift;
+
+/** How many spawn positions a side has on the level friendly games start on: the most a side can deploy. */
 export function usePresetSide() {
     const client = useCurrentClient();
     return useQuery({
-        queryKey: ["ghosts", "preset-side", GHOSTS.preset],
-        enabled: !!GHOSTS.preset,
+        queryKey: ["ghosts", "preset-side", FRIENDLY_LEVEL],
+        enabled: !!FRIENDLY_LEVEL,
         staleTime: Infinity,
         queryFn: async () => {
             const { object } = await client.core.getObject({
-                objectId: GHOSTS.preset,
+                objectId: FRIENDLY_LEVEL,
                 include: { content: true },
             });
             return Math.floor(Preset.parse(object.content).positions.length / 2);
@@ -343,7 +346,7 @@ export function joinLobbyTx(hostId: string, accountId: string, code: Uint8Array)
         target: target("join_lobby"),
         arguments: [
             tx.object(GHOSTS.lobbies),
-            tx.object(GHOSTS.preset),
+            tx.object(FRIENDLY_LEVEL),
             tx.object(hostId),
             tx.object(accountId),
             tx.object.random(),
@@ -401,7 +404,7 @@ export function startFriendlyTx(hostId: string, guestId: string): Transaction {
         target: target("start_friendly"),
         arguments: [
             tx.object(GHOSTS.lobbies),
-            tx.object(GHOSTS.preset),
+            tx.object(FRIENDLY_LEVEL),
             tx.object(hostId),
             tx.object(guestId),
             tx.object.random(),

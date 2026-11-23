@@ -660,6 +660,7 @@ export function decodeGame(bytes: Uint8Array, version: string): GameState {
     return {
         id: game.id,
         version,
+        level: game.map.id,
         ...gridSize(game.map),
         turn: game.turn,
         active: game.turn % game.players.length,

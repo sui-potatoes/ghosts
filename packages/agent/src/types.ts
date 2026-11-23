@@ -119,6 +119,11 @@ export interface GameState {
     id: string;
     /** Object version: a state at one version never changes, so it can be cached forever. */
     version: string;
+    /**
+     * The level the game is played on: its `Preset`'s ID, which the map keeps as `Map.id`
+     * (`levelMap` in `maps.ts` names the known ones). Absent in a state built by hand.
+     */
+    level?: string;
     rows: number;
     cols: number;
     turn: number;

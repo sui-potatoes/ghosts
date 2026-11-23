@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * An in-memory `Backend`: a game on the match preset against a scripted opponent,
+ * An in-memory `Backend`: a game on a level against a scripted opponent,
  * no key or gas needed. It follows `ghosts::ghosts` for the loop (a match starts the
  * game for the player who finds it, the waiting one is seated, the turn clock only
  * passes a turn, kills wait for `bury_fallen`, `complete` sends everyone home) and
@@ -31,7 +31,13 @@ import {
     type SearchRole,
 } from "./lobby.ts";
 import { computeRatings, defaultRating, DEFAULT_RATING, type GlickoRating } from "./glicko.ts";
-import { BLACK_RAIN, BLACK_RAIN_POSITIONS } from "./maps.ts";
+import {
+    BLACK_RAIN_LEVEL,
+    levelMap,
+    NIGHT_SHIFT_LEVEL,
+    TESTNET_LEVELS,
+    type LevelMap,
+} from "./maps.ts";
 import {
     autoSquad,
     checkSquad,
@@ -111,9 +117,15 @@ export interface SandboxOptions {
      * `unit::from_recruit` would make it. A side fields as many as it has spawn positions.
      */
     squads?: [SquadUnit[], SquadUnit[]];
-    /** Spawn positions in place of `map::black_rain_positions`: the first half is the first player's. */
+    /**
+     * The level stakes and friendly games start on, by `Preset` ID (`SANDBOX_LEVELS` names the
+     * ones the sandbox knows): Black Rain, `SANDBOX_LEVEL`, by default. A ranked game starts on the
+     * level the rules name for its size. An ID the sandbox does not know plays Black Rain.
+     */
+    level?: string;
+    /** Spawn positions in place of the level's: the first half is the first player's. */
     positions?: [number, number][];
-    /** A grid in place of Black Rain's, for experiments: rows of tiles, every row as long as the first. */
+    /** A grid in place of the level's, for experiments: rows of tiles, every row as long as the first. */
     tiles?: Tile[][];
     /**
      * Experiments: what a `grenade` throw does in place of the frag's blast, once its AP and
@@ -153,7 +165,16 @@ export const SANDBOX_RANKED_QUEUES: Readonly<Record<number, string>> = {
     3: sandboxId("c3"),
     4: sandboxId("c4"),
 };
-const SANDBOX_LEVEL = sandboxId("d3");
+/** Black Rain in the sandbox: the level of stakes and friendly games, and of ranked games of 3. */
+export const SANDBOX_LEVEL = sandboxId("d3");
+/** Night Shift in the sandbox: name it in `rules` or `level` to play on it. */
+export const SANDBOX_NIGHT_SHIFT = sandboxId("d4");
+/** The levels the sandbox knows, by `Preset` ID: its own two, and testnet's. */
+export const SANDBOX_LEVELS: Readonly<Record<string, LevelMap>> = {
+    ...TESTNET_LEVELS,
+    [SANDBOX_LEVEL]: BLACK_RAIN_LEVEL,
+    [SANDBOX_NIGHT_SHIFT]: NIGHT_SHIFT_LEVEL,
+};
 
 /** `rules::new` as `ghosts::init` calls it: the app's economy, Black Rain for 3, no level for 4. */
 export const SANDBOX_RULES: RankedRules = {
@@ -363,18 +384,27 @@ export function createSandbox(options: SandboxOptions = {}): Backend {
         return { id: hexId("5", ++recruits), armed, utilities };
     }
 
+    /** The level a game of `mode` starts on: the rules' for a ranked size, else `options.level`. */
+    function levelOf(mode: GameMode): string {
+        if (mode.kind !== "ranked") return options.level ?? SANDBOX_LEVEL;
+        return rules.sizes.find((size) => size.units === mode.size)?.level ?? SANDBOX_LEVEL;
+    }
+
     /** `new_game`: the first half of the spawn positions goes to the first player. */
     function freshGame(
         first: string,
         second: string,
         mode: GameMode = { kind: "stakes" },
     ): GameState {
-        const map = MapPresetBcs.parse(Uint8Array.from(Buffer.from(BLACK_RAIN, "hex")));
-        const spawns = options.positions ?? BLACK_RAIN_POSITIONS;
+        const level = levelOf(mode);
+        const { map: bytes, positions } = levelMap(level, SANDBOX_LEVELS) ?? BLACK_RAIN_LEVEL;
+        const map = MapPresetBcs.parse(Uint8Array.from(Buffer.from(bytes, "hex")));
+        const spawns = options.positions ?? positions;
         const half = spawns.length / 2;
         return {
             id: hexId("9", ++games),
             version: String(++version),
+            level,
             ...(options.tiles
                 ? { rows: options.tiles.length, cols: options.tiles[0].length }
                 : gridSize(map)),

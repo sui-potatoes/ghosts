@@ -19,6 +19,7 @@
         "bot": "node --experimental-strip-types src/bin/bot.ts",
         "play": "node --no-warnings --experimental-strip-types src/bin/play.ts",
         "fleet": "node --no-warnings --experimental-strip-types src/bin/fleet.ts",
+        "level": "node --no-warnings --experimental-strip-types src/bin/level.ts",
         "test": "node --experimental-strip-types --test tests/*.test.ts",
         "typecheck": "tsc -p ."
     },

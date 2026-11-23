@@ -84,7 +84,10 @@ export interface ChainSeat {
 /** A seat in a game, not a notice. */
 export type GameSeat = ChainSeat & { game: string };
 
-/** Pair with a compatible waiting player, starting the game, or leave an order in the queue. */
+/**
+ * Pair with a compatible waiting player, starting the game, or leave an order in the queue.
+ * Games for stakes start on Black Rain (`GHOSTS.preset`).
+ */
 function findGameTx(accountId: string): Transaction {
     const tx = new Transaction();
     tx.moveCall({
