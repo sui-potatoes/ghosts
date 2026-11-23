@@ -148,7 +148,7 @@ export class Destruction {
         const upper = building.h - 3.15;
         this.fixedBox(new T.Vector3(b.x, base + 3.15 + upper / 2, b.z), new T.Vector3(w, upper, d));
         this.fixedBox(new T.Vector3(b.x, base + 1.5, b.z - d / 2 + 0.1), new T.Vector3(w, 3, 0.2));
-        const outerSide = building.kind === "seven" ? -1 : 1;
+        const outerSide = building.kind === "eleventy" ? -1 : 1;
         this.fixedBox(new T.Vector3(b.x + outerSide * (w / 2 - 0.1), base + 1.5, b.z), new T.Vector3(0.2, 3, d));
       } else {
         this.fixedBox(new T.Vector3(b.x, building.h / 2, b.z), new T.Vector3(b.w, building.h, b.d));

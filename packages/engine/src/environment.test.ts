@@ -71,7 +71,7 @@ test("misses damage intervening cover, never props behind the shooter", () => {
 test("blast reach and building shielding leave remote props intact", () => {
   const map = new TacticalMap(koraPlan);
   assert.deepEqual(map.blastProps([99, 99]), []);
-  // A prop behind the solid seven-store building cannot be hit through it.
+  // A prop behind the solid eleventy-store building cannot be hit through it.
   const plan = { ...koraPlan, props: [
     { id: "shielded", kind: "crate" as const, x: -9.45, z: -11, yaw: 0, seed: 1 },
   ] };
@@ -142,8 +142,8 @@ test("every demo cover can be destroyed through grenade commands and is restored
 
 test("stray rounds shatter only the intersected storefront pane on either street face", () => {
   for (const [from, toward, shop] of [
-    [[-8, 0], [-8, -3], "seven"], [[5, 0], [5, -3], "lawson"],
-    [[-2, -5], [-3, -5], "seven"], [[2, -5], [3, -5], "lawson"],
+    [[-8, 0], [-8, -3], "eleventy"], [[5, 0], [5, -3], "yawnson"],
+    [[-2, -5], [-3, -5], "eleventy"], [[2, -5], [3, -5], "yawnson"],
   ] as const) {
     const map = new TacticalMap(koraPlan);
     const changes = map.strayShotProps(from, toward, 28);
@@ -168,7 +168,7 @@ test("storefront damage is journaled in combat and replayed without opening buil
   assert(game.attack(a, b));
   const event = game.events.at(-1)!;
   assert.equal(event.type, "shot");
-  assert(event.type === "shot" && !event.hit && event.environment?.[0].id.startsWith("lawson-glass-"));
+  assert(event.type === "shot" && !event.hit && event.environment?.[0].id.startsWith("yawnson-glass-"));
   const replay = replayEncounter(game.scenario, game.events);
   for (const prop of game.map.props) assert.equal(game.map.health(prop.id), replay.map.health(prop.id));
   assert.equal(game.map.open([5, -4]), false);
@@ -179,8 +179,8 @@ test("storefront damage is journaled in combat and replayed without opening buil
 test("exterior explosions reach inset storefront glass without opening movement or sight through the store", () => {
   const map = new TacticalMap(koraPlan);
   const changes = map.blastProps([5, -3]);
-  assert(changes.some((p) => p.id.startsWith("lawson-glass-0-") && p.destroyed));
-  assert(!changes.some((p) => p.id.startsWith("seven-glass-")));
+  assert(changes.some((p) => p.id.startsWith("yawnson-glass-0-") && p.destroyed));
+  assert(!changes.some((p) => p.id.startsWith("eleventy-glass-")));
   map.applyPropDamage(changes);
   assert.equal(map.open([5, -4]), false);
   assert.equal(map.clearBuildingShot([6.75, -4], [6.75, -11]), false);

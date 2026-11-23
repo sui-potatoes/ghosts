@@ -18,8 +18,8 @@ export const STREET = {
   cuts: { avenue: 3.25, cross: 3.85, half: 0.7, run: 0.75 },
 };
 export const districtBuildings = [
-  { x: -7, z: -5, w: 5, d: 4, h: 5.4, kind: 'seven' },
-  { x: 6, z: -5, w: 5, d: 4, h: 4.6, kind: 'lawson' },
+  { x: -7, z: -5, w: 5, d: 4, h: 5.4, kind: 'eleventy' },
+  { x: 6, z: -5, w: 5, d: 4, h: 4.6, kind: 'yawnson' },
   { x: -8, z: 4, w: 3, d: 4, h: 6.1, kind: 'laundry' },
   { x: 6, z: 5, w: 4, d: 3, h: 4.4, kind: 'workshop' },
 ] as const;

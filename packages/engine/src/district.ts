@@ -99,8 +99,8 @@ function signAtlas() {
   const c = document.createElement('canvas'); c.width = 1024; c.height = 1024;
   const ctx = c.getContext('2d')!;
   const rows = [
-    ['#f1ede1', '#17794f', '7–ELEVEN', 'OPEN 24 HOURS  /  FOOD • COFFEE • DAILY GOODS'],
-    ['#12578d', '#ffffff', 'LAWSON', 'STATION  /  OPEN 24 HOURS'],
+    ['#2a2238', '#f2c14e', 'ELEVENTY', 'OPEN 25 HOURS  /  FOOD • COFFEE • DAILY GOODS'],
+    ['#1d6f6a', '#f6e7d0', 'YAWNSON', 'STATION  /  NEVER CLOSED'],
     ['#b8b1a0', '#2b4548', 'COIN LAUNDRY', 'WASH & DRY   •   24 HOURS'],
     ['#313a3d', '#d3a04f', 'MORI MOTOR WORKS', 'REPAIRS  /  TYRES  /  SERVICE'],
     ['#f1dfb7', '#673b2c', 'FRESH COFFEE', 'HOT MEALS  •  EVERY DAY'],
