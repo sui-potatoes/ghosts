@@ -15,7 +15,8 @@ import {
     floorCatalog,
     importLevel,
     inLevel,
-    officeFinishes,
+    finishOf,
+    finishTones,
     placementsAt,
     playtestIssues,
     presetIssues,
@@ -30,7 +31,7 @@ import {
     type AssetSpec,
     type Level,
     type LevelLighting,
-    type OfficeFinish,
+    type Finish,
     type Placement,
     type Side,
     type TimeOfDay,
@@ -65,13 +66,6 @@ const TIMES: readonly (TimeOfDay | "interior")[] = [
 const MIGRATED = "Deployment from an older save moved to side A: place side B";
 
 const hex = (value: number) => `#${value.toString(16).padStart(6, "0")}`;
-
-/** Swatch tones for the office color schemes (the fabric tint of each). */
-const FINISH_TONES: Record<OfficeFinish, string> = {
-    sage: "#627d75",
-    slate: "#647487",
-    sand: "#9b846a",
-};
 
 /**
  * CVR / SOL / OBS / ENT, with the seat: ·E edge, ·S surface, ·W wall mount.
@@ -124,7 +118,7 @@ export default function Editor() {
     const [brush, setBrush] = useState("b01");
     const [turn, setTurn] = useState<Turn>(0);
     // The office color scheme new placements carry; placed ones keep their own.
-    const [finish, setFinish] = useState<OfficeFinish>("sage");
+    const [finish, setFinish] = useState<Finish>("sage");
     const finishRef = useRef(finish);
     finishRef.current = finish;
     const [selection, setSelection] = useState<Placement | null>(null);
@@ -232,7 +226,7 @@ export default function Editor() {
                 asset: brush,
                 at: cell,
                 turn: spec.place === "edge" ? side : turn,
-                ...(spec.kind.startsWith("office-") ? { finish: finishRef.current } : {}),
+                ...(spec.finishes ? { finish: finishOf(spec, finishRef.current) } : {}),
             };
             if (canPlace(lv, p)) commit({ ...lv, placements: [...lv.placements, p] });
         } else if (tool === "select") {
@@ -420,7 +414,7 @@ export default function Editor() {
             !q || `${name} ${uid} ${extra}`.toLowerCase().includes(q);
         const byCategory = new Map<string, { uid: string; name: string; tag: string }[]>();
         for (const a of assetCatalog) {
-            if (!match(a.name, a.uid, `${a.kind} ${a.category}`)) continue;
+            if (!match(a.name, a.uid, `${a.kind} ${a.category} ${a.tags ?? ""}`)) continue;
             const list = byCategory.get(a.category) ?? [];
             list.push({ uid: a.uid, name: a.name, tag: tagOf(a) });
             byCategory.set(a.category, list);
@@ -535,7 +529,7 @@ export default function Editor() {
         setSelection(swapped.placements[index]);
     };
 
-    const recolorSelection = (next: OfficeFinish) => {
+    const recolorSelection = (next: Finish) => {
         const sel = selectionRef.current;
         const lv = levelRef.current;
         if (!sel) return;
@@ -650,20 +644,20 @@ export default function Editor() {
             />
         </label>
     );
-    const finishes = (value: OfficeFinish | undefined, apply: (f: OfficeFinish) => void) => (
+    const finishes = (spec: AssetSpec, value: Finish | undefined, apply: (f: Finish) => void) => (
         <div className="flex items-center justify-between gap-2">
             <span className="ed-chip">Finish</span>
             <div className="flex gap-1.5">
-                {officeFinishes.map((f) => (
+                {(spec.finishes ?? []).map((f) => (
                     <button
                         key={f}
                         className="ed-btn flex items-center gap-1.5"
-                        data-on={(value ?? "sage") === f}
+                        data-on={finishOf(spec, value) === f}
                         onClick={() => apply(f)}
                     >
                         <span
                             className="size-2 rounded-full"
-                            style={{ backgroundColor: FINISH_TONES[f] }}
+                            style={{ backgroundColor: hex(finishTones[f]) }}
                         />
                         {f}
                     </button>
@@ -929,8 +923,8 @@ export default function Editor() {
                                             ))}
                                         </select>
                                     </label>
-                                    {selectionSpec.kind.startsWith("office-") &&
-                                        finishes(selection.finish, recolorSelection)}
+                                    {selectionSpec.finishes &&
+                                        finishes(selectionSpec, selection.finish, recolorSelection)}
                                     <div className="flex gap-1.5">
                                         <button
                                             className="ed-btn"
@@ -949,15 +943,12 @@ export default function Editor() {
                             )}
                         </section>
                     )}
-                    {tool === "place" &&
-                        brushSpec &&
-                        "kind" in brushSpec &&
-                        brushSpec.kind.startsWith("office-") && (
-                            <section className="flex flex-col gap-2 border-b border-line pb-3">
-                                <h2 className="ed-chip">Office scheme</h2>
-                                {finishes(finish, setFinish)}
-                            </section>
-                        )}
+                    {tool === "place" && brushSpec && "kind" in brushSpec && brushSpec.finishes && (
+                        <section className="flex flex-col gap-2 border-b border-line pb-3">
+                            <h2 className="ed-chip">Scheme</h2>
+                            {finishes(brushSpec, finish, setFinish)}
+                        </section>
+                    )}
                     {tool === "light" && (
                         <section className="flex flex-col gap-2 border-b border-line pb-3">
                             <h2 className="ed-chip">Light source</h2>

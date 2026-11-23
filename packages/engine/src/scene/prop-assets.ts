@@ -7,6 +7,7 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { propRandom, type MapProp } from "../environment.ts";
 import { cracksWhenDamaged, deformPropGeometry } from "./prop-deformation.ts";
 import { OfficeAssets, type OfficeKind } from "../office/assets.ts";
+import { ShopAssets, SHOP_VARIANTS, type ShopKind } from "../shop/assets.ts";
 
 export interface PropDamageStage {
   intact: T.Group;
@@ -26,6 +27,7 @@ export interface PropAsset {
 /** Shared finishes, meshes and prefractures. No mesh cutting in the combat loop. */
 export class PropAssets {
   private readonly office = new OfficeAssets();
+  private readonly shop = new ShopAssets();
   private readonly assets = new Map<string, PropAsset>();
   private readonly geometries = new Set<T.BufferGeometry>();
   private readonly materials = new Map<string, T.MeshStandardMaterial>();
@@ -105,6 +107,7 @@ export class PropAssets {
 
   get(prop: MapProp): PropAsset {
     if (prop.kind.startsWith("office-")) return this.getOffice(prop);
+    if (prop.kind.startsWith("shop-")) return this.getShop(prop);
     const variant = prop.seed % 3;
     const key = `${prop.kind}:${variant}:${!!prop.cover}:${!!prop.y}:${prop.storefront?.width ?? prop.pane?.width ?? ""}:${prop.storefront?.height ?? prop.pane?.height ?? ""}`;
     const cached = this.assets.get(key);
@@ -546,6 +549,66 @@ export class PropAssets {
     return asset;
   }
 
+  /**
+   * A shop-pack piece: one look per seeded variant and livery. Everything
+   * breaks with it — the carcass into its largest rigid panels, its glass
+   * (fridge doors, lids, case fronts) into shards — and merchandise never
+   * becomes physics bodies of its own.
+   */
+  private getShop(prop: MapProp): PropAsset {
+    const kind = prop.kind.slice(5) as ShopKind, finish = prop.shop?.finish ?? "plain";
+    const variant = prop.seed % SHOP_VARIANTS;
+    const key = `shop:${kind}:${finish}:${variant}`;
+    const cached = this.assets.get(key);
+    if (cached) return cached;
+    const authored = this.shop.parts(kind, finish, variant);
+    authored.updateMatrixWorld(true);
+    const source = new T.Group(), frame = new T.Group(), fragments: T.Mesh[] = [];
+    const candidates: { mesh: T.Mesh; volume: number }[] = [];
+    let panes = 0;
+    authored.traverse(child => {
+      if (!(child instanceof T.Mesh)) return;
+      const material = child.material as T.MeshStandardMaterial;
+      const geometry = this.geometry(child.geometry.clone().applyMatrix4(child.matrixWorld));
+      const mesh = new T.Mesh(geometry, material);
+      mesh.castShadow = !material.transparent; mesh.receiveShadow = true;
+      source.add(mesh);
+      geometry.computeBoundingBox();
+      const size = geometry.boundingBox!.getSize(new T.Vector3());
+      if (material.userData.decal) return;
+      if (material.transparent) {
+        // Large panes shatter; a bounded number of them, the rest just go.
+        if (panes++ >= 4 || size.x * size.y + size.y * size.z + size.x * size.z < 0.05) return;
+        const destructible = new DestructibleMesh(geometry, material, material);
+        const axis = size.x < size.y && size.x < size.z ? "x" : size.y < size.z ? "y" : "z";
+        for (const shard of destructible.fracture(new FractureOptions({ fragmentCount: 5, seed: 911 + panes,
+          voronoiOptions: { mode: "2.5D", projectionAxis: axis } }))) {
+          this.geometry(shard.geometry);
+          const fragment = new T.Mesh(shard.geometry, shard.material);
+          fragment.position.copy(shard.position); fragment.quaternion.copy(shard.quaternion);
+          fragments.push(fragment);
+        }
+        return;
+      }
+      if (material.vertexColors || material.map) return;
+      const area = Math.max(size.x * size.y, size.x * size.z, size.y * size.z);
+      if (area > 0.01) candidates.push({ mesh, volume: size.x * size.y * size.z });
+    });
+    candidates.sort((a, b) => b.volume - a.volume);
+    const rigid = candidates.slice(0, 18 - Math.min(fragments.length, 8));
+    for (const { mesh } of rigid) {
+      const center = mesh.geometry.boundingBox!.getCenter(new T.Vector3());
+      const geometry = this.geometry(mesh.geometry.clone().translate(-center.x, -center.y, -center.z));
+      const fragment = new T.Mesh(geometry, mesh.material); fragment.position.copy(center);
+      mesh.userData.fragmentIndex = fragments.length; fragments.push(fragment);
+    }
+    const bounds = new T.Box3().setFromObject(source);
+    const intact = source.clone(); this.merge(intact);
+    const asset = { intact, frame, fragments, bounds, colliders: [bounds] };
+    this.assets.set(key, asset); this.sources.set(asset, source);
+    return asset;
+  }
+
   /** Merge within an asset only, so each prop can still be removed independently. */
   private merge(group: T.Group) {
     group.updateMatrixWorld(true);
@@ -571,6 +634,7 @@ export class PropAssets {
 
   dispose() {
     this.office.dispose();
+    this.shop.dispose();
     for (const geometry of this.geometries) geometry.dispose();
     for (const material of this.materials.values()) material.dispose();
     for (const texture of this.textures) texture.dispose();

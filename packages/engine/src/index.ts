@@ -32,6 +32,7 @@ export { scenarioById, scenarios } from "./scenarios";
 export { lookName, lookOfGame, type SceneLook } from "./scene-look";
 export { paperTrail } from "./office/scenario";
 export { OfficeAssets, officeCatalog, officeFinishes, type OfficeKind, type OfficeFinish } from "./office/assets";
+export { ShopAssets, shopFinishes, shopKinds, type ShopKind, type ShopFinish } from "./shop/assets";
 export { deployedIntel } from "./squad-bridge";
 export { localDriver, type DriverFactory, type EncounterDriver } from "./driver";
 export { Guide, type GuideHost } from "./guide/run";

@@ -12,9 +12,11 @@
  * points, floors, markers and lighting. The export file reimports losslessly.
  */
 import { MAX_RECRUITS } from "@ghosts/squad/model";
-import { assetByUid, floorByUid, type AssetSpec } from "../catalog.ts";
+import { allFinishes, assetByUid, finishOf, floorByUid, type AssetSpec, type Finish } from "../catalog.ts";
+import type { MapProp } from "../environment.ts";
 import { CELL, type Cell } from "../map.ts";
-import { officeFinishes, type OfficeFinish } from "../office/catalog.ts";
+import type { OfficeFinish, OfficeKind } from "../office/catalog.ts";
+import type { InteriorFinish } from "../shop/catalog.ts";
 import type { TimeOfDay } from "../scene-weather.ts";
 
 /** Quarter turns clockwise; for an edge asset, the side of its cell (0 N, 1 E, 2 S, 3 W). */
@@ -26,8 +28,8 @@ export interface Placement {
   /** Origin cell, 0-based within the level grid. */
   at: Cell;
   turn: Turn;
-  /** Office color scheme (sage, slate, sand); absent is the default. */
-  finish?: OfficeFinish;
+  /** Colour scheme (office sage/slate/sand, shop plain/eleventy/yandottir); absent is the default. */
+  finish?: Finish;
 }
 
 /** One painted floor tile; at most one per cell. */
@@ -171,6 +173,22 @@ export function placementSeat(spec: AssetSpec, at: Cell, turn: Turn): { x: numbe
   const [ax, az] = turnOffset(anchorOf(spec), turn);
   const [ox, oz] = spec.offset ? turnOffset(spec.offset, turn) : [0, 0];
   return { x: (at[0] + ax) * CELL + ox, z: (at[1] + az) * CELL + oz, yaw: turn * (Math.PI / 2), span: 1 };
+}
+
+/**
+ * What a placement draws beyond its seat: its seeded look and colour scheme.
+ * Shop modules take their look from the cell, so neighbours in a run always
+ * differ and a long wall of fridges never repeats in lockstep; every other
+ * asset keeps the editor's one seed, as it has always looked.
+ */
+export function placementLook(spec: AssetSpec, p: { at: Cell; finish?: Finish }): Pick<MapProp, "seed" | "office" | "shop"> {
+  const finish = finishOf(spec, p.finish);
+  if (spec.kind.startsWith("office-"))
+    return { seed: 7, office: { kind: spec.kind.slice(7) as OfficeKind, ...(finish ? { finish: finish as OfficeFinish } : {}) } };
+  if (!spec.kind.startsWith("shop-")) return { seed: 7 };
+  const [x, z] = p.at;
+  const mix = ((Math.imul(x, 73856093) ^ Math.imul(z, 19349663)) >>> 4) & 0xffff;
+  return { seed: ((((x + 2 * z) % 4) + 4) % 4) + 4 * mix, shop: finish ? { finish: finish as InteriorFinish } : {} };
 }
 
 export function inLevel(level: Level, [x, z]: Cell): boolean {
@@ -524,7 +542,7 @@ export function importLevel(data: unknown): { level: Level; dropped: number; mig
     at: [x, z],
     turn: ((turn ?? 0) % 4) as Turn,
     // A finish this build does not know falls back to the default scheme.
-    ...(officeFinishes.includes(finish as OfficeFinish) ? { finish: finish as OfficeFinish } : {}),
+    ...(allFinishes.includes(finish as Finish) ? { finish: finish as Finish } : {}),
   }));
   // Two passes: whatever carries a desk or a wall lands before what mounts on it.
   for (const mounted of [false, true])

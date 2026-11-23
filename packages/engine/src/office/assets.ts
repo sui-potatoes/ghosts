@@ -306,10 +306,13 @@ export class OfficeAssets {
       case "window-wall":
       case "glass-wall": {
         const fullGlass = kind === "glass-wall", windowed = kind === "window-wall";
-        for (const x of [-0.65, 0.65]) box(x, 1.35, 0, 0.05, 2.7, 0.14, steel);
+        // A glazed run shares its posts: square, centred on the module's ends, so
+        // neighbours and 90° turns meet in one post with continuous head and sill.
+        if (fullGlass) for (const x of [-0.675, 0.675]) box(x, 1.35, 0, 0.14, 2.7, 0.14, steel);
+        else for (const x of [-0.65, 0.65]) box(x, 1.35, 0, 0.05, 2.7, 0.14, steel);
         for (const y of [0.04, 2.66]) box(0, y, 0, 1.35, 0.08, 0.14, steel);
         if (fullGlass) {
-          box(0, 1.35, 0, 1.25, 2.55, 0.018, glass, part("glazing"));
+          box(0, 1.35, 0, 1.21, 2.55, 0.018, glass, part("glazing"));
         } else if (windowed) {
           box(0, 0.48, 0, 1.25, 0.88, 0.12, cream);
           box(0, 2.52, 0, 1.25, 0.24, 0.12, cream);

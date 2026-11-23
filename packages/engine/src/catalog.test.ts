@@ -3,7 +3,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assetByUid, assetCatalog, assetSpec, floorByUid, floorCatalog } from "./catalog.ts";
+import { allFinishes, assetByUid, assetCatalog, assetSpec, finishOf, floorByUid, floorCatalog } from "./catalog.ts";
 import { propBlastMultiplier, propHealth, resistsGunfire } from "./environment.ts";
 import { koraPlan } from "./district-plan.ts";
 import { officePlan } from "./office/plan.ts";
@@ -12,7 +12,7 @@ test("uids are unique, opaque and stable", () => {
   assert.equal(new Set(assetCatalog.map((a) => a.uid)).size, assetCatalog.length);
   assert.equal(new Set(floorCatalog.map((f) => f.uid)).size, floorCatalog.length);
   for (const a of assetCatalog) {
-    assert.match(a.uid, /^[bos]\d\d$/);
+    assert.match(a.uid, /^[boskuv]\d\d$/);
     assert.equal(assetByUid(a.uid), a);
   }
   for (const f of floorCatalog) {
@@ -37,6 +37,15 @@ test("uids are unique, opaque and stable", () => {
     s17: "vending", s18: "bicycle", s19: "pallet", s20: "utility-pole",
     o01: "office-desk", o04: "office-meeting-table", o18: "office-steel-door",
     o19: "office-keypad", o20: "office-steel-wall", o25: "office-locker",
+    k01: "shop-fridge-single", k03: "shop-fridge-mid", k05: "shop-fridge-corner", k06: "shop-fridge-dead",
+    k09: "shop-chiller-mid", k14: "shop-wall-shelf-mid", k17: "shop-gondola-single", k19: "shop-gondola-mid",
+    k22: "shop-gondola-tall-mid", k25: "shop-freezer-mid", k26: "shop-counter-straight", k28: "shop-counter-corner",
+    k29: "shop-register", k30: "shop-hot-case",
+    k31: "shop-wood-wall", k34: "shop-lantern", k42: "shop-bar-counter-straight", k45: "shop-stool",
+    k63: "shop-table-set-drinks", k67: "shop-espresso", k76: "shop-bar-fridge", k79: "shop-back-bar-mid",
+    k88: "shop-rail-guard", k95: "shop-pay-station", k99: "shop-ashtray-stand",
+    v01: "shop-kei-car", v05: "shop-taxi", v07: "shop-mamachari",
+    u01: "shop-building-1", u04: "shop-building-8", u05: "shop-auto-door",
   };
   for (const [uid, kind] of Object.entries(pinned)) assert.equal(assetByUid(uid)?.kind, kind);
   for (const uid of ["f01", "f05", "f08", "f12"]) assert.ok(floorByUid(uid));
@@ -84,8 +93,60 @@ test("footprints give every entry tactical meaning", () => {
     if (a.gunproof) assert.ok(a.footprint === "solid" || a.place === "edge");
     if (a.mount === "wall") assert.equal(a.place, "edge");
     if (a.mount === "surface") assert.equal(a.footprint, "none");
+    // A scheme list always names its default first and only known schemes.
+    for (const f of a.finishes ?? []) assert.ok(allFinishes.includes(f), `${a.uid} ${f}`);
   }
   // The indestructible stand-in blocks movement without owning cover cells.
   assert.equal(assetByUid("b05")?.hp, 0);
   assert.equal(assetByUid("b05")?.footprint, "obstacle");
+});
+
+test("the shop pack maps onto the existing tactical classes", () => {
+  const shop = assetCatalog.filter((a) => a.kind.startsWith("shop-"));
+  assert.ok(shop.length >= 110);
+  for (const a of shop) {
+    assert.match(a.uid, /^[kuv]\d\d$/);
+    assert.ok(a.tags, `${a.uid} is searchable`);
+  }
+  for (const a of shop.filter((a) => /^k(0\d|[12]\d|30)$/.test(a.uid)))
+    assert.deepEqual(a.finishes, ["plain", "eleventy", "yandottir"], a.uid);
+  assert.deepEqual(assetByUid("k31")?.finishes, ["cedar", "smoked", "black"]);
+  const of = (kind: string) => shop.find((a) => a.kind === `shop-${kind}`)!;
+  // Everything a frag can destroy is `cover`: on chain an Obstacle, the one cell class a grenade
+  // clears, so the rules and the scene agree when it breaks — the full-height fridges included.
+  for (const kind of ["fridge-mid", "fridge-corner", "chiller-single", "wall-shelf-left", "gondola-tall-mid", "back-bar-mid",
+    "bar-fridge", "gondola-mid", "gondola-end", "freezer-mid", "counter-straight", "counter-corner", "table-four",
+    "beer-crates", "sake-barrel", "cafe-table", "dumpster", "ac-pair", "roll-cage"])
+    assert.equal(of(kind).footprint, "cover", kind);
+  // No new cell asset is a permanent no-go tile: seating is walk-through dressing.
+  for (const a of shop) if (a.place !== "edge") assert.notEqual(a.footprint, "obstacle", a.uid);
+  for (const kind of ["stool", "cafe-chair"]) assert.equal(of(kind).footprint, "none");
+  // The register and hot case are counter-top clutter; the counter carries them.
+  for (const kind of ["register", "hot-case"]) {
+    assert.equal(of(kind).mount, "surface");
+    assert.equal(of(kind).footprint, "none");
+  }
+  assert.equal(of("counter-end").top, 1);
+  // Every run piece of a kit shares its durability, so a run breaks evenly.
+  for (const family of ["fridge", "chiller", "wall-shelf"]) {
+    const hp = new Set(shop.filter((a) => a.kind.startsWith(`shop-${family}-`)).map((a) => a.hp));
+    assert.equal(hp.size, 1, family);
+  }
+  assert.equal(finishOf(of("fridge-mid")), "plain");
+  assert.equal(finishOf(of("fridge-mid"), "sage"), "plain");
+  assert.equal(finishOf(of("fridge-mid"), "yandottir"), "yandottir");
+  assert.equal(finishOf(assetSpec("barrier")), undefined);
+  // Edges follow the street fences: a low rail is low cover, a tall mesh is high (obstacle),
+  // a chain or an opening is a passage, a doorway in glazing too.
+  assert.equal(of("rail-guard").footprint, "cover");
+  assert.equal(of("rail-mesh").footprint, assetByUid("s15")!.footprint);
+  for (const kind of ["rail-chain", "rail-gap", "auto-door", "noren"]) assert.equal(of(kind).footprint, "none");
+  for (const kind of ["bus-shelter", "taxi-shelter"]) assert.equal(of(kind).footprint, "cover");
+  // Things a frag cannot remove are wall tiles with no hit points, like the building block.
+  for (const kind of ["kei-car", "van", "taxi", "building-1", "building-8"]) {
+    assert.equal(of(kind).footprint, assetByUid("b06")!.footprint);
+    assert.equal(of(kind).hp, 0);
+  }
+  assert.deepEqual(new Set(of("hatchback").cells.map(([x]) => x)), new Set([0, 1]));
+  assert.equal(of("kei-car").cells.length, 3);
 });

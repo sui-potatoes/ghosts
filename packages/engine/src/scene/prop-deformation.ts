@@ -9,7 +9,8 @@ export const cracksWhenDamaged = (kind: PropKind) =>
   kind === "office-glass-wall" || kind === "office-glass-door";
 
 export const staysRigidWhenDamaged = (kind: PropKind) =>
-  kind === "cargo" || kind === "barrels" || kind === "smoking-barrel" || kind.startsWith("fence-") || kind.startsWith("office-");
+  kind === "cargo" || kind === "barrels" || kind === "smoking-barrel" || kind.startsWith("fence-") || kind.startsWith("office-") ||
+  kind.startsWith("shop-");
 
 /** Apply the same prop-space warp to panels, trim and labels so they stay attached. */
 export function deformPropGeometry(geometry: T.BufferGeometry, bounds: T.Box3, kind: PropKind, strength: number) {

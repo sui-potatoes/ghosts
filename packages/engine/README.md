@@ -306,6 +306,22 @@ wide and 2.7m high. Door leaves retain the `door-hinge` pivot. `officeCatalog`
 exports the supported kinds. Remove instances before disposing their owning
 `OfficeAssets` cache; do not dispose individual clones' shared buffers.
 
+### Shop interiors pack
+
+`shop/` is the second indoor pack, built the same way as the office one
+(procedural boxes and cylinders, merged per material, `ShopAssets.create` /
+`parts`): the convenience store (wall fridges, open chillers and wall shelves
+as wall-backed run kits — single, end L, mid, end R, inside corner — plus
+gondolas, the chest freezer, the checkout counter, register and hot case),
+the izakaya, coffee shop and bar, the street front, a coin car park, no-smoking
+signs, parked vehicles, building masses and the storefront's automatic door.
+`shop/catalog.ts` is the roster (uids `k…`, `u…`, `v…`); store pieces take the
+chain liveries (`plain`, `eleventy`, `yandottir`), joinery the wood stains
+(`cedar`, `smoked`, `black`). Merchandise is vertex-coloured, one draw per
+module, and each cell gets one of four seeded looks so runs never repeat in
+lockstep. Lettering is baked offline (`scripts/bake-lettering.mjs`) from
+`shop/lettering.ts` into one alpha atlas, tinted per sign; no font ships.
+
 The office bin collection includes a wire wastebasket, slotted paper recycling bin,
 stainless pedal bin and wheeled utility bin. All four are placeable in the editor,
 appear in Demo 2 and use the existing rigid debris budget. Lids detach under damage.

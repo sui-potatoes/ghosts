@@ -27,10 +27,9 @@
 import { assetByUid, floorByUid } from "../catalog.ts";
 import type { MapProp } from "../environment.ts";
 import { CELL, type Building, type Cell, type MapPlan } from "../map.ts";
-import type { OfficeKind } from "../office/catalog.ts";
 import { blackRain, type Scenario, type UnitSpec } from "../scenario.ts";
 import type { Role } from "../game.ts";
-import { placementSeat, restHeight, SQUAD_SIZE, toMoveMap, type Level } from "./level.ts";
+import { placementLook, placementSeat, restHeight, SQUAD_SIZE, toMoveMap, type Level } from "./level.ts";
 import { deploymentIssues } from "./preset.ts";
 
 /** The scene cell of the level's `[0, 0]`: the grid centred on the origin. */
@@ -78,14 +77,11 @@ function propOf(level: Level, index: number, origin: Cell): MapProp | null {
     z: seat.z + origin[1] * CELL,
     ...(rest ? { y: rest } : {}),
     yaw: seat.yaw,
-    // The editor's seed: every mesh variant reads as it did there.
-    seed: 7,
+    // The editor's look: every mesh variant reads as it did there.
+    ...placementLook(spec, p),
     ...(seat.span !== 1 ? { span: seat.span } : {}),
     // `cover` picks the barrier-sized mesh variants; the rules take cover from the ground, not from it.
     ...(spec.footprint === "cover" ? { cover: [p.at[0] + origin[0], p.at[1] + origin[1]] as Cell } : {}),
-    ...(spec.kind.startsWith("office-")
-      ? { office: { kind: spec.kind.slice(7) as OfficeKind, ...(p.finish ? { finish: p.finish } : {}) } }
-      : {}),
   };
 }
 

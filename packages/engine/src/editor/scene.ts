@@ -14,16 +14,15 @@
 import * as T from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import { assetByUid, floorByUid, type AssetSpec, type FloorSpec } from "../catalog.ts";
+import { assetByUid, floorByUid, type AssetSpec, type Finish, type FloorSpec } from "../catalog.ts";
 import { districtMaps, loadDistrictTextures } from "../district.ts";
 import type { MapProp } from "../environment.ts";
 import { CELL, type Cell } from "../map.ts";
-import type { OfficeFinish, OfficeKind } from "../office/catalog.ts";
 import { applyTimeOfDay } from "../scene-weather.ts";
 import { PropAssets } from "../scene/prop-assets.ts";
 import { floorMaterial, floorMeshes, type FloorTextures } from "./floors.ts";
 import {
-  floorRaise, interiorPreset, newLevel, placementSeat, restHeight,
+  floorRaise, interiorPreset, newLevel, placementLook, placementSeat, restHeight,
   type Level, type LevelLighting, type Placement, type Turn,
 } from "./level.ts";
 
@@ -34,18 +33,15 @@ const placementKey = (p: Placement, rest: number, raise: number) =>
   `${p.asset}:${p.at.join()}:${p.turn}:${rest}:${raise}:${p.finish ?? ""}`;
 
 /** The one fake prop behind a placement; `cover` picks the barrier-sized mesh variants. */
-function propOf(spec: AssetSpec, turn: Turn, finish?: OfficeFinish): MapProp {
+function propOf(spec: AssetSpec, turn: Turn, at: Cell = [0, 0], finish?: Finish): MapProp {
   return {
     id: `editor-${spec.uid}`,
     kind: spec.kind,
     x: 0,
     z: 0,
     yaw: turn * (Math.PI / 2),
-    seed: 7,
+    ...placementLook(spec, { at, finish }),
     ...(spec.footprint === "cover" ? { cover: [0, 0] as Cell } : {}),
-    ...(spec.kind.startsWith("office-")
-      ? { office: { kind: spec.kind.slice(7) as OfficeKind, finish } }
-      : {}),
   };
 }
 
@@ -319,7 +315,7 @@ export class EditorScene {
   // -------------------------------------------------------------------------
 
   private placementObject(spec: AssetSpec, p: Placement, lift: number): T.Object3D {
-    const asset = this.assets.get(propOf(spec, p.turn, p.finish));
+    const asset = this.assets.get(propOf(spec, p.turn, p.at, p.finish));
     const group = new T.Group();
     group.add(asset.intact.clone(), asset.frame.clone());
     const seat = seatOf(spec, p.at, p.turn, lift);

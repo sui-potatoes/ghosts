@@ -14,8 +14,20 @@
  * and never renumbered or reused; `catalog.test.ts` pins them.
  */
 import type { Cell } from "./map.ts";
-import { officeCatalog, type OfficeKind } from "./office/catalog.ts";
+import { officeCatalog, officeFinishes, type OfficeFinish, type OfficeKind } from "./office/catalog.ts";
+import { shopFinishes, shopKinds, shopRoster, woodFinishes, type ShopFinish, type WoodFinish } from "./shop/catalog.ts";
 import type { BlockKind, PropKind, StreetKind } from "./environment.ts";
+
+/** A per-placement colour scheme: the office fabrics, a shop's chain livery, or a wood stain. */
+export type Finish = OfficeFinish | ShopFinish | WoodFinish;
+/** Every scheme a save may name. */
+export const allFinishes: readonly Finish[] = [...officeFinishes, ...shopFinishes, ...woodFinishes];
+/** Swatch tones of each scheme (the office fabric tint, the chain's header colour). */
+export const finishTones: Record<Finish, number> = {
+  sage: 0x627d75, slate: 0x647487, sand: 0x9b846a,
+  plain: 0x6f777b, eleventy: 0x2a2238, yandottir: 0x1d6f6a,
+  cedar: 0x8a6646, smoked: 0x5a4231, black: 0x2c2622,
+};
 
 /**
  * What an asset does to each cell it occupies: `cover` is a waist-high
@@ -77,6 +89,10 @@ export interface AssetSpec {
   blast?: number;
   /** A typed stand-in drawn as a plain mesh, not an authored model. */
   typed?: boolean;
+  /** Extra words the editor's search matches (fridge, cooler, register…). */
+  tags?: string;
+  /** The colour schemes a placement may pick, default first; absent: one look. */
+  finishes?: readonly Finish[];
 }
 
 type Entry = Omit<AssetSpec, "kind" | "name" | "category"> & { name?: string; category?: string };
@@ -172,8 +188,13 @@ export const assetCatalog: readonly AssetSpec[] = [
   })),
   ...street.map((entry): AssetSpec => ({ ...entry })),
   ...officeCatalog.map(([kind, name, group]): AssetSpec => ({
-    kind: `office-${kind}`, name, category: `Office · ${group}`, ...office[kind],
+    kind: `office-${kind}`, name, category: `Office · ${group}`, finishes: officeFinishes, ...office[kind],
   })),
+  ...shopKinds.map((kind): AssetSpec => {
+    const { name, group, scheme = "shop", ...entry } = shopRoster[kind];
+    const finishes = scheme === "shop" ? shopFinishes : scheme === "wood" ? woodFinishes : undefined;
+    return { kind: `shop-${kind}`, name, category: group, ...(finishes ? { finishes } : {}), ...entry };
+  }),
 ];
 
 const byKind = new Map<PropKind, AssetSpec>();
@@ -188,6 +209,12 @@ export function assetSpec(kind: PropKind): AssetSpec {
 /** The spec a save references, or undefined for an id this build does not know. */
 export function assetByUid(uid: string): AssetSpec | undefined {
   return byUid.get(uid);
+}
+
+/** The scheme a placement of `spec` draws with: its own when the asset offers it, else the default. */
+export function finishOf(spec: AssetSpec, finish?: Finish): Finish | undefined {
+  if (!spec.finishes?.length) return undefined;
+  return finish && spec.finishes.includes(finish) ? finish : spec.finishes[0];
 }
 
 /** Assets that can stand in for `uid` without changing the tactics: same seat, same footprint. */

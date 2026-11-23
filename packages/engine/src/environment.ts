@@ -4,6 +4,7 @@
 import type { Cell } from "./map.ts";
 import { assetCatalog, assetSpec } from "./catalog.ts";
 import type { OfficeKind, OfficeFinish } from "./office/catalog.ts";
+import type { InteriorFinish, ShopKind } from "./shop/catalog.ts";
 
 export type StreetKind =
   | "barrier" | "crate" | "cargo" | "barrels" | "smoking-barrel"
@@ -13,7 +14,7 @@ export type StreetKind =
 /** Typed stand-ins: tactical semantics as plain meshes, no authored model. */
 export type BlockKind =
   | "block-cover" | "block-high" | "block-weak" | "block-obstacle" | "block-solid" | "block-fill";
-export type PropKind = StreetKind | BlockKind | `office-${OfficeKind}`;
+export type PropKind = StreetKind | BlockKind | `office-${OfficeKind}` | `shop-${ShopKind}`;
 
 /** Positions are world metres; variation is seeded independently of combat. */
 export interface MapProp {
@@ -33,6 +34,8 @@ export interface MapProp {
   /** A frameless pane fitted into static building scenery; never tactical cover. */
   storefront?: { building: number; width: number; height: number };
   office?: { kind: OfficeKind; finish?: OfficeFinish; open?: boolean };
+  /** A shop-pack piece's chain livery; its seeded look comes from `seed`. */
+  shop?: { finish?: InteriorFinish };
   /** Independent glazing in an office wall or door. */
   pane?: { width: number; height: number };
   /** Movement / cover cells owned by this prop, released when it is destroyed. */

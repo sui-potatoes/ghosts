@@ -180,7 +180,9 @@ export class Destruction {
       const destroyed = map.health(prop.id) === 0;
       const view: PropView = { prop, asset, root, intact, colliders, destroyed, shed: new Set() };
       this.props.set(prop.id, view);
-      if (["office-steel-wall", "office-window-wall", "office-shelf", "office-locker"].includes(prop.kind))
+      // Full-height furniture fades like a wall when it hides a unit.
+      if (["office-steel-wall", "office-window-wall", "office-shelf", "office-locker"].includes(prop.kind) ||
+        (prop.kind.startsWith("shop-") && asset.bounds.max.y > 1.7))
         this.officeOcclusion.occluders.push({ group: root, bounds: asset.bounds.clone().applyMatrix4(root.matrixWorld) });
       if (destroyed) {
         intact.visible = false;

@@ -116,10 +116,12 @@ test("the Move grid ranks footprints and writes edge cover onto both sides", () 
 });
 
 test("every catalog edge asset exports a pinned level: obstacles and walls high, low pieces low, doors nothing", () => {
-  const obstacles = ["s13", "s14", "s15", "s16", "o22"]; // glass pane, tall sheet/chain-link/picket, office glass wall
-  const highs = ["s11", "s12", "b02", "b03", "o20", "o21"];
-  const lows = ["s01", "s06", "s07", "s08", "b01", "o16"];
-  const doors = ["o17", "o18"];
+  // glass pane, tall sheet/chain-link/picket, office glass wall, tall car-park mesh
+  const obstacles = ["s13", "s14", "s15", "s16", "o22", "k90"];
+  const highs = ["s11", "s12", "b02", "b03", "o20", "o21", "k31"]; // … and the izakaya's timber wall
+  // … lattice screen, pipe guard rail, bus and taxi shelters
+  const lows = ["s01", "s06", "s07", "s08", "b01", "o16", "k32", "k88", "u12", "u13"];
+  const doors = ["o17", "o18", "k33", "k89", "k91", "u05"]; // … noren, chain, fence opening, automatic door
   const edges = assetCatalog.filter((a) => a.place === "edge" && a.mount !== "wall");
   assert.deepEqual(
     edges.map((a) => a.uid).sort(),
