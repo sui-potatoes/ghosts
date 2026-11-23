@@ -21,12 +21,13 @@
  * `uiTick`/`uiConfirm` from its own handlers.
  */
 
+import { slotFiles, soundUrl } from "@ghosts/engine/sounds";
 import { holdRate } from "../ui/tactile-model";
 import { audioFocused } from "./focus";
 import { channelLevel } from "./levels";
 import { COUNT_GAP_MS, jitter, panFor, pitchFor, RateGate, TICK_GAP_MS } from "./ui-model";
 
-const SRC = "/sounds/ui-tick.wav";
+const SRC = soundUrl(slotFiles("ui.tick")[0]);
 /** The audible window of the sample: skip the attack, keep the knock. */
 const OFFSET = 0.02;
 const LENGTH = 0.08;

@@ -2,34 +2,50 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Recorded sound effects from `public/sounds/<name>.mp3`. An effect kind has
- * one or more takes; the player varies them without an immediate repeat.
- * Levels follow the same shell audio settings as voice lines. Kinds without
- * recordings fall back to the synthesized tones in `audio.ts`.
+ * Recorded sound effects, as the sound manifest lists them
+ * (`audio/manifest.ts`). An effect kind has one or more takes; the player
+ * varies them without an immediate repeat. Levels follow the same shell
+ * audio settings as voice lines. Kinds without recordings fall back to the
+ * synthesized tones in `audio.ts`. With the soundscape on
+ * (`audio/switch.ts`), `CombatAudio` plays the same slots positioned in the
+ * scene instead of through `EffectPlayer`.
  */
+
+import { slotFiles, soundUrl, stem, type SlotId } from "./audio/manifest.ts";
 
 /** `smoke`: the smoke grenade's hiss, synthesized (no recording). */
 export type EffectKind = "rifle" | "sniper" | "pistol" | "grenade" | "pin" | "click" | "reload" | "aim" | "smoke";
 export type EffectWeapon = "rifle" | "sniper" | "pistol";
 
-/**
- * Takes per effect key. A key is the kind, or `<kind>-<weapon>` when the sound
- * depends on the weapon (reloads). Only keys listed here are recorded.
- */
-export const EFFECTS: Record<string, string[]> = {
-  rifle: ["rifle-burst-01", "rifle-burst-02", "rifle-burst-03", "rifle-burst-04"],
-  sniper: ["sniper-rifle-01", "sniper-rifle-02", "sniper-rifle-03"],
-  pistol: ["pistol-01", "pistol-02", "pistol-03"],
-  "reload-pistol": ["pistol-reload-01", "pistol-reload-02", "pistol-reload-03"],
-  "reload-rifle": ["rifle-reload-01", "rifle-reload-02", "rifle-reload-03"],
-  // The sniper reuses the rifle reload until it has takes of its own.
-  "reload-sniper": ["rifle-reload-01", "rifle-reload-02", "rifle-reload-03"],
+/** The manifest slot each effect key plays. */
+const EFFECT_SLOTS: Record<string, SlotId> = {
+  rifle: "weapon.rifle.shot",
+  sniper: "weapon.sniper.shot",
+  pistol: "weapon.pistol.shot",
+  "reload-pistol": "weapon.pistol.reload",
+  "reload-rifle": "weapon.rifle.reload",
+  "reload-sniper": "weapon.sniper.reload",
   // Raising the weapon when fire mode opens.
-  "aim-pistol": ["pistol-click-01"],
+  "aim-pistol": "weapon.pistol.raise",
   // The pin comes out as the grenade leaves the hand; the blast lands with it.
-  pin: ["grenade-safety-01"],
-  grenade: ["grenade-explodes-01"],
+  pin: "grenade.pin",
+  grenade: "grenade.blast",
 };
+
+/** Synthesized kinds, with no recording: slots only the sound manifest plays. */
+const TONE_SLOTS: Partial<Record<EffectKind, SlotId>> = {
+  smoke: "grenade.smoke",
+  click: "combat.click",
+};
+
+/**
+ * Takes per effect key, from the sound manifest (`audio/manifest.ts`). A key
+ * is the kind, or `<kind>-<weapon>` when the sound depends on the weapon
+ * (reloads). Only keys listed here are recorded.
+ */
+export const EFFECTS: Record<string, string[]> = Object.fromEntries(
+  Object.entries(EFFECT_SLOTS).map(([key, id]) => [key, slotFiles(id).map(stem)]),
+);
 
 /** The recorded key for a kind, weapon-specific first, or null when neither exists. */
 export function effectKey(kind: EffectKind, weapon?: EffectWeapon): string | null {
@@ -37,8 +53,19 @@ export function effectKey(kind: EffectKind, weapon?: EffectWeapon): string | nul
   return EFFECTS[kind] ? kind : null;
 }
 
+/** The manifest slot an effect plays, recorded or synthesized; null when it has none. */
+export function effectSlot(kind: EffectKind, weapon?: EffectWeapon): SlotId | null {
+  const key = effectKey(kind, weapon);
+  return key ? EFFECT_SLOTS[key] : (TONE_SLOTS[kind] ?? null);
+}
+
+/** A take's URL: the manifest's file with that name. */
 export function effectUrl(name: string): string {
-  return `/sounds/${name}.mp3`;
+  for (const id of Object.values(EFFECT_SLOTS)) {
+    const file = slotFiles(id).find((f) => stem(f) === name);
+    if (file) return soundUrl(file);
+  }
+  return soundUrl(name);
 }
 
 /** A take for `key` that is not the one used last time, or null when none is recorded. */

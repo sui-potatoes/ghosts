@@ -32,6 +32,8 @@ export type Settings = {
         sfx: number;
         voice: number;
         ui: number;
+        /** The world around the field: rain, the city, the building. */
+        ambience: number;
         muted: boolean;
     };
     display: {
@@ -68,7 +70,7 @@ export type Settings = {
 };
 
 export const DEFAULTS: Settings = {
-    audio: { master: 50, music: 50, sfx: 80, voice: 80, ui: 80, muted: false },
+    audio: { master: 50, music: 50, sfx: 80, voice: 80, ui: 80, ambience: 70, muted: false },
     display: {
         scanlines: true,
         vignette: true,
@@ -135,6 +137,7 @@ function sanitize(raw: unknown): Settings {
             sfx: level(a.sfx, DEFAULTS.audio.sfx),
             voice: level(a.voice, DEFAULTS.audio.voice),
             ui: level(a.ui, DEFAULTS.audio.ui),
+            ambience: level(a.ambience, DEFAULTS.audio.ambience),
             muted: flag(a.muted, DEFAULTS.audio.muted),
         },
         display: {

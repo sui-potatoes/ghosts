@@ -42,6 +42,8 @@ export function sceneStage(source: RecordSource): SceneStage {
 
     rebuild(events, index) {
       audio.stopVoice();
+      // Sound design: no duck, dip or daze outlives a seek.
+      audio.resetMix();
       const game = rebuildEncounter(s.game.scenario, events, index, prepare);
       s.game = game;
       s.driver = s.makeDriver(game);

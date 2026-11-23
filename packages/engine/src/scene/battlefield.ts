@@ -96,6 +96,16 @@ export class Battlefield {
   onUnitHold: (id: string) => void = () => {};
   /** The pointer kind of the last pick: a tap and a click open the readout differently. */
   lastPointer = "mouse";
+  /**
+   * Sound design (`audio/field.ts`): a shooter settling its aim; a shot's first
+   * tracer, its impact (where, whether it hit, whether it broke cover); a
+   * throw landing; a unit's step; a unit hit or falling.
+   */
+  onShotSteady?: () => void;
+  onShotImpact?: (at: T.Vector3, hit: boolean | Promise<boolean>, broke: boolean) => void;
+  onThrowImpact?: (kind: ThrowOrder, at: Cell) => void;
+  onUnitStep?: (at: T.Vector3, kind: "run" | "cover" | "vault") => void;
+  onUnitReaction?: (at: T.Vector3, down: boolean) => void;
   /** Run after units and plates are placed each rendered frame (the readout follows its unit). */
   readonly frameHooks = new Set<() => void>();
   private hoveredUnit: string | null = null;
@@ -252,6 +262,8 @@ export class Battlefield {
         const current = this.game.unit(id);
         if (current) this.onPick(current.pos, current.id);
       },
+      onStep: (at, kind) => this.onUnitStep?.(at, kind),
+      onReaction: (at, down) => this.onUnitReaction?.(at, down),
     });
     // Outdoors the street's air goes over everything built so far: height fog and the lamps' light volumes.
     this.air = new StreetAir(
@@ -926,6 +938,7 @@ export class Battlefield {
       at,
       () => {
         this.blast.fire(this.game.map, at, kind, reducedMotion());
+        this.onThrowImpact?.(kind, at);
         this.destruction.apply(environment, this.space.vec(at, 0.2));
         for (const c of casualties) this.callout({ hit: true, damage: c.damage }, c.unit);
         this.invalidate();
@@ -949,10 +962,12 @@ export class Battlefield {
     const origin = this.camera.position.clone();
     let impacted = false;
     let called = false;
+    const impact = environment[0]?.impact ? new T.Vector3(...environment[0].impact) :
+      environment.length ? this.destruction.impactPoint(environment[0].id, this.space.vec(a.pos, 1)) : undefined;
     return this.units.fire(a, b, hit, {
       aimed: shoulder,
-      impact: environment[0]?.impact ? new T.Vector3(...environment[0].impact) :
-        environment.length ? this.destruction.impactPoint(environment[0].id, this.space.vec(a.pos, 1)) : undefined,
+      impact,
+      steady: () => this.onShotSteady?.(),
       kick: (t) => {
         if (!shoulder) return;
         this.camera.position.copy(origin);
@@ -960,6 +975,7 @@ export class Battlefield {
         this.camera.lookAt(this.controls.target);
       },
       afterTracer: () => {
+        if (!called) this.onShotImpact?.(impact ?? this.space.vec(b.pos, 1), hit, environment.length > 0);
         if (result && !called) {
           // The first tracer is the impact; a result still on its way shows when it arrives.
           called = true;

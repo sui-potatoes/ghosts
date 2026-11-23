@@ -59,7 +59,7 @@ export function stepTab(
 
 // === Rows from the schema ===================================================
 
-export type LevelKey = "master" | "music" | "sfx" | "voice" | "ui";
+export type LevelKey = "master" | "music" | "sfx" | "voice" | "ui" | "ambience";
 
 export type LevelRow = {
     key: LevelKey;
@@ -80,6 +80,7 @@ export const LEVEL_ROWS: LevelRow[] = [
         preview: "dialogue",
     },
     { key: "ui", label: "Interface", hint: "Menu ticks and clicks" },
+    { key: "ambience", label: "Ambience", hint: "" },
 ];
 
 /** Ten detents, like the classic list's blocks. */
@@ -153,7 +154,7 @@ export const onOff = (on: boolean) => (on ? "on" : "off");
 
 /** What a panel's reset restores: its own store keys, nothing else. */
 export const PANEL_KEYS = {
-    audio: ["master", "music", "sfx", "voice", "ui", "muted"],
+    audio: ["master", "music", "sfx", "voice", "ui", "ambience", "muted"],
     display: [
         "batterySaver",
         "motion",

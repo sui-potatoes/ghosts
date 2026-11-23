@@ -253,7 +253,7 @@ export function AudioPanel() {
     const [audio, setAudio] = useSettingsSection("audio");
 
     const slider = (
-        key: "master" | "music" | "sfx" | "voice" | "ui",
+        key: "master" | "music" | "sfx" | "voice" | "ui" | "ambience",
         label: string,
         description: string,
         preview?: () => void,
@@ -292,6 +292,7 @@ export function AudioPanel() {
         slider("voice", "Dialogue", "Squad chatter and mission dialogue", previewDialogue),
         // No preview callback: the list's own detent tick is the preview.
         slider("ui", "Interface", "Menu ticks and clicks"),
+        slider("ambience", "Ambience", ""),
     ];
 
     return <SettingList rows={rows} />;

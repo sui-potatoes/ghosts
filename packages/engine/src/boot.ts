@@ -3,6 +3,8 @@
 
 import { refresh, showBriefing, watchOpponent } from "./actions";
 import { audio } from "./audio";
+// Sound design: the soundscape hears the field (audio/field.ts).
+import { hearField } from "./audio/field";
 import { bindControls } from "./controls";
 import { bindPadCombat } from "./pad-combat";
 import type { Cell } from "./game";
@@ -106,6 +108,8 @@ export function boot(options: BootOptions): () => void {
       if (disposed) return;
       // A viewer's rosters show both sides.
       for (const u of s.game.units.filter((u) => s.observer || !u.enemy)) s.portraits.set(u.id, battlefield.portrait(u));
+      // Sound design: spatial sound, ambience and the reactive mix for this field.
+      cleanups.push(hearField(s));
       cleanups.push(bindControls({ onPause }));
       cleanups.push(bindPadCombat({ onPause }));
       if (import.meta.env.DEV && review?.startsWith("debrief")) {

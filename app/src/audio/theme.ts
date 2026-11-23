@@ -12,12 +12,13 @@
  * tab never doubles it.
  */
 
+import { SLOTS, soundUrl } from "@ghosts/engine/sounds";
 import { subscribeSettings } from "../settings/store";
 import { audioFocused, subscribeAudioFocus } from "./focus";
 import { channelLevel } from "./levels";
 
-const OPUS = "/sounds/title-theme.opus";
-const AAC = "/sounds/title-theme.m4a";
+const OPUS = soundUrl(SLOTS["music.title"].source.file[0]);
+const AAC = soundUrl(SLOTS["music.title"].source.fallback);
 
 /** Timing breadcrumbs for the dev console; production stays quiet. */
 const debug = import.meta.env.DEV
@@ -158,7 +159,8 @@ function sync() {
     a.play().then(
         () => {
             debug("playing");
-            if (wanted && audioFocused()) ramp(channelLevel("music"), a.currentTime > 0 ? 500 : 1200);
+            if (wanted && audioFocused())
+                ramp(channelLevel("music"), a.currentTime > 0 ? 500 : 1200);
             else a.pause();
         },
         (refusal) => {

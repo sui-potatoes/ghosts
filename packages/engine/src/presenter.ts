@@ -21,9 +21,11 @@ export async function presentShot(
   outcome: Promise<Extract<GameEvent, { type: "shot" }> | null>,
 ) {
   const { battlefield } = session;
+  // Sound design: the world drops away from the order to the impact.
+  audio.beginShot();
   await battlefield.aimReady;
   audio.speak("fire", a);
-  audio.tone(a.weapon);
+  audio.tone(a.weapon, undefined, a);
   await battlefield.fire(a, b, outcome.then((shot) => !!shot?.hit), outcome);
   const shot = await outcome;
   if (shot?.killed) audio.speak("kill", a);
@@ -42,9 +44,10 @@ async function playThrow(u: Unit, at: Cell, kind: ThrowOrder, go: () => Promise<
   const { battlefield, observer } = session;
   await leadIn(battlefield, !!observer, u, at);
   audio.speak(kind === "grenade" ? "grenade" : "utility", u);
-  audio.tone("pin");
+  audio.tone("pin", undefined, u);
   await go();
-  audio.tone(kind === "smoke-grenade" ? "smoke" : "grenade");
+  // Sound design: with the soundscape on, the blast already sounded where and when it landed.
+  if (!audio.spatial) audio.tone(kind === "smoke-grenade" ? "smoke" : "grenade", undefined, at);
   session.notify(THROW_LINE[kind]);
 }
 
@@ -81,17 +84,19 @@ export async function present(event: GameEvent) {
         notify(`${unit!.name} / OVERWATCH`);
         audio.speak("overwatch", unit!);
       } else if (ours(unit!)) {
+        // Sound design: the world drops away from the order to the impact.
+        audio.beginShot();
         await battlefield.aimReady;
         audio.speak("fire", unit!);
       }
-      audio.tone(unit!.weapon);
+      audio.tone(unit!.weapon, undefined, unit);
       await battlefield.play(event);
       if (event.killed) audio.speak("kill", unit!);
       else if (event.hit) audio.speak("hit", target);
       return;
     }
     case "reload":
-      audio.tone("reload", unit!.weapon);
+      audio.tone("reload", unit!.weapon, unit);
       await battlefield.play(event);
       return;
     case "grenade":
@@ -105,10 +110,12 @@ export async function present(event: GameEvent) {
       return;
     case "hunker":
       audio.speak("hunker", unit!);
+      audio.cue("unit.gear", unit);
       await battlefield.play(event);
       notify("HUNKERED / DEFENSE INCREASED");
       return;
     case "overwatch":
+      audio.cue("unit.gear", unit);
       await battlefield.play(event);
       notify("OVERWATCH / REACTION FIRE ARMED");
       return;
@@ -122,10 +129,12 @@ export async function present(event: GameEvent) {
       notify(game.scenario.lines.securedStamp);
       return;
     case "hostile-phase":
+      audio.cue("field.turn");
       if (observer) notify(turnLine(observer.turn, observer.sides[1]));
       else notify("HOSTILE ACTIVITY / STAND BY", "miss");
       return;
     case "turn":
+      audio.cue("field.turn");
       if (observer) notify(turnLine(observer.turn, observer.sides[0]));
       else notify(`TURN ${pad2(event.turn)} / YOUR INITIATIVE`);
       return;

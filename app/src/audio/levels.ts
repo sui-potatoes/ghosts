@@ -16,7 +16,7 @@ export function gain(level: number): number {
 }
 
 /** The amplitude one channel plays at under the saved sliders; muted is silence. */
-export function channelLevel(channel: "music" | "sfx" | "voice" | "ui"): number {
+export function channelLevel(channel: "music" | "sfx" | "voice" | "ui" | "ambience"): number {
     const a = getSettings().audio;
     return a.muted ? 0 : gain(a.master) * gain(a[channel]);
 }
