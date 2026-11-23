@@ -58,19 +58,36 @@ export function noren(b: Build) {
   }
 }
 
-export function lantern(b: Build) {
-  const paper = glow(b, 0xc8392c, 0.85), lacquer = b.kit.material(0x161412, 0.2, 0.5);
-  b.cyl(0, 2.5, 0, 0.006, 0.4, lacquer, 4);
-  b.cyl(0, 2.29, 0, 0.115, 0.04, lacquer, 12);
-  b.cyl(0, 2.02, 0, 0.18, 0.5, paper, 14, b.root, 0.17);
-  for (const y of [1.84, 2.02, 2.2]) b.ring(0, y, 0, 0.181, 0.004, lacquer, b.root).rotation.x = Math.PI / 2;
-  b.cyl(0, 1.75, 0, 0.12, 0.04, lacquer, 12);
+/**
+ * A chōchin: an elongated paper cylinder bellied at the middle, on bamboo
+ * ribs, with black lacquered rings at top and bottom and bold brush lettering
+ * down the front, softly lit from inside. Red (akachōchin) by default; the
+ * white one is `lanternWhite`. It hangs on a short cord from 2.7 m.
+ */
+export function lantern(b: Build, white = false) {
+  const paper = white ? glow(b, 0xece6d8, 0.55) : glow(b, 0xb8352a, 0.7);
+  const rib = b.kit.material(white ? 0xb8b0a0 : 0x7a2018, 0, 0.8), lacquer = b.kit.material(0x141210, 0.2, 0.45);
+  b.cyl(0, 2.6, 0, 0.005, 0.2, lacquer, 4);
+  b.cyl(0, 2.49, 0, 0.11, 0.05, lacquer, 14);
+  const profile = [0.12, 0.155, 0.175, 0.18, 0.175, 0.155, 0.12];
+  for (let i = 0; i < profile.length - 1; i++) {
+    const top = 2.46 - i * 0.1;
+    b.cyl(0, top - 0.05, 0, profile[i + 1], 0.1, paper, 16, b.root, profile[i]);
+  }
+  for (let i = 1; i < 13; i++) {
+    const y = 2.46 - i * 0.05, t = (i / 12) * (profile.length - 1), k = Math.min(profile.length - 2, Math.floor(t));
+    const r = profile[k] + (profile[k + 1] - profile[k]) * (t - k);
+    b.ring(0, y, 0, r + 0.002, 0.0025, rib, b.root, 16).rotation.x = Math.PI / 2;
+  }
+  b.cyl(0, 1.84, 0, 0.115, 0.05, lacquer, 14);
   const text = b.variant % 2 ? "yakitori" : "izakaya";
   for (const s of [1, -1]) {
-    const mark = b.sign(text, 0, 2.02, s * 0.183, 0.14, 0.42, b.root, "print", false);
+    const mark = b.sign(text, 0, 2.15, s * 0.183, 0.15, 0.46, b.root, "print", false);
     if (s < 0) mark.rotation.y = Math.PI;
   }
 }
+
+export const lanternWhite = (b: Build) => lantern(b, true);
 
 const strips = ["beer", "skewers", "edamame", "tofu", "karaage", "sashimi", "shochu", "nihonshu"];
 

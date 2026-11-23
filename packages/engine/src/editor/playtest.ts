@@ -30,8 +30,9 @@ import type { MapProp } from "../environment.ts";
 import { CELL, type Building, type Cell, type MapPlan } from "../map.ts";
 import { blackRain, type Scenario, type UnitSpec } from "../scenario.ts";
 import type { Role } from "../game.ts";
-import { placementLook, placementSeat, restHeight, SQUAD_SIZE, toMoveMap, type Level } from "./level.ts";
+import { edgeRaise, floorRaise, placementLook, placementSeat, restHeight, SQUAD_SIZE, toMoveMap, type Level } from "./level.ts";
 import { deploymentIssues } from "./preset.ts";
+import { buildingBlocks } from "./buildings.ts";
 
 /** The scene cell of the level's `[0, 0]`: the grid centred on the origin. */
 export function levelOrigin(level: Level): Cell {
@@ -70,7 +71,13 @@ function propOf(level: Level, index: number, origin: Cell): MapProp | null {
   const spec = assetByUid(p.asset);
   if (!spec) return null;
   const seat = placementSeat(spec, p.at, p.turn);
-  const rest = restHeight(level, p);
+  let rest = restHeight(level, p);
+  // The field stands a prop on the floor of the cell its centre rounds into; an edge piece
+  // stands on the lower of its two cells instead (see `edgeRaise`).
+  if (spec.place === "edge") {
+    const picked: Cell = [Math.round(seat.x / CELL), Math.round(seat.z / CELL)];
+    rest += edgeRaise(level, p.at, p.turn) - floorRaise(level, picked);
+  }
   return {
     id: `level-${index}`,
     kind: spec.kind,
@@ -95,9 +102,14 @@ export function levelProps(level: Level): { props: MapProp[]; fixed: MapProp[] }
   const origin = levelOrigin(level);
   const props: MapProp[] = [];
   const fixed: MapProp[] = [];
+  const { faces, blockOf } = buildingBlocks(level);
   level.placements.forEach((p, i) => {
     const prop = propOf(level, i, origin);
     if (!prop) return;
+    // A building piece draws only the faces that look out of its block.
+    if (faces.has(i)) prop.faces = faces.get(i);
+    // Every cell of a block shares one seed: one facade style per building.
+    if (blockOf.has(i)) prop.seed = (blockOf.get(i)! * 5 + 3) % 4 + 4 * blockOf.get(i)!;
     (assetByUid(p.asset)!.hp > 0 ? props : fixed).push(prop);
   });
   return { props, fixed };

@@ -79,6 +79,15 @@ export const lettering: readonly Lettering[] = [
   { id: "tenants", text: "テナント募集", font: "sans", shape: "v", ink: 0xc8302a, ground: 0xf2f0ea, gloss: "tenants wanted", use: "building vertical sign" },
   { id: "bus-stop", text: "バス停", font: "sans", shape: "h", ink: 0xf2f0ea, ground: 0x23508c, gloss: "bus stop", use: "bus shelter roof sign" },
   { id: "taxi-stand", text: "タクシー乗り場", font: "sans", shape: "h", ink: 0x1d1a17, ground: 0xe6b84a, gloss: "taxi stand", use: "taxi shelter roof sign" },
+  { id: "24h", text: "24時間", font: "sans", shape: "v", ink: 0xf2f0ea, ground: -1, gloss: "24 hours", use: "blade sign, pylon" },
+  { id: "atm", text: "ATM", font: "sans", shape: "h", ink: 0xf2f0ea, ground: -1, gloss: "ATM (Latin)", use: "ATM header" },
+  { id: "sale", text: "セール", font: "sans", shape: "h", ink: 0xf2f0ea, ground: 0xc8302a, gloss: "sale", use: "window poster" },
+  { id: "new", text: "新発売", font: "sans", shape: "h", ink: 0x24201c, ground: 0xf2c14e, gloss: "new release", use: "window poster" },
+  { id: "toilet", text: "トイレ", font: "sans", shape: "h", ink: 0x24201c, ground: -1, gloss: "toilet", use: "toilet door plate" },
+  { id: "burnable", text: "燃えるゴミ", font: "sans", shape: "h", ink: 0x24201c, ground: 0xf2f0ea, gloss: "burnable rubbish", use: "recycling bank label" },
+  { id: "pet", text: "ペットボトル", font: "sans", shape: "h", ink: 0x24201c, ground: 0xf2f0ea, gloss: "PET bottles", use: "recycling bank label" },
+  { id: "cans", text: "カン・ビン", font: "sans", shape: "h", ink: 0x24201c, ground: 0xf2f0ea, gloss: "cans and bottles", use: "recycling bank label" },
+  { id: "works", text: "工事中", font: "sans", shape: "h", ink: 0xc8302a, ground: -1, gloss: "under construction", use: "roadworks board" },
   { id: "street-smoking-paint", text: "路上喫煙禁止", font: "sans", shape: "h", ink: 0xe8e4d8, ground: -1, gloss: "no smoking on the street", use: "pavement marking" },
 ];
 

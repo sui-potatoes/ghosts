@@ -5,7 +5,8 @@ import * as T from "three";
 import type RAPIER from "@dimforge/rapier3d-compat";
 import { propHealth, propRandom, type MapProp, type PropDamage } from "../environment.ts";
 import { footprint, type TacticalMap } from "../map.ts";
-import { PropAssets, type PropAsset, type PropDamageStage } from "./prop-assets.ts";
+import { PropAssets, type DoorLeaf, type PropAsset, type PropDamageStage } from "./prop-assets.ts";
+import { CELL } from "../map.ts";
 import { SurfaceDamage } from "./surface-damage.ts";
 import { cracksWhenDamaged } from "./prop-deformation.ts";
 import { BuildingFade, Occlusion } from "./occlusion.ts";
@@ -33,6 +34,9 @@ interface PropView {
   shed: Set<number>;
   colliders: RAPIER.Collider[];
   destroyed: boolean;
+  /** Door leaves in this prop's frame, and how far open they are (0 shut, 1 open). */
+  doors?: { leaf: T.Object3D; door: DoorLeaf }[];
+  open?: number;
 }
 interface Debris {
   mesh: T.Mesh;
@@ -95,7 +99,8 @@ export class Destruction {
     return this.debris.some((part) => !!part.body);
   }
 
-  get fading() { return this.officeOcclusion.active; }
+  get fading() { return this.officeOcclusion.active || this.doorsMoving; }
+  private doorsMoving = false;
 
   get stats() {
     return {
@@ -179,6 +184,9 @@ export class Destruction {
       }
       const destroyed = map.health(prop.id) === 0;
       const view: PropView = { prop, asset, root, intact, colliders, destroyed, shed: new Set() };
+      const doors: { leaf: T.Object3D; door: DoorLeaf }[] = [];
+      root.traverse((o) => { if (o.userData.door) doors.push({ leaf: o, door: o.userData.door as DoorLeaf }); });
+      if (doors.length) { view.doors = doors; view.open = 0; }
       this.props.set(prop.id, view);
       // Full-height furniture fades like a wall when it hides a unit.
       if (["office-steel-wall", "office-window-wall", "office-shelf", "office-locker"].includes(prop.kind) ||
@@ -186,6 +194,7 @@ export class Destruction {
         this.officeOcclusion.occluders.push({ group: root, bounds: asset.bounds.clone().applyMatrix4(root.matrixWorld) });
       if (destroyed) {
         intact.visible = false;
+        for (const { leaf } of view.doors ?? []) leaf.visible = false;
         for (const collider of colliders) this.world.removeCollider(collider, true);
         colliders.length = 0;
       } else if (map.health(prop.id) < propHealth[prop.kind]) this.showDamage(view, map.health(prop.id));
@@ -217,9 +226,37 @@ export class Destruction {
 
   syncOfficeVisibility(camera: T.Vector3, points: T.Vector3[], dt = 1 / 60) {
     this.officeOcclusion.update(camera, points, dt);
+    this.animateDoors(points.slice(1), dt);
     for (const view of this.props.values()) if (view.prop.support) {
       const owner = this.props.get(view.prop.support);
       if (owner) view.root.visible = owner.root.visible && !owner.destroyed;
+    }
+  }
+
+  /**
+   * Doors open for whoever comes near: leaves slide or swing open while any
+   * unit stands within a tile and a half, and close after. Presentation only:
+   * on chain the doorway is an open edge either way. Reduced motion shows
+   * them open or shut without the travel.
+   */
+  private animateDoors(units: readonly T.Vector3[], dt: number) {
+    const snap = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const at = new T.Vector3();
+    this.doorsMoving = false;
+    for (const view of this.props.values()) {
+      if (!view.doors) continue;
+      view.root.getWorldPosition(at);
+      const near = !view.destroyed && units.some((p) => Math.hypot(p.x - at.x, p.z - at.z) < CELL * 1.5);
+      const target = near ? 1 : 0, before = view.open!;
+      view.open = snap ? target : before + Math.sign(target - before) * Math.min(Math.abs(target - before), dt * 2.2);
+      if (view.open !== target) this.doorsMoving = true;
+      if (view.open === before) continue;
+      const t = view.open! * view.open! * (3 - 2 * view.open!);
+      for (const { leaf, door } of view.doors) {
+        if (door.slide !== undefined) leaf.position.x = door.rest + door.slide * t;
+        else leaf.rotation.y = door.rest + (door.swing ?? 0) * t;
+        leaf.visible = !view.destroyed;
+      }
     }
   }
 
@@ -251,6 +288,7 @@ export class Destruction {
       }
       view.destroyed = true;
       view.intact.visible = false;
+      for (const { leaf } of view.doors ?? []) leaf.visible = false;
       view.damage?.dispose(); view.damage = undefined;
       for (const collider of view.colliders) this.world.removeCollider(collider, true);
       view.colliders.length = 0;

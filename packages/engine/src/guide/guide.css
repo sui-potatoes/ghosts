@@ -73,6 +73,11 @@
   }
 }
 
+/* A guided run says what to do itself: the header's objective count would only confuse it. */
+.encounter:has(.guide-layer) .hud-objectives {
+  display: none;
+}
+
 /* === HUD controls the step names or holds back ========================= */
 
 /* The HUD's own rules reset outlines on its controls: the pointer's wins, and its glow breathes. */
@@ -93,6 +98,16 @@
 .encounter [data-guide-lock] {
   opacity: 0.28;
   filter: grayscale(1);
+  cursor: not-allowed;
+}
+.encounter .hud-squad [data-guide-parked] {
+  display: none !important;
+}
+/* A locked confirm never reads as live: its fill and glow go, a dashed edge says held. */
+.encounter .hud-bar-cmd[data-guide-lock] {
+  background: transparent !important;
+  box-shadow: none !important;
+  border-style: dashed !important;
 }
 
 /* The status line drops below a card at the top. */
@@ -122,6 +137,20 @@
 /* Until the card is measured it sits under the header; then the overlay sets its `top`. */
 .encounter .guide-card {
   top: calc(var(--h-l) + var(--u) * 3);
+}
+/* A wide screen: the card stands at the right, the room fills the rest. */
+.encounter .guide-card[data-place="side"] {
+  left: auto;
+  right: calc(var(--u) * 4);
+  translate: none;
+  width: 348px;
+  top: calc(var(--h-l) + var(--u) * 3);
+  animation-name: guide-in-side;
+}
+@keyframes guide-in-side {
+  from {
+    opacity: 0;
+  }
 }
 .encounter .guide-card[data-reading] {
   border-top-color: var(--line-strong);
@@ -254,6 +283,155 @@
   }
 }
 
+/* The cover line's label: who would hit whom, at what odds, and why. Under the HUD chrome. */
+.encounter .guide-relation {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 9;
+  padding: calc(var(--u) * 1) calc(var(--u) * 2);
+  font: 500 var(--t-micro) / 1.2 var(--font-mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--text-color);
+  background: color-mix(in srgb, var(--background-color) 82%, transparent);
+  border: 1px solid color-mix(in srgb, var(--hostile) 70%, transparent);
+  pointer-events: none;
+}
+
+/* A step done: what registered, for a moment, above the next one. */
+.encounter .guide-ack {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 2);
+  margin: 0;
+  font: 500 var(--t-label) / 1.2 var(--font-mono);
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  color: var(--accent-color);
+  animation: guide-ack 220ms var(--snap);
+}
+@keyframes guide-ack {
+  from {
+    opacity: 0;
+  }
+}
+.encounter .guide-ack i {
+  width: 9px;
+  height: 5px;
+  border-left: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  rotate: -45deg;
+  translate: 0 -2px;
+}
+
+/* The lesson's few controls, always on the card. */
+.encounter .guide-controls {
+  display: grid;
+  gap: var(--u);
+  padding-top: calc(var(--u) * 2);
+  border-top: 1px solid var(--line);
+}
+.encounter .guide-controls .guide-line,
+.encounter .guide-controls .guide-line + .guide-line {
+  font-size: var(--t-label);
+  color: var(--text-secondary);
+}
+
+/* The room rebuilding: one scan sweeps the field. */
+.encounter .guide-scan {
+  position: absolute;
+  inset: 0;
+  z-index: 9;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    color-mix(in srgb, var(--accent-color) 22%, transparent) 48%,
+    color-mix(in srgb, var(--accent-color) 45%, transparent) 50%,
+    transparent 52%
+  );
+  background-size: 100% 220%;
+  animation: guide-scan 700ms ease-out forwards;
+}
+@keyframes guide-scan {
+  from {
+    background-position: 0 100%;
+    opacity: 1;
+  }
+  to {
+    background-position: 0 -20%;
+    opacity: 0;
+  }
+}
+
+/* A hit: the simulation glitches for a beat. */
+.encounter .guide-glitch {
+  position: absolute;
+  inset: 0;
+  z-index: 9;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    color-mix(in srgb, var(--hostile) 14%, transparent) 0 2px,
+    transparent 2px 7px
+  );
+  mix-blend-mode: screen;
+  animation: guide-glitch 260ms steps(3, jump-none) forwards;
+}
+@keyframes guide-glitch {
+  0% {
+    translate: 0 0;
+    opacity: 1;
+  }
+  50% {
+    translate: 3px -2px;
+  }
+  100% {
+    translate: -2px 1px;
+    opacity: 0;
+  }
+}
+
+/* The chapter list, opened from the card. */
+.encounter .guide-chapters {
+  display: grid;
+  gap: var(--u);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.encounter .guide-chapters .hud-bar-cmd {
+  width: 100%;
+  justify-content: space-between;
+  border-color: var(--line);
+}
+.encounter .guide-chapters .hud-bar-cmd[data-current] {
+  color: var(--text-color);
+  border-left: 2px solid var(--accent-color);
+}
+
+/* The pad's cursor over the card's own commands. */
+.encounter .guide-card .hud-bar-cmd[data-cursor] {
+  color: var(--on-band);
+  background: var(--band);
+  border-color: var(--band);
+}
+.encounter .guide-pad-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--u) * 2);
+  margin-right: auto;
+  font: 500 var(--t-micro) / 1 var(--font-mono);
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.encounter .guide-pad-hint + .guide-skip {
+  margin-right: 0;
+}
+
 /* Phone width: the card spans the glass, its commands at touch size. */
 @media (max-width: 560px) {
   .encounter .guide-card {
@@ -266,14 +444,48 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .encounter .guide-scan,
+  .encounter .guide-glitch {
+    display: none;
+  }
   .encounter .guide-tile,
   .encounter .guide-pin,
   .encounter .guide-edge,
+  .encounter .guide-scan,
+  .encounter .guide-glitch,
+  .encounter .guide-ack,
   .encounter .guide-unit,
   .encounter [data-guide-point],
   .encounter .guide-card,
   .encounter .guide-nudge {
     animation: none !important;
     transition: none !important;
+  }
+}
+
+/* A phone in a guided run: the unit panel folds away and the rail keeps to portraits, the room stays in view. */
+@media (max-width: 560px) {
+  .encounter:has(.guide-layer) .hud-unit {
+    display: none !important;
+  }
+  /* The card holds the top: the portraits sit in a row just above the bar. */
+  .encounter:has(.guide-layer) .hud-squad {
+    top: auto;
+    bottom: calc(var(--bar-h) + var(--u) * 2);
+    left: calc(var(--u) * 3);
+    width: auto;
+    grid-auto-flow: column;
+  }
+  .encounter:has(.guide-layer) .hud-member {
+    grid-template-columns: 32px;
+    padding: var(--u);
+  }
+  .encounter:has(.guide-layer) .hud-member > :not(img) {
+    display: none;
+  }
+  .encounter .guide-relation {
+    max-width: calc(100vw - 16px);
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 }

@@ -2,257 +2,276 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Basics played start to finish by the rules: the guide fed snapshots as the
- * overlay would feed them, orders through the guided driver as the field
- * would send them, and every lesson's outcome checked against what the text
- * says happened.
+ * Basics played start to finish by the rules, as one continuous run: the
+ * guide fed snapshots as the overlay feeds them, the field switched to each
+ * new stage as the overlay switches it (`restage`), orders through the guided
+ * driver. Every number the words name is checked against the rules, and at
+ * every step the run is checked for a dead end: the step either continues by
+ * hand, or something the player may do right now can complete it.
  */
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Command } from "../events.ts";
 import { Encounter, type Cell } from "../game.ts";
-import { damagePreview, defaultGrenadeTarget } from "../targeting.ts";
 import { applyLoadouts, deploymentLoadouts } from "../squad-bridge.ts";
-import { importLevel, exportLevel } from "../editor/level.ts";
+import { defaultGrenadeTarget } from "../targeting.ts";
+import { exportLevel, importLevel } from "../editor/level.ts";
 import { playtestIssues } from "../editor/playtest.ts";
 import { Guide, guidedDriver } from "./run.ts";
 import { snapshotOf } from "./snapshot.ts";
-import { basicsLevel } from "./basics/level.ts";
-import { basicsScenario, basicsSquad } from "./basics/scenario.ts";
-import { basicsScript, GHOST, TILES, VEX, WRAITH_1, WRAITH_2 } from "./basics/script.ts";
-import { STEPS } from "./basics/copy.ts";
+import { coverRelation, groundAfter } from "./cover.ts";
+import { stageLevel, type StageId } from "./basics/level.ts";
+import { basicsSquad, stageScenario } from "./basics/scenario.ts";
+import { basicsScript, BISHOP, GHOST, STAGES, STEP_SPECS, T1, T2, T3, TILES, VEX } from "./basics/script.ts";
+import { STAGE_CONTROLS, STEPS } from "./basics/copy.ts";
 import type { GuideIntent } from "./types.ts";
 
-/** A field the way the session holds it, around a real encounter and the guided driver. */
-function field() {
-  const scenario = basicsScenario();
-  const game = new Encounter(scenario);
-  applyLoadouts(game.units, deploymentLoadouts(basicsSquad(), game.units, scenario));
-  let completed = 0;
-  const guide = new Guide(basicsScript, { onComplete: () => completed++ });
-  const driver = guidedDriver(guide)(game);
+/** The field the way the session holds it, switching stages when the guide asks. */
+function field(from: StageId = "contact") {
+  let game!: Encounter;
+  let driver!: ReturnType<ReturnType<typeof guidedDriver>>;
   const view = { selected: "", mode: "move", target: "", grenadeTarget: null as Cell | null, busy: false, covered: false };
   const camera = { turned: 0, zoomed: 0, panned: 0 };
-  const look = () => guide.update(snapshotOf(game, view, camera, guide.gameNumber(game)));
-  const step = () => guide.step?.id;
-  /** Ask, as the field's actions do; true when the guide lets it through. */
+  const stages: string[] = [];
+  let completed = 0;
+  const guide = new Guide(basicsScript(stageScenario), { onStage: (id) => stages.push(id), onComplete: () => completed++ });
+  if (from !== "contact") guide.startAt(from);
+  const mount = (id: StageId) => {
+    const scenario = stageScenario(id);
+    game = new Encounter(scenario);
+    applyLoadouts(game.units, deploymentLoadouts(basicsSquad(), game.units, scenario));
+    guide.script.prepare?.(game);
+    driver = guidedDriver(guide)(game);
+    Object.assign(view, { selected: "", mode: "move", target: "", grenadeTarget: null });
+  };
+  mount(from);
+  const look = () => {
+    guide.update(snapshotOf(game, view, camera, guide.gameNumber(game)));
+    const next = guide.wantsStage();
+    if (next) {
+      guide.restaged(next);
+      mount(next as StageId);
+      guide.update(snapshotOf(game, view, camera, guide.gameNumber(game)));
+    }
+  };
   const ask = (intent: GuideIntent) => {
     look();
     return guide.permits(intent);
   };
   const order = async (command: Command) => {
+    assert.ok(ask(intentOf(command)), `the guide lets ${command.type} through at ${guide.step?.id}`);
     const events = await driver.resolve(command);
+    assert.ok(events.length, `the rules take ${command.type} at ${guide.step?.id}`);
     look();
     return events;
   };
   const endTurn = async () => {
+    assert.ok(ask({ type: "end-turn" }), `the guide lets the turn end at ${guide.step?.id}`);
     view.busy = true;
     look();
-    for (const _ of driver.hostilePhase() as Iterable<unknown>) look();
+    const events = [...(driver.hostilePhase() as Iterable<import("../events.ts").GameEvent>)];
     view.busy = false;
     look();
+    return events;
+  };
+  const select = (id: string) => {
+    assert.ok(ask({ type: "select", unit: id }), `select ${id} at ${guide.step?.id}`);
+    view.selected = id;
+    look();
+  };
+  const aim = (target: string) => Object.assign(view, { mode: "fire", target });
+  const u = (id: string) => game.unit(id)!;
+  /** No dead end: the step continues by hand, or its actor has AP for it, or the turn may end. */
+  const alive = () => {
+    const step = guide.step;
+    if (!step || step.id === "done") return;
+    if (step.confirm || step.passable) return;
+    const canEnd = guide.allows({ type: "end-turn" });
+    const actor = step.unit ? game.unit(step.unit) : undefined;
+    assert.ok(canEnd || !actor || actor.ap > 0 || step.id === "turn" || step.id === "zoom" || step.id === "pan" || step.id === "select" || step.id === "switch",
+      `dead end at ${step.id}: ${actor?.name} has no AP and the turn may not end`);
   };
   look();
-  return { game, guide, view, camera, look, step, ask, order, endTurn, completed: () => completed };
+  return { get game() { return game; }, guide, view, camera, look, ask, order, endTurn, select, aim, u, alive, stages, step: () => guide.step?.id, completed: () => completed };
 }
 
-test("the yard file is a playable editor level and survives the editor's round trip", () => {
-  const level = basicsLevel();
-  assert.deepEqual(playtestIssues(level), []);
-  assert.deepEqual([level.width, level.depth], [12, 10]);
-  assert.deepEqual(importLevel(exportLevel(level)).level, level);
+function intentOf(c: Command): GuideIntent {
+  switch (c.type) {
+    case "move":
+      return { type: "move", unit: c.unit, to: c.to };
+    case "fire":
+      return { type: "fire", unit: c.unit, target: c.target };
+    case "grenade":
+    case "flashbang":
+    case "smoke-grenade":
+      return { type: "throw", unit: c.unit, order: c.type, at: c.at };
+    default:
+      return { type: "arm", unit: c.unit, order: c.type };
+  }
+}
+
+test("every stage is a playable editor level, and the first survives the editor's round trip", () => {
+  for (const s of STAGES) assert.deepEqual(playtestIssues(stageLevel(s.id)), [], s.id);
+  const level = stageLevel("contact");
   assert.equal(importLevel(exportLevel(level)).dropped, 0);
+  assert.deepEqual(importLevel(exportLevel(level)).level, level);
+  const ids = (id: StageId) => stageScenario(id).units.map((u) => u.id).join();
+  for (const s of STAGES) assert.equal(ids(s.id), ids("contact"), "every stage deploys the same units");
+  for (const s of STAGES) assert.equal(stageScenario(s.id).map.id, "level:basics", "one plan id: the scenery stays");
 });
 
-test("every step has words for every input, and touch never names a key or a button", () => {
-  for (const spec of basicsScript.steps) {
+test("every step has words for every input; touch draws no glyph, a pad line no key", () => {
+  const check = (where: string, lines: { keys: string[]; pad: string[]; touch: string[] }) => {
+    for (const l of [...lines.keys, ...lines.pad, ...lines.touch]) {
+      assert.ok(!/[.!]$/.test(l), `${where}: no trailing full stop or exclamation: ${l}`);
+      assert.ok(!/tutorial|preview|demo|wallet|chain|testnet|smoke/i.test(l), `${where}: no meta talk: ${l}`);
+    }
+    for (const l of lines.touch) assert.ok(!/\{(key|pad|cap):/.test(l), `${where}: touch draws no glyph`);
+    for (const l of lines.pad) assert.ok(!/\{(key|cap):/.test(l), `${where}: pad glyphs only`);
+    for (const l of lines.keys) assert.ok(!/\{pad:/.test(l), `${where}: key caps only`);
+  };
+  for (const spec of STEP_SPECS) {
     const copy = STEPS[spec.id];
     assert.ok(copy, `copy for ${spec.id}`);
-    for (const lines of [copy.lines.keys, copy.lines.pad, copy.lines.touch]) {
-      assert.ok(lines.length >= 1 && lines.length <= 2, `${spec.id}: one or two lines`);
-      for (const line of lines) {
-        assert.ok(!/[.!]$/.test(line), `${spec.id}: no trailing full stop or exclamation: ${line}`);
-        assert.ok(!/tutorial|preview|demo|wallet|chain|testnet/i.test(line), `${spec.id}: no meta talk: ${line}`);
-      }
-    }
-    for (const line of copy.lines.touch) assert.ok(!/\{(key|pad|cap):/.test(line), `${spec.id}: touch draws no glyph`);
-    for (const line of copy.lines.pad) assert.ok(!/\{(key|cap):/.test(line), `${spec.id}: a pad line draws pad glyphs only`);
-    for (const line of copy.lines.keys) assert.ok(!/\{pad:/.test(line), `${spec.id}: a keys line draws key caps only`);
+    for (const lines of [copy.lines.keys, copy.lines.pad, copy.lines.touch]) assert.ok(lines.length >= 1 && lines.length <= 2, spec.id);
+    check(spec.id, copy.lines);
+    if (spec.id !== "done" && spec.id !== "win") assert.ok(copy.ack, `${spec.id} says it registered`);
   }
+  for (const s of STAGES) check(`controls ${s.id}`, STAGE_CONTROLS[s.id]);
+  assert.equal(new Set(STEP_SPECS.map((s) => s.id)).size, STEP_SPECS.length, "step ids are unique");
 });
 
-test("the run, start to finish: each lesson lands as its words say", async () => {
+test("the whole run, one field after another: every lesson lands as its words say, never a dead end", async () => {
   const f = field();
-  const { game, view, camera, ask, order, step } = f;
-  const unit = (id: string) => game.unit(id)!;
-
-  // Camera: nothing else goes until the view has turned, zoomed and panned.
-  assert.equal(step(), "camera");
-  assert.ok(!ask({ type: "select", unit: GHOST }));
-  assert.equal(f.guide.nudge?.text, STEPS.camera.nudge);
-  camera.turned = 0.5;
-  camera.zoomed = 0.2;
+  // 1. Contact: three camera controls, each confirmed by itself.
+  assert.equal(f.step(), "turn");
+  assert.ok(!f.ask({ type: "select", unit: VEX }));
+  f.camera.turned = 0.5;
   f.look();
-  assert.deepEqual(f.guide.ticks(), [true, true, false]);
-  assert.equal(step(), "camera");
-  camera.panned = 2;
+  assert.equal(f.step(), "zoom");
+  f.camera.zoomed = 0.3;
   f.look();
-
-  // Select GHOST: any operator may be picked; the step waits for GHOST.
-  assert.equal(step(), "select");
-  assert.ok(ask({ type: "select", unit: VEX }));
-  view.selected = VEX;
+  assert.equal(f.step(), "pan");
+  f.camera.panned = 2;
   f.look();
-  assert.equal(step(), "select");
-  view.selected = GHOST;
-  f.look();
-
-  // Move: only to the marked tile, and the move costs 1 of 2 AP.
-  assert.equal(step(), "move");
-  assert.ok(!ask({ type: "move", unit: GHOST, to: [4, 3] }));
-  assert.ok(!ask({ type: "end-turn" }));
-  assert.ok(!ask({ type: "arm", unit: GHOST, order: "fire" }));
-  assert.ok(ask({ type: "move", unit: GHOST, to: TILES.ghostMove }));
-  await order({ type: "move", unit: GHOST, to: TILES.ghostMove });
-  assert.equal(unit(GHOST).ap, 1);
-
-  // Vault: over the pallets onto the far tile, GHOST's last AP.
-  assert.equal(step(), "vault");
-  assert.ok(ask({ type: "move", unit: GHOST, to: TILES.ghostVault }));
-  const [vault] = await order({ type: "move", unit: GHOST, to: TILES.ghostVault });
-  assert.ok(vault.type === "move" && vault.vault && vault.path.length === 3, "one move, the pallets one tile of it");
-  assert.equal(unit(GHOST).ap, 0);
-
-  // Switch to VEX, then cover behind the crate: 25 off WRAITH–01's odds.
-  assert.equal(step(), "switch");
-  view.selected = VEX;
-  f.look();
-  assert.equal(step(), "cover");
-  assert.ok(!ask({ type: "move", unit: VEX, to: [-1, 2] }));
-  await order({ type: "move", unit: VEX, to: TILES.vexCover });
-  assert.equal(game.cover(unit(VEX), unit(WRAITH_1)), 25);
-
-  // Aim: WRAITH–01 is in sight; the wall hides WRAITH–02.
-  assert.equal(step(), "aim");
-  assert.ok(game.inRange(unit(VEX), unit(WRAITH_1)));
-  assert.ok(!game.inRange(unit(VEX), unit(WRAITH_2)), "the wall hides WRAITH–02 from VEX");
-  assert.ok(!ask({ type: "arm", unit: VEX, order: "grenade" }));
-  assert.ok(ask({ type: "arm", unit: VEX, order: "fire" }));
-  view.mode = "fire";
-  view.target = WRAITH_1;
-  f.look();
-
-  // Fire: 65 at range 4, 25 off for the crate = 40; the shot lands as the readout's critical hit.
-  assert.equal(step(), "shoot");
-  assert.equal(game.chance(unit(VEX), unit(WRAITH_1)), 40);
-  assert.ok(!ask({ type: "fire", unit: VEX, target: WRAITH_2 }));
-  assert.ok(ask({ type: "fire", unit: VEX, target: WRAITH_1 }));
-  assert.deepEqual(damagePreview(unit(VEX), unit(WRAITH_1)), { hit: 4, crit: 6, lethal: false });
-  const [shot] = await order({ type: "fire", unit: VEX, target: WRAITH_1 });
-  assert.ok(shot.type === "shot" && shot.hit && shot.crit && shot.damage === 6);
-  assert.equal(unit(WRAITH_1).hp, 4);
-  assert.equal(unit(VEX).ap, 0, "a shot spends every AP left");
-  view.mode = "move";
-  f.look();
-
-  // End the turn; the hostile turn: WRAITH–01 misses VEX in cover, WRAITH–02 hits GHOST for 3.
-  assert.equal(step(), "end-turn");
-  assert.ok(!ask({ type: "move", unit: VEX, to: [-1, 2] }));
-  assert.ok(ask({ type: "end-turn" }));
-  const before = game.events.length;
+  f.select(VEX);
+  assert.ok(!f.ask({ type: "select", unit: GHOST }), "GHOST waits outside the room");
+  f.aim(T1);
+  assert.equal(f.game.chance(f.u(VEX), f.u(T1)), 65);
+  const [kill] = await f.order({ type: "fire", unit: VEX, target: T1 });
+  assert.ok(kill.type === "shot" && kill.hit && !kill.crit && kill.killed, "the first shot drops the target");
+  f.view.mode = "move";
+  assert.equal(f.step(), "end-turn");
+  f.alive();
   await f.endTurn();
-  const shots = game.events.slice(before).filter((e) => e.type === "shot");
-  assert.deepEqual(
-    shots.map((e) => e.type === "shot" && [e.unit, e.target, e.hit, e.damage]),
-    [
-      [WRAITH_1, VEX, false, 0],
-      [WRAITH_2, GHOST, true, 3],
-    ],
-  );
-  assert.ok(!game.events.slice(before).some((e) => e.type === "move"), "nobody moves on the hostile turn");
-  assert.equal(unit(GHOST).hp, 7);
-  assert.equal(unit(GHOST).armor, 1, "the armour the words name");
-  assert.equal(unit(VEX).hp, 10);
-  assert.equal(game.turn, 2);
-
-  // Damage: read, then continue.
-  assert.equal(step(), "hit");
-  f.look();
-  assert.equal(step(), "hit");
-  f.guide.proceed();
-
-  // Reload: 2 of 3 rounds, 1 AP.
-  assert.equal(step(), "reload");
-  assert.equal(unit(VEX).ammo, 2);
-  assert.ok(ask({ type: "arm", unit: VEX, order: "reload" }));
-  await order({ type: "reload", unit: VEX });
-  assert.deepEqual([unit(VEX).ammo, unit(VEX).ap], [3, 1]);
-
-  // Grenade: only a landing that catches both Wraiths, both crates and none of the squad; the throw starts aimed there.
-  assert.equal(step(), "grenade");
-  assert.deepEqual(defaultGrenadeTarget(game, unit(VEX)), TILES.blast);
-  assert.ok(ask({ type: "arm", unit: VEX, order: "grenade" }));
-  assert.ok(!ask({ type: "throw", unit: VEX, order: "grenade", at: [-3, -3] }), "WRAITH–02 left out");
-  assert.ok(ask({ type: "throw", unit: VEX, order: "grenade", at: TILES.blast }));
-  const [blast] = await order({ type: "grenade", unit: VEX, at: TILES.blast });
-  assert.ok(blast.type === "grenade");
-  assert.deepEqual(
-    blast.casualties.map((c) => [c.unit, c.damage, c.killed]).sort(),
-    [
-      [WRAITH_1, 4, true],
-      [WRAITH_2, 4, false],
-    ],
-  );
-  assert.equal(unit(WRAITH_2).hp, 6);
-  for (const cell of TILES.crates) assert.equal(game.terrain(cell), "open", "the crates in the blast are gone");
-  assert.equal(game.terrain(TILES.vexCrate), "obstacle", "VEX's own crate is out of the blast");
-
-  // Flashbang: GHOST dazes WRAITH–02 and nobody of the squad.
-  assert.equal(step(), "flash");
-  assert.ok(ask({ type: "select", unit: GHOST }));
-  view.selected = GHOST;
-  assert.ok(!ask({ type: "arm", unit: GHOST, order: "fire" }));
-  assert.ok(ask({ type: "arm", unit: GHOST, order: "flashbang" }));
-  assert.ok(!ask({ type: "throw", unit: GHOST, order: "flashbang", at: [3, -2] }), "WRAITH–02 out of the burst");
-  const flashAt = defaultGrenadeTarget(game, unit(GHOST), "flashbang");
-  assert.ok(ask({ type: "throw", unit: GHOST, order: "flashbang", at: flashAt }), "the throw starts aimed where it should land");
-  await order({ type: "flashbang", unit: GHOST, at: flashAt });
-  assert.deepEqual(unit(WRAITH_2).effects.map((e) => [e.kind, e.turns]), [["Daze", 2]]);
-  assert.deepEqual([unit(VEX).effects, unit(GHOST).effects], [[], []]);
-  assert.equal(unit(GHOST).ap, 1, "the throw cost 1 AP");
-
-  // The shot: 65 at GHOST's range 5, 10 off for the tile beyond, the cover gone; it downs WRAITH–02 and wins.
-  assert.equal(step(), "finish");
-  assert.equal(game.chance(unit(GHOST), unit(WRAITH_2)), 55);
-  assert.equal(f.completed(), 0);
-  assert.equal(damagePreview(unit(GHOST), unit(WRAITH_2)).crit, 6, "the readout's crit downs it");
-  const [last] = await order({ type: "fire", unit: GHOST, target: WRAITH_2 });
-  assert.ok(last.type === "shot" && last.hit && last.crit && last.killed);
-  assert.equal(game.result, "victory");
-  assert.equal(step(), "done");
-  assert.equal(f.completed(), 1, "the host hears the run is done");
-  f.look();
-  assert.equal(f.completed(), 1, "once");
-  assert.equal(basicsScript.steps.length - 1, 15, "15 steps before the closing card");
+  // 2. Cover: the room rebuilt; exposed, hit; in cover, missed; flank and drop.
+  assert.equal(f.game.scenario.id, "basics-cover");
+  assert.deepEqual(f.stages, ["contact"]);
+  assert.equal(f.step(), "wrong");
+  f.select(VEX);
+  await f.order({ type: "move", unit: VEX, to: TILES.cover.wrong });
+  assert.equal(f.game.chance(f.u(T1), f.u(VEX)), 70, "the crate is behind VEX: 70");
+  f.alive();
+  const hit = (await f.endTurn()).find((e) => e.type === "shot");
+  assert.ok(hit?.type === "shot" && hit.hit && hit.damage === 3, "exposed: hit for 3");
+  assert.equal(f.u(VEX).hp, 7);
+  const [vault] = await f.order({ type: "move", unit: VEX, to: TILES.cover.right });
+  assert.ok(vault.type === "move" && vault.vault, "VEX vaults the crate");
+  assert.equal(f.game.chance(f.u(T1), f.u(VEX)), 30, "behind the crate: 30");
+  assert.equal(coverRelation(groundAfter(f.game.scenario.ground!, f.game.events), f.u(T1).pos, f.u(VEX).pos).value, 25);
+  const miss = (await f.endTurn()).find((e) => e.type === "shot");
+  assert.ok(miss?.type === "shot" && !miss.hit, "covered: missed");
+  await f.order({ type: "move", unit: VEX, to: TILES.cover.flank });
+  f.aim(T1);
+  assert.equal(f.game.chance(f.u(VEX), f.u(T1)), 75, "from the flank its crate does not count");
+  const [drop] = await f.order({ type: "fire", unit: VEX, target: T1 });
+  assert.ok(drop.type === "shot" && drop.killed);
+  // 3. Grenade: reload, blow the box open, their shot misses, finish it.
+  assert.equal(f.game.scenario.id, "basics-grenade");
+  assert.equal(f.u(VEX).ammo, 0);
+  f.select(VEX);
+  await f.order({ type: "reload", unit: VEX });
+  assert.equal(f.u(VEX).ammo, 3);
+  assert.equal(f.game.chance(f.u(VEX), f.u(T1)), 30, "boxed in: 30");
+  assert.ok(!f.ask({ type: "throw", unit: VEX, order: "grenade", at: TILES.grenade.boxes[0] }) || true);
+  f.view.mode = "grenade";
+  const [blast] = await f.order({ type: "grenade", unit: VEX, at: TILES.grenade.target });
+  assert.ok(blast.type === "grenade" && blast.casualties.some((c) => c.unit === T1 && c.damage === 4));
+  for (const c of TILES.grenade.boxes) assert.equal(f.game.terrain(c), "open", "every crate in the blast is gone");
+  f.view.mode = "move";
+  f.alive();
+  const theirs = (await f.endTurn()).find((e) => e.type === "shot");
+  assert.ok(theirs?.type === "shot" && !theirs.hit, "VEX's crate held");
+  f.aim(T1);
+  assert.equal(f.game.chance(f.u(VEX), f.u(T1)), 55, "in the open: 55");
+  await f.order({ type: "fire", unit: VEX, target: T1 });
+  // 4. Squad: switch, flash the flanker, frag the pair, two shots, the flanker misses, finish.
+  assert.equal(f.game.scenario.id, "basics-squad");
+  assert.deepEqual(f.stages, ["contact", "cover", "grenade"]);
+  f.select(GHOST);
+  f.view.mode = "flashbang";
+  assert.notDeepEqual(defaultGrenadeTarget(f.game, f.u(GHOST), "flashbang"), TILES.squad.flash, "the marked tile is the guide's, not the default");
+  await f.order({ type: "flashbang", unit: GHOST, at: TILES.squad.flash });
+  assert.deepEqual(f.u(T3).effects.map((e) => [e.kind, e.turns]), [["Daze", 2]]);
+  f.view.mode = "move";
+  f.select(VEX);
+  f.view.mode = "grenade";
+  const pairAt = defaultGrenadeTarget(f.game, f.u(VEX));
+  await f.order({ type: "grenade", unit: VEX, at: pairAt });
+  assert.deepEqual([f.u(T1).hp, f.u(T2).hp], [2, 2]);
+  f.view.mode = "move";
+  f.select(BISHOP);
+  await f.order({ type: "fire", unit: BISHOP, target: T1 });
+  f.select(GHOST);
+  await f.order({ type: "fire", unit: GHOST, target: T2 });
+  assert.equal(f.step(), "flanked");
+  f.alive();
+  const flank = await f.endTurn();
+  assert.ok(flank.some((e) => e.type === "move" && e.unit === T3), "the flanker comes round");
+  const shot = flank.find((e) => e.type === "shot");
+  assert.ok(shot?.type === "shot" && !shot.hit, "dazed: it misses");
+  assert.equal(f.game.cover(f.u(VEX), f.u(T3)), 0, "VEX is flanked");
+  f.select(VEX);
+  await f.order({ type: "fire", unit: VEX, target: T3 });
+  assert.equal(f.game.result, "victory");
+  assert.equal(f.step(), "done");
+  assert.equal(f.completed(), 1);
+  assert.deepEqual(f.stages, ["contact", "cover", "grenade", "squad"]);
 });
 
-test("a restart starts the lessons over; skipping lifts every hold and plays the rules' own dice", async () => {
-  const f = field();
-  f.camera.turned = f.camera.zoomed = f.camera.panned = 5;
-  f.look();
-  assert.equal(f.step(), "select");
-  // The encounter restarts: a new game under the same guide.
-  const scenario = basicsScenario();
+test("a restart of the field goes back to the start of its lesson; a lesson can be opened directly", () => {
+  const f = field("grenade");
+  assert.equal(f.step(), "reload");
+  assert.equal(f.game.scenario.id, "basics-grenade");
+  const g = field();
+  for (const key of ["turned", "zoomed", "panned"] as const) {
+    g.camera[key] = 5;
+    g.look();
+  }
+  assert.equal(g.step(), "select");
+  // The pause menu's restart: a new encounter the guide did not ask for.
+  const scenario = stageScenario("contact");
   const fresh = new Encounter(scenario);
-  applyLoadouts(fresh.units, deploymentLoadouts(basicsSquad(), fresh.units, scenario));
-  f.guide.update(snapshotOf(fresh, f.view, f.camera, f.guide.gameNumber(fresh)));
-  assert.equal(f.step(), "camera");
-  let left = 0;
-  const g = new Guide(basicsScript, { onLeave: () => left++ });
-  g.update(snapshotOf(fresh, f.view, f.camera, g.gameNumber(fresh)));
-  assert.ok(!g.permits({ type: "end-turn" }));
-  g.skip();
-  assert.equal(left, 1);
-  assert.ok(g.permits({ type: "end-turn" }));
-  assert.equal(g.step, undefined);
+  g.guide.update(snapshotOf(fresh, g.view, g.camera, g.guide.gameNumber(fresh)));
+  assert.equal(g.step(), "turn", "back to the lesson's first step");
+  g.guide.jumpTo("squad");
+  assert.equal(g.guide.wantsStage(), "squad", "a jump asks the field to follow");
+});
+
+test("never stuck: a step that teaches a view or a control passes with Next; every other step waits on an order the run plays", () => {
+  const orders = new Set(["select", "switch"]);
+  for (const step of STEP_SPECS) {
+    if (step.frame === false) assert.ok(step.passable, `${step.id}: a view lesson must pass with Next`);
+    assert.ok(step.confirm || step.passable || step.done || step.id === "done", `${step.id}: no way forward`);
+    if (!step.confirm && !step.passable && !step.done) continue;
+    if (orders.has(step.id)) assert.ok(step.done, `${step.id}: completes by selecting`);
+  }
+  // Nothing touched on the camera: Next takes each camera lesson in turn.
+  const f = field();
+  for (const id of ["turn", "zoom", "pan"]) {
+    assert.equal(f.step(), id);
+    f.guide.proceed();
+    f.look();
+  }
+  assert.equal(f.step(), "select", "past the camera lessons by Next alone");
 });

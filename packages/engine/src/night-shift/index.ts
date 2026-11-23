@@ -16,7 +16,7 @@
 import { levelView } from "../editor/playtest-view.ts";
 import type { Scenario } from "../scenario.ts";
 import { registerMapView } from "../scene/maps.ts";
-import { nightShiftLevel } from "./level.ts";
+import { nightShiftLevel, nightShiftNextLevel } from "./level.ts";
 import { nightShiftScenario } from "./scenario.ts";
 
 /** Night Shift, ready to mount: the scenario, with its scenery registered for the battlefield. */
@@ -26,6 +26,22 @@ export function nightShift(): Scenario {
   return scenario;
 }
 
-export { nightShiftLevel } from "./level.ts";
+/**
+ * The next revision for Training: the same scenario on `level-next.json`, its
+ * scenery registered under a map id of its own, so a chain match on the
+ * preset still on testnet never draws the wrong ground.
+ */
+export function nightShiftTraining(): Scenario {
+  const base = nightShiftScenario(nightShiftNextLevel());
+  const scenario = { ...base, map: { ...base.map, id: `${base.map.id} · next` } };
+  registerMapView(scenario.map.id, levelView(nightShiftNextLevel()));
+  return scenario;
+}
+
+export { nightShiftLevel, nightShiftNextLevel } from "./level.ts";
 export { nightShiftScenario, NIGHT_SHIFT_ID } from "./scenario.ts";
 export { NIGHT_SHIFT_MAP, NIGHT_SHIFT_NAME, NIGHT_SHIFT_POSITIONS, NIGHT_SHIFT_SIZE } from "./chain.ts";
+export {
+  NIGHT_SHIFT_NEXT_MAP, NIGHT_SHIFT_NEXT_NAME, NIGHT_SHIFT_NEXT_POSITIONS, NIGHT_SHIFT_NEXT_SIZE,
+} from "./chain-next.ts";
+export { NIGHT_SHIFT_SURROUNDINGS, type Surroundings, type SurroundingBuilding } from "./surroundings.ts";

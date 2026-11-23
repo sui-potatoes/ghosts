@@ -72,6 +72,13 @@ export interface AssetSpec {
   /** Metres the authored mesh runs along the edge; scaled to one cell. */
   span?: number;
   /**
+   * `in`: an edge asset with a front. Its +z always faces into the cell it was
+   * placed from, whichever side of that cell the edge is on (plain edge seats
+   * turn east and west edges the other way round, which only symmetric walls
+   * and fences can ignore). Shelters, the storefront glass, the doors.
+   */
+  facing?: "in";
+  /**
    * `surface` items rest on whatever occupies their cell (a desk, a crate —
    * anything with `top`) and cannot sit on a bare floor; `wall` items mount
    * on an edge that already holds a wall or door.
@@ -268,6 +275,10 @@ export const floorCatalog: readonly FloorSpec[] = [
   { uid: "f09", name: "Wood · smoked", texture: "oak", tone: 0x8a7a68 },
   { uid: "f10", name: "Rubber mat", texture: "rubber", tone: 0xffffff },
   { uid: "f11", name: "Steel plate", tone: 0x454c52, rough: 0.4, metal: 0.7 },
+  // Raised to the pavement's height (f01), so a street has two ground levels: only the roadway low.
+  { uid: "f14", name: "Asphalt · raised", street: "asphalt", tone: 0x737c88, rough: 0.72, raise: 0.16 },
+  { uid: "f15", name: "Concrete · raised", street: "concrete", tone: 0x9c9fa3, rough: 0.9, raise: 0.16 },
+  { uid: "f16", name: "Vinyl · raised", texture: "vinyl", tone: 0xffffff, raise: 0.16 },
 ];
 
 const floors = new Map(floorCatalog.map((f) => [f.uid, f]));

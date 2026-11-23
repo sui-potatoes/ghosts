@@ -36,6 +36,8 @@ export interface MapProp {
   office?: { kind: OfficeKind; finish?: OfficeFinish; open?: boolean };
   /** A shop-pack piece's chain livery; its seeded look comes from `seed`. */
   shop?: { finish?: InteriorFinish };
+  /** A building piece's outside faces (bits: 1 +z, 2 +x, 4 -z, 8 -x, local); absent: all four. */
+  faces?: number;
   /** Independent glazing in an office wall or door. */
   pane?: { width: number; height: number };
   /** Movement / cover cells owned by this prop, released when it is destroyed. */

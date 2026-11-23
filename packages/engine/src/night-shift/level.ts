@@ -36,8 +36,18 @@
  */
 import { importLevel, type Level } from "../editor/level.ts";
 import file from "./level.json" with { type: "json" };
+import next from "./level-next.json" with { type: "json" };
 
 /** The level as the editor holds it. */
 export function nightShiftLevel(): Level {
   return importLevel(file).level;
+}
+
+/**
+ * The next revision, as the editor holds it: the block re-planned as a Tokyo
+ * side street (`levels/tokyo-v2.md`). Training plays it now; chain matches
+ * keep `level.json` until the preset is re-created from `chain-next.ts`.
+ */
+export function nightShiftNextLevel(): Level {
+  return importLevel(next).level;
 }

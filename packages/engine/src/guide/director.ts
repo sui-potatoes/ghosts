@@ -11,14 +11,19 @@
  * cancelling are never held. The player can read back the steps already done
  * (`back` / `forward`) without undoing anything, and leave (`skip`).
  */
+import type { Cell } from "../map.ts";
 import type { GuideIntent, GuideSnapshot, Pointer } from "./types.ts";
 
 export interface StepSpec {
   id: string;
+  /** The first step of a stage names it: the field is set up anew for it (a restart of the field goes back here). */
+  stage?: string;
   /** Done when this holds; `start` is the field as the step began. */
   done?: (now: GuideSnapshot, start: GuideSnapshot) => boolean;
   /** A step that only tells: done when the player continues. */
   confirm?: boolean;
+  /** A step that teaches a view or a control, not an order: Next passes it, so nobody is ever held on a gesture. */
+  passable?: boolean;
   /** May complete while an order still animates (the end of a turn); others wait for the scene. */
   busy?: boolean;
   /** What the player may ask for during the step; nothing held back when absent. */
@@ -29,6 +34,12 @@ export interface StepSpec {
   unit?: string;
   /** Progress ticks shown with the step (the camera's three moves). */
   ticks?: (now: GuideSnapshot, start: GuideSnapshot) => boolean[];
+  /** `false`: the step leaves the camera where the player puts it (looking around); others frame the arena. */
+  frame?: false;
+  /** Who covers whom to draw during the step, as `[shooter, operator]`; the target in sight and the operator in hand when absent. */
+  relation?: (now: GuideSnapshot) => [string, string] | null;
+  /** Where the pad's tile cursor (or a throw's landing) jumps on the d-pad: the step's marked tile. */
+  cursor?: (now: GuideSnapshot) => Cell | null;
 }
 
 export interface DirectorState {
@@ -81,10 +92,10 @@ function advance(state: DirectorState, now: GuideSnapshot): DirectorState {
   return { ...state, index, view: index, start: now };
 }
 
-/** The player continues past a step that only tells; nothing for a step that waits on an order. */
+/** The player continues past a step that only tells (or teaches a control); nothing for a step that waits on an order. */
 export function proceed(steps: readonly StepSpec[], state: DirectorState, now: GuideSnapshot): DirectorState {
   const step = current(steps, state);
-  if (!step?.confirm || state.view !== state.index || !settled(step, now)) return state;
+  if (!(step?.confirm || step?.passable) || state.view !== state.index || !settled(step, now)) return state;
   return advance(state, now);
 }
 
@@ -106,6 +117,22 @@ export function skip(state: DirectorState): DirectorState {
 /** A fresh run on a new game (the encounter restarted). */
 export function restart(now: GuideSnapshot): DirectorState {
   return { ...initialState(), start: now };
+}
+
+/** The index of the first step of the stage `index` belongs to (0 when no step names a stage). */
+export function stageStart(steps: readonly StepSpec[], index: number): number {
+  for (let i = Math.min(index, steps.length - 1); i >= 0; i--) if (steps[i].stage) return i;
+  return 0;
+}
+
+/** The stage `index` belongs to, if any. */
+export function stageAt(steps: readonly StepSpec[], index: number): string | undefined {
+  return steps[stageStart(steps, index)]?.stage;
+}
+
+/** Go to step `index` (a stage's first step), on the field `now`. */
+export function jump(state: DirectorState, index: number, now: GuideSnapshot | null): DirectorState {
+  return { ...state, index, view: index, start: now, left: false };
 }
 
 /**

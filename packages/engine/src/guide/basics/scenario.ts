@@ -2,41 +2,66 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Basics as an encounter: the yard played by the rules a chain match on its
- * tile grid follows (`scenarioFromLevel`), with its own words and loadouts.
- * The squad is fixed, so the instructions can name it: VEX with a rifle and a
- * frag grenade, GHOST with a marksman rifle and a flashbang. The Wraiths carry
- * rifles and no armour (10 HP, nothing off a hit, no dodge), so the lessons'
- * damage adds up the same way every run.
+ * Basics as encounters: one per stage, all on the same simulation room and
+ * map plan, played by the rules a chain match on the stage's tile grid
+ * follows (`scenarioFromLevel`). Every stage deploys the same units (so the
+ * field can switch stages without a reload, `restage`): the ones the stage
+ * uses in the room, the rest waiting far outside it. The squad is fixed so
+ * the words can name it: VEX (rifle, frag grenade), GHOST (marksman rifle,
+ * flashbang), BISHOP (rifle). The targets carry rifles and no armour.
  */
 import { initialSquad } from "@ghosts/squad/model";
 import type { Recruit } from "@ghosts/squad/types";
 import { scenarioFromLevel } from "../../editor/playtest.ts";
-import type { Scenario } from "../../scenario.ts";
+import type { Scenario, UnitSpec } from "../../scenario.ts";
 import { BRIEFING } from "./copy.ts";
-import { basicsLevel } from "./level.ts";
+import { parked, stageLevel, type StageId } from "./level.ts";
+import { STAGES } from "./script.ts";
 
-/** The scenario id; the host keys the training's progress by it. */
+/** The training's id; the host keys its progress by it. */
 export const BASICS_ID = "basics";
 
-/** The squad, from the default roster's faces: VEX and GHOST. */
+/** The whole squad, from the default roster's faces: VEX, GHOST and BISHOP. */
 export function basicsSquad(): Recruit[] {
-  const [vex, ghost] = initialSquad().recruits;
-  return [
-    { ...vex, equipment: { ...vex.equipment, primary: "mx4", armor: "spectre", utility: "frag" }, attachments: {} },
-    { ...ghost, equipment: { ...ghost.equipment, primary: "srs9", armor: "spectre", utility: "flash" }, attachments: {} },
-  ];
+  const [vex, ghost, bishop] = initialSquad().recruits;
+  const kit = (r: Recruit, primary: string, utility: string | null): Recruit => ({
+    ...r,
+    equipment: { ...r.equipment, primary, armor: "spectre", utility },
+    attachments: {},
+  });
+  return [kit(vex, "mx4", "frag"), kit(ghost, "srs9", "flash"), kit(bishop, "mx4", null)];
 }
 
-/** Basics, ready to mount. Throws only if the level file stops being playable. */
-export function basicsScenario(): Scenario {
-  const base = scenarioFromLevel(basicsLevel());
+const TARGET_NAMES = ["TARGET–01", "TARGET–02", "TARGET–03"];
+
+/** A stage of Basics as an encounter. */
+export function stageScenario(id: StageId): Scenario {
+  const spec = STAGES.find((s) => s.id === id)!;
+  const base = scenarioFromLevel(stageLevel(id));
+  const squad = base.units.filter((u) => !u.enemy);
+  const hostile = base.units.find((u) => u.enemy)!;
+  const units: UnitSpec[] = [
+    ...squad.map((u, i) => ({ ...u, pos: spec.allies[u.id] ?? parked(i, false) })),
+    ...["h1", "h2", "h3"].map(
+      (uid, i): UnitSpec => ({
+        ...hostile,
+        id: uid,
+        name: TARGET_NAMES[i],
+        full: "Simulation target",
+        role: "ASSAULT",
+        pos: spec.hostiles[uid] ?? parked(i, true),
+        kit: { primary: "mx4", armor: null },
+      }),
+    ),
+  ];
   return {
     ...base,
-    id: BASICS_ID,
-    units: base.units.map((u) =>
-      u.enemy ? { ...u, role: "ASSAULT" as const, kit: { primary: "mx4", armor: null } } : u,
-    ),
+    id: `basics-${id}`,
+    // One plan id for every stage: the scenery stays, the props are the stage's.
+    map: { ...base.map, id: "level:basics" },
+    units,
+    noObjective: true,
+    skipBriefing: true,
     briefing: BRIEFING.briefing,
     location: BRIEFING.location,
     contract: BRIEFING.contract,

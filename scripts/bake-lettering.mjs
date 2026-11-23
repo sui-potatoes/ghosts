@@ -3,7 +3,7 @@
 // Input: every entry of packages/engine/src/shop/lettering.ts. Fonts: assets-src/fonts/ (Yuji
 // Syuku for `brush`, Noto Sans JP for `sans`), read on this machine only and never shipped.
 // Output, both committed:
-//   app/public/demo-assets/textures/shop/lettering.png   white glyphs on clear, 1024 × 1024
+//   app/public/demo-assets/textures/shop/lettering.png   white glyphs on clear, 2048 × 2048
 //   packages/engine/src/shop/lettering-atlas.ts          id → UV rect and aspect
 // Strings that share text, face and direction share one image. Vertical strings are set one
 // glyph per row, centred, with the long vowel mark turned.
@@ -30,12 +30,12 @@ const png = join(root, "app/public/demo-assets/textures/shop/lettering.png");
 const map = join(root, "packages/engine/src/shop/lettering-atlas.ts");
 
 const page = `<!doctype html><meta charset="utf-8"><title>bake lettering</title>
-<body style="background:#333;color:#ddd;font:14px monospace"><p id="state">baking…</p><canvas id="c" width="1024" height="1024" style="background:#000"></canvas>
+<body style="background:#333;color:#ddd;font:14px monospace"><p id="state">baking…</p><canvas id="c" width="2048" height="2048" style="background:#000"></canvas>
 <script type="module">
 const entries = ${JSON.stringify(entries)};
 const families = { brush: "BakeBrush", sans: "BakeSans" };
 for (const [font, family] of Object.entries(families)) document.fonts.add(await new FontFace(family, "url(/font/" + font + ")").load());
-const SIZE = 1024, EM = 66, PAD = 5;
+const SIZE = 2048, EM = 66, PAD = 5;
 const ctx = document.getElementById("c").getContext("2d");
 const set = (e) => ctx.font = e.weight + " " + EM + "px " + families[e.font];
 // One image per distinct text, face and direction; boxes measured first, then shelf-packed tallest first.

@@ -169,9 +169,11 @@ export class Build {
   readonly kit: Kit;
   readonly finish: InteriorFinish;
   readonly variant: number;
+  /** Which local faces are outside (bits: 1 +z, 2 +x, 4 -z, 8 -x); a building draws only those. */
+  readonly faces: number;
 
-  constructor(kit: Kit, name: string, finish: InteriorFinish, variant: number) {
-    this.kit = kit; this.finish = finish; this.variant = variant;
+  constructor(kit: Kit, name: string, finish: InteriorFinish, variant: number, faces = 15) {
+    this.kit = kit; this.finish = finish; this.variant = variant; this.faces = faces;
     this.root.name = name;
     let seed = variant * 7919 + 17;
     for (let i = 0; i < name.length; i++) seed = Math.imul(seed ^ name.charCodeAt(i), 2654435761) >>> 0;
@@ -201,6 +203,11 @@ export class Build {
   get hinoki() { return this.kit.material(0xc9ab80, 0, 0.72); }
   get ceramic() { return this.kit.material(0xe6e1d6, 0, 0.4); }
   get warm() { return this.kit.material(0xffd7a0, 0, 0.4, 1.1, 0xffb060); }
+
+  /** The local face yaws (0 +z, π/2 +x, π -z, -π/2 -x) that are outside. */
+  outsideFaces() {
+    return [0, Math.PI / 2, Math.PI, -Math.PI / 2].filter((_, i) => this.faces & (1 << i));
+  }
 
   pick<V>(list: readonly V[]): V { return list[Math.floor(this.random() * list.length) % list.length]; }
 

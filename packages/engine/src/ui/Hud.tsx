@@ -256,7 +256,9 @@ export function HudHeader({ onMenu }: { onMenu?: () => void }) {
   const down = game.hostileCount - game.enemies.length;
   const phase =
     game.result === "victory"
-      ? "Contract complete"
+      ? s.guide?.script.simulation
+        ? "Simulation complete"
+        : "Contract complete"
       : game.result === "defeat"
         ? "Squad lost"
         : game.phase === "enemy"
@@ -433,7 +435,8 @@ export function SquadRail() {
             data-kia={a.hp <= 0 || undefined}
             disabled={a.hp <= 0}
             aria-pressed={s.selected === a.id}
-            onClick={() => (s.selected === a.id ? deselect() : select(a.id))}
+            aria-label={a.name}
+            onClick={() => (s.selected === a.id ? !s.guide && deselect() : select(a.id))}
           >
             <img src={s.portraits.get(a.id)} alt="" />
             <span className="hud-member-text">

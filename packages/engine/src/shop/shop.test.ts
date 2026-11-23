@@ -52,7 +52,8 @@ test("shop kit builds bounded, finite, floor-origin meshes within one cell and s
     const roomy = spec.place || spec.hp === 0 || spec.cells.length > 1 || spec.mount;
     if (!roomy) for (const v of [bounds.min.x, bounds.max.x, bounds.min.z, bounds.max.z])
       assert(Math.abs(v) <= H + 0.006, `${kind} stays in its cell: ${v}`);
-    assert(calls <= 16, `${kind} batches by material: ${calls} draw calls`);
+    // Built-ins carry a wall and a whole fixture: the two together stay under twenty.
+    assert(calls <= (kind.startsWith("building-wall-") ? 20 : 16), `${kind} batches by material: ${calls} draw calls`);
     assert(triangles < 9000, `${kind} triangle budget: ${triangles}`);
     const meshes: T.Mesh[] = [], copies: T.Mesh[] = [];
     a.traverse(o => { if (o instanceof T.Mesh) meshes.push(o); });
@@ -126,8 +127,10 @@ test("fence and storefront sections share square posts on their edge ends", () =
     // Posts centred on ±H: the run's next section and a 90° turn land on the same post.
     assert(Math.abs(bounds.max.x + bounds.min.x) < 0.001 && bounds.max.x > H && bounds.max.x < H + 0.08, kind);
   }
-  const glass = stats(office.create("glass-wall")).bounds;
-  assert(Math.abs(glass.max.x - (H + 0.07)) < 0.001, "glass wall posts centred on the module ends");
+  // The storefront glass shares slim mullions on its module ends; the office partition is unchanged.
+  const glass = stats(assets.create("storefront-glass")).bounds;
+  assert(glass.max.x - H < 0.04 && glass.max.x - H > 0.02, "storefront mullions centred on the module ends");
+  assert(Math.abs(stats(office.create("glass-wall")).bounds.max.x - 0.675) < 0.001, "office glass wall as it was");
   assert.equal(shopRoster["auto-door"].footprint, "none");
   assets.dispose(); office.dispose();
 });

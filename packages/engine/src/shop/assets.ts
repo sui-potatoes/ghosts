@@ -9,10 +9,13 @@ import { chiller, counter, freezer, fridge, gondola, hotCase, register, wallShel
 import * as room from "./interiors.ts";
 import * as street from "./street.ts";
 import * as car from "./vehicles.ts";
+import * as front from "./storefront.ts";
+import * as shop from "./store.ts";
+import * as ground from "./ground.ts";
 
 /** Builders by kind for everything outside the convenience store. */
 const builders: Partial<Record<ShopKind, (b: Build) => void>> = {
-  "wood-wall": room.woodWall, "lattice-screen": room.latticeScreen, noren: room.noren, lantern: room.lantern,
+  "wood-wall": room.woodWall, "lattice-screen": room.latticeScreen, noren: room.noren, lantern: (b) => room.lantern(b),
   "menu-strips": room.menuStrips, "bottle-keep": room.bottleKeep, "coat-hooks": room.coatHooks,
   "umbrella-stand": room.umbrellaStand, "wall-clock": room.wallClock, calendar: room.calendar, poster: room.poster,
   "bar-counter-straight": (b) => room.woodCounter(b, "straight"), "bar-counter-end": (b) => room.woodCounter(b, "end"),
@@ -30,17 +33,33 @@ const builders: Partial<Record<ShopKind, (b: Build) => void>> = {
   "rail-guard": street.railGuard, "rail-chain": street.railChain, "rail-mesh": street.railMesh, "rail-gap": street.railGap,
   "wheel-stop": street.wheelStop, "bay-line": (b) => street.bayLine(b, false), "bay-line-end": (b) => street.bayLine(b, true),
   "pay-station": street.payStation, "no-smoking-plate": street.noSmokingPlate, "no-smoking-pole": street.noSmokingPole,
-  "no-smoking-paint": street.noSmokingPaint, "ashtray-stand": street.ashtrayStand, "auto-door": street.autoDoor,
+  "no-smoking-paint": street.noSmokingPaint, "ashtray-stand": street.ashtrayStand, "auto-door": front.autoDoor,
+  "storefront-glass": front.storefrontGlass, "lantern-white": room.lanternWhite,
+  "vending-drinks": (b) => street.vending(b, "drinks"), "vending-tobacco": (b) => street.vending(b, "tobacco"), "service-door": front.serviceDoor, "utility-pole": front.utilityPole,
+  "bus-stop-sign": front.busStopSign,
+  "store-partition": (b) => shop.edgeWall(b, false), "store-wall": (b) => shop.edgeWall(b, true),
+  "self-checkout": shop.selfCheckout, "packing-table": shop.packingTable, "magazine-rack": shop.magazineRack,
+  "entrance-mat": shop.entranceMat, "door-decor": shop.doorDecor,
+  "fascia-logo": (b) => shop.fascia(b, true), "fascia-band": (b) => shop.fascia(b, false),
+  "blade-sign": shop.bladeSign, "pylon-sign": shop.pylonSign, "window-posters": shop.windowPosters, "toilet-sign": shop.toiletSign,
+  "building-roof": (b) => shop.storeRoof(b, false), "building-roof-plant": (b) => shop.storeRoof(b, true),
+  "building-ceiling-light": (b) => shop.ceilingLight(b, true), "building-ceiling-panel": (b) => shop.ceilingLight(b, false),
+  kerb: (b) => ground.kerb(b, false), "kerb-dropped": (b) => ground.kerb(b, true), "tactile-paving": ground.tactile,
+  manhole: (b) => ground.manhole(b, false), "drain-grate": (b) => ground.manhole(b, true),
+  "bin-bank": ground.binBank, "rubbish-point": ground.rubbishPoint, "bike-rack": ground.bikeRack, roadworks: ground.roadworks,
+  "lantern-row": ground.lanternRow, dumpster: ground.rubbishCage,
+  "bulkhead-cell": shop.bulkheadOnBuilding,
+  "street-lamp": shop.streetLamp, floodlight: shop.floodlight, bulkhead: shop.bulkhead,
   "building-1": (b) => street.building(b, 1), "building-2": (b) => street.building(b, 2),
   "building-4": (b) => street.building(b, 4), "building-8": (b) => street.building(b, 8),
-  "recycling-bins": street.recyclingBins, dumpster: street.dumpster,
+  "recycling-bins": street.recyclingBins,
   "ac-unit": (b) => street.acUnit(b, false), "ac-pair": (b) => street.acUnit(b, true),
   "bus-shelter": (b) => street.shelter(b, false), "taxi-shelter": (b) => street.shelter(b, true), "roll-cage": street.rollCage,
   "building-wall-store": (b) => street.shell(b, "store"), "building-wall-corner": (b) => street.shell(b, "corner"),
   "building-wall-partition": (b) => street.shell(b, "partition"), "building-wall-timber": (b) => street.shell(b, "timber"),
   "building-wall-concrete": (b) => street.shell(b, "concrete"),
   "kei-car": car.keiCar, hatchback: (b) => car.hatchback(b), "kei-truck": car.keiTruck, van: car.van,
-  taxi: (b) => car.hatchback(b, true), scooter: car.scooter, mamachari: car.mamachari,
+  taxi: car.taxi, scooter: car.scooter, mamachari: car.mamachari,
 };
 const tableware = ["sake-set", "beer-bottle", "shochu", "whisky", "plates", "bowl", "chopsticks", "caddy", "napkins", "towel", "ashtray", "menu-card"];
 
@@ -63,24 +82,24 @@ export class ShopAssets {
   private readonly templates = new Map<string, T.Group>();
   private readonly partTemplates = new Map<string, T.Group>();
 
-  create(kind: ShopKind, finish?: InteriorFinish, variant = 0): T.Group {
-    const key = `${kind}:${finish}:${variant % SHOP_VARIANTS}`;
+  create(kind: ShopKind, finish?: InteriorFinish, variant = 0, faces = 15): T.Group {
+    const key = `${kind}:${finish}:${variant % SHOP_VARIANTS}:${faces}`;
     let template = this.templates.get(key);
     if (!template) {
-      template = this.build(kind, finish, variant % SHOP_VARIANTS);
+      template = this.build(kind, finish, variant % SHOP_VARIANTS, faces);
       this.templates.set(key, template);
     }
     return template.clone(true);
   }
 
   /** Individual authored pieces for rigid breakage; same transforms and finish as the intact model. */
-  parts(kind: ShopKind, finish?: InteriorFinish, variant = 0): T.Group {
-    this.create(kind, finish, variant);
-    return this.partTemplates.get(`${kind}:${finish}:${variant % SHOP_VARIANTS}`)!.clone(true);
+  parts(kind: ShopKind, finish?: InteriorFinish, variant = 0, faces = 15): T.Group {
+    this.create(kind, finish, variant, faces);
+    return this.partTemplates.get(`${kind}:${finish}:${variant % SHOP_VARIANTS}:${faces}`)!.clone(true);
   }
 
-  private build(kind: ShopKind, finish: InteriorFinish | undefined, variant: number) {
-    const b = new Build(this.kit, kind, finish ?? "plain", variant);
+  private build(kind: ShopKind, finish: InteriorFinish | undefined, variant: number, faces: number) {
+    const b = new Build(this.kit, kind, finish ?? "plain", variant, faces);
     b.root.userData.shopKind = kind;
     const [family, ...rest] = kind.split("-");
     const piece = rest.join("-");
@@ -88,6 +107,7 @@ export class ShopAssets {
     if (builder) builder(b);
     else if (tableware.includes(kind)) room.ware(b, kind as room.Ware);
     else if (kind.startsWith("back-bar-")) room.backBar(b, kind.slice(9) as RunPiece);
+    else if (/^building-wall-(fridge|chiller|shelf|cigarettes|atm|terminal|copier|stock)/.test(kind)) shop.builtIn(b, kind.slice(14) as shop.BuiltIn);
     else if (kind.startsWith("wall-shelf-")) wallShelf(b, kind.slice(11) as RunPiece);
     else if (kind.startsWith("gondola-tall-")) gondola(b, kind.slice(13) as "single" | "end" | "mid", true);
     else switch (family) {
@@ -101,8 +121,7 @@ export class ShopAssets {
       default: throw new Error(`No shop model for ${kind}`);
     }
     flatten(b.root);
-    const key = `${kind}:${finish}:${variant}`;
-    this.partTemplates.set(key, b.root.clone(true));
+    this.partTemplates.set(`${kind}:${finish}:${variant}:${faces}`, b.root.clone(true));
     this.merge(b.root, kind);
     return b.root;
   }

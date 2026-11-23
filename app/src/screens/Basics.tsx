@@ -3,42 +3,57 @@
 
 import {
     basicsTraining,
+    BASICS_CHAPTERS,
     BASICS_ID,
     closeEncounterDebrief,
     Encounter,
     openBriefing,
     restartEncounter,
+    withChapter,
 } from "@ghosts/engine";
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { engineSettings } from "../engineSettings";
 import { markTrainingDone } from "../features/play/demo/progress";
 import { useBack } from "../hooks/useBack";
 import { PauseMenu } from "../PauseMenu";
+import { completedChapters, saveChapters } from "./basics-progress";
 
 /**
- * `/demo-basics`: Basics, the first training. The engine's guided run over a
- * small yard (`basicsTraining`): one order at a time, each waiting until it is
- * carried out, with its own fixed squad, fully local. Completing it is
- * remembered on the device for the training list; Skip and the pause menu's
- * Quit go back to that list. The guide's closing card is the end: no debrief.
+ * `/demo-basics`: Basics, the first training. One continuous guided run
+ * through a simulation room that rebuilds itself for each lesson
+ * (`basicsTraining`): one order at a time, each waiting until it is carried
+ * out, a fixed squad, fully local. `?lesson=` opens on a lesson; the card's
+ * lesson list jumps between them. Lessons completed are remembered on the
+ * device; the training list marks Basics done once the run is finished.
+ * Skip and the pause menu's Quit go back to that list; Restart restarts the
+ * lesson in play. The guide's closing card is the end: no debrief.
  */
 export default function Basics() {
     const navigate = useNavigate();
+    const [params] = useSearchParams();
     const toTraining = () => navigate("/play/training");
     const [paused, setPaused] = useState(false);
-    // Built once per mount: a restart replays the same run on a fresh game.
-    const [training] = useState(() =>
-        basicsTraining({
-            onComplete: () => markTrainingDone(BASICS_ID),
-            onLeave: toTraining,
-            exits: [
-                { label: "Play", run: () => navigate("/play") },
-                { label: "Training", run: toTraining },
-            ],
-        }),
-    );
+    // Built once per mount: the lessons follow one another on the same field.
+    const [training] = useState(() => {
+        const run = basicsTraining(
+            {
+                done: completedChapters(),
+                onStage: (id) => {
+                    const done = withChapter(BASICS_CHAPTERS, completedChapters(), id);
+                    saveChapters(done);
+                    run.guide.host.done = done;
+                },
+                onComplete: () => markTrainingDone(BASICS_ID),
+                onLeave: toTraining,
+                onPlay: () => navigate("/play"),
+                onTraining: toTraining,
+            },
+            params.get("lesson") ?? undefined,
+        );
+        return run;
+    });
 
     // A back key the engine did not take (still loading, focus elsewhere) pauses.
     useBack(() => setPaused(true));

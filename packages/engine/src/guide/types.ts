@@ -75,6 +75,8 @@ export type GuideIntent =
 export type HudTarget =
   | "end-turn"
   | "confirm"
+  /** While aiming: the command that steps the aim to the next target. */
+  | "aim-next"
   | "odds"
   /** The command bar slot of an action kind (`Attack`, `Reload`, `Grenade`, …). */
   | `command:${string}`
@@ -106,4 +108,6 @@ export interface StepCopy {
   nudge?: string;
   /** Labels of the step's ticks (the camera step's three moves). */
   ticks?: string[];
+  /** Said once the step is done, as the next one comes in: that it registered. */
+  ack?: string;
 }

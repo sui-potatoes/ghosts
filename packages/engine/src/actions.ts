@@ -6,6 +6,7 @@ import type { Command, GameEvent } from "./events";
 import { ACTIONS, hasKind, isThrowOrder, REFUSAL_TEXT, refusalOf } from "./action-registry";
 import { allows, Encounter, type Cell } from "./game";
 import type { GuideIntent } from "./guide/types";
+import type { Scenario } from "./scenario";
 import { applyDeploymentNames, applyLoadouts } from "./squad-bridge";
 // @ts-ignore Native editor adapter is shared JavaScript.
 import { deployment } from "./mpfb-characters.js";
@@ -369,9 +370,13 @@ export async function pick(p: Cell, id?: string) {
     s.battlefield.showPath([u.pos, p], true);
     return;
   }
+  // A guided run: a click on the tile under an operator is a click on the operator.
+  if (!id && s.guide) id = s.game.units.find((x) => !x.enemy && x.hp > 0 && x.pos[0] === p[0] && x.pos[1] === p[1])?.id;
   if (id) {
-    // A second click on the operator taking orders stands them down.
-    if (id === s.selected && s.mode === "move") deselect();
+    // A second click on the operator taking orders stands them down (never in a guided run).
+    if (id === s.selected && s.mode === "move") {
+      if (!s.guide) deselect();
+    }
     else select(id);
     return;
   }
@@ -448,5 +453,27 @@ export function reset() {
   s.debrief = false;
   refresh();
   notify("OPERATION RESET / SQUAD DEPLOYED");
-  showBriefing("deploy");
+  if (!s.game.scenario.skipBriefing) showBriefing("deploy");
+}
+
+/**
+ * Guided run touch point (`guide/`): the same squad on a new layout of the
+ * same map, at once and with no briefing, as a training simulation
+ * reconfigures around the player. `scenario` deploys the same unit ids on the
+ * same map plan id; its props and ground may differ. False while busy.
+ */
+export function restage(scenario: Scenario): boolean {
+  const s = session;
+  if (s.busy) return false;
+  void s.battlefield.leaveAim();
+  s.game = new Encounter(scenario);
+  s.driver = s.makeDriver(s.game);
+  applyDeploymentNames(s.game.units, deployment);
+  applyLoadouts(s.game.units, s.loadouts);
+  s.battlefield.rebuild(s.game);
+  s.resetSelection();
+  s.battlefield.select(s.selected);
+  s.debrief = false;
+  refresh();
+  return true;
 }

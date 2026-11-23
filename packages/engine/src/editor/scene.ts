@@ -22,7 +22,7 @@ import { applyTimeOfDay } from "../scene-weather.ts";
 import { PropAssets } from "../scene/prop-assets.ts";
 import { floorMaterial, floorMeshes, type FloorTextures } from "./floors.ts";
 import {
-  floorRaise, interiorPreset, newLevel, placementLook, placementSeat, restHeight,
+  edgeRaise, floorRaise, interiorPreset, newLevel, placementLook, placementRaise, placementSeat, restHeight,
   type Level, type LevelLighting, type Placement, type Turn,
 } from "./level.ts";
 
@@ -189,7 +189,7 @@ export class EditorScene {
       const spec = assetByUid(p.asset);
       if (!spec) continue;
       const rest = restHeight(level, p);
-      const raise = floorRaise(level, p.at);
+      const raise = placementRaise(level, p);
       const key = placementKey(p, rest, raise);
       keep.add(key);
       if (this.byKey.has(key)) continue;
@@ -274,7 +274,7 @@ export class EditorScene {
   /** Tint one placement red (about to erase) or cyan (selected); null restores. */
   mark(p: Placement | null, tone: "erase" | "select" = "erase") {
     const rest = p ? restHeight(this.level, p) : 0;
-    const raise = p ? floorRaise(this.level, p.at) : 0;
+    const raise = p ? placementRaise(this.level, p) : 0;
     const key = p ? `${placementKey(p, rest, raise)}:${tone}` : "";
     if (key === this.markedKey) return;
     for (const [mesh, material] of this.markedSwap) mesh.material = material;
@@ -529,7 +529,7 @@ export class EditorScene {
       if (this.hovered) {
         const turn = spec.place === "edge" ? this.hoveredSide : this.previewTurn;
         const lift =
-          floorRaise(this.level, this.hovered) +
+          (spec.place === "edge" ? edgeRaise(this.level, this.hovered, turn) : floorRaise(this.level, this.hovered)) +
           (spec.mount === "wall"
             ? (spec.lift ?? 0)
             : spec.mount === "surface"

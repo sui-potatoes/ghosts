@@ -338,7 +338,10 @@ export function bindPadCombat({ onPause }: ControlOptions = {}): () => void {
     if (isThrowOrder(s.mode)) {
       const from = s.grenadeTarget ?? u.pos;
       const d = navDelta(pad);
-      if (d) {
+      // Guided run touch point: the first d-pad press lands on the step's marked tile.
+      const marked = s.guide?.padCursor();
+      if (d && marked && (marked[0] !== from[0] || marked[1] !== from[1])) void pick(marked);
+      else if (d) {
         const [dx, dz] = battlefield.screenDelta(d);
         void pick([from[0] + dx, from[1] + dz]);
       } else if (pad.pressed("a")) runCombatAction("confirm");
@@ -356,6 +359,9 @@ export function bindPadCombat({ onPause }: ControlOptions = {}): () => void {
       // next reachable cell in that direction. The path routes on its own.
       const [dx, dz] = battlefield.screenDelta(d);
       let next: Cell = [(cursor ?? u.pos)[0] + dx, (cursor ?? u.pos)[1] + dz];
+      // Guided run touch point: the cursor jumps to the step's marked tile first.
+      const marked = s.guide?.padCursor();
+      if (marked && (!cursor || marked[0] !== cursor[0] || marked[1] !== cursor[1])) next = marked;
       let path: Cell[] | undefined;
       while (game.map.inBounds(next) && !(path = battlefield.previewPath(next))) {
         next = [next[0] + dx, next[1] + dz];

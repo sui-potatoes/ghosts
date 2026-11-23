@@ -8,6 +8,7 @@
  */
 import { scenarioFromLevel } from "../editor/playtest.ts";
 import type { Scenario } from "../scenario.ts";
+import type { Level } from "../editor/level.ts";
 import { nightShiftLevel } from "./level.ts";
 
 /** The scenario id; the host keys the training's progress by it. */
@@ -48,7 +49,7 @@ const COPY: Pick<Scenario, "briefing" | "contract" | "location" | "objectives" |
 };
 
 /** Night Shift as an encounter: the rules and the words, its scenery not registered (node-safe). */
-export function nightShiftScenario(): Scenario {
-  return { ...scenarioFromLevel(nightShiftLevel()), id: NIGHT_SHIFT_ID, ...COPY };
+export function nightShiftScenario(level: Level = nightShiftLevel()): Scenario {
+  return { ...scenarioFromLevel(level), id: NIGHT_SHIFT_ID, ...COPY };
 }
 

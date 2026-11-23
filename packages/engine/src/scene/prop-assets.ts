@@ -22,7 +22,16 @@ export interface PropAsset {
   bounds: T.Box3;
   smoke?: T.Vector3;
   colliders?: T.Box3[];
+  /** A lamp the fixture carries: colour, intensity, range, local position. */
+  light?: { color: number; intensity: number; distance: number; at: T.Vector3 };
 }
+
+/**
+ * A door leaf kept out of the merged model, in `frame` (so the editor and the
+ * field both draw it): `slide` metres along its x when open, or `swing`
+ * radians about its pivot. `Destruction` opens it when a unit comes near.
+ */
+export interface DoorLeaf { slide?: number; swing?: number; rest: number }
 
 /** Shared finishes, meshes and prefractures. No mesh cutting in the combat loop. */
 export class PropAssets {
@@ -558,16 +567,38 @@ export class PropAssets {
   private getShop(prop: MapProp): PropAsset {
     const kind = prop.kind.slice(5) as ShopKind, finish = prop.shop?.finish ?? "plain";
     const variant = prop.seed % SHOP_VARIANTS;
-    const key = `shop:${kind}:${finish}:${variant}`;
+    const faces = prop.faces ?? 15;
+    const key = `shop:${kind}:${finish}:${variant}:${faces}`;
     const cached = this.assets.get(key);
     if (cached) return cached;
-    const authored = this.shop.parts(kind, finish, variant);
+    const authored = this.shop.parts(kind, finish, variant, faces);
     authored.updateMatrixWorld(true);
     const source = new T.Group(), frame = new T.Group(), fragments: T.Mesh[] = [];
+    // Door leaves: each part with a slide or swing becomes its own pivoted group in the frame.
+    const leaves = new Map<T.Object3D, T.Group>();
+    authored.traverse((part) => {
+      const { slide, swing } = part.userData as { slide?: number; swing?: number };
+      if (slide === undefined && swing === undefined) return;
+      const leaf = new T.Group();
+      const inverse = part.matrixWorld.clone().invert();
+      part.traverse((child) => {
+        if (!(child instanceof T.Mesh)) return;
+        const mesh = new T.Mesh(this.geometry(child.geometry.clone().applyMatrix4(inverse.clone().multiply(child.matrixWorld))), child.material);
+        mesh.castShadow = !(child.material as T.Material).transparent; mesh.receiveShadow = true;
+        leaf.add(mesh);
+      });
+      this.merge(leaf);
+      part.matrixWorld.decompose(leaf.position, leaf.quaternion, leaf.scale);
+      const door: DoorLeaf = { slide, swing, rest: slide !== undefined ? leaf.position.x : leaf.rotation.y };
+      leaf.userData.door = door;
+      leaves.set(part, leaf);
+      frame.add(leaf);
+    });
+    const inLeaf = (o: T.Object3D | null) => { for (; o; o = o.parent) if (leaves.has(o)) return true; return false; };
     const candidates: { mesh: T.Mesh; volume: number }[] = [];
     let panes = 0;
     authored.traverse(child => {
-      if (!(child instanceof T.Mesh)) return;
+      if (!(child instanceof T.Mesh) || inLeaf(child)) return;
       const material = child.material as T.MeshStandardMaterial;
       const geometry = this.geometry(child.geometry.clone().applyMatrix4(child.matrixWorld));
       const mesh = new T.Mesh(geometry, material);
@@ -603,8 +634,11 @@ export class PropAssets {
       mesh.userData.fragmentIndex = fragments.length; fragments.push(fragment);
     }
     const bounds = new T.Box3().setFromObject(source);
+    for (const leaf of leaves.values()) bounds.expandByObject(leaf);
     const intact = source.clone(); this.merge(intact);
-    const asset = { intact, frame, fragments, bounds, colliders: [bounds] };
+    const lamp = authored.userData.light as { color: number; intensity: number; distance: number; at: [number, number, number] } | undefined;
+    const asset: PropAsset = { intact, frame, fragments, bounds, colliders: [bounds],
+      ...(lamp ? { light: { ...lamp, at: new T.Vector3(...lamp.at) } } : {}) };
     this.assets.set(key, asset); this.sources.set(asset, source);
     return asset;
   }

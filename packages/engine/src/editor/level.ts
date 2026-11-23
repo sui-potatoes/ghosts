@@ -17,6 +17,7 @@ import type { MapProp } from "../environment.ts";
 import { CELL, type Cell } from "../map.ts";
 import type { OfficeFinish, OfficeKind } from "../office/catalog.ts";
 import type { InteriorFinish } from "../shop/catalog.ts";
+import type { Surroundings } from "../shop/surroundings.ts";
 import type { TimeOfDay } from "../scene-weather.ts";
 
 /** Quarter turns clockwise; for an edge asset, the side of its cell (0 N, 1 E, 2 S, 3 W). */
@@ -107,6 +108,8 @@ export interface Level {
   objective?: Cell;
   lighting: LevelLighting;
   lights: LightSource[];
+  /** What lies beyond the grid on each side (render only): a street running on, a row of buildings. */
+  surroundings?: Surroundings;
 }
 
 export function newLevel(width = 18, depth = 14): Level {
@@ -168,7 +171,8 @@ export function placementSeat(spec: AssetSpec, at: Cell, turn: Turn): { x: numbe
       z += (dz / length) * 0.09;
       return { x, z, yaw: -turn * (Math.PI / 2), span: 1 };
     }
-    return { x, z, yaw: turn * (Math.PI / 2), span: spec.span ? CELL / spec.span : 1 };
+    const yaw = (spec.facing === "in" ? -turn : turn) * (Math.PI / 2);
+    return { x, z, yaw, span: spec.span ? CELL / spec.span : 1 };
   }
   const [ax, az] = turnOffset(anchorOf(spec), turn);
   const [ox, oz] = spec.offset ? turnOffset(spec.offset, turn) : [0, 0];
@@ -280,6 +284,23 @@ export function hostTop(level: Level, cell: Cell): number | null {
 export function floorRaise(level: Level, cell: Cell): number {
   const tile = level.floors.find((f) => key(f.at) === key(cell));
   return (tile && floorByUid(tile.floor)?.raise) || 0;
+}
+
+/**
+ * The floor an edge piece stands on: the lower of the two cells it divides,
+ * so a fence or a glass run along a kerb stands on the road side with its
+ * posts reaching the lower ground, and keeps one top line along the run.
+ */
+export function edgeRaise(level: Level, at: Cell, turn: Turn): number {
+  const [a, b] = edgeCells(at, turn);
+  const raise = (c: Cell) => (inLevel(level, c) ? floorRaise(level, c) : 0);
+  return Math.min(raise(a), raise(b));
+}
+
+/** The floor a placement stands on: its cell's, or for an edge piece the lower side's. */
+export function placementRaise(level: Level, p: Placement): number {
+  const spec = assetByUid(p.asset);
+  return spec?.place === "edge" ? edgeRaise(level, p.at, p.turn) : floorRaise(level, p.at);
 }
 
 /** Height above the cell floor the placement rests at (surface and wall mounts). */
@@ -400,6 +421,7 @@ export interface LevelExport {
     objective?: Cell;
     lighting: LevelLighting;
     lights: [x: number, z: number, color: number, intensity: number, height: number][];
+    surroundings?: Surroundings;
   };
 }
 
@@ -488,6 +510,7 @@ export function exportLevel(level: Level): LevelExport {
       ...(level.objective ? { objective: level.objective } : {}),
       lighting: level.lighting,
       lights: level.lights.map((l) => [l.at[0], l.at[1], l.color, l.intensity, l.height]),
+      ...(level.surroundings ? { surroundings: level.surroundings } : {}),
     },
   };
 }
@@ -520,6 +543,7 @@ export function importLevel(data: unknown): { level: Level; dropped: number; mig
   level.unwalkable = (r.unwalkable ?? []).filter((c) => inLevel(level, c));
   if (r.objective && inLevel(level, r.objective)) level.objective = r.objective;
   if (r.lighting?.time) level.lighting = r.lighting;
+  if (r.surroundings && typeof r.surroundings === "object") level.surroundings = r.surroundings;
   level.lights = (r.lights ?? [])
     .filter(([x, z]) => inLevel(level, [x, z]))
     .map(([x, z, color, intensity, height]) => ({

@@ -12,7 +12,7 @@ export {
   type AssetSpec, type Finish, type FloorSpec, type Footprint,
 } from "../catalog.ts";
 export {
-  addSpawn, canPlace, canonicalEdge, edgeCells, edgeKey, exportLevel, fitsBounds, floorRaise, hostTop,
+  addSpawn, canPlace, canonicalEdge, edgeRaise, placementRaise, edgeCells, edgeKey, exportLevel, fitsBounds, floorRaise, hostTop,
   importLevel, inLevel, interiorPreset, newLevel, placementCells, placementLook, placementSeat, placementsAt, removeSpawn,
   restHeight, SIDES, spawnSide, SQUAD_SIZE, swapAsset, toMoveMap, turnOffset,
   type FloorTile, type Level, type LevelExport, type LevelLighting, type LightSource,
@@ -28,4 +28,5 @@ export { demoLevels, levelFromPlan, levelFromScenario, type FloorZone, type Plan
 export { officeFinishes, type OfficeFinish } from "../office/catalog.ts";
 export { shopFinishes, type ShopFinish } from "../shop/catalog.ts";
 export { timePresets, type TimeOfDay } from "../scene-weather.ts";
+export { buildSurroundings, type Surroundings, type SurroundSide } from "../shop/surroundings.ts";
 export { EditorScene, SIDE_COLORS } from "./scene.ts";

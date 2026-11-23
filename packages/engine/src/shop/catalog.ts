@@ -65,7 +65,20 @@ export type ShopKind =
   // Street cover the level asked for.
   | "recycling-bins" | "dumpster" | "ac-unit" | "ac-pair" | "bus-shelter" | "taxi-shelter" | "roll-cage"
   // Building shells: plain wall tiles, a storey high.
-  | "building-wall-store" | "building-wall-corner" | "building-wall-partition" | "building-wall-timber" | "building-wall-concrete";
+  | "building-wall-store" | "building-wall-corner" | "building-wall-partition" | "building-wall-timber" | "building-wall-concrete"
+  // Storefront glazing, doors that open, the wired utility pole.
+  | "storefront-glass" | "service-door" | "utility-pole"
+  | "lantern-white" | "vending-drinks" | "vending-tobacco" | "bus-stop-sign"
+  // The store as a building: built-ins on its Wall tiles, thin edge walls, furniture, signs, roof, lights.
+  | `building-wall-${"fridge" | "chiller" | "shelf"}-${"single" | "left" | "mid" | "right"}`
+  | "building-wall-cigarettes" | "building-wall-atm" | "building-wall-terminal" | "building-wall-copier" | "building-wall-stock"
+  | "store-partition" | "store-wall" | "self-checkout" | "packing-table" | "magazine-rack" | "entrance-mat" | "door-decor"
+  | "fascia-logo" | "fascia-band" | "blade-sign" | "pylon-sign" | "window-posters" | "toilet-sign"
+  | "building-roof" | "building-roof-plant" | "building-ceiling-light" | "building-ceiling-panel"
+  | "street-lamp" | "floodlight" | "bulkhead"
+  // Street ground and furniture.
+  | "kerb" | "kerb-dropped" | "tactile-paving" | "manhole" | "drain-grate"
+  | "bin-bank" | "rubbish-point" | "bike-rack" | "roadworks" | "lantern-row" | "bulkhead-cell";
 
 type Placement = Omit<AssetSpec, "kind" | "name" | "category" | "finishes">;
 export interface ShopEntry extends Placement {
@@ -261,8 +274,11 @@ function batch2(): Record<string, ShopEntry> {
     rows[`building-${floors}`] = { uid: u(), name: `Building · ${floors} storey${floors > 1 ? "s" : ""}`, group: "Street · Buildings",
       tags: "building block mass facade tall storeys", footprint: "solid", cells: one, hp: 0, scheme: none };
   // The glazed storefront's doorway: an open edge (no cover), posts shared with the glass walls beside it.
-  rows["auto-door"] = { uid: u(), name: "Automatic door", group: "Office · Architecture",
-    tags: "door automatic sliding glass storefront entrance", footprint: "none", cells: [], place: "edge", span: 1.35, hp: 12, scheme: none };
+  // Its leaves slide apart when a unit comes within a tile and a half (scene only). Front +z faces
+  // into the cell it is placed from: place it from the store's floor.
+  rows["auto-door"] = { uid: u(), name: "Automatic door", group: "Konbini · Storefront",
+    tags: "door automatic sliding glass storefront entrance", footprint: "none", cells: [], place: "edge", span: 1.35, hp: 12,
+    facing: "in", scheme: "shop" };
   rows["counter-end-left"] = { uid: u(), name: "Shop counter · end L", group: "Konbini · Checkout",
     tags: counterTags, footprint: "cover", cells: one, hp: 100, blast: 2, top: 1 };
   rows["bar-counter-end-left"] = { uid: u(), name: "Wooden counter · end L", group: "Izakaya · Furniture",
@@ -270,12 +286,20 @@ function batch2(): Record<string, ShopEntry> {
   const street = (kind: string, name: string, tags: string, spec: Omit<ShopEntry, "uid" | "name" | "group" | "tags">) =>
     (rows[kind] = { uid: u(), name, group: "Street · Cover", tags: `street cover ${tags}`, scheme: none, ...spec });
   street("recycling-bins", "Recycling bins", "bin bins trash recycling cans bottles", { footprint: "cover", cells: one, hp: 50 });
-  street("dumpster", "Dumpster", "dumpster bin skip container trash", { footprint: "cover", cells: one, hp: 120, top: 1.12 });
+  // u09 keeps its uid and footprint; the model is the apartment block's folding mesh rubbish cage.
+  street("dumpster", "Rubbish cage", "rubbish cage garbage bin mesh dumpster", { footprint: "cover", cells: one, hp: 120, top: 1.12 });
+  // Condensers stand against a wall on the cell's north edge at turn 0, the fan grille (+z) facing
+  // into the cell. Turn names the wall behind: 0 north, 1 west, 2 south, 3 east (a cell asset's
+  // turn rotates it that way). On chain a cover tile (Obstacle), as Night Shift pins it.
   street("ac-unit", "AC condenser", "ac air conditioner condenser outdoor unit wall", { footprint: "cover", cells: one, hp: 40, top: 0.78 });
   street("ac-pair", "AC condensers · stacked", "ac air conditioner condenser outdoor unit wall stacked", { footprint: "cover", cells: one, hp: 60 });
   // Shelters seat on the edge their back panel stands on: low cover along it, open in front.
-  street("bus-shelter", "Bus shelter", "bus stop shelter bench roof glass", { footprint: "cover", cells: [], place: "edge", span: 1.35, hp: 60 });
-  street("taxi-shelter", "Taxi stand shelter", "taxi stand shelter bench roof glass", { footprint: "cover", cells: [], place: "edge", span: 1.35, hp: 60 });
+  // The back panel stands on the edge it is placed on; the roof, the bench and the open side
+  // face into the cell it was placed from (`facing: "in"`), whichever side that edge is.
+  // So: stand in the pavement cell where passengers wait and place it on that cell's
+  // building-side edge; the open side then faces the kerb and the road.
+  street("bus-shelter", "Bus shelter", "bus stop shelter bench roof glass", { footprint: "cover", cells: [], place: "edge", span: 1.35, hp: 60, facing: "in" });
+  street("taxi-shelter", "Taxi stand shelter", "taxi stand shelter bench roof glass", { footprint: "cover", cells: [], place: "edge", span: 1.35, hp: 60, facing: "in" });
   street("roll-cage", "Roll cage", "roll cage cart delivery trolley boxes", { footprint: "cover", cells: one, hp: 50 });
   // Shell walls: a wall tile like the building masses (permanent), one storey, merging cell to cell.
   const shell = (kind: string, name: string, tags: string, scheme: ShopEntry["scheme"]) =>
@@ -286,6 +310,105 @@ function batch2(): Record<string, ShopEntry> {
   shell("partition", "partition", "interior partition painted", none);
   shell("timber", "timber", "timber wood izakaya", wood);
   shell("concrete", "concrete", "concrete back of house", none);
+  // A konbini front: floor-to-ceiling glass on slim shared mullions, a kick plate, a continuous
+  // header, a frosted band at waist height. Same on-chain meaning as the glass partition (o22):
+  // an obstacle edge, high on both sides. Front +z faces into the cell it is placed from.
+  rows["storefront-glass"] = { uid: u(), name: "Storefront glass", group: "Konbini · Storefront",
+    tags: "glass storefront window front glazing shop", footprint: "obstacle", cells: [], place: "edge", span: 1.35, hp: 12,
+    facing: "in", scheme: "shop" };
+  // A steel back door, shown standing open into the cell it is placed from. A doorway is nothing
+  // on chain: no cover, no blocking.
+  rows["service-door"] = { uid: u(), name: "Service door", group: "Konbini · Storefront",
+    tags: "door service back steel stockroom push bar", footprint: "none", cells: [], place: "edge", span: 1.35, hp: 140,
+    gunproof: true, blast: 3, facing: "in", scheme: none };
+  // Concrete pole: crossarms, transformer, insulators, a street lamp. The play view strings
+  // cables between neighbouring poles (within eight tiles) on its own; it carries the lamp's light.
+  rows["utility-pole"] = { uid: u(), name: "Utility pole · wired", group: "Street · Shopfront",
+    tags: "utility pole electricity cables wires transformer street lamp", footprint: "none", cells: one, hp: 0, scheme: none };
+  rows["lantern-white"] = { uid: u(), name: "White lantern", group: "Izakaya · Decor",
+    tags: "lantern chochin white paper light hanging izakaya", footprint: "none", cells: one, hp: 10, scheme: none };
+  // Vending machines: wall-backed cells, the back on the cell's north edge at turn 0 and the lit
+  // front (+z) toward the street; a permanent Wall tile on chain, like the cars.
+  for (const [kind, name] of [["vending-drinks", "Vending machine · drinks"], ["vending-tobacco", "Vending machine · tobacco"]])
+    rows[kind] = { uid: u(), name, group: "Street · Shopfront", tags: "vending machine drinks cigarettes tobacco street",
+      footprint: "solid", cells: one, hp: 0, scheme: none };
+  rows["bus-stop-sign"] = { uid: u(), name: "Bus stop sign", group: "Street · Cover",
+    tags: "bus stop sign pole timetable", footprint: "none", cells: one, hp: 0, scheme: none };
+  // --- The store as a building. Wall-backed pieces: back on the north edge at turn 0, front +z.
+  // A cell asset's turn rotates it so that its back lands on: 0 north, 1 west, 2 south, 3 east.
+  // Built-ins are the store's Wall tiles (solid, permanent, like the shell walls): a thin wall on
+  // the north edge with a full-depth fixture against it and a dark plinth over the rest.
+  const builtin = (kind: string, name: string, tags: string) =>
+    (rows[`building-wall-${kind}`] = { uid: u(), name: `Built-in · ${name}`, group: "Konbini · Built-ins",
+      tags: `built-in wall store konbini ${tags}`, footprint: "solid", cells: one, hp: 0, scheme: "shop" });
+  for (const [family, label, tags] of [["fridge", "drinks fridge", "fridge cooler drinks"], ["chiller", "open chiller", "chiller rice balls"], ["shelf", "wall shelf", "shelf goods"]] as const)
+    for (const [piece, pname] of [["single", "single"], ["left", "end L"], ["mid", "mid"], ["right", "end R"]] as const)
+      builtin(`${family}-${piece}`, `${label} · ${pname}`, tags);
+  builtin("cigarettes", "cigarette display", "cigarettes tobacco back counter");
+  builtin("atm", "ATM", "atm cash machine bank");
+  builtin("terminal", "multi-purpose terminal", "terminal ticket kiosk multi-purpose");
+  builtin("copier", "copier", "copier copy machine printer");
+  builtin("stock", "stockroom shelving", "stockroom stock shelving cartons");
+  // Thin edge walls: a solid edge is high cover on that edge on chain, shot through only at a penalty.
+  rows["store-partition"] = { uid: u(), name: "Store partition", group: "Konbini · Built-ins", tags: "wall partition thin store edge",
+    footprint: "solid", cells: [], place: "edge", span: 1.35, hp: 120, blast: 3, scheme: none };
+  rows["store-wall"] = { uid: u(), name: "Store wall · outside", group: "Konbini · Built-ins", tags: "wall exterior thin store edge tile fascia",
+    footprint: "solid", cells: [], place: "edge", span: 1.35, hp: 160, gunproof: true, blast: 3, facing: "in", scheme: "shop" };
+  const store = (kind: string, name: string, tags: string, spec: Omit<ShopEntry, "uid" | "name" | "group" | "tags">) =>
+    (rows[kind] = { uid: u(), name, group: "Konbini · Storefront", tags: `konbini store ${tags}`, scheme: "shop", ...spec });
+  store("self-checkout", "Self-checkout", "self checkout kiosk till register", { footprint: "cover", cells: one, hp: 40 });
+  store("packing-table", "Packing table", "packing bagging table window", { footprint: "cover", cells: one, hp: 60, top: 0.9 });
+  store("magazine-rack", "Magazine rack", "magazine rack newspapers window", { footprint: "cover", cells: one, hp: 50 });
+  store("entrance-mat", "Entrance mat", "mat entrance door", { footprint: "none", cells: one, hp: 0 });
+  store("door-decor", "Baskets & umbrella stand", "basket baskets umbrella stand door", { footprint: "none", cells: one, hp: 10 });
+  // Wall-mounted signs face +z, into the cell they are placed from: mount them from the street side.
+  const sign = (kind: string, name: string, lift: number) =>
+    store(kind, name, "sign signage logo fascia", { footprint: "none", cells: [], place: "edge", mount: "wall", lift, hp: 0 });
+  sign("fascia-logo", "Fascia sign · logo", 2.62);
+  sign("fascia-band", "Fascia sign · band", 2.62);
+  sign("blade-sign", "Blade sign", 2.0);
+  store("pylon-sign", "Pylon sign", "sign pylon pole logo forecourt", { footprint: "none", cells: one, hp: 0 });
+  sign("window-posters", "Window posters", 1.45);
+  sign("toilet-sign", "Toilet sign", 1.5);
+  // Roof and ceiling: `shop-building-` kinds that cut away with the walls; nothing on chain.
+  const top = (kind: string, name: string, tags: string) =>
+    (rows[`building-${kind}`] = { uid: u(), name, group: "Konbini · Roof & lights", tags: `roof ceiling store ${tags}`,
+      footprint: "none", cells: one, hp: 0, scheme: none });
+  top("roof", "Store roof", "roof flat");
+  top("roof-plant", "Store roof · AC plant", "roof ac plant condensers");
+  top("ceiling-light", "Ceiling light · lit", "ceiling light led panel lamp");
+  top("ceiling-panel", "Ceiling light · glow", "ceiling light led panel");
+  // Fixtures that carry a lamp in play: place a level's lights as these, not as bare lights.
+  const lamp = (kind: string, name: string, tags: string, spec: Partial<ShopEntry> = {}) =>
+    (rows[kind] = { uid: u(), name, group: "Street · Lights", tags: `light lamp ${tags}`, footprint: "none", cells: one, hp: 0, scheme: none, ...spec } as ShopEntry);
+  lamp("street-lamp", "Street lamp", "street lamp post");
+  lamp("floodlight", "Floodlight pole", "floodlight car park parking");
+  lamp("bulkhead", "Bulkhead light", "bulkhead wall alley back door", { cells: [], place: "edge", mount: "wall", lift: 2.3 });
+  // Street ground. The kerb seats on the edge between a raised pavement cell (+z, the cell it is
+  // placed from: place it from the pavement) and the road, standing on the road's level; on chain
+  // nothing. A level has two ground levels: raised pavement (f01) and the roadway.
+  const ground = (kind: string, name: string, tags: string, spec: Partial<ShopEntry> = {}) =>
+    (rows[kind] = { uid: u(), name, group: "Street · Ground", tags: `street ground ${tags}`, footprint: "none", cells: one, hp: 0, scheme: none, ...spec } as ShopEntry);
+  ground("kerb", "Kerb", "kerb curb pavement edge gutter", { cells: [], place: "edge", span: 1.35, facing: "in" });
+  ground("kerb-dropped", "Kerb · dropped", "kerb dropped driveway crossing ramp", { cells: [], place: "edge", span: 1.35, facing: "in" });
+  ground("tactile-paving", "Tactile paving", "tactile paving blind guidance yellow blocks");
+  ground("manhole", "Manhole cover", "manhole cover cast iron");
+  ground("drain-grate", "Drain grate", "drain grate gutter");
+  // Street furniture. Wall-backed: back on the north edge at turn 0.
+  rows["bin-bank"] = { uid: u(), name: "Recycling bank", group: "Street · Cover", tags: "bins recycling konbini store burnable pet cans",
+    footprint: "cover", cells: one, hp: 50, scheme: "shop" };
+  rows["rubbish-point"] = { uid: u(), name: "Rubbish collection point", group: "Street · Cover", tags: "rubbish garbage bags net collection",
+    footprint: "none", cells: one, hp: 10, scheme: none };
+  rows["bike-rack"] = { uid: u(), name: "Bicycle rack", group: "Street · Vehicles", tags: "bicycle rack parking stand",
+    footprint: "none", cells: one, hp: 0, scheme: none };
+  rows["roadworks"] = { uid: u(), name: "Roadworks", group: "Street · Cover", tags: "roadworks barrier cones construction lamp",
+    footprint: "cover", cells: one, hp: 60, scheme: none };
+  rows["lantern-row"] = { uid: u(), name: "Lanterns under the eaves", group: "Izakaya · Decor", tags: "lanterns chochin row eaves bracket",
+    footprint: "none", cells: [], place: "edge", mount: "wall", lift: 2.6, hp: 0, scheme: none };
+  // The bulkhead on a building's face: a cell piece for the street cell in front of a Wall tile,
+  // the lamp on the cell's north edge at turn 0 (turn names the wall: 0 north, 1 west, 2 south, 3 east).
+  rows["bulkhead-cell"] = { uid: u(), name: "Bulkhead light · on building", group: "Street · Lights", tags: "light lamp bulkhead wall alley building",
+    footprint: "none", cells: one, hp: 0, scheme: none };
   rows["mamachari"] = { uid: v(), name: "City bicycle", group: "Street · Vehicles", tags: "vehicle bicycle bike mamachari basket parked", footprint: "none", cells: one, hp: 0, scheme: none };
   return rows;
 }

@@ -2,269 +2,353 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Basics, step by step: the order of the lessons, what each points at, what
- * completes it and what it lets the player do meanwhile. The words are in
- * `copy.ts`. The run is scripted so every lesson is always possible: the
- * player's moves go to the marked tiles, the shots that teach land as the text
- * says (`dice`), and the one hostile turn is played the same way every time
- * (`hostileTurn`): WRAITH–01 misses VEX behind the crate, WRAITH–02 hits GHOST
- * in the open for 3.
+ * Basics as one continuous run through a simulation room that reconfigures
+ * around the player (`level.ts`): four stages, each a short burst that ends in
+ * something happening, the next one materialising straight after. The words
+ * are in `copy.ts`; this file gives the order, the pointers, what completes a
+ * step, what it lets the player do, the dice of the lesson shots and what the
+ * targets do on their turn. Nothing can be failed into a dead end: moves go to
+ * marked tiles, the lesson shots land as the words say, and the targets act
+ * as the lesson needs.
  *
- * Turn 1: look around, select GHOST, move, vault, switch to VEX, take cover,
- * aim, fire (a critical hit: 6 off WRAITH–01's 10 HP), end the turn, watch the Wraiths.
- * Turn 2: read the damage, reload, the grenade (WRAITH–01 down, WRAITH–02 at
- * 6, both crates gone), GHOST's flashbang, GHOST's shot (WRAITH–02 down: won).
+ * 1. Contact: turn, zoom and pan the view, select VEX, aim, fire: the first
+ *    target goes down; end the turn.
+ * 2. Cover: stand on the wrong side of a crate and get hit, vault to the right
+ *    side and watch the shot miss, flank the shooter and drop it.
+ * 3. Grenade: reload, blow away the crates boxing a target in, end the turn
+ *    (its shot misses VEX in cover), finish it in the open.
+ * 4. Squad: switch operators, daze the flanker with GHOST's flashbang, VEX's
+ *    frag on the pair, BISHOP and GHOST finish them, the dazed flanker misses,
+ *    down it to win.
  */
 import { GRENADE_RADIUS } from "../../action-registry.ts";
 import type { Command, GameEvent } from "../../events.ts";
 import { distance, type Cell, type Encounter } from "../../game.ts";
 import type { StepSpec } from "../director.ts";
 import { fixShot, type ShotOutcome } from "../dice.ts";
-import type { GuideIntent, GuideSnapshot, GuideUnit, Pointer } from "../types.ts";
-import { levelOrigin } from "../../editor/playtest.ts";
 import type { GuideScript } from "../run.ts";
-import { STEPS } from "./copy.ts";
-import { basicsLevel, MARKS } from "./level.ts";
+import type { GuideIntent, GuideSnapshot, GuideUnit, Pointer } from "../types.ts";
+import { STAGE_CONTROLS, STAGE_TITLES, STEPS } from "./copy.ts";
+import { cell, roomCells, type StageId } from "./level.ts";
 
-const [ox, oz] = levelOrigin(basicsLevel());
-/** A level cell as the scene's cell. */
-const scene = ([x, z]: Cell): Cell => [x + ox, z + oz];
-
-/** The yard's tiles, in scene cells. */
-export const TILES = {
-  ghostMove: scene(MARKS.ghostMove as Cell),
-  pallets: scene(MARKS.pallets as Cell),
-  ghostVault: scene(MARKS.ghostVault as Cell),
-  vexCover: scene(MARKS.vexCover as Cell),
-  vexCrate: scene(MARKS.vexCrate as Cell),
-  crates: (MARKS.crates as Cell[]).map(scene),
-  blast: scene(MARKS.blast as Cell),
-};
-
-/** The units, by the ids the yard deploys them under. */
+/** The operators and the targets, by the ids every stage deploys them under. */
 export const VEX = "v";
 export const GHOST = "g";
-export const WRAITH_1 = "h1";
-export const WRAITH_2 = "h2";
+export const BISHOP = "b";
+export const T1 = "h1";
+export const T2 = "h2";
+export const T3 = "h3";
 
 const same = (a: Cell | null | undefined, b: Cell) => !!a && a[0] === b[0] && a[1] === b[1];
 const unit = (now: GuideSnapshot, id: string): GuideUnit | undefined => now.units.find((u) => u.id === id);
-const standing = (now: GuideSnapshot, id: string) => (unit(now, id)?.hp ?? 0) > 0;
-const at = (now: GuideSnapshot, id: string, cell: Cell) => same(unit(now, id)?.pos, cell);
-/** The events since the step began. */
+const at = (now: GuideSnapshot, id: string, c: Cell) => same(unit(now, id)?.pos, c);
 const since = (now: GuideSnapshot, start: GuideSnapshot): readonly GameEvent[] => now.events.slice(start.events.length);
 const did = (now: GuideSnapshot, start: GuideSnapshot, type: GameEvent["type"], by: string) =>
   since(now, start).some((e) => e.type === type && "unit" in e && e.unit === by);
+const down = (now: GuideSnapshot, id: string) => (unit(now, id)?.hp ?? 0) <= 0;
 
-const selecting = (i: GuideIntent) => i.type === "select";
-const moving = (i: GuideIntent, id: string, to: Cell) => i.type === "move" && i.unit === id && same(i.to, to);
 const arming = (i: GuideIntent, id: string, order: string) => i.type === "arm" && i.unit === id && i.order === order;
+const moving = (i: GuideIntent, id: string, to: Cell) => i.type === "move" && i.unit === id && same(i.to, to);
+/** Selecting one of the stage's operators (the others wait outside the room). */
+const selectingOf = (ids: string[]) => (i: GuideIntent) => i.type === "select" && ids.includes(i.unit);
 
-/** Who a burst at `p` catches, by id. */
-const caught = (now: GuideSnapshot, p: Cell) =>
-  now.units.filter((u) => u.hp > 0 && distance(u.pos, p) <= GRENADE_RADIUS);
-/** A burst that catches every hostile in `ids`, every tile in `cells` (the cover it is meant to break) and none of the squad. */
-const burstFits = (now: GuideSnapshot, p: Cell | null, ids: string[], cells: Cell[] = []) => {
+/** A burst at `p` that catches every target in `ids` still standing and no operator. */
+export function burstFits(now: GuideSnapshot, p: Cell | null, ids: string[]): boolean {
   if (!p) return false;
-  const hit = caught(now, p);
-  return (
-    ids.every((id) => !standing(now, id) || hit.some((u) => u.id === id)) &&
-    cells.every((c) => distance(c, p) <= GRENADE_RADIUS) &&
-    !hit.some((u) => !u.enemy)
-  );
-};
-
-/** Point at a command, then (once armed) at what it is aimed with, then at the landing tile and the confirm. */
-function throwPointers(now: GuideSnapshot, order: string, kind: string, fits: boolean, aim: Pointer[]): Pointer[] {
-  if (now.mode !== order) return [{ hud: `command:${kind}` }];
-  return fits && now.throwAt ? [{ hud: "confirm" }, { tiles: [now.throwAt], tone: "blast" }] : aim;
+  const hit = now.units.filter((u) => u.hp > 0 && distance(u.pos, p) <= GRENADE_RADIUS);
+  return ids.every((id) => down(now, id) || hit.some((u) => u.id === id)) && !hit.some((u) => !u.enemy);
 }
 
-/** How far the first step wants the view turned (radians), zoomed (share of the distance) and panned (metres). */
-const CAMERA = { turned: 0.3, zoomed: 0.12, panned: 1.2 };
-const travel = (now: GuideSnapshot, start: GuideSnapshot) => [
-  now.camera.turned - start.camera.turned >= CAMERA.turned,
-  now.camera.zoomed - start.camera.zoomed >= CAMERA.zoomed,
-  now.camera.panned - start.camera.panned >= CAMERA.panned,
-];
+/** How far each camera step wants the view turned (radians), zoomed (share of the distance) or panned (metres). */
+const CAMERA = { turned: 0.35, zoomed: 0.15, panned: 1.2 };
 
-/** The steps, in order. The last one is the closing card: it never completes. */
-export const STEP_SPECS: StepSpec[] = [
-  {
-    id: "camera",
-    ticks: travel,
-    done: (now, start) => travel(now, start).every(Boolean),
+/** One camera control, confirmed by itself. */
+const cameraStep = (id: "turn" | "zoom" | "pan", index: 0 | 1 | 2): StepSpec => {
+  const key = (["turned", "zoomed", "panned"] as const)[index];
+  return {
+    id,
+    frame: false,
+    passable: true,
+    done: (now, start) => now.camera[key] - start.camera[key] >= CAMERA[key],
     permits: () => false,
+  };
+};
+
+/** End the turn and watch theirs: done when it is the player's turn again and the scene is still. */
+const endTurn = (id: string): StepSpec => ({
+  id,
+  done: (now, start) => now.phase === "player" && now.turn > start.turn,
+  permits: (i) => i.type === "end-turn",
+  point: () => [{ hud: "end-turn" }],
+});
+
+/** Select `who`. */
+const select = (id: string, who: string, active: string[]): StepSpec => ({
+  id,
+  done: (now) => now.selected === who,
+  permits: selectingOf(active),
+  point: () => [{ unit: who }, { hud: `member:${who}` }],
+});
+
+/** Move `who` to `to`. */
+const moveTo = (id: string, who: string, to: Cell, active: string[], extra: Pointer[] = []): StepSpec => ({
+  id,
+  unit: who,
+  done: (now) => at(now, who, to),
+  permits: (i) => selectingOf(active)(i) || moving(i, who, to),
+  point: () => [{ tiles: [to], tone: "go" }, ...extra],
+  cursor: () => to,
+});
+
+/** Aim `who` at `target`, then fire: one step, two inputs; done when the shot is taken. */
+const fire = (id: string, who: string, target: string, active: string[], done?: StepSpec["done"]): StepSpec => ({
+  id,
+  unit: who,
+  done: done ?? ((now, start) => did(now, start, "shot", who)),
+  permits: (i) =>
+    selectingOf(active)(i) || arming(i, who, "fire") || (i.type === "fire" && i.unit === who && i.target === target),
+  point: (now) =>
+    now.mode === "fire" ? [{ hud: "odds" }, { hud: "confirm" }, { unit: target }] : [{ hud: "command:Attack" }, { unit: target }],
+});
+
+/**
+ * Fire `who` at any of `targets`: the aim may open on another target, so the
+ * step points at the right ones and at stepping the aim until one is held.
+ */
+const fireAny = (id: string, who: string, targets: string[], active: string[], done: StepSpec["done"]): StepSpec => ({
+  id,
+  unit: who,
+  done,
+  permits: (i) =>
+    selectingOf(active)(i) ||
+    i.type === "select" ||
+    arming(i, who, "fire") ||
+    (i.type === "fire" && i.unit === who && targets.includes(i.target)),
+  point: (now) => {
+    const open = targets.filter((t) => !down(now, t));
+    if (now.mode !== "fire") return [{ hud: "command:Attack" }, ...open.map((t) => ({ unit: t }))];
+    return open.includes(now.target) ? [{ hud: "odds" }, { hud: "confirm" }] : [{ hud: "aim-next" }, ...open.map((t) => ({ unit: t }))];
   },
-  {
-    id: "select",
-    done: (now) => now.selected === GHOST,
-    permits: selecting,
-    point: () => [{ unit: GHOST }, { hud: `member:${GHOST}` }],
+});
+
+/** Arm and throw `order` with `who` so the burst catches `ids` and no operator; `landing` is the marked tile. */
+const toss = (
+  id: string,
+  who: string,
+  order: "grenade" | "flashbang",
+  kind: string,
+  ids: string[],
+  landing: (now: GuideSnapshot) => Cell,
+  active: string[],
+): StepSpec => ({
+  id,
+  unit: who,
+  done: (now, start) => did(now, start, order, who),
+  permits: (i, now) =>
+    selectingOf(active)(i) ||
+    arming(i, who, order) ||
+    (i.type === "throw" && i.unit === who && i.order === order && burstFits(now, i.at, ids)),
+  point: (now) =>
+    now.mode !== order
+      ? [{ hud: `command:${kind}` }]
+      : burstFits(now, now.throwAt, ids)
+        ? [{ hud: "confirm" }, { tiles: [now.throwAt!], tone: "blast" }]
+        : [{ tiles: [landing(now)], tone: "blast" }],
+  cursor: (now) => (now.mode === order && !burstFits(now, now.throwAt, ids) ? landing(now) : null),
+});
+
+/** A stage: where everyone stands, the steps, the dice of the player's shots and the targets' turn. */
+export interface StageSpec {
+  id: StageId;
+  /** Operators and targets in the room, by id; the rest wait outside. */
+  allies: Record<string, Cell>;
+  hostiles: Record<string, Cell>;
+  /** Health of the targets that should not take a recruit's 10. */
+  hp?: Record<string, number>;
+  /** VEX's rounds, when the stage starts on an empty magazine. */
+  ammo?: Record<string, number>;
+  steps: StepSpec[];
+  /** The player's shots: plain hits, as the aim readout's HIT names them. */
+  dice?(game: Encounter, command: Command): ShotOutcome | null;
+  /** The targets' turn, as the lesson needs it. */
+  turn?(game: Encounter): Generator<GameEvent, void, void>;
+}
+
+/** A plain hit for the shooter's own damage stat less armour. */
+const plainHit = (game: Encounter, command: Command): ShotOutcome | null => {
+  if (command.type !== "fire") return null;
+  const a = game.unit(command.unit),
+    b = game.unit(command.target);
+  return a && b ? { hit: true, damage: Math.max(1, a.damage - b.armor) } : null;
+};
+
+/** A target's shot: a hit for 3 on an operator in the open, a miss on one in cover. */
+function* targetShot(game: Encounter, from: string, to: string): Generator<GameEvent, void, void> {
+  const a = game.unit(from),
+    b = game.unit(to);
+  if (!a || !b || a.hp <= 0 || b.hp <= 0 || !game.inRange(a, b)) return;
+  const command: Command = { type: "fire", unit: from, target: to };
+  fixShot(game, command, game.cover(b, a) > 0 || game.chance(a, b) < 20 ? { hit: false } : { hit: true, damage: 3 });
+  yield* game.apply(command);
+}
+
+/** The cells each stage names. */
+export const TILES = {
+  contact: { vex: cell(3, 6), target: cell(3, 2) },
+  cover: { vex: cell(1, 6), shooter: cell(5, 1), crate: cell(3, 3), wrong: cell(3, 2), right: cell(3, 4), flank: cell(7, 1) },
+  grenade: { vex: cell(4, 6), target: cell(4, 1), boxes: [cell(4, 2), cell(3, 1), cell(5, 1)] },
+  squad: {
+    vex: cell(2, 5),
+    ghost: cell(4, 6),
+    bishop: cell(5, 5),
+    pair: [cell(2, 1), cell(3, 1)] as Cell[],
+    flanker: cell(6, 1),
+    flash: cell(6, 3),
+    flank: cell(6, 4),
   },
+};
+
+const ONE = [VEX];
+const ALL = [VEX, GHOST, BISHOP];
+
+export const STAGES: StageSpec[] = [
   {
-    id: "move",
-    unit: GHOST,
-    done: (now) => at(now, GHOST, TILES.ghostMove),
-    permits: (i) => selecting(i) || moving(i, GHOST, TILES.ghostMove),
-    point: () => [{ tiles: [TILES.ghostMove], tone: "go" }],
-  },
-  {
-    id: "vault",
-    unit: GHOST,
-    done: (now, start) =>
-      at(now, GHOST, TILES.ghostVault) && since(now, start).some((e) => e.type === "move" && e.unit === GHOST && e.vault),
-    permits: (i) => selecting(i) || moving(i, GHOST, TILES.ghostVault),
-    point: () => [
-      { tiles: [TILES.ghostVault], tone: "go" },
-      { tiles: [TILES.pallets], tone: "prop" },
+    id: "contact",
+    allies: { [VEX]: TILES.contact.vex },
+    hostiles: { [T1]: TILES.contact.target },
+    hp: { [T1]: 4 },
+    dice: plainHit,
+    steps: [
+      { ...cameraStep("turn", 0), stage: "contact" },
+      cameraStep("zoom", 1),
+      cameraStep("pan", 2),
+      select("select", VEX, ONE),
+      fire("fire", VEX, T1, ONE),
+      endTurn("end-turn"),
     ],
-  },
-  {
-    id: "switch",
-    done: (now) => now.selected === VEX,
-    permits: selecting,
-    point: () => [{ hud: `member:${VEX}` }, { unit: VEX }],
   },
   {
     id: "cover",
-    unit: VEX,
-    done: (now) => at(now, VEX, TILES.vexCover),
-    permits: (i) => selecting(i) || moving(i, VEX, TILES.vexCover),
-    point: () => [
-      { tiles: [TILES.vexCover], tone: "go" },
-      { tiles: [TILES.vexCrate], tone: "prop" },
-      { unit: WRAITH_1 },
+    allies: { [VEX]: TILES.cover.vex },
+    hostiles: { [T1]: TILES.cover.shooter },
+    hp: { [T1]: 4 },
+    dice: plainHit,
+    turn: function* (game) {
+      yield* game.beginEnemy();
+      yield* targetShot(game, T1, VEX);
+      if (!game.result) yield* game.nextTurn();
+    },
+    steps: [
+      { ...moveTo("wrong", VEX, TILES.cover.wrong, ONE, [{ unit: T1 }]), stage: "cover" },
+      endTurn("hit"),
+      {
+        ...moveTo("right", VEX, TILES.cover.right, ONE, [{ tiles: [TILES.cover.crate], tone: "prop" }]),
+        done: (now, start) =>
+          at(now, VEX, TILES.cover.right) && since(now, start).some((e) => e.type === "move" && e.unit === VEX && e.vault),
+      },
+      endTurn("miss"),
+      moveTo("flank", VEX, TILES.cover.flank, ONE, [{ unit: T1 }]),
+      fire("drop", VEX, T1, ONE, (now) => down(now, T1)),
     ],
   },
   {
-    id: "aim",
-    unit: VEX,
-    done: (now) => now.selected === VEX && now.mode === "fire" && now.target === WRAITH_1,
-    permits: (i) => selecting(i) || arming(i, VEX, "fire"),
-    point: () => [{ hud: "command:Attack" }, { unit: WRAITH_1 }],
-  },
-  {
-    id: "shoot",
-    unit: VEX,
-    done: (now, start) => did(now, start, "shot", VEX),
-    permits: (i) =>
-      selecting(i) || arming(i, VEX, "fire") || (i.type === "fire" && i.unit === VEX && i.target === WRAITH_1),
-    point: (now) => (now.mode === "fire" ? [{ hud: "odds" }, { hud: "confirm" }] : [{ hud: "command:Attack" }]),
-  },
-  {
-    id: "end-turn",
-    busy: true,
-    done: (now, start) => now.phase === "enemy" || now.turn > start.turn,
-    permits: (i) => i.type === "end-turn",
-    point: () => [{ hud: "end-turn" }],
-  },
-  {
-    id: "enemy",
-    done: (now, start) => now.phase === "player" && now.turn > start.turn,
-    permits: () => false,
-  },
-  {
-    id: "hit",
-    confirm: true,
-    permits: selecting,
-    point: () => [{ hud: `member:${GHOST}` }, { unit: GHOST }],
-  },
-  {
-    id: "reload",
-    unit: VEX,
-    done: (now, start) => did(now, start, "reload", VEX),
-    permits: (i) => selecting(i) || arming(i, VEX, "reload"),
-    point: () => [{ hud: "command:Reload" }, { hud: "unit-ammo" }],
-  },
-  {
     id: "grenade",
-    unit: VEX,
-    done: (now, start) => did(now, start, "grenade", VEX),
-    permits: (i, now) =>
-      selecting(i) ||
-      arming(i, VEX, "grenade") ||
-      (i.type === "throw" && i.unit === VEX && i.order === "grenade" && burstFits(now, i.at, [WRAITH_1, WRAITH_2], TILES.crates)),
-    point: (now) =>
-      throwPointers(now, "grenade", "Grenade", burstFits(now, now.throwAt, [WRAITH_1, WRAITH_2], TILES.crates), [
-        { tiles: [TILES.blast], tone: "blast" },
-      ]),
+    allies: { [VEX]: TILES.grenade.vex },
+    hostiles: { [T1]: TILES.grenade.target },
+    hp: { [T1]: 6 },
+    ammo: { [VEX]: 0 },
+    dice: plainHit,
+    turn: function* (game) {
+      yield* game.beginEnemy();
+      yield* targetShot(game, T1, VEX);
+      if (!game.result) yield* game.nextTurn();
+    },
+    steps: [
+      {
+        id: "reload",
+        stage: "grenade",
+        unit: VEX,
+        done: (now, start) => did(now, start, "reload", VEX),
+        permits: (i) => selectingOf(ONE)(i) || arming(i, VEX, "reload"),
+        point: () => [{ hud: "command:Reload" }, { hud: "unit-ammo" }],
+      },
+      toss("frag", VEX, "grenade", "Grenade", [T1], () => TILES.grenade.target, ONE),
+      endTurn("their-shot"),
+      fire("finish", VEX, T1, ONE, (now) => down(now, T1)),
+    ],
   },
   {
-    id: "flash",
-    unit: GHOST,
-    done: (now, start) => did(now, start, "flashbang", GHOST),
-    permits: (i, now) =>
-      selecting(i) ||
-      arming(i, GHOST, "flashbang") ||
-      (i.type === "throw" && i.unit === GHOST && i.order === "flashbang" && burstFits(now, i.at, [WRAITH_2])),
-    point: (now) =>
-      throwPointers(now, "flashbang", "Flashbang", burstFits(now, now.throwAt, [WRAITH_2]), [{ unit: WRAITH_2 }]),
-  },
-  {
-    id: "finish",
-    unit: GHOST,
-    done: (now) => now.result === "victory",
-    permits: (i) =>
-      selecting(i) || arming(i, GHOST, "fire") || (i.type === "fire" && i.unit === GHOST && i.target === WRAITH_2),
-    point: (now) =>
-      now.mode === "fire" ? [{ hud: "confirm" }, { unit: WRAITH_2 }] : [{ hud: "command:Attack" }, { unit: WRAITH_2 }],
-  },
-  {
-    id: "done",
-    permits: () => false,
+    id: "squad",
+    allies: { [VEX]: TILES.squad.vex, [GHOST]: TILES.squad.ghost, [BISHOP]: TILES.squad.bishop },
+    hostiles: { [T1]: TILES.squad.pair[0], [T2]: TILES.squad.pair[1], [T3]: TILES.squad.flanker },
+    hp: { [T1]: 6, [T2]: 6, [T3]: 4 },
+    dice: plainHit,
+    // The dazed flanker comes round VEX's barrier and fires: daze took its aim, it misses.
+    turn: function* (game) {
+      yield* game.beginEnemy();
+      const flanker = game.unit(T3);
+      if (flanker && flanker.hp > 0) {
+        yield* game.apply({ type: "move", unit: T3, to: TILES.squad.flank });
+        yield* targetShot(game, T3, VEX);
+      }
+      if (!game.result) yield* game.nextTurn();
+    },
+    steps: [
+      { ...select("switch", GHOST, ALL), stage: "squad" },
+      toss("flash", GHOST, "flashbang", "Flashbang", [T3], () => TILES.squad.flash, ALL),
+      toss("pair", VEX, "grenade", "Grenade", [T1, T2], () => TILES.squad.pair[0], ALL),
+      fireAny("bishop", BISHOP, [T1, T2], ALL, (now) => down(now, T1) || down(now, T2)),
+      fireAny("ghost", GHOST, [T1, T2], ALL, (now) => down(now, T1) && down(now, T2)),
+      { ...endTurn("flanked"), relation: () => [T3, VEX] },
+      // Free: whatever the player does from here, the flanker can be finished; nothing is held back.
+      { id: "win", done: (now) => now.result === "victory", point: () => [{ unit: T3 }] },
+    ],
   },
 ];
 
-/**
- * The dice a player's shot is taken with. The lesson's shots land as the
- * critical hit the aim readout offers ("CRIT −6", "CRIT −7"): VEX's leaves
- * WRAITH–01 at 4 for the grenade to finish, GHOST's downs WRAITH–02 (6 HP
- * after the grenade). Null: the rules roll as they would.
- */
-export function shotDice(game: Encounter, command: Command): ShotOutcome | null {
-  if (command.type !== "fire") return null;
-  const target = game.unit(command.target);
-  if (!target) return null;
-  const crit = Math.max(1, Math.floor(1.5 * game.unit(command.unit)!.damage) - target.armor);
-  if (command.unit === VEX && command.target === WRAITH_1) return { hit: true, crit: true, damage: crit };
-  if (command.unit === GHOST && command.target === WRAITH_2) return { hit: true, crit: true, damage: crit };
-  return null;
+/** The closing card: it never completes. */
+const CLOSING: StepSpec = { id: "done", permits: () => false };
+
+/** Every step of the run, in order; each stage's first step names the stage. */
+export const STEP_SPECS: StepSpec[] = [...STAGES.flatMap((s) => s.steps), CLOSING];
+
+/** The stage an encounter plays: its scenario id is `basics-<stage>` (`scenario.ts`). */
+export const stageOfGame = (game: Encounter) => STAGES.find((s) => `basics-${s.id}` === game.scenario.id);
+
+/** The run's script; `scenario` builds a stage's encounter (`scenario.ts`), passed in to keep this file free of it. */
+export function basicsScript(scenarios: (id: StageId) => import("../../scenario.ts").Scenario): GuideScript {
+  return {
+    steps: STEP_SPECS,
+    copy: STEPS,
+    stages: STAGES.map((s) => ({ id: s.id, title: STAGE_TITLES[s.id] })),
+    stageScenario: (id) => scenarios(id as StageId),
+    dice: (game, command) => stageOfGame(game)?.dice?.(game, command) ?? null,
+    hostileTurn: (game) => {
+      const stage = stageOfGame(game);
+      return stage?.turn ? stage.turn(game) : passiveTurn(game);
+    },
+    controls: STAGE_CONTROLS,
+    frame: roomCells(),
+    relations: true,
+    simulation: true,
+    prepare: (game) => {
+      const stage = stageOfGame(game);
+      if (!stage) return;
+      for (const [id, hp] of Object.entries(stage.hp ?? {})) {
+        const u = game.unit(id);
+        if (u) u.hp = u.maxHp = hp;
+      }
+      for (const [id, ammo] of Object.entries(stage.ammo ?? {})) {
+        const u = game.unit(id);
+        if (u) u.ammo = ammo;
+      }
+    },
+  };
 }
 
-/** The hostile turn's shots: who fires at whom, and how it comes out. */
-const HOSTILE_SHOTS: { from: string; at: string; want: ShotOutcome }[] = [
-  { from: WRAITH_1, at: VEX, want: { hit: false } },
-  { from: WRAITH_2, at: GHOST, want: { hit: true, damage: 3 } },
-];
-
-/**
- * The first hostile turn as the lesson needs it: WRAITH–01 fires at VEX and
- * misses, WRAITH–02 fires at GHOST and hits for 3; nobody moves. A shot the
- * field no longer allows is left out. Null after the first turn: the rules'
- * own hostiles play.
- */
-export function hostileTurn(game: Encounter): Iterable<GameEvent> | null {
-  if (game.turn !== 1) return null;
-  return (function* () {
-    if (game.result || game.phase !== "player") return;
-    yield* game.beginEnemy();
-    for (const { from, at: to, want } of HOSTILE_SHOTS) {
-      const a = game.unit(from),
-        b = game.unit(to);
-      if (!a || !b || a.hp <= 0 || b.hp <= 0 || !game.inRange(a, b)) continue;
-      const command: Command = { type: "fire", unit: from, target: to };
-      fixShot(game, command, want);
-      yield* game.apply(command);
-    }
-    if (!game.result) yield* game.nextTurn();
-  })();
+/** The targets' turn when nothing is scripted: it passes. */
+export function* passiveTurn(game: Encounter): Generator<GameEvent, void, void> {
+  if (game.result || game.phase !== "player") return;
+  yield* game.beginEnemy();
+  if (!game.result) yield* game.nextTurn();
 }
-
-/** The script the guide runs: steps, words, dice and the hostile turn. */
-export const basicsScript: GuideScript = {
-  steps: STEP_SPECS,
-  copy: STEPS,
-  dice: shotDice,
-  hostileTurn,
-};

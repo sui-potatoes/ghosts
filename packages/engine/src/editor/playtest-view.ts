@@ -19,6 +19,8 @@ import type { Occluder } from "../scene/occlusion.ts";
 import { floorMaterial, floorMeshes, type FloorTextures } from "./floors.ts";
 import { floorRaise, interiorPreset, type Level } from "./level.ts";
 import { levelOrigin, levelProps, scenarioFromLevel } from "./playtest.ts";
+import { buildingBlocks } from "./buildings.ts";
+import { buildSurroundings } from "../shop/surroundings.ts";
 
 /** A flat plane on the ground with metric UVs (one texture repeat per 2m). */
 function ground(width: number, depth: number, material: T.Material, x: number, y: number, z: number) {
@@ -134,7 +136,14 @@ export function levelView(level: Level): MapView {
       // Indestructible stand-ins: the same meshes, as fixed scenery. A cell of a building
       // mass fades like the district's buildings when it stands between the camera and a
       // unit: a cutaway of the cells in the way, not the block.
+      // Beyond the grid: the streets and buildings the level declares per side, into the fog.
+      if (level.surroundings) scene.add(buildSurroundings({
+        minX: (minX - 0.5) * CELL, maxX: (minX + level.width - 0.5) * CELL,
+        minZ: (minZ - 0.5) * CELL, maxZ: (minZ + level.depth - 0.5) * CELL,
+      }, level.surroundings));
       const occluders: Occluder[] = [];
+      const poles: T.Vector3[] = [];
+      const roofs = new Map<string, T.Group>();
       for (const prop of levelProps(level).fixed) {
         const asset = kit.props.get(prop);
         const root = new T.Group();
@@ -143,6 +152,25 @@ export function levelView(level: Level): MapView {
         root.position.set(prop.x, floorRaise(level, cell) + (prop.y ?? 0), prop.z);
         root.rotation.y = prop.yaw;
         if (prop.span) root.scale.x = prop.span;
+        // A fixture carries its own lamp: the light comes from something you can see.
+        if (asset.light) {
+          const lamp = new T.PointLight(asset.light.color, asset.light.intensity, asset.light.distance, 2);
+          // A ceiling lamp stays lit when its roof cuts away: it hangs in the scene, not the roof.
+          if (/^shop-building-(roof|ceiling)/.test(prop.kind)) {
+            root.updateMatrixWorld(true);
+            lamp.position.copy(root.localToWorld(asset.light.at.clone()));
+            scene.add(lamp);
+          } else {
+            lamp.position.copy(asset.light.at);
+            root.add(lamp);
+          }
+        }
+        if (prop.kind === "shop-utility-pole") poles.push(root.position.clone());
+        // Roof and ceiling tiles cut away per roof, not per cell: gathered and grouped below.
+        if (/^shop-building-(roof|ceiling)/.test(prop.kind)) {
+          roofs.set(cell.join(), root);
+          continue;
+        }
         if (!prop.kind.startsWith("shop-building-")) {
           scene.add(root);
           continue;
@@ -155,15 +183,97 @@ export function levelView(level: Level): MapView {
         occluders.push({ group, bounds: new T.Box3().setFromObject(group) });
       }
 
-      // The level's point lights, always on, each with its bulb.
+      // Blocks nobody enters: a flat dark fill over the whole footprint (what a cutaway shows,
+      // like the poché of a plan), and the roof carried over the empty interior cells, which
+      // cut away cell by cell like the pieces around them. At most one rooftop object per
+      // block, large enough to read: a water tank on legs on the bigger, taller blocks.
+      const fill = new T.MeshStandardMaterial({ color: 0x16181b, roughness: 0.95 });
+      const cut = new T.MeshStandardMaterial({ color: 0x8a8c88, roughness: 0.8 });
+      const slabTop = Math.max(0, ...level.floors.map((f) => floorRaise(level, f.at))) + 0.45;
+      const roofing = new T.MeshStandardMaterial({ color: 0x2a2c2f, roughness: 0.95 });
+      const tankSteel = new T.MeshStandardMaterial({ color: 0x8a8c88, roughness: 0.6, metalness: 0.4 });
+      buildingBlocks(level).blocks.forEach((block, n) => {
+        const y = (c: [number, number]) => floorRaise(level, c);
+        // A cut-away block reads as a mass sliced off at knee height: a dark slab half a metre
+        // above the pavement, its outer edge picked out in a lighter line. Hidden inside the
+        // building while it stands.
+        const inBlock = new Set(block.cells.map((c) => c.join()));
+        for (const cell of block.cells) {
+          const base = y(cell), height = slabTop - base;
+          const slab = new T.Mesh(new T.BoxGeometry(CELL, height, CELL), fill);
+          slab.position.set((cell[0] + minX) * CELL, base + height / 2, (cell[1] + minZ) * CELL);
+          scene.add(slab);
+          for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            if (inBlock.has([cell[0] + dx, cell[1] + dz].join())) continue;
+            const edge = new T.Mesh(new T.BoxGeometry(dx ? 0.1 : CELL, 0.03, dx ? CELL : 0.1), cut);
+            edge.position.set((cell[0] + minX + dx * 0.46) * CELL, slabTop + 0.015, (cell[1] + minZ + dz * 0.46) * CELL);
+            scene.add(edge);
+          }
+        }
+        // Only over a real roofed interior, so it can never land on a shop's skin or a lone wall.
+        const tankAt = block.interior.length >= 4 && block.height >= 6 && n % 2 === 0
+          ? block.interior[Math.floor(block.interior.length / 2)] : null;
+        for (const cell of block.interior) {
+          const group = new T.Group();
+          const roof = new T.Mesh(new T.BoxGeometry(CELL, 0.012, CELL), roofing);
+          roof.position.set((cell[0] + minX) * CELL, y(cell) + block.height + 0.006, (cell[1] + minZ) * CELL);
+          roof.receiveShadow = true;
+          group.add(roof);
+          scene.add(group);
+          occluders.push({ group, bounds: new T.Box3(
+            new T.Vector3(roof.position.x - CELL / 2, y(cell), roof.position.z - CELL / 2),
+            new T.Vector3(roof.position.x + CELL / 2, y(cell) + block.height, roof.position.z + CELL / 2)) });
+        }
+        if (tankAt) {
+          const tank = new T.Group();
+          tank.position.set((tankAt[0] + minX) * CELL, y(tankAt) + block.height, (tankAt[1] + minZ) * CELL);
+          const body = new T.Mesh(new T.CylinderGeometry(0.7, 0.7, 1.3, 16), tankSteel);
+          body.position.y = 1.55;
+          const lid = new T.Mesh(new T.CylinderGeometry(0.72, 0.72, 0.08, 16), tankSteel);
+          lid.position.y = 2.24;
+          tank.add(body, lid);
+          for (const [lx, lz] of [[-0.5, -0.5], [0.5, -0.5], [-0.5, 0.5], [0.5, 0.5]]) {
+            const leg = new T.Mesh(new T.BoxGeometry(0.08, 0.9, 0.08), tankSteel);
+            leg.position.set(lx, 0.45, lz);
+            tank.add(leg);
+          }
+          tank.traverse((o) => { if (o instanceof T.Mesh) o.castShadow = true; });
+          scene.add(tank);
+        }
+      });
+
+      // A roof is every roof and ceiling tile joined four ways: one occluder, so with anyone
+      // inside (or the camera's focus there) the whole sales floor opens at once.
+      const seen = new Set<string>();
+      for (const start of roofs.keys()) {
+        if (seen.has(start)) continue;
+        const group = new T.Group(), queue = [start];
+        seen.add(start);
+        while (queue.length) {
+          const k = queue.pop()!, [x, z] = k.split(",").map(Number);
+          group.add(roofs.get(k)!);
+          for (const n of [[x + 1, z], [x - 1, z], [x, z + 1], [x, z - 1]].map((c) => c.join()))
+            if (roofs.has(n) && !seen.has(n)) { seen.add(n); queue.push(n); }
+        }
+        scene.add(group);
+        group.updateMatrixWorld(true);
+        const bounds = new T.Box3().setFromObject(group);
+        bounds.min.y = 0;
+        occluders.push({ group, bounds });
+      }
+
+      // Overhead lines between neighbouring utility poles: each pole wires to its nearest
+      // neighbours within eight tiles, three sagging conductors and a lower telecom cable.
+      if (poles.length > 1) scene.add(poleCables(poles));
+
+      // The level's point lights, always on, hung in fixtures.
       for (const light of level.lights) {
         const [x, z] = light.at;
         const y = light.height + floorRaise(level, light.at);
         const lamp = new T.PointLight(light.color, light.intensity, 0, 2);
         lamp.position.set((x + minX) * CELL, y, (z + minZ) * CELL);
-        const bulb = new T.Mesh(new T.SphereGeometry(0.07, 12, 8), new T.MeshBasicMaterial({ color: light.color }));
-        bulb.position.copy(lamp.position);
-        scene.add(lamp, bulb);
+        // No bulb marker in play: a level's lamps hang in fixtures (the editor alone shows the gizmo).
+        scene.add(lamp);
       }
       return occluders;
     },
@@ -178,4 +288,29 @@ export function playtestScenario(level: Level): Scenario {
   const scenario = scenarioFromLevel(level);
   registerMapView(scenario.map.id, levelView(level));
   return scenario;
+}
+
+/** Catenary spans between nearby poles, as one line batch (no collision, no shadow). */
+function poleCables(poles: readonly T.Vector3[]): T.LineSegments {
+  const points: number[] = [], done = new Set<string>();
+  const heights: [number, number][] = [[-0.45, 7.25], [0, 7.25], [0.45, 7.25], [0.25, 5.2]];
+  poles.forEach((a, i) => {
+    const near = poles.map((b, j) => ({ j, d: a.distanceTo(b) }))
+      .filter(({ j, d }) => j !== i && d < CELL * 8).sort((p, q) => p.d - q.d).slice(0, 2);
+    for (const { j, d } of near) {
+      const key = i < j ? `${i}:${j}` : `${j}:${i}`;
+      if (done.has(key)) continue;
+      done.add(key);
+      const b = poles[j], dir = b.clone().sub(a).setY(0).normalize(), side = new T.Vector3(-dir.z, 0, dir.x);
+      for (const [offset, y] of heights) {
+        const sag = 0.25 + d * 0.035;
+        for (let k = 0; k < 12; k++) for (const t of [k / 12, (k + 1) / 12]) {
+          const p = a.clone().lerp(b, t).addScaledVector(side, offset);
+          points.push(p.x, y - sag * 4 * t * (1 - t), p.z);
+        }
+      }
+    }
+  });
+  const geometry = new T.BufferGeometry().setAttribute("position", new T.Float32BufferAttribute(points, 3));
+  return new T.LineSegments(geometry, new T.LineBasicMaterial({ color: 0x0c0d0f }));
 }
