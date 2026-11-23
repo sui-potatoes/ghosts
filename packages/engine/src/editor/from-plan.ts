@@ -18,7 +18,7 @@ import { paperTrail } from "../office/scenario.ts";
 import { officeFloorZones } from "../office/flooring.ts";
 import { anchorOf, canPlace, newLevel, turnOffset, type Level, type Placement, type Turn } from "./level.ts";
 import { basicsLevel } from "../guide/basics/level.ts";
-import { nightShiftNextLevel } from "../night-shift/level.ts";
+import { nightShiftLevel } from "../night-shift/level.ts";
 
 export interface FloorZone {
   /** Floor catalog uid painted over the zone. */
@@ -189,5 +189,5 @@ export const demoLevels: readonly { id: string; name: string; build: () => { lev
       }),
   },
   { id: "basics", name: "Basics · Training yard", build: () => ({ level: basicsLevel(), dropped: 0 }) },
-  { id: "night-shift", name: "Night Shift · Sector 11", build: () => ({ level: nightShiftNextLevel(), dropped: 0 }) },
+  { id: "night-shift", name: "Night Shift · Sector 11", build: () => ({ level: nightShiftLevel(), dropped: 0 }) },
 ];

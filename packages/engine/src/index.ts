@@ -39,7 +39,7 @@ export { Guide, type GuideHost } from "./guide/run";
 export { basicsTraining, BASICS_CHAPTERS, BASICS_ID } from "./guide/basics";
 export { allDone, nextChapter, openingChapter, withChapter } from "./guide/chapters";
 export {
-  nightShift, nightShiftLevel, nightShiftNextLevel, nightShiftScenario, nightShiftTraining, NIGHT_SHIFT_ID,
+  nightShift, nightShiftLevel, nightShiftScenario, NIGHT_SHIFT_ID,
   NIGHT_SHIFT_MAP, NIGHT_SHIFT_NAME, NIGHT_SHIFT_POSITIONS, NIGHT_SHIFT_SIZE,
 } from "./night-shift";
 export type { Command, GameEvent } from "./events";

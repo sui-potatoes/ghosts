@@ -55,21 +55,24 @@ function doors(b: Build, w: number, cuts: number[], y0: number, y1: number, trim
   }
 }
 
-/** Lamps off, plates blank; hazards on in one look of four. */
+/** Lamps with a little depth and a faint tint (parked, off), plates blank; hazards on in one look of four. */
 function lamps(b: Build, w: number, front: number, rear: number, y: number, frontY = y) {
   const hazards = b.variant === 3;
-  const head = b.kit.material(0xcfd3cc, 0.2, 0.25), tail = b.kit.material(0x5a1a18, 0.1, 0.4);
-  const amber = hazards ? b.kit.material(0xffb24a, 0, 0.4, 1.4, 0xff9a2a) : b.kit.material(0x8a5a1a, 0.1, 0.4);
-  const plate = b.kit.material(0xe8e6dc, 0.1, 0.5);
+  const head = b.kit.material(0xdfe6e8, 0.3, 0.15, 0.25, 0xcfe0ff), tail = b.kit.material(0x8a1e1a, 0.1, 0.3, 0.35, 0xc0201a);
+  const amber = hazards ? b.kit.material(0xffb24a, 0, 0.4, 1.4, 0xff9a2a) : b.kit.material(0xa86a1a, 0.1, 0.4, 0.2, 0xa86a1a);
+  const plate = b.kit.material(0xe8e6dc, 0.1, 0.5), housing = b.kit.material(0x15181b, 0.3, 0.5);
   for (const s of [-1, 1]) {
-    b.box(s * (w / 2 - 0.16), frontY, front, 0.24, 0.1, 0.03, head);
-    b.box(s * (w / 2 - 0.04), frontY, front - 0.01, 0.05, 0.06, 0.03, amber);
-    b.box(s * (w / 2 - 0.1), y, rear, 0.14, 0.18, 0.03, tail);
-    b.box(s * (w / 2 - 0.1), y - 0.13, rear, 0.1, 0.05, 0.03, amber);
+    b.box(s * (w / 2 - 0.17), frontY, front - 0.02, 0.3, 0.13, 0.08, housing);
+    b.box(s * (w / 2 - 0.17), frontY, front + 0.022, 0.26, 0.1, 0.01, head);
+    b.box(s * (w / 2 - 0.04), frontY - 0.08, front + 0.01, 0.06, 0.05, 0.04, amber);
+    b.box(s * (w / 2 - 0.1), y, rear + 0.02, 0.16, 0.22, 0.08, housing);
+    b.box(s * (w / 2 - 0.1), y, rear - 0.022, 0.13, 0.19, 0.01, tail);
+    b.box(s * (w / 2 - 0.1), y - 0.15, rear - 0.015, 0.1, 0.05, 0.02, amber);
   }
   for (const [z, s] of [[front, 1], [rear, -1]] as const) {
-    b.box(0, 0.42, z + s * 0.012, 0.33, 0.165, 0.01, plate);
-    for (const x of [-0.08, 0.06]) b.box(x, 0.43, z + s * 0.018, 0.08, 0.05, 0.004, b.dark);
+    b.box(0, 0.42, z + s * 0.012, 0.36, 0.19, 0.02, housing);
+    b.box(0, 0.42, z + s * 0.024, 0.33, 0.165, 0.006, plate);
+    for (const x of [-0.08, 0.06]) b.box(x, 0.43, z + s * 0.028, 0.08, 0.05, 0.004, b.dark);
   }
 }
 
@@ -81,9 +84,9 @@ function mirrors(b: Build, w: number, z: number, y: number, m: T.Material) {
 export function keiCar(b: Build) {
   const { paint, trim, glass } = materials(b, 0x7d8a6a), w = 1.42;
   b.box(0, 0.5, 0, w, 0.6, 3.3, paint);
-  b.box(0, 0.86, 1.4, w - 0.04, 0.14, 0.5, paint);
+  b.box(0, 0.84, 1.45, w - 0.04, 0.1, 0.4, paint);
   b.box(0, 0.86, -0.25, w, 0.14, 2.6, paint);
-  greenhouse(b, { paint, trim, glass }, w - 0.08, 0.93, 1.64, -1.55, 1.1, 0.22);
+  greenhouse(b, { paint, trim, glass }, w - 0.08, 0.93, 1.74, -1.6, 1.22, 0.3);
   for (const s of [-1, 1]) b.box(s * (w / 2 - 0.005), 0.62, 0.15, 0.004, 0.01, 1.6, trim);
   for (const z of [1.68, -1.66]) b.box(0, 0.36, z, w + 0.02, 0.2, 0.08, trim);
   for (const s of [-1, 1]) for (const z of [-1.12, 1.24]) wheel(b, s * (w / 2 - 0.06), z, 0.28, 0.17);
@@ -124,7 +127,7 @@ export function taxi(b: Build) {
   b.box(0, 0.52, 0, w, 0.62, 3.95, paint);
   b.box(0, 0.88, 1.38, w - 0.06, 0.12, 1.05, paint);
   b.box(0, 0.88, -1.6, w - 0.06, 0.12, 0.75, paint);
-  greenhouse(b, body, w - 0.2, 0.86, 1.42, -1.2, 0.85, 0.5);
+  greenhouse(b, body, w - 0.2, 0.86, 1.36, -1.15, 0.8, 0.5);
   b.box(0, 1.12, -1.28, w - 0.32, 0.4, 0.04, glass).rotation.x = 0.85;
   for (const s of [-1, 1]) b.box(s * (w / 2 + 0.003), 0.66, 0, 0.004, 0.1, 3.7, band);
   for (const z of [1.98, -1.98]) b.box(0, 0.36, z, w + 0.02, 0.2, 0.08, trim);

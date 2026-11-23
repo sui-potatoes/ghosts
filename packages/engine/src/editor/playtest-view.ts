@@ -143,7 +143,7 @@ export function levelView(level: Level): MapView {
       }, level.surroundings));
       const occluders: Occluder[] = [];
       const poles: T.Vector3[] = [];
-      const roofs = new Map<string, T.Group>();
+      const roofs = new Map<string, T.Group[]>();
       for (const prop of levelProps(level).fixed) {
         const asset = kit.props.get(prop);
         const root = new T.Group();
@@ -168,7 +168,8 @@ export function levelView(level: Level): MapView {
         if (prop.kind === "shop-utility-pole") poles.push(root.position.clone());
         // Roof and ceiling tiles cut away per roof, not per cell: gathered and grouped below.
         if (/^shop-building-(roof|ceiling)/.test(prop.kind)) {
-          roofs.set(cell.join(), root);
+          // A cell may hold a roof tile and a ceiling fixture: both go with the roof.
+          (roofs.get(cell.join()) ?? roofs.set(cell.join(), []).get(cell.join())!).push(root);
           continue;
         }
         if (!prop.kind.startsWith("shop-building-")) {
@@ -251,7 +252,7 @@ export function levelView(level: Level): MapView {
         seen.add(start);
         while (queue.length) {
           const k = queue.pop()!, [x, z] = k.split(",").map(Number);
-          group.add(roofs.get(k)!);
+          for (const root of roofs.get(k)!) group.add(root);
           for (const n of [[x + 1, z], [x - 1, z], [x, z + 1], [x, z - 1]].map((c) => c.join()))
             if (roofs.has(n) && !seen.has(n)) { seen.add(n); queue.push(n); }
         }

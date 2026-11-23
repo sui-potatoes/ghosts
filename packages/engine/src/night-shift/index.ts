@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Night Shift, Tokyo / Sector 11: a 19 × 24 street corner in the editor's
+ * Night Shift, Tokyo / Sector 11: a 21 × 22 street corner in the editor's
  * level format (`level.json`, the export file the editor reads and writes; the
- * editor opens it as a base). An all-night ELEVENTY store sits between a coin
+ * editor opens it as a base). An all-night ELEVENTY store sits between its own
  * car park (side A, south) and a parcel depot (side B, north), with three
  * lanes between them: the road on the west, the store (front door, sales
  * floor, stockroom, back door) and the service alley on the east, joined by
@@ -16,7 +16,7 @@
 import { levelView } from "../editor/playtest-view.ts";
 import type { Scenario } from "../scenario.ts";
 import { registerMapView } from "../scene/maps.ts";
-import { nightShiftLevel, nightShiftNextLevel } from "./level.ts";
+import { nightShiftLevel } from "./level.ts";
 import { nightShiftScenario } from "./scenario.ts";
 
 /** Night Shift, ready to mount: the scenario, with its scenery registered for the battlefield. */
@@ -26,22 +26,7 @@ export function nightShift(): Scenario {
   return scenario;
 }
 
-/**
- * The next revision for Training: the same scenario on `level-next.json`, its
- * scenery registered under a map id of its own, so a chain match on the
- * preset still on testnet never draws the wrong ground.
- */
-export function nightShiftTraining(): Scenario {
-  const base = nightShiftScenario(nightShiftNextLevel());
-  const scenario = { ...base, map: { ...base.map, id: `${base.map.id} · next` } };
-  registerMapView(scenario.map.id, levelView(nightShiftNextLevel()));
-  return scenario;
-}
-
-export { nightShiftLevel, nightShiftNextLevel } from "./level.ts";
+export { nightShiftLevel } from "./level.ts";
 export { nightShiftScenario, NIGHT_SHIFT_ID } from "./scenario.ts";
 export { NIGHT_SHIFT_MAP, NIGHT_SHIFT_NAME, NIGHT_SHIFT_POSITIONS, NIGHT_SHIFT_SIZE } from "./chain.ts";
-export {
-  NIGHT_SHIFT_NEXT_MAP, NIGHT_SHIFT_NEXT_NAME, NIGHT_SHIFT_NEXT_POSITIONS, NIGHT_SHIFT_NEXT_SIZE,
-} from "./chain-next.ts";
 export { NIGHT_SHIFT_SURROUNDINGS, type Surroundings, type SurroundingBuilding } from "./surroundings.ts";

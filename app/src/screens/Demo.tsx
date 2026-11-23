@@ -7,7 +7,7 @@ import {
     deployedIntel,
     Encounter,
     type EncounterDebrief,
-    nightShiftTraining,
+    nightShift,
     openBriefing,
     restartEncounter,
     paperTrail,
@@ -39,7 +39,7 @@ export type Operation = "black-rain" | "paper-trail" | "night-shift";
 /** The encounter an operation plays; Night Shift registers its scenery on first use. */
 function operationScenario(operation: Operation): Scenario {
     if (operation === "paper-trail") return paperTrail;
-    if (operation === "night-shift") return nightShiftTraining();
+    if (operation === "night-shift") return nightShift();
     return STREET;
 }
 
