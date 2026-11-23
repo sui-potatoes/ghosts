@@ -181,7 +181,7 @@ const APPROACH_WEIGHT = 0.4;
  * 1.5 to 2.5 the squad ends more turns in cover and still wins more than it loses; at 4 it hides
  * from shots it should take and loses.
  */
-const COVER_MARGIN = 2;
+const COVER_MARGIN = 2.5;
 /**
  * Point blank: a tile this close to an enemy is one it can flank with a single step, at its best
  * chance. A unit ends there only to shoot with an even chance of a kill (`CLOSE_KILL`), or in
