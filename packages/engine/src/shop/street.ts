@@ -230,8 +230,14 @@ export function building(b: Build, floors: number) {
       }
     }
   }
-  for (let i = 0; i < 2; i++) if (b.random() < 0.5) b.box((b.random() - 0.5) * 0.7, h + 0.25, (b.random() - 0.5) * 0.7, 0.45, 0.5, 0.35, ac);
-  if (floors >= 4 && b.random() < 0.35) b.cyl(0.2, h + 0.7, -0.15, 0.32, 1.4, b.kit.material(0x8a8a84, 0.3, 0.6), 12);
+  // A dark roof that recedes at night, flush cell to cell, with the coping band running round
+  // the outer faces as one parapet line. Plant is sparse: now and then one low unit, the odd tank.
+  const roof = b.kit.material(0x2a2c2f, 0, 0.95), coping = b.kit.material(0x4a4b4c, 0, 0.9);
+  b.box(0, h + 0.006, 0, C, 0.012, C, roof);
+  // The band stops just under the roof, so where cells abut it is buried in the neighbour.
+  for (const yaw of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) b.box(0, h - 0.115, H + 0.02, C, 0.22, 0.04, coping, b.frame(yaw));
+  if (b.random() < 0.14) b.box((b.random() - 0.5) * 0.3, h + 0.17, (b.random() - 0.5) * 0.3, 0.95, 0.3, 0.6, b.kit.material(0x55575a, 0.2, 0.7));
+  if (floors >= 4 && b.random() < 0.1) b.cyl(0.2, h + 0.5, -0.15, 0.3, 1.0, b.kit.material(0x4a4c4e, 0.3, 0.7), 12);
   if (floors >= 2 && b.variant === 1) {
     const sign = b.frame(0);
     b.sign(b.random() < 0.5 ? "for-rent" : "tenants", 0.5, STOREY + 1.4, H + 0.06, 0.32, 1.4, sign, "lit");
@@ -317,5 +323,52 @@ export function rollCage(b: Build) {
     const h = 0.22 + b.random() * 0.12;
     b.item("box", b.pick(carton), (b.random() - 0.5) * 0.08, y, (b.random() - 0.5) * 0.06, 0.66, h, 0.5);
     y += h;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Building shells: one plain wall cell, a storey high, that merges with its neighbours.
+
+const SHELL_H = 3;
+export type Shell = "store" | "corner" | "partition" | "timber" | "concrete";
+
+/**
+ * A wall tile for a building's shell. The front (+z) of `store` and the
+ * front and right (+x) of `corner` are the outside: pale panels in a joint
+ * grid that runs on from cell to cell, a fascia band in the chain's livery
+ * under a flat coping. Every other face is the inside: plain painted wall,
+ * so shelving and fridges stand against something believable. No roof plant,
+ * no windows; the faces between neighbours are hidden inside them.
+ */
+export function shell(b: Build, kind: Shell) {
+  const paint = b.kit.material(0xc9c5b8, 0, 0.88), skirting = b.kit.material(0x3a3c3e, 0.1, 0.7);
+  const core = kind === "timber" ? b.woodTrim : kind === "concrete" ? b.kit.material(0x7c7d78, 0, 0.92) : paint;
+  b.box(0, SHELL_H / 2, 0, C, SHELL_H, C, core);
+  b.box(0, SHELL_H + 0.03, 0, C, 0.06, C, b.kit.material(0x55585a, 0.1, 0.85));
+  const outside = kind === "store" ? [0] : kind === "corner" ? [0, Math.PI / 2] : [];
+  for (const yaw of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+    const face = b.frame(yaw), z = H + 0.004;
+    if (outside.includes(yaw)) {
+      const tile = b.kit.material(0xd2cec2, 0, 0.7), joint = b.kit.material(0x9a968c, 0, 0.8);
+      b.box(0, 1.22, z, C, 2.34, 0.008, tile, face);
+      for (let y = 0.35; y < 2.35; y += 0.3) b.box(0, y, z + 0.005, C, 0.008, 0.004, joint, face);
+      for (const x of [-0.225, 0.225]) b.box(x, 1.22, z + 0.005, 0.008, 2.3, 0.004, joint, face);
+      b.box(0, 0.06, z + 0.004, C, 0.12, 0.02, skirting, face);
+      b.box(0, 2.7, z + 0.012, C, 0.56, 0.024, b.header, face);
+      b.box(0, 2.47, z + 0.026, C, 0.03, 0.004, b.stripe, face);
+      b.box(0, 2.98, z + 0.03, C, 0.06, 0.06, b.kit.material(0x55585a, 0.1, 0.85), face);
+      continue;
+    }
+    if (kind === "timber") {
+      for (let i = 0; i < 9; i++) b.box(-H + 0.075 + i * 0.15, 1.5, z, 0.142, 2.9, 0.008, b.random() < 0.25 ? b.woodTrim : b.wood, face);
+      b.box(0, 0.06, z + 0.006, C, 0.12, 0.012, b.woodTrim, face);
+    } else if (kind === "concrete") {
+      const mark = b.kit.material(0x6a6b66, 0, 0.95);
+      for (let y = 0.3; y < 2.9; y += 0.3) b.box(0, y, z, C, 0.006, 0.004, mark, face);
+      for (const x of [-0.45, 0, 0.45]) for (let y = 0.45; y < 2.9; y += 0.6) b.box(x, y, z, 0.025, 0.025, 0.006, mark, face);
+    } else {
+      b.box(0, 1.55, z, C, 2.9, 0.006, b.kit.material(0xd8d4c8, 0, 0.9), face);
+      b.box(0, 0.05, z + 0.004, C, 0.1, 0.012, skirting, face);
+    }
   }
 }

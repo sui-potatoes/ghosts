@@ -63,7 +63,9 @@ export type ShopKind =
   // Counter ends capping the left (west) end, so a straight counter closes at both ends.
   | "counter-end-left" | "bar-counter-end-left"
   // Street cover the level asked for.
-  | "recycling-bins" | "dumpster" | "ac-unit" | "ac-pair" | "bus-shelter" | "taxi-shelter" | "roll-cage";
+  | "recycling-bins" | "dumpster" | "ac-unit" | "ac-pair" | "bus-shelter" | "taxi-shelter" | "roll-cage"
+  // Building shells: plain wall tiles, a storey high.
+  | "building-wall-store" | "building-wall-corner" | "building-wall-partition" | "building-wall-timber" | "building-wall-concrete";
 
 type Placement = Omit<AssetSpec, "kind" | "name" | "category" | "finishes">;
 export interface ShopEntry extends Placement {
@@ -275,6 +277,15 @@ function batch2(): Record<string, ShopEntry> {
   street("bus-shelter", "Bus shelter", "bus stop shelter bench roof glass", { footprint: "cover", cells: [], place: "edge", span: 1.35, hp: 60 });
   street("taxi-shelter", "Taxi stand shelter", "taxi stand shelter bench roof glass", { footprint: "cover", cells: [], place: "edge", span: 1.35, hp: 60 });
   street("roll-cage", "Roll cage", "roll cage cart delivery trolley boxes", { footprint: "cover", cells: one, hp: 50 });
+  // Shell walls: a wall tile like the building masses (permanent), one storey, merging cell to cell.
+  const shell = (kind: string, name: string, tags: string, scheme: ShopEntry["scheme"]) =>
+    (rows[`building-wall-${kind}`] = { uid: u(), name: `Shell wall · ${name}`, group: "Street · Buildings",
+      tags: `wall shell building ${tags}`, footprint: "solid", cells: one, hp: 0, scheme });
+  shell("store", "store front", "store exterior facade fascia konbini", "shop");
+  shell("corner", "store corner", "store exterior facade fascia corner konbini", "shop");
+  shell("partition", "partition", "interior partition painted", none);
+  shell("timber", "timber", "timber wood izakaya", wood);
+  shell("concrete", "concrete", "concrete back of house", none);
   rows["mamachari"] = { uid: v(), name: "City bicycle", group: "Street · Vehicles", tags: "vehicle bicycle bike mamachari basket parked", footprint: "none", cells: one, hp: 0, scheme: none };
   return rows;
 }

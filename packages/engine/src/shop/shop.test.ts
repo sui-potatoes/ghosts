@@ -138,6 +138,12 @@ test("buildings stack whole storeys and vehicles keep to their bays", () => {
     const { bounds } = stats(assets.create(`building-${floors}`));
     assert(bounds.max.y >= floors * 3 && bounds.max.y < floors * 3 + 1.6, `building-${floors}`);
   }
+  for (const kind of ["building-wall-store", "building-wall-corner", "building-wall-partition", "building-wall-timber", "building-wall-concrete"] as const) {
+    const { bounds } = stats(assets.create(kind));
+    // One storey, flat top, and nothing past the cell but the outside skin's few millimetres.
+    assert(bounds.max.y > 2.9 && bounds.max.y < 3.1, kind);
+    assert(Math.max(-bounds.min.x, bounds.max.x, -bounds.min.z, bounds.max.z) < H + 0.07, kind);
+  }
   for (const kind of ["kei-car", "kei-truck", "hatchback", "van", "taxi"] as const) {
     const spec = shopRoster[kind], { bounds } = stats(assets.create(kind));
     const cols = new Set(spec.cells.map(([x]) => x)).size, rows = new Set(spec.cells.map(([, z]) => z)).size;

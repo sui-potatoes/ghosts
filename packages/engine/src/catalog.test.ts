@@ -147,6 +147,14 @@ test("the shop pack maps onto the existing tactical classes", () => {
     assert.equal(of(kind).footprint, assetByUid("b06")!.footprint);
     assert.equal(of(kind).hp, 0);
   }
+  // Shell walls are permanent wall tiles, like the masses they replace in a store's shell.
+  for (const uid of ["u15", "u16", "u17", "u18", "u19"]) {
+    const spec = assetByUid(uid)!;
+    assert.ok(spec.kind.startsWith("shop-building-wall-"), uid);
+    assert.equal(spec.footprint, assetByUid("u01")!.footprint);
+    assert.equal(spec.hp, 0);
+  }
+  assert.deepEqual(assetByUid("u15")!.finishes, ["plain", "eleventy", "yandottir"]);
   assert.deepEqual(new Set(of("hatchback").cells.map(([x]) => x)), new Set([0, 1]));
   assert.equal(of("kei-car").cells.length, 3);
 });

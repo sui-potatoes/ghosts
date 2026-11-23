@@ -36,6 +36,9 @@ const builders: Partial<Record<ShopKind, (b: Build) => void>> = {
   "recycling-bins": street.recyclingBins, dumpster: street.dumpster,
   "ac-unit": (b) => street.acUnit(b, false), "ac-pair": (b) => street.acUnit(b, true),
   "bus-shelter": (b) => street.shelter(b, false), "taxi-shelter": (b) => street.shelter(b, true), "roll-cage": street.rollCage,
+  "building-wall-store": (b) => street.shell(b, "store"), "building-wall-corner": (b) => street.shell(b, "corner"),
+  "building-wall-partition": (b) => street.shell(b, "partition"), "building-wall-timber": (b) => street.shell(b, "timber"),
+  "building-wall-concrete": (b) => street.shell(b, "concrete"),
   "kei-car": car.keiCar, hatchback: (b) => car.hatchback(b), "kei-truck": car.keiTruck, van: car.van,
   taxi: (b) => car.hatchback(b, true), scooter: car.scooter, mamachari: car.mamachari,
 };
