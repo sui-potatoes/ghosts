@@ -203,7 +203,8 @@ export const SLOTS = {
     placeholder: true,
     note: "Ear ring when the held unit is dazed",
   },
-  "unit.step": field("unit.step", 0.38, 0.08, "Footsteps, one cell"),
+  // Silent until a real footfall sample replaces the synthesized tick.
+  "unit.step": field("unit.step", 0, 0.08, "Footsteps, one cell"),
   "unit.vault": field("unit.vault", 0.57, 0.06, "Vaulting low cover"),
   "unit.hit": field("unit.hit", 2, 0.06, "A round striking a unit"),
   "unit.miss": field("unit.miss", 0.65, 0.1, "A round missing: snap past and strike behind"),
