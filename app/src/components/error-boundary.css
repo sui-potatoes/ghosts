@@ -9,24 +9,42 @@
     background: var(--background-color);
 }
 
+/* Like Settings' signed-out plate: one panel in the middle of the body. */
 .gui-fault .gui-body {
-    grid-template-columns: minmax(0, calc(var(--u) * 105)) minmax(0, 1fr);
-    align-items: start;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+}
+
+.gui-fault-stage {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    gap: calc(var(--u) * 3);
+    place-self: center;
+    width: 100%;
+    max-height: 100%;
+    min-height: 0;
+}
+
+.gui-fault-panel {
+    flex: 0 1 calc(var(--u) * 110);
+    max-height: 100%;
 }
 
 .gui-fault-panel .gui-panel-body {
-    gap: calc(var(--u) * 3);
+    gap: calc(var(--u) * 2);
 }
 
 .gui-fault-message {
     padding: calc(var(--u) * 1) calc(var(--u) * 1) 0;
     font: 400 var(--t-body) / 1.4 var(--font-mono);
-    color: var(--warn-color);
+    color: var(--text-secondary);
     overflow-wrap: anywhere;
 }
 
 .gui-fault-details {
-    height: 100%;
+    flex: 0 1 calc(var(--u) * 160);
+    height: min(70vh, calc(var(--u) * 140));
     min-height: 0;
 }
 
@@ -54,54 +72,134 @@
     background: color-mix(in srgb, var(--text-color) 5%, transparent);
 }
 
-/* Phone width: the actions, then the details under them. */
+/* Phone width: the plate fills the width, the details stack under it. */
 @media (max-width: 720px) {
-    .gui-fault .gui-body {
-        grid-template-columns: minmax(0, 1fr);
-        grid-template-rows: auto minmax(0, 1fr);
-        padding: calc(var(--u) * 3);
+    .gui-fault-stage {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .gui-fault-panel,
+    .gui-fault-details {
+        flex: none;
+    }
+    .gui-fault-details {
+        height: auto;
+        flex: 1 1 0;
     }
 }
 
-/* === Plain fallback ================================================== */
+/* === Plain fallback ==================================================
+   Drawn without the interface library (it may be what broke), in plain CSS
+   on the theme tokens: the same frame, strips, panel and rows as the menus,
+   the focused row as the white band. */
 
 .fault-plain {
     position: absolute;
     inset: 0;
     z-index: 500;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 24px;
+    display: grid;
+    grid-template-rows: 56px minmax(0, 1fr) 56px;
     background: var(--background-color);
     color: var(--text-color);
+    font: 400 13px / 1.4 var(--font-mono);
+    letter-spacing: 0.02em;
 }
 
 .fault-plain-full {
     position: fixed;
 }
 
-.fault-plain-block {
+.fault-plain-strip {
     display: flex;
-    flex-direction: column;
-    gap: 20px;
-    width: 100%;
-    max-width: 672px;
-    max-height: 100%;
-    overflow-y: auto;
-    padding: 32px;
-    border: 1px solid var(--border-color);
-    background: var(--surface-color);
+    align-items: center;
+    gap: 8px;
+    padding: 0 24px;
+    border-bottom: 1px solid var(--border-color);
+    font: 500 11px / 1 var(--font-mono);
+    letter-spacing: 0.18em;
+    color: var(--text-secondary);
 }
 
-.fault-actions .btn {
+.fault-plain-sep {
+    color: var(--disabled-color);
+}
+
+.fault-plain-here {
+    color: var(--text-color);
+}
+
+.fault-plain-bar {
+    border-top: 1px solid var(--border-color);
+    border-bottom: 0;
+}
+
+.fault-plain-body {
+    display: grid;
+    place-items: center;
+    padding: 16px 24px;
+    min-height: 0;
+    overflow: auto;
+}
+
+.fault-plain-panel {
+    width: min(440px, 100%);
+    border: 1px solid var(--border-color);
+    background: color-mix(in srgb, var(--surface-color) 88%, transparent);
+}
+
+.fault-plain-label {
+    margin: 0;
+    padding: 0 12px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid var(--border-color);
+    font: 500 11px / 1 var(--font-mono);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+
+.fault-plain-message {
+    margin: 0;
+    padding: 12px 12px 4px;
+    color: var(--text-secondary);
+    overflow-wrap: anywhere;
+}
+
+.fault-plain-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px;
+}
+
+.fault-plain-rows > * {
+    display: flex;
+    align-items: center;
+    min-height: 40px;
+    padding: 0 12px;
+    border: 0;
+    background: none;
+    color: var(--text-color);
+    font: 500 13px / 1.1 var(--font-mono);
+    text-align: left;
+    text-decoration: none;
+    cursor: pointer;
     transition: none;
 }
 
-.fault-actions .btn:focus,
-.fault-actions .btn:focus-visible {
+.fault-plain-rows > [data-current] {
     background: var(--text-color);
     color: var(--background-color);
-    border-color: var(--text-color);
     outline: none;
+}
+
+@media (hover: hover) {
+    .fault-plain-rows > *:hover {
+        background: color-mix(in srgb, var(--text-color) 9%, transparent);
+    }
+    .fault-plain-rows > [data-current]:hover {
+        background: var(--text-color);
+    }
 }

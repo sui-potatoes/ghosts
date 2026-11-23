@@ -16,6 +16,7 @@ import { issueUrl } from "../reportIssue";
 import {
     FocusCommandBar,
     FocusRoot,
+    FocusScope,
     List,
     ListRow,
     Panel,
@@ -165,9 +166,15 @@ function CrashScreen(fault: Fault) {
     );
 }
 
+/**
+ * Like the other menus' plates (Settings when signed out): one panel in the
+ * middle of the frame with the message and the ways out as rows. The stack
+ * opens beside it on Details, its own scope that Back closes.
+ */
 function FaultFrame(fault: Fault) {
     const glyphs = useGlyphSet();
     const [said, copy] = useCopy(report(fault));
+    const [details, setDetails] = useState(false);
     const again: Command = { action: "reset", label: "Reload", run: reload };
     const row = (label: string, run: () => void, primary = false): Command[] => [
         { action: "confirm", label, tone: primary ? "primary" : undefined, run },
@@ -175,54 +182,82 @@ function FaultFrame(fault: Fault) {
     ];
     return (
         <ScreenFrame location={["System", "Fault"]} commands={<FocusCommandBar glyphs={glyphs} />}>
-            <Panel label="Something broke" className="gui-fault-panel">
-                <p className="gui-fault-message">{fault.error.message || String(fault.error)}</p>
-                <List label="Fault">
-                    <ListRow
-                        id="fault-reload"
-                        group="fault"
-                        name="Reload"
-                        title="Reload"
-                        instant
-                        commands={row("Reload", reload, true)}
-                    />
-                    <ListRow
-                        id="fault-menu"
-                        group="fault"
-                        name="Back to menu"
-                        title="Back to menu"
-                        instant
-                        commands={row("Menu", goMenu)}
-                    />
-                    <ListRow
-                        id="fault-copy"
-                        group="fault"
-                        name="Copy details"
-                        tag={said ?? undefined}
-                        tagTone={said === "Copy failed" ? "warn" : "accent"}
-                        title="Copy details"
-                        instant
-                        commands={row("Copy", copy)}
-                    />
-                    <ListRow
-                        id="fault-report"
-                        group="fault"
-                        name="Report on GitHub"
-                        title="Report on GitHub"
-                        instant
-                        commands={row("Report", () => {
-                            window.open(issueLink(fault), "_blank", "noopener,noreferrer");
-                        })}
-                    />
-                </List>
-            </Panel>
-            <Panel label="Details" variant="ghost" className="gui-fault-details">
-                <FaultLog
-                    text={`${fault.error.stack ?? ""}\n\nComponent stack:${fault.componentStack || " (none)"}`}
-                />
-            </Panel>
+            <div className="gui-fault-stage" data-details={details || undefined}>
+                <Panel label="Something broke" className="gui-fault-panel">
+                    <p className="gui-fault-message">
+                        {fault.error.message || String(fault.error)}
+                    </p>
+                    <List label="Fault">
+                        <ListRow
+                            id="fault-reload"
+                            group="fault"
+                            name="Reload"
+                            title="Reload"
+                            instant
+                            commands={row("Reload", reload, true)}
+                        />
+                        <ListRow
+                            id="fault-menu"
+                            group="fault"
+                            name="Back to menu"
+                            title="Back to menu"
+                            instant
+                            commands={row("Menu", goMenu)}
+                        />
+                        <ListRow
+                            id="fault-details"
+                            group="fault"
+                            name="Details"
+                            title="Details"
+                            selected={details}
+                            instant
+                            commands={row("Details", () => setDetails((open) => !open))}
+                        />
+                        <ListRow
+                            id="fault-copy"
+                            group="fault"
+                            name="Copy details"
+                            tag={said ?? undefined}
+                            tagTone={said === "Copy failed" ? "warn" : "accent"}
+                            title="Copy details"
+                            instant
+                            commands={row("Copy", copy)}
+                        />
+                        <ListRow
+                            id="fault-report"
+                            group="fault"
+                            name="Report on GitHub"
+                            title="Report on GitHub"
+                            instant
+                            commands={row("Report", () => {
+                                window.open(issueLink(fault), "_blank", "noopener,noreferrer");
+                            })}
+                        />
+                    </List>
+                </Panel>
+                {details && (
+                    <FocusScope
+                        id="fault-details-scope"
+                        back={{ action: "back", label: "Close", run: () => setDetails(false) }}
+                    >
+                        <Panel label="Details" className="gui-fault-details">
+                            <FaultLog text={readableStack(fault)} />
+                        </Panel>
+                    </FocusScope>
+                )}
+            </div>
         </ScreenFrame>
     );
+}
+
+/**
+ * The stack as a person reads it: file and line, without the server's long
+ * paths and cache stamps. The copied report keeps everything.
+ */
+function readableStack({ error, componentStack }: Fault): string {
+    const tidy = (text: string) =>
+        text.replace(/\(?https?:\/\/[^\s)]*\/([^/\s)?]+)(\?[^:\s)]*)?(:\d+:\d+)?\)?/g, "($1$3)");
+    return `${tidy(error.stack ?? "")}\n\nComponent stack:${tidy(componentStack) || " (none)"}`;
 }
 
 /** The stack, scrolled by the directions while the cursor is on it (keys, pad), natively by wheel and finger. */
@@ -275,33 +310,39 @@ function PlainCrash(fault: Fault) {
             role="alert"
             className={`fault-plain ${fault.fullScreen ? "fault-plain-full" : ""}`}
         >
-            <div className="fault-plain-block">
-                <p className="label text-warn">System / Fault</p>
-                <h1 className="label text-lg text-foreground">Something broke</h1>
-                <p className="break-words font-mono text-[13px] text-secondary">
-                    {fault.error.message || String(fault.error)}
-                </p>
-                <div className="fault-actions flex flex-wrap gap-3">
-                    <button type="button" data-fault-item="first" className="btn" onClick={reload}>
-                        Reload
-                    </button>
-                    <button type="button" data-fault-item className="btn" onClick={copy}>
-                        {said ?? "Copy details"}
-                    </button>
-                    <button type="button" data-fault-item className="btn" onClick={goMenu}>
-                        Back to menu
-                    </button>
-                    <a
-                        data-fault-item
-                        className="btn"
-                        href={issueLink(fault)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                    >
-                        Report on GitHub
-                    </a>
-                </div>
+            <header className="fault-plain-strip">
+                <span>System</span>
+                <span className="fault-plain-sep">/</span>
+                <span className="fault-plain-here">Fault</span>
+            </header>
+            <div className="fault-plain-body">
+                <section className="fault-plain-panel">
+                    <h1 className="fault-plain-label">Something broke</h1>
+                    <p className="fault-plain-message">
+                        {fault.error.message || String(fault.error)}
+                    </p>
+                    <div className="fault-plain-rows">
+                        <button type="button" data-fault-item="first" onClick={reload}>
+                            Reload
+                        </button>
+                        <button type="button" data-fault-item onClick={goMenu}>
+                            Back to menu
+                        </button>
+                        <button type="button" data-fault-item onClick={copy}>
+                            {said ?? "Copy details"}
+                        </button>
+                        <a
+                            data-fault-item
+                            href={issueLink(fault)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                        >
+                            Report on GitHub
+                        </a>
+                    </div>
+                </section>
             </div>
+            <footer className="fault-plain-strip fault-plain-bar" />
         </main>
     );
 }
@@ -317,20 +358,35 @@ function usePlainNav(root: RefObject<HTMLElement | null>) {
                 return [];
             }
         };
+        // The band is drawn from an attribute, not :focus: it shows even while
+        // the window itself does not hold focus.
+        const mark = (el: HTMLElement | undefined) => {
+            for (const item of items()) item.toggleAttribute("data-current", item === el);
+            el?.focus();
+        };
         const move = (delta: 1 | -1) => {
             const list = items();
-            const at = list.indexOf(document.activeElement as HTMLElement);
-            list[stepFocus(at, list.length, delta)]?.focus();
+            const at = list.findIndex((el) => el.hasAttribute("data-current"));
+            mark(list[stepFocus(at, list.length, delta)]);
         };
         try {
-            items()
-                .find((el) => el.dataset.faultItem === "first")
-                ?.focus();
+            mark(items().find((el) => el.dataset.faultItem === "first"));
         } catch {
             /* nothing to do */
         }
+        const current = () => items().find((el) => el.hasAttribute("data-current"));
         const onKey = (e: KeyboardEvent) => {
             try {
+                // Enter and Space press the row with the band, wherever DOM focus is.
+                if ((e.key === "Enter" || e.key === " ") && !e.repeat && !e.altKey) {
+                    const row = current();
+                    if (row) {
+                        e.preventDefault();
+                        e.stopImmediatePropagation();
+                        row.click();
+                        return;
+                    }
+                }
                 const action = crashKeyAction(e);
                 if (action === "none") return;
                 e.preventDefault();
@@ -344,6 +400,13 @@ function usePlainNav(root: RefObject<HTMLElement | null>) {
                 /* a second fault here would leave no screen at all */
             }
         };
+        // The pointer moves the band, as the cursor follows it in the menus.
+        const over = (e: PointerEvent) => {
+            if (e.pointerType !== "mouse" || !(e.target instanceof Element)) return;
+            const row = e.target.closest<HTMLElement>("[data-fault-item]");
+            if (row && !row.hasAttribute("data-current")) mark(row);
+        };
+        root.current?.addEventListener("pointerover", over);
         // Capture: nothing the shell left behind sees these keys first.
         window.addEventListener("keydown", onKey, true);
         let raf = 0;
@@ -369,7 +432,7 @@ function usePlainNav(root: RefObject<HTMLElement | null>) {
                 }
                 const a = !!pad.buttons[0]?.pressed;
                 const b = !!pad.buttons[1]?.pressed;
-                if (a && !wasA) (document.activeElement as HTMLElement | null)?.click();
+                if (a && !wasA) current()?.click();
                 if (b && !wasB) goMenu();
                 wasA = a;
                 wasB = b;
@@ -382,7 +445,9 @@ function usePlainNav(root: RefObject<HTMLElement | null>) {
         } catch {
             /* no rAF, no pad */
         }
+        const host = root.current;
         return () => {
+            host?.removeEventListener("pointerover", over);
             window.removeEventListener("keydown", onKey, true);
             cancelAnimationFrame(raf);
         };
