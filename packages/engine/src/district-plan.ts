@@ -19,7 +19,7 @@ export const STREET = {
 };
 export const districtBuildings = [
   { x: -7, z: -5, w: 5, d: 4, h: 5.4, kind: 'eleventy' },
-  { x: 6, z: -5, w: 5, d: 4, h: 4.6, kind: 'yawnson' },
+  { x: 6, z: -5, w: 5, d: 4, h: 4.6, kind: 'yandottir' },
   { x: -8, z: 4, w: 3, d: 4, h: 6.1, kind: 'laundry' },
   { x: 6, z: 5, w: 4, d: 3, h: 4.4, kind: 'workshop' },
 ] as const;

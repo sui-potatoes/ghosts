@@ -100,7 +100,7 @@ function signAtlas() {
   const ctx = c.getContext('2d')!;
   const rows = [
     ['#2a2238', '#f2c14e', 'ELEVENTY', 'OPEN 25 HOURS  /  FOOD • COFFEE • DAILY GOODS'],
-    ['#1d6f6a', '#f6e7d0', 'YAWNSON', 'STATION  /  NEVER CLOSED'],
+    ['#1d6f6a', '#f6e7d0', 'YANDOTTIR', 'STATION  /  NEVER CLOSED'],
     ['#b8b1a0', '#2b4548', 'COIN LAUNDRY', 'WASH & DRY   •   24 HOURS'],
     ['#313a3d', '#d3a04f', 'MORI MOTOR WORKS', 'REPAIRS  /  TYRES  /  SERVICE'],
     ['#f1dfb7', '#673b2c', 'FRESH COFFEE', 'HOT MEALS  •  EVERY DAY'],

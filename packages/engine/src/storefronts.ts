@@ -6,7 +6,7 @@ import { footprint, type Building } from "./map.ts";
 
 /** Shared by the scenery frames and the independently breakable glazing. */
 export function storefrontFaces(building: Building) {
-  if (building.kind !== "eleventy" && building.kind !== "yawnson") return [];
+  if (building.kind !== "eleventy" && building.kind !== "yandottir") return [];
   const f = footprint(building), w = f.w - 0.1, d = f.d - 0.1;
   const side = building.kind === "eleventy" ? 1 : -1;
   return [

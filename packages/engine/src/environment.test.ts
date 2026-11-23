@@ -142,8 +142,8 @@ test("every demo cover can be destroyed through grenade commands and is restored
 
 test("stray rounds shatter only the intersected storefront pane on either street face", () => {
   for (const [from, toward, shop] of [
-    [[-8, 0], [-8, -3], "eleventy"], [[5, 0], [5, -3], "yawnson"],
-    [[-2, -5], [-3, -5], "eleventy"], [[2, -5], [3, -5], "yawnson"],
+    [[-8, 0], [-8, -3], "eleventy"], [[5, 0], [5, -3], "yandottir"],
+    [[-2, -5], [-3, -5], "eleventy"], [[2, -5], [3, -5], "yandottir"],
   ] as const) {
     const map = new TacticalMap(koraPlan);
     const changes = map.strayShotProps(from, toward, 28);
@@ -168,7 +168,7 @@ test("storefront damage is journaled in combat and replayed without opening buil
   assert(game.attack(a, b));
   const event = game.events.at(-1)!;
   assert.equal(event.type, "shot");
-  assert(event.type === "shot" && !event.hit && event.environment?.[0].id.startsWith("yawnson-glass-"));
+  assert(event.type === "shot" && !event.hit && event.environment?.[0].id.startsWith("yandottir-glass-"));
   const replay = replayEncounter(game.scenario, game.events);
   for (const prop of game.map.props) assert.equal(game.map.health(prop.id), replay.map.health(prop.id));
   assert.equal(game.map.open([5, -4]), false);
@@ -179,7 +179,7 @@ test("storefront damage is journaled in combat and replayed without opening buil
 test("exterior explosions reach inset storefront glass without opening movement or sight through the store", () => {
   const map = new TacticalMap(koraPlan);
   const changes = map.blastProps([5, -3]);
-  assert(changes.some((p) => p.id.startsWith("yawnson-glass-0-") && p.destroyed));
+  assert(changes.some((p) => p.id.startsWith("yandottir-glass-0-") && p.destroyed));
   assert(!changes.some((p) => p.id.startsWith("eleventy-glass-")));
   map.applyPropDamage(changes);
   assert.equal(map.open([5, -4]), false);
