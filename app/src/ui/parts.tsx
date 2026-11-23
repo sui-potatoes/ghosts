@@ -508,8 +508,9 @@ export function Slider({
     const set = (v: number) => {
         const next = Math.round(clamp(v) * 1000) / 1000;
         if (next !== value) {
-            uiTick(null);
+            // The change first: the tick then plays at the level just set.
             onChange(next);
+            uiTick(null);
         }
     };
     const { props } = useFocusable<HTMLDivElement>({

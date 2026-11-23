@@ -14,7 +14,7 @@ import { NameDialog } from "../NameDialog";
 import { requestSignIn } from "../signIn";
 import { Kbd, Keys } from "./controls";
 import { useFullscreen } from "./fullscreen";
-import { previewDialogue, previewEffect } from "../audio";
+import { previewAmbience, previewDialogue, previewEffect } from "../audio";
 import { onAction } from "../input";
 import {
     COMBAT_ACTIONS,
@@ -292,7 +292,7 @@ export function AudioPanel() {
         slider("voice", "Dialogue", "Squad chatter and mission dialogue", previewDialogue),
         // No preview callback: the list's own detent tick is the preview.
         slider("ui", "Interface", "Menu ticks and clicks"),
-        slider("ambience", "Ambience", ""),
+        slider("ambience", "Ambience", "", previewAmbience),
     ];
 
     return <SettingList rows={rows} />;

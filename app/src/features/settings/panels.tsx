@@ -36,7 +36,7 @@ import {
 import { economyRules as economyRulesNow, sizeOpen } from "../play/economy";
 import { DEFAULT_RATING } from "../play/rating";
 import { useRatingRecord, type RatingRecord } from "./rating-qa";
-import { previewDialogue, previewEffect } from "../../audio";
+import { previewAmbience, previewDialogue, previewEffect } from "../../audio";
 import type { SessionTermination } from "../../chain";
 import { usePad } from "../../components/PadHints";
 import { validateRpcUrl } from "../../rpcUrl";
@@ -685,13 +685,14 @@ export function AccountPanel() {
 
 /** Drags step through many levels at once; one preview per beat is enough. */
 function usePreview() {
-    const last = useRef({ effect: 0, dialogue: 0 });
-    return (kind?: "effect" | "dialogue") => {
+    const last = useRef({ effect: 0, dialogue: 0, ambience: 0 });
+    return (kind?: "effect" | "dialogue" | "ambience") => {
         if (!kind) return;
         const now = performance.now();
         if (now - last.current[kind] < 160) return;
         last.current[kind] = now;
         if (kind === "effect") previewEffect();
+        else if (kind === "ambience") previewAmbience();
         else previewDialogue();
     };
 }

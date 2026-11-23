@@ -65,8 +65,12 @@ export type LevelRow = {
     key: LevelKey;
     label: string;
     hint: string;
-    /** The sound a change plays at the new level; the Interface row's own tick is its preview. */
-    preview?: "effect" | "dialogue";
+    /**
+     * The sound a change plays at the new level. The Interface and Master rows'
+     * own detent tick is theirs (it plays under both), and the title theme
+     * behind the menus follows Music live.
+     */
+    preview?: "effect" | "dialogue" | "ambience";
 };
 
 export const LEVEL_ROWS: LevelRow[] = [
@@ -80,7 +84,7 @@ export const LEVEL_ROWS: LevelRow[] = [
         preview: "dialogue",
     },
     { key: "ui", label: "Interface", hint: "Menu ticks and clicks" },
-    { key: "ambience", label: "Ambience", hint: "" },
+    { key: "ambience", label: "Ambience", hint: "", preview: "ambience" },
 ];
 
 /** Ten detents, like the classic list's blocks. */
