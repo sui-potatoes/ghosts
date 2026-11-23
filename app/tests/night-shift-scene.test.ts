@@ -110,10 +110,10 @@ test("from every deployment cell, the app's chain rules and the engine's reach a
 test("cover, shot by shot, is the chain's: the storefront glass is high, a gondola low", () => {
     const game = new Encounter(scenario);
     const at = (tile: [number, number]) => toCell(tile, bounds);
-    // [row, col]: a shooter on the forecourt at a unit against the inside of the front glass
-    assert.equal(coverBonus(GAME, [17, 9], [15, 9]), 50);
+    // [row, col]: a shooter in an empty forecourt bay at a unit against the inside of the front glass
+    assert.equal(coverBonus(GAME, [18, 14], [15, 14]), 50);
     assert.equal(
-        game.authority!.cover({ pos: at([17, 9]) } as Unit, { pos: at([15, 9]) } as Unit),
+        game.authority!.cover({ pos: at([18, 14]) } as Unit, { pos: at([15, 14]) } as Unit),
         50,
     );
     // a unit in the aisle beside the west gondola run, shot from the east aisle
