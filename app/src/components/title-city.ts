@@ -12,17 +12,16 @@ import { createTitleStreet } from "./title-street";
 import { getSettings, subscribeSettings } from "../settings/store";
 import { Reflector } from "three/examples/jsm/objects/Reflector.js";
 
+/**
+ * The camera never moves: the player's lean is a 2D shift of the whole
+ * picture (`TitleBackdrop`), so nothing here is redrawn for it, the mirror
+ * least of all.
+ */
 export interface TitleCity {
     dispose(): void;
-    /** Where the player's pointer or stick leans, -1 to 1 each way; the camera follows a degree. */
-    lean(x: number, y: number): void;
-    /** A confirm: the camera dips in a touch and the light flickers, then settles. */
+    /** A confirm: the light flickers down a touch, then settles. */
     nudge(): void;
 }
-
-/** How far the set answers the player's lean: look offset at the far target, camera shift. */
-const LEAN_LOOK = { x: 1.6, y: 0.9 };
-const LEAN_SHIFT = { x: 0.05, y: 0.025 };
 const EXPOSURE = 1.15;
 /** The road mirror's size against the frame's drawing buffer, and its widest. */
 const MIRROR_SCALE = 0.6;
@@ -58,9 +57,6 @@ export function createTitleCity(
     const camera = new THREE.PerspectiveCamera(46, REFERENCE_ASPECT, 0.2, 700);
     camera.position.set(0, 1.65, 2);
     camera.lookAt(0, 1.65, -100);
-    const cameraHome = camera.position.clone();
-    const lookHome = new THREE.Vector3(0, 1.65, -100);
-    const look = new THREE.Vector3();
     const textures = new Set<THREE.Texture>();
     const geometries = new Set<THREE.BufferGeometry>();
     const materials = new Set<THREE.Material>();
@@ -175,7 +171,8 @@ export function createTitleCity(
                     vec2 uv=refUv.xy/refUv.w;
                     uv+=(surfaceNormal.xy-.5)*.006*(1.-pools)+vec2(noise(p*25.+time*.3)-.5,sin(p.y*90.+time*1.6)*.3)*.0008*rippleFade;
                     float blur=mix(2.2,.35,pools)+rough*.8;
-                    vec3 mirrored=texture2D(tDiffuse,uv,blur).rgb;
+                    // A frozen mirror kept alive: the pools' surface stirs, so the light in them breathes.
+                    vec3 mirrored=texture2D(tDiffuse,uv,blur).rgb*(.9+.1*noise(p*1.7+vec2(time*.35,-time*.2)));
                     float far=smoothstep(2.,120.,-world.z);float lateral=exp(-abs(world.x+1.5)*.38);
                     vec3 standIn=vec3(.019,.025,.03)+vec3(.5,.6,.66)*far*far*lateral*(.5+noise(p*vec2(.7,.04)));
                     vec3 reflection=max(mix(standIn,mirrored,planar)-vec3(.017,.022,.026),vec3(0.));
@@ -217,12 +214,13 @@ export function createTitleCity(
     // camera: never inside the main pass, so everything that samples it (the
     // road, the pavement's puddles) reads the same, current mirror.
     road.onBeforeRender = () => {};
-    // While the camera holds still only the scene's own motion (the patrol,
-    // the rain) changes the mirror: it is redrawn every other frame then, and
-    // every frame the camera moves, where a stale mirror would slide.
-    const mirroredView = new THREE.Matrix4();
-    const mirroredProjection = new THREE.Matrix4();
-    let mirrorSkipped = false;
+    // The mirror is frozen: drawn once, and again only when the picture itself
+    // changes (a resize, assets arriving, a settings or context change: every
+    // `restart`). The camera never moves, so a frozen mirror stays exact. The
+    // patrol and the rain are left out of it (frozen, they would be ghosts);
+    // the road's own ripples and shimmer keep it alive.
+    let mirrorDirty = true;
+    const transient: THREE.Object3D[] = [];
     function reflect() {
         const uniforms = (road.material as THREE.ShaderMaterial).uniforms;
         uniforms.planar.value = planar ? 1 : 0;
@@ -230,18 +228,11 @@ export function createTitleCity(
             groundReflection.texture.value = standIn;
             return;
         }
+        if (!mirrorDirty && groundReflection.texture.value === mirror.texture) return;
+        mirrorDirty = false;
         camera.updateMatrixWorld();
-        const still =
-            groundReflection.texture.value === mirror.texture &&
-            mirroredView.equals(camera.matrixWorld) &&
-            mirroredProjection.equals(camera.projectionMatrix);
-        if (still && !mirrorSkipped) {
-            mirrorSkipped = true;
-            return;
-        }
-        mirrorSkipped = false;
-        mirroredView.copy(camera.matrixWorld);
-        mirroredProjection.copy(camera.projectionMatrix);
+        const shown = transient.map((o) => o.visible);
+        for (const o of transient) o.visible = false;
         // Pavement must not sample the target while the reflected view is drawn.
         groundReflection.texture.value = null;
         renderReflection.call(
@@ -253,6 +244,7 @@ export function createTitleCity(
             road.material as THREE.Material,
             null as unknown as THREE.Group,
         );
+        transient.forEach((o, i) => (o.visible = shown[i]));
         groundReflection.texture.value = mirror.texture;
         groundReflection.matrix.value.copy(uniforms.textureMatrix.value).multiply(roadInverse);
     }
@@ -470,6 +462,8 @@ export function createTitleCity(
     const rain = new THREE.LineSegments(rainGeometry, rainMaterial);
     rain.frustumCulled = false;
     scene.add(rain);
+    // The patrol walks and the rain falls: neither belongs in a frozen mirror.
+    transient.push(person, rain);
 
     let initialized = false;
     let presented = false;
@@ -522,30 +516,12 @@ export function createTitleCity(
         idleResident.update(t * 0.75);
         bridge.update(person.position.x);
     }
-    // The player's lean (pointer or stick) and a confirm's kick, eased per frame.
-    const aim = { x: 0, y: 0 };
-    const leaning = { x: 0, y: 0 };
+    // A confirm's kick: the exposure dips and recovers (the picture's own
+    // pulse is a 2D scale in TitleBackdrop).
     let kick = 0;
-    function steer(dt: number) {
-        const k = 1 - Math.exp(-dt * 5);
-        leaning.x += (aim.x - leaning.x) * k;
-        leaning.y += (aim.y - leaning.y) * k;
-        // Settled is settled: the camera stops changing, so the mirror stops redrawing.
-        if (Math.abs(aim.x - leaning.x) < 0.002) leaning.x = aim.x;
-        if (Math.abs(aim.y - leaning.y) < 0.002) leaning.y = aim.y;
+    function settle(dt: number) {
         kick *= Math.exp(-dt * 9);
         if (kick < 0.001) kick = 0;
-        camera.position.set(
-            cameraHome.x + leaning.x * LEAN_SHIFT.x,
-            cameraHome.y + leaning.y * LEAN_SHIFT.y - kick * 0.02,
-            cameraHome.z - kick * 0.05,
-        );
-        look.set(
-            lookHome.x + leaning.x * LEAN_LOOK.x,
-            lookHome.y + leaning.y * LEAN_LOOK.y,
-            lookHome.z,
-        );
-        camera.lookAt(look);
         renderer.toneMappingExposure = EXPOSURE * (1 - kick * 0.09);
     }
     function render() {
@@ -559,7 +535,7 @@ export function createTitleCity(
         // canvas has faded in, then advance only time after the reveal.
         if (motion && presented && now > revealUntil) {
             elapsed += Math.min((now - Math.max(lastTime, revealUntil)) / 1000, 0.1);
-            steer(Math.min((now - lastTime) / 1000, 0.1));
+            settle(Math.min((now - lastTime) / 1000, 0.1));
         }
         lastTime = now;
         animate(elapsed);
@@ -575,12 +551,15 @@ export function createTitleCity(
         if (motion) raf = requestAnimationFrame(render);
     }
     function restart() {
+        mirrorDirty = true;
         cancelAnimationFrame(raf);
         lastTime = deadline = performance.now();
         render();
     }
     function resize() {
-        const { width, height } = host.getBoundingClientRect();
+        // Layout size, not the drawn one: the lean layer above scales the picture.
+        const width = host.offsetWidth;
+        const height = host.offsetHeight;
         if (!width || !height) return;
         renderer.setPixelRatio(
             Math.min(devicePixelRatio, 1, Math.sqrt(900_000 / (width * height))),
@@ -604,7 +583,6 @@ export function createTitleCity(
         const buffer = renderer.getDrawingBufferSize(new THREE.Vector2());
         const mirrorWidth = Math.min(MIRROR_MAX, Math.round(buffer.x * MIRROR_SCALE));
         mirror.setSize(mirrorWidth, Math.round((mirrorWidth * buffer.y) / buffer.x));
-        mirroredView.identity(); // a resized mirror is empty: draw it on the next frame
         renderer.shadowMap.needsUpdate = true;
         restart();
     }
@@ -619,9 +597,7 @@ export function createTitleCity(
         motion = !reducedMotion.matches && !getSettings().display.reduceMotion;
         if (!motion) {
             // Still: the set holds its home framing.
-            aim.x = aim.y = leaning.x = leaning.y = kick = 0;
-            camera.position.copy(cameraHome);
-            camera.lookAt(lookHome);
+            kick = 0;
             renderer.toneMappingExposure = EXPOSURE;
         }
         restart();
@@ -629,7 +605,7 @@ export function createTitleCity(
     let savedReduceMotion = getSettings().display.reduceMotion;
     const unsubscribeSettings = subscribeSettings(() => {
         // Interface motion below Full holds the lean; the set settles home.
-        if (getSettings().display.motion !== "full") aim.x = aim.y = kick = 0;
+        if (getSettings().display.motion !== "full") kick = 0;
         // Battery saver drops the mirror (and brings it back) on the next frame.
         const saver = getSettings().display.batterySaver;
         if (planar === saver) {
@@ -695,11 +671,6 @@ export function createTitleCity(
             }
         });
     return {
-        lean(x: number, y: number) {
-            if (!motion || getSettings().display.motion !== "full") return;
-            aim.x = Math.max(-1, Math.min(1, x));
-            aim.y = Math.max(-1, Math.min(1, y));
-        },
         nudge() {
             if (motion && getSettings().display.motion === "full") kick = 1;
         },
