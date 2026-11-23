@@ -167,7 +167,15 @@ export function App() {
                     path="/demo-2"
                     element={
                         <Suspense fallback={<LoadingSpinner />}>
-                            <Demo office />
+                            <Demo operation="paper-trail" />
+                        </Suspense>
+                    }
+                />
+                <Route
+                    path="/demo-night-shift"
+                    element={
+                        <Suspense fallback={<LoadingSpinner />}>
+                            <Demo operation="night-shift" />
                         </Suspense>
                     }
                 />

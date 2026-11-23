@@ -15,6 +15,7 @@ import { districtMaps, loadDistrictTextures } from "../district.ts";
 import { CELL } from "../map.ts";
 import type { Scenario } from "../scenario.ts";
 import { registerMapView, type MapView } from "../scene/maps.ts";
+import type { Occluder } from "../scene/occlusion.ts";
 import { floorMaterial, floorMeshes, type FloorTextures } from "./floors.ts";
 import { floorRaise, interiorPreset, type Level } from "./level.ts";
 import { levelOrigin, levelProps, scenarioFromLevel } from "./playtest.ts";
@@ -130,7 +131,10 @@ export function levelView(level: Level): MapView {
         scene.add(plane);
       }
 
-      // Indestructible stand-ins: the same meshes, as fixed scenery.
+      // Indestructible stand-ins: the same meshes, as fixed scenery. A cell of a building
+      // mass fades like the district's buildings when it stands between the camera and a
+      // unit: a cutaway of the cells in the way, not the block.
+      const occluders: Occluder[] = [];
       for (const prop of levelProps(level).fixed) {
         const asset = kit.props.get(prop);
         const root = new T.Group();
@@ -139,7 +143,16 @@ export function levelView(level: Level): MapView {
         root.position.set(prop.x, floorRaise(level, cell) + (prop.y ?? 0), prop.z);
         root.rotation.y = prop.yaw;
         if (prop.span) root.scale.x = prop.span;
-        scene.add(root);
+        if (!prop.kind.startsWith("shop-building-")) {
+          scene.add(root);
+          continue;
+        }
+        // The battlefield resets an occluder's own transform: the cell sits inside one.
+        const group = new T.Group();
+        group.add(root);
+        scene.add(group);
+        group.updateMatrixWorld(true);
+        occluders.push({ group, bounds: new T.Box3().setFromObject(group) });
       }
 
       // The level's point lights, always on, each with its bulb.
@@ -152,7 +165,7 @@ export function levelView(level: Level): MapView {
         bulb.position.copy(lamp.position);
         scene.add(lamp, bulb);
       }
-      return [];
+      return occluders;
     },
   };
 }

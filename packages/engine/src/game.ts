@@ -701,10 +701,34 @@ export class Encounter {
         const damage = Math.min(t.hp, Math.max(1, GRENADE_DAMAGE - t.armor));
         return { unit: t.id, damage, killed: t.hp - damage === 0 };
       });
-    const environment = this.map.blastProps(p);
+    const environment = this.scenario.ground ? this.groundBlastProps(p) : this.map.blastProps(p);
     this.emit({ type: "grenade", unit: u.id, at: [...p], casualties, environment });
     return true;
   }
+  /**
+   * What a frag does to the scenery on a chain ground: `Map.explode` turns every
+   * Obstacle tile within the radius into open ground, whatever its health, so a
+   * cover prop standing on one is destroyed outright, as the ground says (the app's
+   * `chainBlast` does the same for a chain match); the rest breaks as the scene's
+   * own blast says. Without it a fridge would stand on a tile the rules had cleared.
+   */
+  private groundBlastProps(p: Cell): ReturnType<TacticalMap["blastProps"]> {
+    const coverOf = (prop: TacticalMap["props"][number]) => prop.covers ?? (prop.cover ? [prop.cover] : []);
+    const covers = new Set(this.map.props.filter((prop) => coverOf(prop).length).map((prop) => prop.id));
+    const changes = new Map<string, ReturnType<TacticalMap["blastProps"]>[number]>();
+    const take = (list: ReturnType<TacticalMap["blastProps"]>) => {
+      for (const change of list) {
+        const was = changes.get(change.id);
+        if (!was || was.hp > change.hp) changes.set(change.id, change);
+      }
+    };
+    take(this.map.blastProps(p).filter((change) => !covers.has(change.id)));
+    for (const prop of this.map.props)
+      if (coverOf(prop).some((cell) => distance(cell, p) <= GRENADE_RADIUS) && this.map.health(prop.id) > 0)
+        take(this.map.damageProp(prop.id, Number.MAX_SAFE_INTEGER, "blast"));
+    return [...changes.values()];
+  }
+
   /**
    * `Map.perform_flashbang` / `Map.perform_smoke_grenade`: the frag's throw
    * checks (range, wall, line of throw), then the effect on every living unit

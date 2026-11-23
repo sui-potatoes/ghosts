@@ -74,6 +74,24 @@ export function scenarioFor(
     return { ...base, id: "match", versus: true, units, look: lookOfGame(game.id) };
 }
 
+/** Object IDs compare as Sui addresses: any case, with or without `0x`. */
+const sameId = (a: string, b: string) =>
+    a.toLowerCase().replace(/^0x/, "") === b.toLowerCase().replace(/^0x/, "");
+
+/**
+ * The scene a game is played in, by its map's ID (the level's `Preset` ID,
+ * `Map.id`): the listed level's, else `fallback`. A level with no ID yet (not
+ * on chain) is never picked. `levels` builds its scene only when picked.
+ */
+export function sceneOfLevel(
+    mapId: string,
+    levels: readonly (readonly [id: string, scene: () => Scenario])[],
+    fallback: Scenario,
+): Scenario {
+    const level = levels.find(([id]) => id !== "" && sameId(id, mapId));
+    return level ? level[1]() : fallback;
+}
+
 /**
  * What the blasts of a game did to its scene, for an encounter opened after them:
  * the same damage in the same order, so it stands as if it had been there.

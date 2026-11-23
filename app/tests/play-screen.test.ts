@@ -45,6 +45,7 @@ test("ranked, friendly, contract and demo open their screens", () => {
         [
             ["Basics", "/demo-basics"],
             ["Black Rain", "/demo"],
+            ["Night Shift", "/demo-night-shift"],
             ["Paper Trail", "/demo-2"],
         ],
     );

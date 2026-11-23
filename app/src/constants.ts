@@ -39,6 +39,18 @@ export const GHOSTS: {
     rules: "0xd08bf87e9ae0c50680088ecdec506ad02e5588eec66b288db1e8aa4832fdc40f",
 };
 
+/**
+ * Levels frozen on chain after publish, by `ghosts::new_level`, besides the one
+ * `init` freezes (Black Rain, `GHOSTS.preset`): each level's `Preset` object ID,
+ * which is also the ID every game on that level carries in its map (`Map.id`),
+ * so a match shows its own level's scene (`chain/levels.ts`). Empty until the
+ * level exists on chain; a game on a level this build does not list is shown
+ * in Black Rain's scene.
+ */
+export const LEVELS: { nightShift: string } = {
+    nightShift: "",
+};
+
 /** Same Google OAuth client as `app/`; both origins are registered on it. */
 export const GOOGLE_CLIENT_ID =
     "591411088609-6kbt6b07a6np6mq2mnlq97i150amussh.apps.googleusercontent.com";

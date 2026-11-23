@@ -14,7 +14,12 @@
 export function parentOf(pathname: string): string | null {
     if (pathname === "/") return null;
     // The training operations hang off their list under Play.
-    if (pathname === "/demo" || pathname === "/demo-2" || pathname === "/demo-basics")
+    if (
+        pathname === "/demo" ||
+        pathname === "/demo-2" ||
+        pathname === "/demo-basics" ||
+        pathname === "/demo-night-shift"
+    )
         return "/play/training";
     // The mode screens hang off the Play cards.
     if (pathname.startsWith("/play/")) return "/play";

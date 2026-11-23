@@ -12,7 +12,6 @@
  */
 
 import {
-    blackRain,
     recordedSource,
     replayEncounter,
     type IntelSource,
@@ -39,6 +38,7 @@ import { endingOf, fetchGameEnded, type GameEnding } from "../../../chain/ending
 import { fetchGameRecruits } from "../../../chain/game";
 import { graphql, sharedOfType } from "../../../chain/graphql";
 import { chainUnitIntel } from "../../../chain/intel";
+import { matchBase } from "../../../chain/levels";
 import { deployUntil, isRanked, unitsOnMap } from "../../../chain/match-rules";
 import type { UnitLook } from "../../../chain/match-scene";
 import { assignedName } from "../../../chain/names";
@@ -526,7 +526,7 @@ export async function openChainGame(
               ),
           };
     const squad = dress.squad;
-    const start = watchStart(blackRain, story.first, dress.names, dress.looks);
+    const start = watchStart(matchBase(story.first.map.id), story.first, dress.names, dress.looks);
     const feed = new EventFeed(start, story.first, (scenario) => replayEncounter(scenario, []));
     const startUnits = new Map(unitsOnMap(story.first).map(({ unit }) => [unit.recruit, unit]));
     const intel: IntelSource = (unit, base) =>

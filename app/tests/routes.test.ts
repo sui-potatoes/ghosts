@@ -20,6 +20,11 @@ test("every screen's parent is the menu; the menu has none", () => {
     assert.equal(parentOf("/"), null);
 });
 
+test("every training operation goes back to the training list", () => {
+    for (const p of ["/demo", "/demo-2", "/demo-basics", "/demo-night-shift"])
+        assert.equal(parentOf(p), "/play/training");
+});
+
 test("Back pops only when the previous entry is the parent, else replaces with it", () => {
     assert.deepEqual(upStep("/headquarters", { 0: "/", 1: "/headquarters" }, 1), { kind: "pop" });
     // Squad -> Armory by replace leaves [menu, armory]: still one pop to the menu.

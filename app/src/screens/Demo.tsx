@@ -7,6 +7,7 @@ import {
     deployedIntel,
     Encounter,
     type EncounterDebrief,
+    nightShift,
     openBriefing,
     restartEncounter,
     paperTrail,
@@ -32,6 +33,16 @@ const PODIUM_DEBRIEF = true;
 /** The street encounter, each game (and each restart) in a freshly drawn time of day and weather. */
 const STREET: Scenario = { ...blackRain, look: "drawn" };
 
+/** The training operations this screen plays, by route: Black Rain unless told otherwise. */
+export type Operation = "black-rain" | "paper-trail" | "night-shift";
+
+/** The encounter an operation plays; Night Shift registers its scenery on first use. */
+function operationScenario(operation: Operation): Scenario {
+    if (operation === "paper-trail") return paperTrail;
+    if (operation === "night-shift") return nightShift();
+    return STREET;
+}
+
 /**
  * An editor draft as the demo plays it (`?level=<slot>`): the scenario, or
  * why the level cannot be played (an unknown slot, deployment the rules refuse).
@@ -47,7 +58,8 @@ function playtestOf(slot: string | null) {
 }
 
 /**
- * The Tokyo street encounter. The engine handles its own keys and reports a
+ * A training operation: the Tokyo street encounter (`/demo`), the office
+ * (`/demo-2`) or Night Shift (`/demo-night-shift`). The engine handles its own keys and reports a
  * cancel it did not use (no targeting, no dialog open); this screen answers
  * with the pause menu and freezes the encounter while it is up. Leaving the
  * route unmounts the encounter, which releases its renderer and audio.
@@ -56,12 +68,13 @@ function playtestOf(slot: string | null) {
  * (`/demo?level=scratch`): the same encounter on the draft's grid, and every
  * way out (pause menu, debrief) goes back to the editor on that slot.
  */
-export default function Demo({ office = false }: { office?: boolean }) {
+export default function Demo({ operation = "black-rain" }: { operation?: Operation }) {
     const navigate = useNavigate();
     const [params] = useSearchParams();
     const slot = params.get("level");
     // Built once per mount: the draft as it was saved when the playtest opened.
     const [playtest] = useState(() => playtestOf(slot));
+    const [scenario] = useState(() => playtest?.scenario ?? operationScenario(operation));
     const quit = () =>
         navigate(slot !== null ? editorPath(isSlot(slot) ? slot : "scratch") : "/play/training");
     const [paused, setPaused] = useState(false);
@@ -99,8 +112,8 @@ export default function Demo({ office = false }: { office?: boolean }) {
     return (
         <div className="fixed inset-0 h-dvh w-full bg-surface">
             <Encounter
-                key={playtest ? `level:${slot}` : office ? "office" : "kora"}
-                scenario={playtest?.scenario ?? (office ? paperTrail : STREET)}
+                key={playtest ? `level:${slot}` : operation}
+                scenario={scenario}
                 squad={squad}
                 intel={deployedIntel}
                 settings={engineSettings}

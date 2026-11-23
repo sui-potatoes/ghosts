@@ -11,7 +11,6 @@
  */
 
 import {
-    blackRain,
     correctEncounter,
     type Command,
     type DriverFactory,
@@ -24,6 +23,7 @@ import { useCurrentClient } from "@mysten/dapp-kit-react";
 import { ObjectError } from "@mysten/sui/client";
 
 import { Game, type ChainGame } from "./bcs";
+import { matchBase } from "./levels";
 import type { Order } from "./fast-lane";
 import {
     fetchGame,
@@ -72,13 +72,14 @@ type Client = ReturnType<typeof useCurrentClient>;
 /** How often the opponent's turn is re-read. */
 const POLL_MS = 400;
 
-/** The scene games are shown in, and where its cells sit on the chain's grid. */
-export const MATCH_BOUNDS: Bounds = blackRain.map.bounds;
+/** Where the cells of the scene a game is shown in sit on the chain's grid: its level's. */
+export const matchBounds = (game: ChainGame): Bounds => matchBase(game.map.id).map.bounds;
 
 /**
- * The encounter a game starts as for `side`: Black Rain's scene with the units
- * the map holds right now, so it also picks a game up after a reload. `looks`
- * dress the opponent's units (a ranked squad has no recruits to read them from).
+ * The encounter a game starts as for `side`: its level's scene (`matchBase`)
+ * with the units the map holds right now, so it also picks a game up after a
+ * reload. `looks` dress the opponent's units (a ranked squad has no recruits to
+ * read them from).
  */
 export function matchScenario(
     game: ChainGame,
@@ -86,15 +87,8 @@ export function matchScenario(
     names: Map<string, string>,
     looks?: ReadonlyMap<string, UnitLook>,
 ): Scenario {
-    return scenarioFor(blackRain, game, side, names, looks);
+    return scenarioFor(matchBase(game.map.id), game, side, names, looks);
 }
-
-const restoreBlasts = (rules: EncounterRules, game: ChainGame) =>
-    restoreSceneBlasts(rules, game, MATCH_BOUNDS);
-
-/** Bring the rules in line with the chain: it decides, the rules only show. */
-const syncUnits = (rules: EncounterRules, game: ChainGame) =>
-    syncSceneUnits(rules, game, MATCH_BOUNDS);
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -128,6 +122,13 @@ export function chainDriver({
         let generation = 0;
         /** The game as last seen: the ground and the stats the odds go by. */
         let latest = start;
+        /** The game's level never changes: its scene's cells on the chain's grid. */
+        const bounds = matchBounds(start);
+        const restoreBlasts = (rules: EncounterRules, game: ChainGame) =>
+            restoreSceneBlasts(rules, game, bounds);
+        /** Bring the rules in line with the chain: it decides, the rules only show. */
+        const syncUnits = (rules: EncounterRules, game: ChainGame) =>
+            syncSceneUnits(rules, game, bounds);
 
         const refs = fetchGameRefs(client, gameId, accountId);
         // A failed lookup shows when an order needs it.
@@ -139,7 +140,7 @@ export function chainDriver({
         rules.phase = activeSide(start) === side ? "player" : "enemy";
         rules.turn = Math.floor(start.turn / 2);
 
-        const tile = (cell: readonly number[]) => toTile(cell as Cell, MATCH_BOUNDS);
+        const tile = (cell: readonly number[]) => toTile(cell as Cell, bounds);
         /** The stats the contract keeps on a unit, which the rules have no place for. */
         const statsOf = (id: string) => {
             const entry = unitsOnMap(latest).find(({ unit }) => unit.recruit === id);
@@ -186,7 +187,7 @@ export function chainDriver({
         };
 
         const field: FieldView = {
-            bounds: MATCH_BOUNDS,
+            bounds,
             side,
             unitAt: ([x, z]) =>
                 rules.units.find((u) => u.hp > 0 && u.pos[0] === x && u.pos[1] === z)?.id,
@@ -245,7 +246,7 @@ export function chainDriver({
             const events: GameEvent[] = [];
             for (const { row, col, unit } of unitsOnMap(game)) {
                 const u = rules.unit(unit.recruit);
-                const cell = toCell([row, col], MATCH_BOUNDS);
+                const cell = toCell([row, col], bounds);
                 if (!u || (u.pos[0] === cell[0] && u.pos[1] === cell[1])) continue;
                 events.push({
                     type: "move",
@@ -300,7 +301,7 @@ export function chainDriver({
         function resolve(command: Command): Promise<GameEvent[]> {
             const unit = rules.unit(command.unit);
             if (!unit) return Promise.resolve([]);
-            const from = toTile(unit.pos as Cell, MATCH_BOUNDS);
+            const from = toTile(unit.pos as Cell, bounds);
             // the chain refuses what the unit's actions do not list: not even sent
             const needs = {
                 move: "Move",
@@ -316,7 +317,7 @@ export function chainDriver({
                 case "move": {
                     const path = rules.paths(unit).get(`${command.to[0]},${command.to[1]}`);
                     if (!path || path.length < 2) return Promise.resolve([]);
-                    const bytes = encodePath(path as Cell[], MATCH_BOUNDS);
+                    const bytes = encodePath(path as Cell[], bounds);
                     const events = rules.apply(command);
                     if (events.length) behind((r) => moveUnitOrder(r, bytes));
                     return Promise.resolve(events);
@@ -329,18 +330,18 @@ export function chainDriver({
                 case "fire": {
                     const target = rules.unit(command.target);
                     if (!target) return Promise.resolve([]);
-                    const to = toTile(target.pos as Cell, MATCH_BOUNDS);
+                    const to = toTile(target.pos as Cell, bounds);
                     return strike((r) => strikeOrder("perform_attack", r, from, to));
                 }
                 case "grenade": {
-                    const to = toTile(command.at as Cell, MATCH_BOUNDS);
+                    const to = toTile(command.at as Cell, bounds);
                     if (!throwValid(latest, from, to)) return Promise.resolve([]);
                     return strike((r) => strikeOrder("perform_grenade", r, from, to));
                 }
                 // nothing rolls for these: no `Random`, and the burst comes back as effect records
                 case "flashbang":
                 case "smoke-grenade": {
-                    const to = toTile(command.at as Cell, MATCH_BOUNDS);
+                    const to = toTile(command.at as Cell, bounds);
                     if (!throwValid(latest, from, to)) return Promise.resolve([]);
                     const action =
                         command.type === "flashbang"
