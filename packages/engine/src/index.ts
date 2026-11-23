@@ -34,6 +34,8 @@ export { paperTrail } from "./office/scenario";
 export { OfficeAssets, officeCatalog, officeFinishes, type OfficeKind, type OfficeFinish } from "./office/assets";
 export { deployedIntel } from "./squad-bridge";
 export { localDriver, type DriverFactory, type EncounterDriver } from "./driver";
+export { Guide, type GuideHost } from "./guide/run";
+export { basicsTraining, BASICS_ID } from "./guide/basics";
 export type { Command, GameEvent } from "./events";
 export { replayEncounter, type Encounter as EncounterRules, type UnitOrder } from "./game";
 export { defaultSettings, type AudioLevels, type EngineSettings } from "./settings";

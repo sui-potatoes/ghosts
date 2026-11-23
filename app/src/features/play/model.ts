@@ -82,9 +82,9 @@ const CARDS: Record<ModeId, ModeCard> = {
         id: "demo",
         name: "Training",
         route: "/play/training",
-        lines: ["Two single-player operations against the AI"],
+        lines: ["Basics, then two single-player operations against the AI"],
         tag: "Open",
-        hint: "Black Rain and Paper Trail",
+        hint: "Basics, Black Rain and Paper Trail",
         verb: "Open",
     },
     factions: {
@@ -202,6 +202,7 @@ export type DemoScenario = { id: string; name: string; place: string; route: str
 
 /** The demo's operations: what the title menu offered before, under Play. */
 export const DEMO_SCENARIOS: DemoScenario[] = [
+    { id: "basics", name: "Basics", place: "Kōra / Training yard", route: "/demo-basics" },
     { id: "black-rain", name: "Black Rain", place: "Tokyo / Sector 09", route: "/demo" },
     { id: "paper-trail", name: "Paper Trail", place: "Kōra HQ / Floor 07", route: "/demo-2" },
 ];

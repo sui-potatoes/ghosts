@@ -5,6 +5,7 @@ import { audio } from "./audio";
 import type { Command, GameEvent } from "./events";
 import { ACTIONS, hasKind, isThrowOrder, REFUSAL_TEXT, refusalOf } from "./action-registry";
 import { allows, Encounter, type Cell } from "./game";
+import type { GuideIntent } from "./guide/types";
 import { applyDeploymentNames, applyLoadouts } from "./squad-bridge";
 // @ts-ignore Native editor adapter is shared JavaScript.
 import { deployment } from "./mpfb-characters.js";
@@ -20,6 +21,18 @@ import { bestShotTarget, damagePreview, defaultGrenadeTarget, grenadeBlockReason
  */
 
 const notify: typeof session.notify = (message, tone) => session.notify(message, tone);
+
+/**
+ * Guided run touch point (`guide/`): whether the run lets `intent` go ahead.
+ * Always true without a guide. A held order clicks and does nothing; the
+ * guide's card says what to do instead.
+ */
+function guided(intent: GuideIntent): boolean {
+  const guide = session.guide;
+  if (!guide || guide.permits(intent)) return true;
+  audio.tone("click");
+  return false;
+}
 
 /**
  * Bring the scene in line with the session: selection, the range or throw
@@ -167,6 +180,8 @@ export function select(id: string) {
     }
     // With nobody selected there is no shooter: the hostile is only marked.
     const shooter = s.selectedUnit();
+    if (shooter && allows(shooter, "fire") && s.mode !== "fire" && !guided({ type: "arm", unit: shooter.id, order: "fire" }))
+      return;
     if (shooter && allows(shooter, "fire")) {
       // Only a hostile in range is aimed at; aiming, if on, stays on its target.
       if (!s.game.inRange(shooter, u)) {
@@ -178,6 +193,7 @@ export function select(id: string) {
     }
     s.target = id;
   } else {
+    if (!guided({ type: "select", unit: id })) return;
     if (s.selected !== id) audio.speak("select", u);
     s.selected = id;
     s.battlefield.select(id);
@@ -213,6 +229,7 @@ export async function fire() {
   const a = s.selectedUnit(),
     b = s.targetUnit();
   if (!a || !b) return;
+  if (s.busy || !guided({ type: "fire", unit: a.id, target: b.id })) return;
   await perform(async () => {
     const command: Command = { type: "fire", unit: a.id, target: b.id };
     let shot: GameEvent | undefined;
@@ -257,6 +274,7 @@ export async function throwGrenade() {
   const kind = s.mode;
   if (!s.grenadeTarget || !u || !isThrowOrder(kind)) return;
   const at: Cell = [...s.grenadeTarget];
+  if (s.busy || !guided({ type: "throw", unit: u.id, order: kind, at })) return;
   await perform(async () => {
     const command: Command = { type: kind, unit: u.id, at };
     if (s.driver.remote) {
@@ -296,6 +314,10 @@ export async function action(name: string) {
   const spec = ACTIONS.find((a) => a.order === name);
   // Never offered to this unit: no key, button or wheel entry gets past here.
   if (!spec || !hasKind(u, spec.id)) return;
+  // Arming again is the confirm (fire, throw): those ask the guide themselves; Move is the field's
+  // resting mode, and the move itself asks.
+  const confirming = s.mode === name && (name === "fire" || (isThrowOrder(name) && !!s.grenadeTarget));
+  if (!confirming && name !== "move" && !guided({ type: "arm", unit: u.id, order: spec.order })) return;
   const refusal = refusalOf(s.game, u, spec.id);
   if (refusal) {
     audio.tone("click");
@@ -354,6 +376,7 @@ export async function pick(p: Cell, id?: string) {
     return;
   }
   if (u && s.mode === "move") {
+    if (s.busy || !guided({ type: "move", unit: u.id, to: [...p] })) return;
     await perform(async () => {
       if (!(await order({ type: "move", unit: u.id, to: p })))
         notify("DESTINATION UNAVAILABLE");
@@ -365,6 +388,7 @@ export async function endTurn() {
   const s = session;
   const { game, battlefield } = s;
   if (s.busy || s.observer || game.result || game.phase !== "player") return;
+  if (!guided({ type: "end-turn" })) return;
   s.mode = "move";
   s.grenadeTarget = null;
   await battlefield.leaveAim();

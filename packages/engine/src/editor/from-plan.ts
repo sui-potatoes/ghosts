@@ -17,6 +17,7 @@ import { blackRain, type Scenario } from "../scenario.ts";
 import { paperTrail } from "../office/scenario.ts";
 import { officeFloorZones } from "../office/flooring.ts";
 import { anchorOf, canPlace, newLevel, turnOffset, type Level, type Placement, type Turn } from "./level.ts";
+import { basicsLevel } from "../guide/basics/level.ts";
 
 export interface FloorZone {
   /** Floor catalog uid painted over the zone. */
@@ -174,7 +175,7 @@ const officeFloors: Record<(typeof officeFloorZones)[number]["finish"], string> 
   "carpet-charcoal": "f07",
 };
 
-/** The demos, reconstructible in the editor and overridable locally. */
+/** The demos, reconstructible in the editor and overridable locally; Basics is authored as a level file. */
 export const demoLevels: readonly { id: string; name: string; build: () => { level: Level; dropped: number } }[] = [
   { id: "black-rain", name: "Black Rain · Kōra", build: () => levelFromScenario(blackRain) },
   {
@@ -186,4 +187,5 @@ export const demoLevels: readonly { id: string; name: string; build: () => { lev
         floorZones: officeFloorZones.map((zone) => ({ ...zone, uid: officeFloors[zone.finish] })),
       }),
   },
+  { id: "basics", name: "Basics · Training yard", build: () => ({ level: basicsLevel(), dropped: 0 }) },
 ];

@@ -6,7 +6,7 @@
  * No sign-in, no account. Back returns to Play; leaving an operation returns here.
  */
 
-import { useLayoutEffect } from "react";
+import { useLayoutEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { useGoUp } from "../../../hooks/useGoUp";
@@ -22,6 +22,7 @@ import {
     type Command,
 } from "../../../ui";
 import { DEMO_SCENARIOS } from "../model";
+import { completedTrainings } from "./progress";
 
 export function DemoScreen() {
     const leave = useGoUp();
@@ -44,6 +45,8 @@ export function DemoScreen() {
 function Scenarios() {
     const navigate = useNavigate();
     const store = useFocusStore();
+    // Read once per visit: a training finished elsewhere shows on the next one.
+    const [done] = useState(completedTrainings);
     useLayoutEffect(() => {
         store.focus(`demo-${DEMO_SCENARIOS[0].id}`, false);
     }, [store]);
@@ -58,7 +61,8 @@ function Scenarios() {
                         instant
                         name={scenario.name}
                         kind={scenario.place}
-                        tag="Single player"
+                        tag={done.includes(scenario.id) ? "Done" : "Single player"}
+                        tagTone={done.includes(scenario.id) ? "accent" : "default"}
                         title={scenario.name}
                         hint={scenario.place}
                         commands={[

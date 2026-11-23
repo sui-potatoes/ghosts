@@ -17,6 +17,8 @@ import { newSession, type Session } from "../session";
 import { defaultSettings, type EngineSettings } from "../settings";
 import type { EncounterDebrief } from "../aftermath/report";
 import { Briefing, Debrief } from "./Dialogs";
+import type { Guide } from "../guide/run";
+import { GuideLayer } from "./Guide";
 import { Field, type FieldRefs } from "./Field";
 import { CommandBar, HudHeader, SquadRail, UnitPanel } from "./Hud";
 import { useSession } from "./useSession";
@@ -59,6 +61,12 @@ export interface EncounterProps {
    * are not used.
    */
   observer?: ObserverOptions;
+  /**
+   * A guided run over the encounter (`guide/`, e.g. Basics' `basicsTraining`):
+   * its card and pointers over the field, and its say over which orders go
+   * ahead. Pass the guided driver with it. Absent: nothing is guided.
+   */
+  guide?: Guide;
 }
 
 export interface ObserverOptions {
@@ -134,6 +142,7 @@ export function Encounter({
   intel,
   opponent = null,
   observer,
+  guide,
 }: EncounterProps) {
   const refs: FieldRefs = {
     viewport: useRef<HTMLDivElement>(null),
@@ -141,11 +150,14 @@ export function Encounter({
     reticle: useRef<HTMLDivElement>(null),
   };
   // The session exists before the first render so the UI subscribes to the one boot fills in.
-  const [session] = useState(() =>
-    observer
+  const [session] = useState(() => {
+    const s = observer
       ? newSession(observer.source.scenario, undefined, { sides: observer.source.sides, turn: 1, host: observer })
-      : newSession(scenario, driver),
-  );
+      : newSession(scenario, driver);
+    // Guided run touch point: the field's actions ask the guide before an order goes ahead.
+    if (guide && !observer) s.guide = guide;
+    return s;
+  });
   const hooks = useRef({ onPause, onQuit, onDebrief });
   hooks.current = { onPause, onQuit, onDebrief };
   const watching = useRef(observer);
@@ -198,7 +210,7 @@ export function Encounter({
       }
     : undefined;
 
-  return <EncounterView observer={!!observer} refs={refs} onQuit={() => hooks.current.onQuit?.()} hasQuit={!!onQuit} onMenu={menu} onDebrief={onDebrief ? (d) => hooks.current.onDebrief?.(d) : undefined} />;
+  return <EncounterView observer={!!observer} refs={refs} onQuit={() => hooks.current.onQuit?.()} hasQuit={!!onQuit} onMenu={menu} onDebrief={onDebrief ? (d) => hooks.current.onDebrief?.(d) : undefined} guide={observer ? undefined : guide} />;
 }
 
 function EncounterView({
@@ -208,6 +220,7 @@ function EncounterView({
   hasQuit,
   onMenu,
   onDebrief,
+  guide,
 }: {
   observer: boolean;
   refs: FieldRefs;
@@ -215,6 +228,7 @@ function EncounterView({
   hasQuit: boolean;
   onMenu?: () => void;
   onDebrief?: (debrief: EncounterDebrief) => void;
+  guide?: Guide;
 }) {
   const s = useSession();
   const ready = s.state === "ready";
@@ -226,6 +240,7 @@ function EncounterView({
         {ready && <SquadRail />}
         {ready && <UnitPanel />}
         {ready && !observer && <CommandBar />}
+        {guide && <GuideLayer guide={guide} />}
       </main>
       {ready &&
         (s.debrief ? (

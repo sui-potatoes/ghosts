@@ -24,6 +24,7 @@ const Headquarters = lazy(loadHeadquarters);
 const Armory = lazy(loadArmory);
 // The encounter brings three.js and the combat assets; load it with the route.
 const Demo = lazy(() => import("./screens/Demo"));
+const Basics = lazy(() => import("./screens/Basics"));
 // A match is an encounter too, and brings the chain driver along.
 const Match = lazy(() => import("./screens/Match"));
 // The level editor brings three.js and the full asset catalog.
@@ -167,6 +168,14 @@ export function App() {
                     element={
                         <Suspense fallback={<LoadingSpinner />}>
                             <Demo office />
+                        </Suspense>
+                    }
+                />
+                <Route
+                    path="/demo-basics"
+                    element={
+                        <Suspense fallback={<LoadingSpinner />}>
+                            <Basics />
                         </Suspense>
                     }
                 />

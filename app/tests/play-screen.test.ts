@@ -43,6 +43,7 @@ test("ranked, friendly, contract and demo open their screens", () => {
     assert.deepEqual(
         DEMO_SCENARIOS.map((d) => [d.name, d.route]),
         [
+            ["Basics", "/demo-basics"],
             ["Black Rain", "/demo"],
             ["Paper Trail", "/demo-2"],
         ],
@@ -148,6 +149,7 @@ test("Back from a mode screen goes up to Play; Play's parent is the menu", () =>
     // A demo operation goes back to the demo's list.
     assert.equal(parentOf("/demo"), "/play/training");
     assert.equal(parentOf("/demo-2"), "/play/training");
+    assert.equal(parentOf("/demo-basics"), "/play/training");
 });
 
 test("the numbers on the Play screen carry their unit or label", () => {

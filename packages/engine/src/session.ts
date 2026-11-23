@@ -4,6 +4,7 @@
 import type { ThrowOrder } from "./action-registry";
 import { localDriver, type DriverFactory, type EncounterDriver } from "./driver";
 import { Encounter, type Cell, type Unit } from "./game";
+import type { Guide } from "./guide/run";
 import type { ObserverView } from "./observer";
 import type { Scenario } from "./scenario";
 import { gameLook, type SceneLook } from "./scene-look";
@@ -54,6 +55,12 @@ export class Session {
   debrief = false;
   /** The host has the encounter paused (its pause menu is up); keys go to the host. */
   paused = false;
+  /**
+   * A guided run over this encounter (`<Encounter guide>`, `guide/`): the
+   * field's actions ask it before an order goes ahead. Null in every other
+   * game, where nothing is asked.
+   */
+  guide: Guide | null = null;
   /** The status line over the field; `at` tells repeats of the same message apart. */
   feedback: { message: string; tone: Tone; at: number } | null = null;
   /**

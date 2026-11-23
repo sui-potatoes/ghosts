@@ -14,7 +14,8 @@
 export function parentOf(pathname: string): string | null {
     if (pathname === "/") return null;
     // The training operations hang off their list under Play.
-    if (pathname === "/demo" || pathname === "/demo-2") return "/play/training";
+    if (pathname === "/demo" || pathname === "/demo-2" || pathname === "/demo-basics")
+        return "/play/training";
     // The mode screens hang off the Play cards.
     if (pathname.startsWith("/play/")) return "/play";
     // A game in the viewer goes back to the watch screen's lists.
