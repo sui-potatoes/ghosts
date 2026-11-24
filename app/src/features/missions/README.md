@@ -32,7 +32,7 @@ interface Mission {
     id: string;
     code?: string; // file code, "BL–09.007"
     name: string;
-    location: string; // short: "Tokyo / Sector 09"
+    location: string; // short: "Tokyo / Shinjuku"
     place?: string; // the briefing's place line
     coordinates?: [lat, lon];
     position?: { lat; lon; city }; // decimal degrees; drives the World pin. None: off the map

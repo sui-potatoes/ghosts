@@ -203,11 +203,11 @@ export type DemoScenario = { id: string; name: string; place: string; route: str
 /** The demo's operations: what the title menu offered before, under Play. */
 export const DEMO_SCENARIOS: DemoScenario[] = [
     { id: "basics", name: "Basics", place: "Kōra / Training yard", route: "/demo-basics" },
-    { id: "black-rain", name: "Black Rain", place: "Tokyo / Sector 09", route: "/demo" },
+    { id: "black-rain", name: "Black Rain", place: "Tokyo / Shinjuku", route: "/demo" },
     {
         id: "night-shift",
         name: "Night Shift",
-        place: "Tokyo / Sector 11",
+        place: "Tokyo / Nakano",
         route: "/demo-night-shift",
     },
     { id: "paper-trail", name: "Paper Trail", place: "Kōra HQ / Floor 07", route: "/demo-2" },

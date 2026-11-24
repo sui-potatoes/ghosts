@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Night Shift, Tokyo / Sector 11: a 21 × 22 street corner in the editor's
+ * Night Shift, Tokyo / Nakano: a 21 × 22 street corner in the editor's
  * level format (`level.json`, the export file the editor reads and writes; the
  * editor opens it as a base). An all-night ELEVENTY store sits between its own
  * car park (side A, south) and a parcel depot (side B, north), with three

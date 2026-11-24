@@ -189,5 +189,5 @@ export const demoLevels: readonly { id: string; name: string; build: () => { lev
       }),
   },
   { id: "basics", name: "Basics · Training yard", build: () => ({ level: basicsLevel(), dropped: 0 }) },
-  { id: "night-shift", name: "Night Shift · Sector 11", build: () => ({ level: nightShiftLevel(), dropped: 0 }) },
+  { id: "night-shift", name: "Night Shift · Nakano", build: () => ({ level: nightShiftLevel(), dropped: 0 }) },
 ];

@@ -12,7 +12,7 @@ export type Readout = {
 
 /**
  * The console's instrument strip: a row of labelled readouts (file code,
- * sector, coordinates, ground). Built only from
+ * area, coordinates, ground). Built only from
  * what the caller passes; a readout it has no value for is simply absent.
  */
 export function StatusStrip({ readouts }: { readouts: Readout[] }) {

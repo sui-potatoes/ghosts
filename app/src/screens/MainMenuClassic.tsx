@@ -85,7 +85,7 @@ export default function MainMenuClassic() {
         // operation, with the location as the tag (scenario.ts carries both).
         {
             label: "Training: Black Rain",
-            tag: "Tokyo / Sector 09",
+            tag: "Tokyo / Shinjuku",
             onClick: () => navigate("/demo"),
         },
         {

@@ -19,8 +19,8 @@ const COPY: Pick<Scenario, "briefing" | "contract" | "location" | "objectives" |
   briefing: {
     issuer: "HELIOS STRATEGIC INDUSTRIES / NIGHT DESK",
     title: "Operation Night Shift",
-    setting: "Sector 11, Tokyo / 03:40 AM. The store on the corner never closes",
-    scene: { place: "Sector 11, Tokyo", rest: "The store on the corner never closes" },
+    setting: "Nakano, Tokyo / 03:40 AM. The store on the corner never closes",
+    scene: { place: "Nakano, Tokyo", rest: "The store on the corner never closes" },
     contract: [
       "A Wraith cell runs its drops through the all-night ELEVENTY on the main road",
       "Three ways in: the road, the store, the service alley",
@@ -36,13 +36,13 @@ const COPY: Pick<Scenario, "briefing" | "contract" | "location" | "objectives" |
     ],
   },
   contract: { employer: "HELIOS", division: "STRATEGIC INDUSTRIES", value: "₡ 36,000", threat: "HIGH", threatLevel: 4 },
-  location: { sector: "SECTOR 11 / TOKYO", coordinates: ["35° 41′ N", "139° 42′ E"], code: "NS–11.024" },
+  location: { sector: "NAKANO / TOKYO", coordinates: ["35° 41′ N", "139° 42′ E"], code: "NS–11.024" },
   objectives: {
     secure: { title: "Hold the corner", detail: "Clear the store and the street", order: "Hold the corner" },
     eliminate: { title: "Clear the Wraith cell", order: "Clear Wraith forces" },
   },
   lines: {
-    opening: "Squad deployed. Sector 11",
+    opening: "Squad deployed. Nakano",
     secured: "Corner clear",
     securedStamp: "CORNER CLEAR",
   },

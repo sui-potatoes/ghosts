@@ -147,7 +147,7 @@ export const blackRain: Scenario = {
     setting: "Kōra Industrial District / 02:14 AM / Heavy rainfall. Nobody owns this city. Everybody pays.",
     scene: { place: "Kōra Industrial District", rest: "Nobody owns this city. Everybody pays." },
     contract: [
-      "Kōra Systems intercepted a Helios research shipment. The manifest sits on a relay inside Sector 09. Your squad has one window before the network purges the evidence.",
+      "Kōra Systems intercepted a Helios research shipment. The manifest sits on a relay in Shinjuku. Your squad has one window before the network purges the evidence.",
       "Move an operator onto the illuminated relay pad and use *Extract*. Neutralize the three Wraith operators to close the contract.",
     ],
     rules:
@@ -159,7 +159,7 @@ export const blackRain: Scenario = {
       ["EXTRACTION", "RELAY CORE + AREA SECURED"],
     ],
   },
-  location: { sector: "SECTOR 09 / TOKYO", coordinates: ["35° 41′ N", "139° 41′ E"], code: "BL–09.007" },
+  location: { sector: "SHINJUKU / TOKYO", coordinates: ["35° 41′ N", "139° 41′ E"], code: "BL–09.007" },
   contract: {
     employer: "HELIOS",
     division: "STRATEGIC INDUSTRIES",

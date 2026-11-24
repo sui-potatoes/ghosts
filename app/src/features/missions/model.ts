@@ -56,7 +56,7 @@ export interface Mission {
     /** The operation's file code, `BL–09.007`. */
     code?: string;
     name: string;
-    /** Where, in one short line: `Tokyo / Sector 09`. */
+    /** Where, in one short line: `Tokyo / Shinjuku`. */
     location: string;
     /** The full place name the briefing opens on. */
     place?: string;

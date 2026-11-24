@@ -144,7 +144,7 @@ function readoutsOf(mission: Mission | null): Readout[] {
     if (!mission) return [];
     const out: Readout[] = [];
     if (mission.code) out.push({ label: "File", value: mission.code, tone: "accent" });
-    out.push({ label: "Sector", value: mission.location });
+    out.push({ label: "Area", value: mission.location });
     if (mission.coordinates)
         out.push({ label: "Grid ref", value: mission.coordinates.join(" "), minor: true });
     if (!mission.position) out.push({ label: "Location", value: "Unknown" });
