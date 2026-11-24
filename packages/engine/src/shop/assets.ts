@@ -3,7 +3,7 @@
 
 import * as T from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import type { InteriorFinish, RunPiece, ShopKind } from "./catalog.ts";
+import { massDims, roofDims, type InteriorFinish, type RunPiece, type ShopKind } from "./catalog.ts";
 import { Build, Kit, flatten } from "./kit.ts";
 import { chiller, counter, freezer, fridge, gondola, hotCase, register, wallShelf } from "./konbini.ts";
 import * as room from "./interiors.ts";
@@ -103,8 +103,10 @@ export class ShopAssets {
     b.root.userData.shopKind = kind;
     const [family, ...rest] = kind.split("-");
     const piece = rest.join("-");
-    const builder = builders[kind];
+    const builder = builders[kind], whole = massDims(kind), roof = roofDims(kind);
     if (builder) builder(b);
+    else if (whole) street.mass(b, whole.w, whole.d, whole.floors);
+    else if (roof) shop.wholeRoof(b, roof.w, roof.d);
     else if (tableware.includes(kind)) room.ware(b, kind as room.Ware);
     else if (kind.startsWith("back-bar-")) room.backBar(b, kind.slice(9) as RunPiece);
     else if (/^building-wall-(fridge|chiller|shelf|cigarettes|atm|terminal|copier|stock)/.test(kind)) shop.builtIn(b, kind.slice(14) as shop.BuiltIn);

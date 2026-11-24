@@ -11,6 +11,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { assetByUid } from "../catalog.ts";
+import { massDims } from "../shop/catalog.ts";
 import { ChainGround, type GroundTile } from "../chain-ground.ts";
 import { edgeCells, floorRaise, importLevel, placementCells, toMoveMap, type Level } from "../editor/level.ts";
 import { toPreset } from "../editor/preset.ts";
@@ -32,8 +33,10 @@ const N4: Cell[] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 /** The roadway: the only ground at road level. */
 const ROAD = (x: number) => x >= 2 && x <= 5;
 
-/** Building masses (`u01`–`u04`) by cell; the buildings are their 4-connected runs plus enclosed unwalkable interiors. */
-const massCells = new Set(level.placements.filter((p) => /^u0[1-4]$/.test(p.asset)).map((p) => key(p.at)));
+/** A placement that is a building mass: a per-tile piece (`u01`–`u04`) or a whole-building asset. */
+const isMass = (p: Level["placements"][number]) => /^u0[1-4]$/.test(p.asset) || massDims(assetByUid(p.asset)!.kind) !== null;
+/** Building masses by cell (a whole-building asset by the cells of its ring); the buildings are their 4-connected runs plus enclosed unwalkable interiors. */
+const massCells = new Set(level.placements.filter(isMass).flatMap((p) => /^u0[1-4]$/.test(p.asset) ? [p.at] : placementCells(assetByUid(p.asset)!, p)).map(key));
 const unwalkable = new Set(level.unwalkable.map(key));
 const building = (c: readonly number[]) => massCells.has(key(c)) || unwalkable.has(key(c)) && N4.some(([dx, dz]) => massCells.has(key([c[0] + dx, c[1] + dz])));
 
@@ -51,7 +54,7 @@ test("the file reads whole and the chain's copy is pinned", () => {
 test("buildings: a ring of walls round an empty interior, nothing placed in them", () => {
   for (const cell of massCells) assert.equal(tile(cell.split(",").map(Number))?.t, "wall", `mass at ${cell} is a Wall`);
   for (const p of level.placements) {
-    if (/^u0[1-4]$/.test(p.asset)) continue;
+    if (isMass(p)) continue;
     const spec = assetByUid(p.asset)!;
     // an edge piece may hang on a building's face (a noren, lanterns): never on an edge inside it
     if (spec.place === "edge") {
@@ -117,13 +120,8 @@ test("two ground levels: the roadway, and everything else at pavement height", (
     if (!b || tile(a)!.t === "wall" || tile(b)!.t === "wall") continue;
     assert.equal(floorRaise(level, a), floorRaise(level, b), `${p.asset} at ${p.at} straddles a level change`);
   }
-  // the kerb runs the whole length of both pavements, and nowhere else
-  const kerbs = level.placements.filter((p) => p.asset === "u64" || p.asset === "u65");
-  assert.equal(kerbs.length, 2 * level.depth);
-  for (const p of kerbs) {
-    const [a, b] = edgeCells(p.at, p.turn);
-    assert.notEqual(ROAD(a[0]), ROAD(b[0]), `kerb at ${p.at} sits between pavement and road`);
-  }
+  // no kerb pieces: the raised pavement slab shows its own side face at the road edge
+  assert.equal(level.placements.filter((p) => p.asset === "u64" || p.asset === "u65").length, 0);
 });
 
 test("every walkable tile can be reached from both deployments", () => {

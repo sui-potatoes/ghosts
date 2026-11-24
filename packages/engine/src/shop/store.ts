@@ -242,7 +242,8 @@ export function windowPosters(b: Build) {
 
 /** A store roof tile over a walkable floor: a dark deck under the walls' coping line; `plant` adds a condenser cluster. */
 export function storeRoof(b: Build, plant: boolean) {
-  b.box(0, 3.0, 0, C, 0.08, C, b.kit.material(0x2a2c2f, 0, 0.95));
+  // The plant's own deck sits a hair inside a whole roof's, so the two never fight over the same plane.
+  b.box(0, 3.0, 0, C, plant ? 0.076 : 0.08, C, b.kit.material(0x2a2c2f, 0, 0.95));
   if (!plant) return;
   const shell = b.kit.material(0xcfccc2, 0.2, 0.55), grille = b.kit.material(0x3a3e40, 0.4, 0.5);
   for (const x of [-0.3, 0.3]) {
@@ -250,6 +251,11 @@ export function storeRoof(b: Build, plant: boolean) {
     b.cyl(x, 3.38, 0.185, 0.2, 0.01, grille, 18).rotation.x = Math.PI / 2;
   }
   b.box(0, 3.1, -0.3, 1.1, 0.12, 0.12, b.kit.material(0x9a968c, 0.3, 0.6));
+}
+
+/** A whole roof in one piece: the same dark deck as the tile, over `w` × `d` cells centred on the origin. */
+export function wholeRoof(b: Build, w: number, d: number) {
+  b.box(0, 3.0, 0, w * C, 0.08, d * C, b.kit.material(0x2a2c2f, 0, 0.95));
 }
 
 /** A recessed LED panel in the ceiling; the lit one carries a lamp, the plain one only glows. */

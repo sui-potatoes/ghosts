@@ -28,6 +28,29 @@ export type WoodFinish = "cedar" | "smoked" | "black";
 export const woodFinishes: readonly WoodFinish[] = ["cedar", "smoked", "black"];
 export type InteriorFinish = ShopFinish | WoodFinish;
 
+/** Footprints of the whole-building masses (width × depth in cells; a turn swaps them) and their storeys. */
+export const massSizes = ["1x4", "2x3", "2x4", "3x3", "3x4", "4x4"] as const;
+export const massStoreys = [1, 2, 4] as const;
+export type MassSize = (typeof massSizes)[number];
+export type MassStoreys = (typeof massStoreys)[number];
+/** Footprints of the whole-roof pieces (a store's roof in one placement). */
+export const roofSizes = ["5x5", "7x7", "9x9"] as const;
+export type RoofSize = (typeof roofSizes)[number];
+
+const sizeOf = (size: string): [number, number] => size.split("x").map(Number) as [number, number];
+
+/** The mass a kind names (`shop-` prefix or not): its width and depth in cells and its storeys, or null. */
+export function massDims(kind: string): { w: number; d: number; floors: number } | null {
+  const m = /^(?:shop-)?building-mass-(\dx\d)-(\d)$/.exec(kind);
+  return m ? { w: sizeOf(m[1])[0], d: sizeOf(m[1])[1], floors: Number(m[2]) } : null;
+}
+
+/** The roof a kind names: its width and depth in cells, or null. */
+export function roofDims(kind: string): { w: number; d: number } | null {
+  const m = /^(?:shop-)?building-roof-(\dx\d)$/.exec(kind);
+  return m ? { w: sizeOf(m[1])[0], d: sizeOf(m[1])[1] } : null;
+}
+
 export type RunPiece = "single" | "left" | "mid" | "right" | "corner";
 export const runPieces: readonly RunPiece[] = ["single", "left", "mid", "right", "corner"];
 
@@ -75,6 +98,8 @@ export type ShopKind =
   | "store-partition" | "store-wall" | "self-checkout" | "packing-table" | "magazine-rack" | "entrance-mat" | "door-decor"
   | "fascia-logo" | "fascia-band" | "blade-sign" | "pylon-sign" | "window-posters" | "toilet-sign"
   | "building-roof" | "building-roof-plant" | "building-ceiling-light" | "building-ceiling-panel"
+  // A whole closed building in one placement, and a whole roof.
+  | `building-mass-${MassSize}-${MassStoreys}` | `building-roof-${RoofSize}`
   | "street-lamp" | "floodlight" | "bulkhead"
   // Street ground and furniture.
   | "kerb" | "kerb-dropped" | "tactile-paving" | "manhole" | "drain-grate"
@@ -414,6 +439,25 @@ function batch2(): Record<string, ShopEntry> {
   // the lamp on the cell's north edge at turn 0 (turn names the wall: 0 north, 1 west, 2 south, 3 east).
   rows["bulkhead-cell"] = { uid: u(), name: "Bulkhead light · on building", group: "Street · Lights", tags: "light lamp bulkhead wall alley building",
     footprint: "none", cells: one, hp: 0, scheme: none };
+  // A closed building in one placement: the origin cell is the corner (north-west at turn 0), the Wall
+  // tiles are the ring the per-tile masses (u01–u03) stood on, the interior is left to the level's own
+  // unwalkable cells. The mesh is the whole mass: facades on the four outside faces, one roof.
+  for (const size of massSizes) {
+    const [w, d] = sizeOf(size);
+    const ring: [number, number][] = [];
+    for (let x = 0; x < w; x++) for (let z = 0; z < d; z++) if (x === 0 || z === 0 || x === w - 1 || z === d - 1) ring.push([x, z]);
+    for (const floors of massStoreys)
+      rows[`building-mass-${size}-${floors}`] = { uid: u(), name: `Building · ${w}×${d} · ${floors} storey${floors > 1 ? "s" : ""}`, group: "Street · Buildings",
+        tags: "building mass facade whole closed block storeys footprint", footprint: "solid", cells: ring, anchor: [(w - 1) / 2, (d - 1) / 2], hp: 0, scheme: none };
+  }
+  // A roof in one placement: the deck over a w × d floor (a store's, flush with its walls' top).
+  for (const size of roofSizes) {
+    const [w, d] = sizeOf(size);
+    const cells: [number, number][] = [];
+    for (let x = 0; x < w; x++) for (let z = 0; z < d; z++) cells.push([x, z]);
+    rows[`building-roof-${size}`] = { uid: u(), name: `Roof · ${w}×${d}`, group: "Konbini · Roof & lights",
+      tags: "roof ceiling store deck whole flat", footprint: "none", cells, anchor: [(w - 1) / 2, (d - 1) / 2], hp: 0, scheme: none };
+  }
   rows["mamachari"] = { uid: v(), name: "City bicycle", group: "Street · Vehicles", tags: "vehicle bicycle bike mamachari basket parked", footprint: "none", cells: one, hp: 0, scheme: none };
   return rows;
 }

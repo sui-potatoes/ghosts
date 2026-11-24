@@ -17,9 +17,10 @@ import type { Scenario } from "../scenario.ts";
 import { registerMapView, type MapView } from "../scene/maps.ts";
 import type { Occluder } from "../scene/occlusion.ts";
 import { floorMaterial, floorMeshes, type FloorTextures } from "./floors.ts";
-import { floorRaise, interiorPreset, type Level } from "./level.ts";
+import { floorRaise, interiorPreset, turnOffset, type Level } from "./level.ts";
 import { levelOrigin, levelProps, scenarioFromLevel } from "./playtest.ts";
 import { buildingBlocks } from "./buildings.ts";
+import { massDims, roofDims } from "../shop/catalog.ts";
 import { buildSurroundings, surroundingBuildings } from "../shop/surroundings.ts";
 
 /** A flat plane on the ground with metric UVs (one texture repeat per 2m). */
@@ -169,7 +170,7 @@ export function levelView(level: Level): MapView {
       const ceilingLamps: T.PointLight[] = [];
       // A closed building (a mass nobody enters) is one thing: every piece and its roof in one
       // group, so it cuts away whole, never a tile at a time. A store's skin still opens by the cell.
-      const blocks = buildingBlocks(level).blocks;
+      const { blocks, blockOf } = buildingBlocks(level);
       const massOf = new Map<string, number>();
       blocks.forEach((block, n) => { if (!block.shell) for (const c of block.cells) massOf.set(c.join(), n); });
       const masses = new Map<number, T.Group>();
@@ -185,7 +186,11 @@ export function levelView(level: Level): MapView {
         const asset = kit.props.get(prop);
         const root = new T.Group();
         root.add(asset.intact.clone(), asset.frame.clone());
-        const cell: [number, number] = [Math.round(prop.x / CELL) - minX, Math.round(prop.z / CELL) - minZ];
+        // A whole building or roof is seated by its origin cell (its centre may sit between cells).
+        const index = Number(prop.id.slice("level-".length)), placed = level.placements[index];
+        const wholeMass = massDims(prop.kind), wholeRoof = roofDims(prop.kind);
+        const cell: [number, number] = wholeMass || wholeRoof ? [placed.at[0], placed.at[1]]
+          : [Math.round(prop.x / CELL) - minX, Math.round(prop.z / CELL) - minZ];
         root.position.set(prop.x, floorRaise(level, cell) + (prop.y ?? 0), prop.z);
         root.rotation.y = prop.yaw;
         if (prop.span) root.scale.x = prop.span;
@@ -206,7 +211,18 @@ export function levelView(level: Level): MapView {
         // Roof and ceiling tiles cut away per roof, not per cell: gathered and grouped below.
         if (/^shop-building-(roof|ceiling)/.test(prop.kind)) {
           // A cell may hold a roof tile and a ceiling fixture: both go with the roof.
-          (roofs.get(cell.join()) ?? roofs.set(cell.join(), []).get(cell.join())!).push(root);
+          const at = (c: string) => roofs.get(c) ?? roofs.set(c, []).get(c)!;
+          at(cell.join()).push(root);
+          // A whole roof holds every cell it spans, so the fixtures beside it join its group.
+          if (wholeRoof) for (let x = 0; x < wholeRoof.w; x++) for (let z = 0; z < wholeRoof.d; z++) {
+            const [dx, dz] = turnOffset([x, z], placed.turn);
+            at([cell[0] + dx, cell[1] + dz].join());
+          }
+          continue;
+        }
+        // A whole building is its own occluder group (the roof and the water tank join it below).
+        if (wholeMass) {
+          mass(blockOf.get(index)!).add(root);
           continue;
         }
         if (!prop.kind.startsWith("shop-building-")) {
@@ -238,7 +254,14 @@ export function levelView(level: Level): MapView {
         const y = (c: [number, number]) => floorRaise(level, c);
         // A cut-away mass shows a flat dark fill at pavement height, nothing raised. A store’s
         // skin keeps the shop floor under its fixtures instead.
-        if (!block.shell) for (const cell of block.cells) {
+        // A building that is one placement gets one slab over its footprint; the piecewise ones a tile each.
+        if (block.mass !== undefined) {
+          const xs = block.cells.map((c) => c[0]), zs = block.cells.map((c) => c[1]);
+          const [x0, x1, z0, z1] = [Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs)];
+          const slab = new T.Mesh(new T.BoxGeometry((x1 - x0 + 1) * CELL, 0.02, (z1 - z0 + 1) * CELL), fill);
+          slab.position.set(((x0 + x1) / 2 + minX) * CELL, slabTop + 0.01, ((z0 + z1) / 2 + minZ) * CELL);
+          scene.add(slab);
+        } else if (!block.shell) for (const cell of block.cells) {
           const slab = new T.Mesh(new T.BoxGeometry(CELL, 0.02, CELL), fill);
           slab.position.set((cell[0] + minX) * CELL, slabTop + 0.01, (cell[1] + minZ) * CELL);
           scene.add(slab);
@@ -246,7 +269,8 @@ export function levelView(level: Level): MapView {
         // Only over a real roofed interior, so it can never land on a shop's skin or a lone wall.
         const tankAt = block.interior.length >= 4 && block.height >= 6 && n % 2 === 0
           ? block.interior[Math.floor(block.interior.length / 2)] : null;
-        for (const cell of block.interior) {
+        // A whole building's own mesh carries the roof over the interior.
+        for (const cell of block.mass === undefined ? block.interior : []) {
           const group = new T.Group();
           const roof = new T.Mesh(new T.BoxGeometry(CELL, 0.012, CELL), roofing);
           roof.position.set((cell[0] + minX) * CELL, y(cell) + block.height + 0.006, (cell[1] + minZ) * CELL);

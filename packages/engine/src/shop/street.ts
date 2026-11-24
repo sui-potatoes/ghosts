@@ -193,54 +193,68 @@ const STOREY = 3;
  * seeded per cell, and the roof has no per-cell parapet to seam.
  */
 export function building(b: Build, floors: number) {
-  // A block's style comes from its seed (the play view gives every cell of a block the same one),
-  // so a row of blocks reads as separate buildings put up at different times.
+  mass(b, 1, 1, floors);
+}
+
+/**
+ * A whole closed building: `w` × `d` cells (x by z, centred on the origin), `floors` storeys. The
+ * facade is the one-cell mass's, cell after cell along each outside face; one roof with its coping
+ * band round the edge. A block's style comes from its seed (the play view gives every building its
+ * own), so a row of blocks reads as separate buildings put up at different times.
+ */
+export function mass(b: Build, w: number, d: number, floors: number) {
   const style = b.variant % 4;
   const tile = b.kit.material([0xc8bfae, 0x7c7f7a, 0x8a6a52, 0x9aa49a][style], 0, 0.88), h = floors * STOREY;
   const window = b.kit.material(style % 2 ? 0x1a2228 : 0xb8c4c6, style % 2 ? 0.5 : 0.1, style % 2 ? 0.2 : 0.6);
   const lit = glow(b, 0xe8d6b0, 0.75), litCold = glow(b, 0xc8e4ec, 0.7);
   const ac = b.kit.material(0xc8c6be, 0.2, 0.6), slab = b.kit.material(0x5a5650, 0, 0.9), rail = b.kit.material(0x6a6e72, 0.5, 0.5);
-  b.box(0, h / 2, 0, C, h, C, tile);
+  b.box(0, h / 2, 0, w * C, h, d * C, tile);
   for (let f = 0; f < floors; f++) {
     const y = f * STOREY;
     for (const yaw of b.outsideFaces()) {
+      // The face's frame: +z out of the building, x along the face; `n` cells run along it.
+      const across = Math.abs(Math.sin(yaw)) > 0.5, n = across ? d : w, reach = (across ? w : d) * H;
       const face = b.frame(yaw);
-      b.box(0, y + 0.06, H + 0.012, C, 0.12, 0.024, slab, face);
-      if (f === 0 && floors > 1) {
-        if (style % 2 === 0) {
-          // A roll-down shutter.
-          b.box(0, 1.2, H + 0.02, C - 0.2, 2.2, 0.03, b.kit.material(0x8a8e90, 0.5, 0.5), face);
-          for (let k = 0; k < 10; k++) b.box(0, 0.2 + k * 0.2, H + 0.037, C - 0.2, 0.01, 0.004, b.dark, face);
-        } else {
-          // A small shop front: dark glass under a coloured awning.
-          b.box(0, 1.1, H + 0.01, C - 0.12, 2.0, 0.02, b.kit.material(0x23292d, 0.4, 0.3), face);
-          b.box(0, 2.35, H + 0.3, C, 0.06, 0.6, b.kit.material(b.pick([0x7a2a2a, 0x2a4a3a, 0x3a3a5a, 0xa8823a]), 0, 0.7), face).rotation.x = 0.25;
+      for (let i = 0; i < n; i++) {
+        const cx = (i - (n - 1) / 2) * C;
+        b.box(cx, y + 0.06, reach + 0.012, C, 0.12, 0.024, slab, face);
+        if (f === 0 && floors > 1) {
+          if (style % 2 === 0) {
+            // A roll-down shutter.
+            b.box(cx, 1.2, reach + 0.02, C - 0.2, 2.2, 0.03, b.kit.material(0x8a8e90, 0.5, 0.5), face);
+            for (let k = 0; k < 10; k++) b.box(cx, 0.2 + k * 0.2, reach + 0.037, C - 0.2, 0.01, 0.004, b.dark, face);
+          } else {
+            // A small shop front: dark glass under a coloured awning.
+            b.box(cx, 1.1, reach + 0.01, C - 0.12, 2.0, 0.02, b.kit.material(0x23292d, 0.4, 0.3), face);
+            b.box(cx, 2.35, reach + 0.3, C, 0.06, 0.6, b.kit.material(b.pick([0x7a2a2a, 0x2a4a3a, 0x3a3a5a, 0xa8823a]), 0, 0.7), face).rotation.x = 0.25;
+          }
+          continue;
         }
-        continue;
-      }
-      for (const x of [-0.34, 0.34]) {
-        const on = b.random() < 0.28;
-        b.box(x, y + 1.5, H + 0.008, 0.48, 1.25, 0.016, on ? (b.random() < 0.5 ? lit : litCold) : window, face);
-        b.box(x, y + 1.5, H + 0.018, 0.012, 1.25, 0.006, rail, face);
-        b.box(x, y + 0.86, H + 0.03, 0.54, 0.04, 0.06, slab, face);
-        if (!on && b.random() < 0.18) b.box(x + 0.05, y + 0.72, H + 0.15, 0.4, 0.3, 0.26, ac, face);
-      }
-      if (style === 0) b.box(0, y + 1.0, H + 0.35, C, 0.04, 0.04, rail, face);
-      if (style === 2 && b.random() < 0.5) {
-        b.box(0, y + 2.1, H + 0.3, C - 0.1, 0.02, 0.02, rail, face);
-        for (let k = 0; k < 3; k++) b.item("box", b.pick([0xe8e6de, 0x5a6b7a, 0xc8b8a0]), -0.4 + k * 0.4, y + 1.6, H + 0.3, 0.3, 0.5, 0.01, face);
+        for (const x of [-0.34, 0.34]) {
+          const on = b.random() < 0.28;
+          b.box(cx + x, y + 1.5, reach + 0.008, 0.48, 1.25, 0.016, on ? (b.random() < 0.5 ? lit : litCold) : window, face);
+          b.box(cx + x, y + 1.5, reach + 0.018, 0.012, 1.25, 0.006, rail, face);
+          b.box(cx + x, y + 0.86, reach + 0.03, 0.54, 0.04, 0.06, slab, face);
+          if (!on && b.random() < 0.18) b.box(cx + x + 0.05, y + 0.72, reach + 0.15, 0.4, 0.3, 0.26, ac, face);
+        }
+        if (style === 0) b.box(cx, y + 1.0, reach + 0.35, C, 0.04, 0.04, rail, face);
+        if (style === 2 && b.random() < 0.5) {
+          b.box(cx, y + 2.1, reach + 0.3, C - 0.1, 0.02, 0.02, rail, face);
+          for (let k = 0; k < 3; k++) b.item("box", b.pick([0xe8e6de, 0x5a6b7a, 0xc8b8a0]), cx - 0.4 + k * 0.4, y + 1.6, reach + 0.3, 0.3, 0.5, 0.01, face);
+        }
       }
     }
   }
-  // A quiet dark roof, flush cell to cell, the coping band only along the outside faces.
+  // A quiet dark roof, the coping band along the outside faces in one run each.
   // No plant on the roof: the play view sets at most one recognisable object per building.
   const roof = b.kit.material(0x2a2c2f, 0, 0.95), coping = b.kit.material(0x4a4b4c, 0, 0.9);
-  b.box(0, h + 0.006, 0, C, 0.012, C, roof);
-  for (const yaw of b.outsideFaces()) b.box(0, h - 0.115, H + 0.02, C, 0.22, 0.04, coping, b.frame(yaw));
-  if (floors >= 2 && b.variant === 1 && b.faces & 1) {
-    const sign = b.frame(0);
-    b.sign(b.random() < 0.5 ? "for-rent" : "tenants", 0.5, STOREY + 1.4, H + 0.06, 0.32, 1.4, sign, "lit");
+  b.box(0, h + 0.006, 0, w * C, 0.012, d * C, roof);
+  for (const yaw of b.outsideFaces()) {
+    const across = Math.abs(Math.sin(yaw)) > 0.5;
+    b.box(0, h - 0.115, (across ? w : d) * H + 0.02, (across ? d : w) * C, 0.22, 0.04, coping, b.frame(yaw));
   }
+  if (floors >= 2 && b.variant === 1 && b.faces & 1)
+    b.sign(b.random() < 0.5 ? "for-rent" : "tenants", 0.5 - (w - 1) * H, STOREY + 1.4, d * H + 0.06, 0.32, 1.4, b.frame(0), "lit");
 }
 
 // ---------------------------------------------------------------------------
