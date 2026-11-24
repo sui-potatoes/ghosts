@@ -89,6 +89,11 @@ export interface ShopEntry extends Placement {
 }
 
 const one: AssetSpec["cells"] = [[0, 0]];
+/**
+ * Where a post stands in its tile: a corner, never the middle. The tile stays walkable on
+ * chain, and a unit crossing it from any side passes clear of the post.
+ */
+const POST: [number, number] = [0.55, -0.55];
 const tall: AssetSpec["cells"] = [[0, 0], [0, 1]];
 const long1: AssetSpec["cells"] = [[0, 0], [0, 1], [0, 2]];
 const long2: AssetSpec["cells"] = [[0, 0], [1, 0], [0, 1], [1, 1], [0, 2], [1, 2]];
@@ -324,7 +329,7 @@ function batch2(): Record<string, ShopEntry> {
   // Concrete pole: crossarms, transformer, insulators, a street lamp. The play view strings
   // cables between neighbouring poles (within eight tiles) on its own; it carries the lamp's light.
   rows["utility-pole"] = { uid: u(), name: "Utility pole · wired", group: "Street · Shopfront",
-    tags: "utility pole electricity cables wires transformer street lamp", footprint: "none", cells: one, hp: 0, scheme: none };
+    tags: "utility pole electricity cables wires transformer street lamp", footprint: "none", cells: one, hp: 0, scheme: none, offset: [-0.55, -0.55] };
   rows["lantern-white"] = { uid: u(), name: "White lantern", group: "Izakaya · Decor",
     tags: "lantern chochin white paper light hanging izakaya", footprint: "none", cells: one, hp: 10, scheme: none };
   // Vending machines: wall-backed cells, the back on the cell's north edge at turn 0 and the lit
@@ -333,7 +338,7 @@ function batch2(): Record<string, ShopEntry> {
     rows[kind] = { uid: u(), name, group: "Street · Shopfront", tags: "vending machine drinks cigarettes tobacco street",
       footprint: "solid", cells: one, hp: 0, scheme: none };
   rows["bus-stop-sign"] = { uid: u(), name: "Bus stop sign", group: "Street · Cover",
-    tags: "bus stop sign pole timetable", footprint: "none", cells: one, hp: 0, scheme: none };
+    tags: "bus stop sign pole timetable", footprint: "none", cells: one, hp: 0, scheme: none, offset: POST };
   // --- The store as a building. Wall-backed pieces: back on the north edge at turn 0, front +z.
   // A cell asset's turn rotates it so that its back lands on: 0 north, 1 west, 2 south, 3 east.
   // Built-ins are the store's Wall tiles (solid, permanent, like the shell walls): a thin wall on
@@ -367,7 +372,7 @@ function batch2(): Record<string, ShopEntry> {
   sign("fascia-logo", "Fascia sign · logo", 2.62);
   sign("fascia-band", "Fascia sign · band", 2.62);
   sign("blade-sign", "Blade sign", 2.0);
-  store("pylon-sign", "Pylon sign", "sign pylon pole logo forecourt", { footprint: "none", cells: one, hp: 0 });
+  store("pylon-sign", "Pylon sign", "sign pylon pole logo forecourt", { footprint: "none", cells: one, hp: 0, offset: POST });
   sign("window-posters", "Window posters", 1.45);
   sign("toilet-sign", "Toilet sign", 1.5);
   // Roof and ceiling: `shop-building-` kinds that cut away with the walls; nothing on chain.
@@ -381,8 +386,8 @@ function batch2(): Record<string, ShopEntry> {
   // Fixtures that carry a lamp in play: place a level's lights as these, not as bare lights.
   const lamp = (kind: string, name: string, tags: string, spec: Partial<ShopEntry> = {}) =>
     (rows[kind] = { uid: u(), name, group: "Street · Lights", tags: `light lamp ${tags}`, footprint: "none", cells: one, hp: 0, scheme: none, ...spec } as ShopEntry);
-  lamp("street-lamp", "Street lamp", "street lamp post");
-  lamp("floodlight", "Floodlight pole", "floodlight car park parking");
+  lamp("street-lamp", "Street lamp", "street lamp post", { offset: [-0.55, 0.55] });
+  lamp("floodlight", "Floodlight pole", "floodlight car park parking", { offset: POST });
   lamp("bulkhead", "Bulkhead light", "bulkhead wall alley back door", { cells: [], place: "edge", mount: "wall", lift: 2.3 });
   // Street ground. The kerb seats on the edge between a raised pavement cell (+z, the cell it is
   // placed from: place it from the pavement) and the road, standing on the road's level; on chain
