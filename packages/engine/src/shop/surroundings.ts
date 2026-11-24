@@ -25,14 +25,36 @@ const tones = [0xc8bfae, 0x7c7f7a, 0x8a6a52, 0x9aa49a, 0x6e6a64, 0xa8a196, 0x5e5
 /** Where the level’s own roadway meets a side, as world ranges along that edge: the street beyond opens there. */
 export type RoadMouths = Partial<Record<"north" | "south" | "east" | "west", [from: number, to: number][]>>;
 
+/** The row buildings of a built surroundings group, each with its bounds: what a view cuts away in front of the camera. */
+export const surroundingBuildings = (surroundings: T.Group) =>
+  (surroundings.userData.buildings ?? []) as { group: T.Group; bounds: T.Box3 }[];
+
 export function buildSurroundings(bounds: Bounds, sides: Surroundings, mouths: RoadMouths = {}): T.Group {
   const random = propRandom(sides.seed ?? 11);
   const parts = new Map<number, T.BufferGeometry[]>();
+  // A building in a row collects its own boxes: it stands as one group, so the view can cut it away.
+  let building: Map<number, T.BufferGeometry[]> | null = null;
   const add = (color: number, x: number, y: number, z: number, w: number, h: number, d: number) => {
-    const g = new T.BoxGeometry(w, h, d).translate(x, y, z);
-    (parts.get(color) ?? parts.set(color, []).get(color)!).push(g);
+    const g = new T.BoxGeometry(w, h, d).translate(x, y, z), into = building ?? parts;
+    (into.get(color) ?? into.set(color, []).get(color)!).push(g);
   };
   const LIT = 0xffe2b0, COLD = 0xc8e4ec, DARK = 0x161a1e;
+  const materials = new Map<number, T.MeshStandardMaterial>();
+  const material = (color: number) => {
+    const lit = color === LIT || color === COLD;
+    return materials.get(color) ?? materials.set(color, new T.MeshStandardMaterial({ color, roughness: 0.9, ...(lit ? { emissive: color, emissiveIntensity: 0.8 } : {}) })).get(color)!;
+  };
+  const merged = (color: number, geometries: T.BufferGeometry[]) => {
+    const geometry = mergeGeometries(geometries);
+    for (const g of geometries) g.dispose();
+    const mesh = new T.Mesh(geometry, material(color));
+    mesh.receiveShadow = false; mesh.castShadow = false;
+    return mesh;
+  };
+  const group = new T.Group();
+  group.name = "surroundings";
+  const buildings: { group: T.Group; bounds: T.Box3 }[] = [];
+  group.userData.buildings = buildings;
   const cx = (bounds.minX + bounds.maxX) / 2, cz = (bounds.minZ + bounds.maxZ) / 2;
   const half = { x: (bounds.maxX - bounds.minX) / 2, z: (bounds.maxZ - bounds.minZ) / 2 };
   const lines: number[] = [];
@@ -92,6 +114,7 @@ export function buildSurroundings(bounds: Bounds, sides: Surroundings, mouths: R
       const w = 2.7 + random() * 3, h = (2 + Math.floor(random() * (tallest - 1))) * 3, d = 8 + random() * 4;
       // A street on a neighbouring side runs across this row: leave it clear, kerb to kerb.
       if (crossed(u - 0.5, u + w + 0.5)) { u += w + 0.15; continue; }
+      building = new Map();
       put(tones[Math.floor(random() * tones.length)], u + w / 2, h / 2, v + d / 2, w, h, d);
       put(0x2a2c2f, u + w / 2, h + 0.05, v + d / 2, w, 0.1, d);
       for (let f = 1; f < h / 3; f++) for (let x = u + 0.6; x < u + w - 0.5; x += 1.1) {
@@ -99,6 +122,12 @@ export function buildSurroundings(bounds: Bounds, sides: Surroundings, mouths: R
         put(on < 0.22 ? LIT : on < 0.32 ? COLD : DARK, x + 0.3, f * 3 + 1.5, v - 0.02, 0.6, 1.1, 0.04);
       }
       put(on(random) ? 0x23292d : 0x8a8e90, u + w / 2, 1.2, v - 0.03, w - 0.4, 2.2, 0.04);
+      const block = new T.Group();
+      block.name = "surrounding building";
+      for (const [color, geometries] of building) block.add(merged(color, geometries));
+      building = null;
+      group.add(block);
+      buildings.push({ group: block, bounds: new T.Box3().setFromObject(block) });
       u += w + 0.15 + random() * 0.4;
     }
   };
@@ -111,17 +140,7 @@ export function buildSurroundings(bounds: Bounds, sides: Surroundings, mouths: R
     add(0x2e3238, x, h / 2, z, w, h, w);
     for (let k = 0; k < 14; k++) add(random() < 0.6 ? LIT : COLD, x + (random() - 0.5) * w, 4 + random() * (h - 6), z + (z > cz ? -1 : 1) * (w / 2 + 0.05), 1.2, 1.6, 0.1);
   }
-  const group = new T.Group();
-  group.name = "surroundings";
-  for (const [color, geometries] of parts) {
-    const geometry = mergeGeometries(geometries);
-    for (const g of geometries) g.dispose();
-    const lit = color === LIT || color === COLD;
-    const material = new T.MeshStandardMaterial({ color, roughness: 0.9, ...(lit ? { emissive: color, emissiveIntensity: 0.8 } : {}) });
-    const mesh = new T.Mesh(geometry, material);
-    mesh.receiveShadow = false; mesh.castShadow = false;
-    group.add(mesh);
-  }
+  for (const [color, geometries] of parts) group.add(merged(color, geometries));
   if (lines.length) group.add(new T.LineSegments(new T.BufferGeometry().setAttribute("position", new T.Float32BufferAttribute(lines, 3)),
     new T.LineBasicMaterial({ color: 0x0c0d0f })));
   return group;
