@@ -513,6 +513,8 @@ export function Slider({
             uiTick(null);
         }
     };
+    const at = Math.round((value - min) / step);
+    const zero = min < 0 && max > 0 ? Math.round((0 - min) / step) : -1;
     const { props } = useFocusable<HTMLDivElement>({
         ...focus,
         clickConfirm: false,
@@ -524,10 +526,14 @@ export function Slider({
     });
     const fromPointer = (e: ReactPointerEvent) => {
         const r = bar.current!.getBoundingClientRect();
-        set(min + ((e.clientX - r.left) / r.width) * (max - min));
+        // The segment under the pointer is the one that fills: a press anywhere on a
+        // bar lights it, whichever half it lands in. Left of a centre mark the fill
+        // grows leftward, so the bar's near edge is its left one. Past the start
+        // (a drag off the bar, or the first sliver of it) is empty.
+        const f = ((e.clientX - r.left) / r.width) * segments;
+        const n = zero >= 0 && f < zero ? Math.floor(f) : f < 0.2 ? 0 : Math.ceil(f);
+        set(min + n * step);
     };
-    const at = Math.round((value - min) / step);
-    const zero = min < 0 && max > 0 ? Math.round((0 - min) / step) : -1;
     return (
         <div className="gui-chooser" data-kind="slider" {...props}>
             <span className="gui-chooser-label">{label}</span>
