@@ -9,7 +9,6 @@ import {
     useMemo,
     useRef,
     useState,
-    type MouseEvent as ReactMouseEvent,
     type ReactNode,
     type RefObject,
 } from "react";
@@ -202,65 +201,64 @@ export function WorldLegend({ zoom, onZoom }: { zoom: number; onZoom: (zoom: num
 }
 
 /**
- * The map's zoom as an instrument control: label, −, level, +. A cursor
- * target like a stepper: left and right step it (the bar names it), a press
- * on either sign steps at once and takes the cursor there. 1× is the whole world.
+ * The map's zoom as an instrument control: label, −, level, +. Each sign is a
+ * cursor target of its own (confirm or a press steps it), so left and right
+ * pass through the control like any other row. 1× is the whole world.
  */
 export function ZoomControl({ zoom, onZoom }: { zoom: number; onZoom: (zoom: number) => void }) {
-    const store = useFocusState();
-    const id = "world-zoom";
-    const step = (by: 1 | -1) => {
-        const next = stepZoom(zoom, by);
-        if (next === zoom) return;
-        uiTick(null);
-        onZoom(next);
-    };
-    const { props } = useFocusable<HTMLDivElement>({
-        id,
-        group: "ops-world-zoom",
-        title: "Zoom",
-        hint: zoom === ZOOM_LEVELS[0] ? "Whole world" : `${zoom}×`,
-        clickConfirm: false,
-        commands: [{ action: "nav", label: "Zoom", glyph: "lr" }],
-        directions: (dir) => {
-            if (dir !== "left" && dir !== "right") return false;
-            step(dir === "left" ? -1 : 1);
-            return true;
-        },
-    });
-    const press = (by: 1 | -1) => (e: ReactMouseEvent) => {
-        e.stopPropagation();
-        store.pointerInput();
-        store.focus(id);
-        step(by);
-    };
-    const min = zoom <= ZOOM_LEVELS[0];
-    const max = zoom >= ZOOM_LEVELS[ZOOM_LEVELS.length - 1];
     return (
-        <div className="gui-ops-zoom" {...props}>
+        <div className="gui-ops-zoom">
             <span className="gui-ops-zoom-label">Zoom</span>
-            <button
-                type="button"
-                tabIndex={-1}
-                className="gui-ops-zoom-step"
-                data-end={min || undefined}
-                aria-label="Zoom out"
-                onClick={press(-1)}
-            >
-                <i data-sign="minus" aria-hidden />
-            </button>
+            <ZoomStep by={-1} zoom={zoom} onZoom={onZoom} />
             <span className="gui-ops-zoom-value">{zoom}×</span>
-            <button
-                type="button"
-                tabIndex={-1}
-                className="gui-ops-zoom-step"
-                data-end={max || undefined}
-                aria-label="Zoom in"
-                onClick={press(1)}
-            >
-                <i data-sign="plus" aria-hidden />
-            </button>
+            <ZoomStep by={1} zoom={zoom} onZoom={onZoom} />
         </div>
+    );
+}
+
+/** One sign of the zoom control: steps the zoom out (−1) or in (+1), held at the ends. */
+function ZoomStep({
+    by,
+    zoom,
+    onZoom,
+}: {
+    by: 1 | -1;
+    zoom: number;
+    onZoom: (zoom: number) => void;
+}) {
+    const next = stepZoom(zoom, by);
+    const end = next === zoom;
+    const label = by < 0 ? "Zoom out" : "Zoom in";
+    const { props } = useFocusable<HTMLButtonElement>({
+        id: by < 0 ? "world-zoom-out" : "world-zoom-in",
+        group: "ops-world-zoom",
+        title: label,
+        hint: zoom === ZOOM_LEVELS[0] ? "Whole world" : `${zoom}×`,
+        instant: true,
+        commands: end
+            ? []
+            : [
+                  {
+                      action: "confirm",
+                      label,
+                      run: () => {
+                          uiTick(null);
+                          onZoom(next);
+                      },
+                  },
+              ],
+    });
+    return (
+        <button
+            type="button"
+            tabIndex={-1}
+            className="gui-ops-zoom-step"
+            data-end={end || undefined}
+            aria-label={label}
+            {...props}
+        >
+            <i data-sign={by < 0 ? "minus" : "plus"} aria-hidden />
+        </button>
     );
 }
 

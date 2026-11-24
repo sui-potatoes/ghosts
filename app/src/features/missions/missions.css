@@ -1132,17 +1132,11 @@
     font-variant-numeric: tabular-nums;
     letter-spacing: 0.08em;
 }
-.gui-ops-zoom[data-focused] {
+.gui-ops-zoom-step[data-focused] {
     background: var(--band);
-    border-color: var(--band);
-}
-.gui-ops-zoom[data-focused] .gui-ops-zoom-label,
-.gui-ops-zoom[data-focused] .gui-ops-zoom-step,
-.gui-ops-zoom[data-focused] .gui-ops-zoom-value {
     color: var(--on-band);
-    border-color: color-mix(in srgb, var(--on-band) 25%, transparent);
 }
-.gui-ops-zoom[data-focused] .gui-ops-zoom-step[data-end] {
+.gui-ops-zoom-step[data-focused][data-end] {
     color: color-mix(in srgb, var(--on-band) 40%, transparent);
 }
 @media (hover: none), (pointer: coarse) {
