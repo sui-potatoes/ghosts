@@ -1,0 +1,780 @@
+/* Copyright (c) Sui Potatoes */
+/* SPDX-License-Identifier: MIT */
+
+/*
+ * The mission console (features/missions, see its README): the operations
+ * queue, the situation board, the status strip, the briefing and its commit.
+ * Scoped by the gui-ops prefix, built on the gui scale; every tint is a mix of
+ * the theme tokens. The accent marks the live and the ours (cover the squad
+ * can use, the objective, the file code); amber marks only the opposition.
+ */
+
+/* === Console layout ================================================= */
+
+.gui-body:has(> .gui-ops-console) {
+    min-width: 0;
+}
+
+.gui-ops-console {
+    display: grid;
+    grid-template-columns: minmax(232px, 300px) minmax(0, 1fr) minmax(296px, 372px);
+    grid-template-rows: minmax(0, 1fr);
+    gap: calc(var(--u) * 3);
+    min-width: 0;
+    min-height: 0;
+}
+
+/* === Queue ========================================================== */
+
+.gui-ops-line {
+    min-height: calc(var(--u) * 13);
+    gap: calc(var(--u) * 3);
+}
+
+.gui-ops-line-index {
+    font: 400 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: 0.1em;
+    color: var(--disabled-color);
+    font-variant-numeric: tabular-nums;
+}
+
+.gui-ops-line .gui-row-main {
+    gap: calc(var(--u) * 1.5);
+}
+
+.gui-ops-line .gui-row-kind {
+    letter-spacing: 0.1em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.gui-row[data-focused] .gui-ops-line-index {
+    color: var(--on-band-soft);
+}
+
+/* The state over the file code, right-aligned: what a status line ends on. */
+.gui-ops-line-side {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: calc(var(--u) * 1.5);
+    flex: none;
+}
+
+.gui-ops-line-code {
+    font: 400 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: 0.1em;
+    color: var(--disabled-color);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.gui-row[data-focused] .gui-ops-line-code {
+    color: var(--on-band-soft);
+}
+
+/* A cleared operation: a small tick before the word. */
+.gui-ops-tick {
+    width: 7px;
+    height: 4px;
+    border: solid currentColor;
+    border-width: 0 0 1.5px 1.5px;
+    transform: translateY(-1px) rotate(-45deg);
+}
+
+/* === Board ========================================================== */
+
+.gui-ops-board .gui-panel-body {
+    padding: 0;
+}
+
+.gui-ops-display {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr);
+    padding: calc(var(--u) * 5) calc(var(--u) * 6) calc(var(--u) * 3);
+    /* The display's own ground: darker than the panel, a fine dot grid. */
+    background:
+        radial-gradient(
+                circle at 1px 1px,
+                color-mix(in srgb, var(--text-color) 7%, transparent) 1px,
+                transparent 1.2px
+            )
+            0 0 / calc(var(--u) * 4) calc(var(--u) * 4),
+        color-mix(in srgb, var(--background-color) 55%, transparent);
+    border-top: 1px solid var(--line);
+    overflow: hidden;
+}
+
+.gui-ops-plot-box,
+.gui-ops-stage-box {
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+    display: grid;
+    place-items: center;
+}
+
+.gui-ops-plot {
+    position: relative;
+}
+
+/* The lock-on: four brackets that close onto what is locked, and one sweep. */
+.gui-ops-reticle {
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+
+.gui-ops-reticle > i {
+    position: absolute;
+    width: calc(var(--u) * 4);
+    height: calc(var(--u) * 4);
+    border: 0 solid var(--accent-color);
+    pointer-events: none;
+    animation: gui-ops-lock 180ms var(--snap) both;
+}
+.gui-ops-reticle > i[data-at="tl"] {
+    top: calc(var(--u) * -3);
+    left: calc(var(--u) * -3);
+    border-width: 1px 0 0 1px;
+    --from: calc(var(--u) * -3) calc(var(--u) * -3);
+}
+.gui-ops-reticle > i[data-at="tr"] {
+    top: calc(var(--u) * -3);
+    right: calc(var(--u) * -3);
+    border-width: 1px 1px 0 0;
+    --from: calc(var(--u) * 3) calc(var(--u) * -3);
+}
+.gui-ops-reticle > i[data-at="bl"] {
+    bottom: calc(var(--u) * -3);
+    left: calc(var(--u) * -3);
+    border-width: 0 0 1px 1px;
+    --from: calc(var(--u) * -3) calc(var(--u) * 3);
+}
+.gui-ops-reticle > i[data-at="br"] {
+    bottom: calc(var(--u) * -3);
+    right: calc(var(--u) * -3);
+    border-width: 0 1px 1px 0;
+    --from: calc(var(--u) * 3) calc(var(--u) * 3);
+}
+
+@keyframes gui-ops-lock {
+    from {
+        translate: var(--from);
+        opacity: 0.35;
+    }
+}
+
+.gui-ops-sweep {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 1px;
+    background: color-mix(in srgb, var(--accent-color) 70%, transparent);
+    box-shadow: 0 0 8px color-mix(in srgb, var(--accent-color) 50%, transparent);
+    pointer-events: none;
+    opacity: 0;
+    animation: gui-ops-sweep 180ms linear;
+}
+
+@keyframes gui-ops-sweep {
+    from {
+        top: 0;
+        opacity: 1;
+    }
+    to {
+        top: 100%;
+        opacity: 0.6;
+    }
+}
+
+.gui-ops-display[data-still] .gui-ops-reticle > i,
+.gui-ops-display[data-still] .gui-ops-sweep {
+    animation: none;
+}
+
+/* --- The plot --- */
+
+.gui-ops-svg {
+    display: block;
+    overflow: visible;
+}
+
+.gui-ops-rule {
+    font: 400 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: 0.08em;
+    fill: var(--disabled-color);
+}
+
+.gui-ops-floor {
+    fill: color-mix(in srgb, var(--surface-color) 70%, transparent);
+}
+
+.gui-ops-grid {
+    stroke: color-mix(in srgb, var(--text-color) 6%, transparent);
+    stroke-width: 1;
+    fill: none;
+}
+
+.gui-ops-bounds {
+    fill: none;
+    stroke: var(--line-strong);
+    stroke-width: 1;
+}
+
+.gui-ops-hatch {
+    stroke: color-mix(in srgb, var(--text-color) 14%, transparent);
+    stroke-width: 1;
+}
+
+/* Walls read as mass, not light: the plot's brightest marks are its cover and markers. */
+.gui-ops-wall {
+    fill: color-mix(in srgb, var(--text-color) 30%, var(--background-color));
+}
+
+.gui-ops-obstacle {
+    fill: color-mix(in srgb, var(--text-color) 18%, var(--background-color));
+}
+
+.gui-ops-edge {
+    stroke-linecap: square;
+}
+.gui-ops-edge[data-level="high"] {
+    stroke: var(--accent-color);
+    stroke-width: 2;
+}
+.gui-ops-edge[data-level="low"] {
+    stroke: color-mix(in srgb, var(--accent-color) 50%, var(--background-color));
+    stroke-width: 1.5;
+}
+
+.gui-ops-squad {
+    fill: var(--text-color);
+}
+
+.gui-ops-hostile {
+    fill: none;
+    stroke: var(--warn-color);
+    stroke-width: 1.5;
+}
+
+.gui-ops-objective {
+    fill: none;
+    stroke: var(--accent-color);
+    stroke-width: 1.5;
+}
+
+/* --- Legend --- */
+
+.gui-ops-legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: calc(var(--u) * 2) calc(var(--u) * 4);
+    flex: none;
+    min-height: calc(var(--u) * 9);
+    padding: calc(var(--u) * 2) calc(var(--u) * 4);
+    border-top: 1px solid var(--line);
+}
+
+.gui-ops-key {
+    display: inline-flex;
+    align-items: center;
+    gap: calc(var(--u) * 2);
+    font: 400 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.gui-ops-key i {
+    position: relative;
+    width: 10px;
+    height: 10px;
+    flex: none;
+}
+.gui-ops-key i[data-key="squad"] {
+    width: 6px;
+    height: 6px;
+    margin: 2px;
+    background: var(--text-color);
+}
+.gui-ops-key i[data-key="hostile"] {
+    width: 7px;
+    height: 7px;
+    margin: 1.5px;
+    border: 1.5px solid var(--warn-color);
+    transform: rotate(45deg);
+}
+.gui-ops-key i[data-key="objective"] {
+    border: 1.5px solid var(--accent-color);
+    border-radius: 50%;
+}
+.gui-ops-key i[data-key="wall"] {
+    background: color-mix(in srgb, var(--text-color) 30%, var(--background-color));
+}
+.gui-ops-key i[data-key="high"],
+.gui-ops-key i[data-key="low"] {
+    height: 2px;
+    width: 12px;
+    background: var(--accent-color);
+}
+.gui-ops-key i[data-key="low"] {
+    height: 1.5px;
+    background: color-mix(in srgb, var(--accent-color) 50%, var(--background-color));
+}
+.gui-ops-key i[data-key="void"] {
+    background: repeating-linear-gradient(
+        45deg,
+        color-mix(in srgb, var(--text-color) 22%, transparent) 0 1px,
+        transparent 1px 4px
+    );
+    outline: 1px solid var(--line);
+}
+
+/* --- A mission drawn as its stages --- */
+
+.gui-ops-stage-box .gui-ops-reticle {
+    width: min(100%, 520px);
+    height: auto;
+}
+
+.gui-ops-stages {
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--u) * 3);
+    padding: calc(var(--u) * 6);
+    border: 1px solid var(--line);
+    background: color-mix(in srgb, var(--surface-color) 70%, transparent);
+}
+
+.gui-ops-stages-head {
+    display: flex;
+    justify-content: space-between;
+    gap: calc(var(--u) * 4);
+    padding-bottom: calc(var(--u) * 3);
+    border-bottom: 1px solid var(--line);
+    font: 500 var(--t-label) / 1 var(--font-mono);
+    letter-spacing: var(--track);
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+
+.gui-ops-stages-head > span:last-child {
+    color: var(--disabled-color);
+    font-variant-numeric: tabular-nums;
+}
+
+.gui-ops-stage-list {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.gui-ops-stage {
+    display: grid;
+    grid-template-columns: calc(var(--u) * 8) minmax(0, 1fr) auto;
+    align-items: center;
+    height: var(--h-m);
+    border-bottom: 1px dashed var(--line);
+    font: 400 var(--t-body) / 1 var(--font-mono);
+}
+.gui-ops-stage:last-child {
+    border-bottom: 0;
+}
+
+.gui-ops-stage-index {
+    font-size: var(--t-micro);
+    letter-spacing: 0.1em;
+    color: var(--disabled-color);
+}
+
+.gui-ops-stage-state {
+    font: 500 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--disabled-color);
+}
+.gui-ops-stage[data-done] .gui-ops-stage-state {
+    color: var(--accent-color);
+}
+
+.gui-ops-void {
+    display: grid;
+    place-items: center;
+    height: 100%;
+    font: 500 var(--t-label) / 1 var(--font-mono);
+    letter-spacing: var(--track);
+    text-transform: uppercase;
+    color: var(--disabled-color);
+}
+
+/* === Status strip =================================================== */
+
+.gui-ops-strip {
+    display: flex;
+    align-items: stretch;
+    flex: none;
+    min-height: calc(var(--u) * 11);
+    overflow: hidden;
+}
+
+.gui-ops-readout {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: calc(var(--u) * 1.5);
+    min-width: 0;
+    padding: 0 calc(var(--u) * 4);
+    border-right: 1px solid var(--line);
+}
+
+.gui-ops-readout:last-child {
+    margin-left: auto;
+    border-right: 0;
+    border-left: 1px solid var(--line);
+}
+
+.gui-ops-readout-label {
+    font: 400 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--disabled-color);
+}
+
+.gui-ops-readout-value {
+    font: 500 var(--t-label) / 1 var(--font-mono);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-color);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.gui-ops-readout[data-tone="accent"] .gui-ops-readout-value {
+    color: var(--accent-color);
+}
+.gui-ops-readout[data-tone="warn"] .gui-ops-readout-value {
+    color: var(--warn-color);
+}
+
+/* === Briefing ======================================================= */
+
+.gui-ops-briefing .gui-panel-body {
+    padding: 0;
+}
+
+.gui-ops-brief {
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--u) * 4);
+    flex: 1;
+    min-height: 0;
+    padding: calc(var(--u) * 4);
+    overflow-y: auto;
+    scrollbar-width: none;
+}
+.gui-ops-brief::-webkit-scrollbar {
+    display: none;
+}
+
+/* More below the panel's foot: the last lines fade into it. */
+.gui-ops-brief[data-more] {
+    mask-image: linear-gradient(to top, transparent, #000 calc(var(--u) * 10));
+}
+
+.gui-ops-brief-head {
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--u) * 2);
+}
+
+.gui-ops-issuer {
+    font: 400 var(--t-micro) / 1.3 var(--font-mono);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--disabled-color);
+}
+
+.gui-ops-title {
+    font: 600 var(--t-title) / 1.1 var(--font-mono);
+    letter-spacing: 0;
+    color: var(--text-color);
+}
+
+.gui-ops-place {
+    display: flex;
+    flex-wrap: wrap;
+    gap: calc(var(--u) * 1) calc(var(--u) * 3);
+    font: 400 var(--t-label) / 1.3 var(--font-mono);
+    letter-spacing: 0.06em;
+    color: var(--text-secondary);
+}
+
+.gui-ops-coords {
+    color: var(--disabled-color);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.gui-ops-contract {
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--u) * 2);
+    padding-left: calc(var(--u) * 3);
+    border-left: 1px solid var(--line-strong);
+}
+
+.gui-ops-contract p {
+    font: 400 var(--t-body) / 1.5 var(--font-mono);
+    color: var(--text-secondary);
+}
+
+.gui-ops-order {
+    font-style: normal;
+    font-weight: 600;
+    color: var(--text-color);
+}
+
+.gui-ops-objectives {
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--u) * 2);
+    margin: calc(var(--u) * 1) 0 0;
+    padding: 0 calc(var(--u) * 1);
+    list-style: none;
+}
+
+.gui-ops-objectives li {
+    display: grid;
+    grid-template-columns: calc(var(--u) * 7) minmax(0, 1fr);
+    align-items: baseline;
+}
+
+.gui-ops-objective-index {
+    font: 400 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: 0.1em;
+    color: var(--accent-color);
+}
+
+.gui-ops-objective-text {
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--u) * 1);
+    font: 500 var(--t-body) / 1.3 var(--font-mono);
+}
+
+.gui-ops-objective-detail {
+    font-weight: 400;
+    font-size: var(--t-label);
+    color: var(--text-secondary);
+}
+
+.gui-ops-facts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: calc(var(--u) * 3) calc(var(--u) * 4);
+    margin: calc(var(--u) * 1) 0 0;
+    padding: 0 calc(var(--u) * 1);
+}
+
+.gui-ops-fact {
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--u) * 1.5);
+    min-width: 0;
+}
+
+.gui-ops-fact dt {
+    font: 400 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--disabled-color);
+}
+
+.gui-ops-fact dd {
+    font: 500 var(--t-label) / 1.35 var(--font-mono);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-color);
+}
+
+.gui-ops-threat {
+    display: flex;
+    align-items: center;
+    gap: calc(var(--u) * 2);
+}
+
+.gui-ops-pips {
+    display: inline-flex;
+    gap: 2px;
+}
+
+.gui-ops-pips i {
+    width: 4px;
+    height: 10px;
+    background: color-mix(in srgb, var(--text-color) 14%, transparent);
+}
+
+.gui-ops-pips i[data-on] {
+    background: var(--warn-color);
+}
+
+/* --- The commit --- */
+
+.gui-ops-briefing .gui-panel-foot {
+    padding: calc(var(--u) * 3);
+}
+
+.gui-ops-commit {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: calc(var(--u) * 3);
+    width: 100%;
+    height: var(--h-l);
+    padding: 0 calc(var(--u) * 4);
+    border: 1px solid color-mix(in srgb, var(--accent-color) 45%, var(--line));
+    background: color-mix(in srgb, var(--accent-color) 6%, transparent);
+    color: var(--text-color);
+    text-align: left;
+    transition: transform 90ms ease-out;
+}
+
+.gui-ops-commit-verb {
+    font: 600 var(--t-body) / 1 var(--font-mono);
+    letter-spacing: var(--track);
+    text-transform: uppercase;
+}
+
+.gui-ops-commit-name {
+    margin-left: auto;
+    font: 400 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent-color);
+    white-space: nowrap;
+}
+
+.gui-ops-commit[data-focused] {
+    background: var(--band);
+    border-color: var(--band);
+    color: var(--on-band);
+    animation: gui-band-in 100ms ease-out;
+}
+.gui-ops-commit[data-focused] .gui-ops-commit-name {
+    color: var(--on-band-soft);
+}
+
+.gui-ops-commit[data-inactive] {
+    border-style: dashed;
+    border-color: var(--line);
+    background: none;
+    color: var(--disabled-color);
+}
+.gui-ops-commit[data-focused][data-inactive] {
+    background: var(--band-locked);
+    color: var(--on-band);
+}
+
+/* === Narrow consoles ================================================ */
+
+/* A laptop: the strip drops its minor readouts, the queue its file codes. */
+@media (max-width: 1180px) {
+    /* The side panels give the board the room. */
+    .gui-ops-console {
+        grid-template-columns: minmax(196px, 216px) minmax(0, 1fr) minmax(264px, 292px);
+    }
+    .gui-ops-issuer,
+    .gui-ops-objective-detail {
+        display: none;
+    }
+    /* Facts first where the column is short: the prose is what may fade. */
+    .gui-ops-brief-intel {
+        order: 1;
+    }
+    .gui-ops-brief-objectives {
+        order: 2;
+    }
+    .gui-ops-contract {
+        order: 3;
+    }
+    /* The queue's state column keeps only what changes the choice: the tick, Next. */
+    .gui-ops-line-side .gui-row-tag[data-state="done"] .gui-ops-line-word,
+    .gui-ops-line-side .gui-row-tag[data-state="open"] {
+        display: none;
+    }
+    .gui-ops-line-code {
+        display: none;
+    }
+    .gui-ops-readout[data-minor] {
+        display: none;
+    }
+    .gui-ops-readout:last-child:not([data-minor]) {
+        margin-left: 0;
+        border-left: 0;
+        border-right: 0;
+    }
+    .gui-ops-display {
+        padding: calc(var(--u) * 5) calc(var(--u) * 4) calc(var(--u) * 3);
+    }
+    .gui-ops-legend {
+        gap: calc(var(--u) * 2) calc(var(--u) * 3);
+    }
+}
+
+/* Phone and narrow windows: one column that scrolls inside the body: the
+   queue, the board at a fixed height, the briefing with its commit. */
+@media (max-width: 760px) {
+    .gui-body:has(> .gui-ops-console) {
+        padding: calc(var(--u) * 3) 0;
+    }
+    .gui-ops-console {
+        display: flex;
+        flex-direction: column;
+        padding: 0 calc(var(--u) * 3);
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        scrollbar-width: none;
+    }
+    .gui-ops-console::-webkit-scrollbar {
+        display: none;
+    }
+    .gui-ops-console > .gui-panel {
+        flex: none;
+    }
+    .gui-ops-lines {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+    }
+    .gui-ops-board .gui-ops-display {
+        height: 300px;
+        flex: none;
+        padding: calc(var(--u) * 6) calc(var(--u) * 4) calc(var(--u) * 3);
+    }
+    .gui-ops-brief,
+    .gui-ops-brief[data-more] {
+        overflow: visible;
+        mask-image: none;
+    }
+    .gui-ops-strip .gui-ops-readout:nth-child(n + 3) {
+        display: none;
+    }
+    .gui-ops-strip .gui-ops-readout:nth-child(2) {
+        border-right: 0;
+    }
+    .gui-ops-legend {
+        padding: calc(var(--u) * 2) calc(var(--u) * 3);
+    }
+}
