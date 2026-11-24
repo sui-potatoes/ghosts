@@ -272,7 +272,7 @@ export function streetLamp(b: Build) {
   b.tube(new T.Vector3(0, 5.1, -0.3), new T.Vector3(0, 5.35, 0.55), 0.04, steel);
   b.box(0, 5.32, 0.7, 0.24, 0.1, 0.5, steel);
   b.box(0, 5.265, 0.7, 0.18, 0.012, 0.4, b.kit.material(0xfff0d8, 0, 0.4, 1.6, 0xffe2b0));
-  b.root.userData.light = { color: 0xffe2b0, intensity: 10, distance: 16, at: [0, 5.0, 0.7] };
+  b.root.userData.light = { color: 0xffe2b0, intensity: 75, distance: 14, at: [0, 5.0, 0.7], night: true };
 }
 
 /** A car-park floodlight: a tall pole with two square heads aimed down-forward (+z). */
@@ -285,7 +285,8 @@ export function floodlight(b: Build) {
     head.rotation.x = -0.6;
     b.box(x, 6.8, -0.03, 0.3, 0.2, 0.01, b.kit.material(0xf2f8fa, 0, 0.4, 1.6, 0xe8f4ff)).rotation.x = -0.6;
   }
-  b.root.userData.light = { color: 0xe8f4ff, intensity: 18, distance: 22, at: [0, 6.5, 0.6] };
+  // Candela: a point light's pool on the ground is intensity / height², so it has to outweigh the night's sun there.
+  b.root.userData.light = { color: 0xe8f4ff, intensity: 150, distance: 18, at: [0, 6.5, 2.4], night: true };
 }
 
 /** A wall bulkhead light for an alley or a back door: a caged oval on the wall, lit. */

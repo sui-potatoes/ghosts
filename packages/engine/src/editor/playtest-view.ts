@@ -205,6 +205,8 @@ export function levelView(level: Level): MapView {
             ceilingLamps.push(lamp);
           } else {
             lamp.position.copy(asset.light.at);
+            // A street lamp burns at night only, like the district's own.
+            if (asset.light.night) lamp.userData.nightIntensity = lamp.intensity;
             root.add(lamp);
           }
         }

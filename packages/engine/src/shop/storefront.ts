@@ -106,7 +106,7 @@ export function utilityPole(b: Build) {
   b.tube(new T.Vector3(0, 4.6, 0.1), new T.Vector3(0, 4.85, 1.05), 0.03, steel);
   b.box(0, 4.82, 1.12, 0.22, 0.08, 0.42, steel);
   b.box(0, 4.77, 1.12, 0.16, 0.02, 0.34, b.kit.material(0xfff0d8, 0, 0.4, 1.6, 0xffe2b0));
-  b.root.userData.light = { color: 0xffe2b0, intensity: 9, distance: 14, at: [0, 4.6, 1.12] };
+  b.root.userData.light = { color: 0xffe2b0, intensity: 45, distance: 12, at: [0, 4.6, 1.12], night: true };
 }
 
 /**

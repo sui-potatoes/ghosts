@@ -22,8 +22,8 @@ export interface PropAsset {
   bounds: T.Box3;
   smoke?: T.Vector3;
   colliders?: T.Box3[];
-  /** A lamp the fixture carries: colour, intensity, range, local position. */
-  light?: { color: number; intensity: number; distance: number; at: T.Vector3 };
+  /** A lamp the fixture carries: colour, intensity, range, local position; `night` for a street lamp that goes out by day. */
+  light?: { color: number; intensity: number; distance: number; at: T.Vector3; night?: boolean };
 }
 
 /**
@@ -636,7 +636,7 @@ export class PropAssets {
     const bounds = new T.Box3().setFromObject(source);
     for (const leaf of leaves.values()) bounds.expandByObject(leaf);
     const intact = source.clone(); this.merge(intact);
-    const lamp = authored.userData.light as { color: number; intensity: number; distance: number; at: [number, number, number] } | undefined;
+    const lamp = authored.userData.light as { color: number; intensity: number; distance: number; at: [number, number, number]; night?: boolean } | undefined;
     const asset: PropAsset = { intact, frame, fragments, bounds, colliders: [bounds],
       ...(lamp ? { light: { ...lamp, at: new T.Vector3(...lamp.at) } } : {}) };
     this.assets.set(key, asset); this.sources.set(asset, source);
