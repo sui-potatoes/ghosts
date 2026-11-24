@@ -19,6 +19,7 @@ import { actionSpec, isThrowOrder } from "../action-registry";
 import { audio } from "../audio";
 import { onPad, padGlyph, padKind, type PadButton } from "../gamepad";
 import { CELL, type Cell } from "../map";
+import { shot } from "../scene/shot";
 import { combatActionOf, PAD_COMBAT_ACTIONS, type CombatAction, type PadCombatAction } from "../keys";
 import { session, type Session } from "../session";
 import { engineSettings } from "../settings";
@@ -586,6 +587,8 @@ export function GuideLayer({ guide }: { guide: Guide }) {
   }
 
   function frameCamera(cells: Cell[], instant: boolean) {
+    // `?shot=` pins the camera.
+    if (shot) return;
     const { battlefield } = s;
     const xs = cells.map((c) => c[0] * CELL),
       zs = cells.map((c) => c[1] * CELL);

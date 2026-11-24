@@ -101,6 +101,11 @@ export class UnitMarkers {
     label.querySelector("em")!.hidden = true;
   }
 
+  /** The contact shadows, for a capture that leaves the units out. */
+  get shadows(): T.Object3D[] {
+    return [...this.contacts.values()];
+  }
+
   /** Follow the body: shadow under the feet, plate projected over the head. */
   place(u: Unit, root: T.Vector3, camera: T.Camera, width: number, height: number) {
     const contact = this.contacts.get(u.id)!;

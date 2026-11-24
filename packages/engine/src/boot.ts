@@ -15,6 +15,7 @@ import { Battlefield } from "./scene/battlefield";
 import { loadDestruction } from "./scene/destruction";
 import { mapView } from "./scene/maps";
 import { shot } from "./scene/shot";
+import { capture } from "./scene/capture";
 import { timePresets, type TimeOfDay } from "./scene-weather";
 import type { Weather } from "./scene/precipitation";
 import type { Recruit } from "@ghosts/squad/types";
@@ -95,6 +96,7 @@ export function boot(options: BootOptions): () => void {
       viewport.dataset.humanTextures = JSON.stringify(humanTextureStats());
       const battlefield = new Battlefield({ viewport, labels, reticle, game: s.game, renderer });
       s.battlefield = battlefield;
+      if (capture?.look) s.look = capture.look;
       if (s.look) battlefield.setLook(s.look);
       battlefield.setPaused(s.paused);
       cleanups.push(() => battlefield.dispose());

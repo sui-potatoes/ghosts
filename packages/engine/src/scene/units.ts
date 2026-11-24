@@ -467,6 +467,11 @@ export class Units {
     };
   }
 
+  /** Every body and its contact shadow, for a capture that leaves the units out. */
+  get bodies(): T.Object3D[] {
+    return [...[...this.rigs.values()].map((r) => r.root), ...this.markers.shadows];
+  }
+
   dispose() {
     for (const rig of this.rigs.values()) rig.smoking?.dispose();
     this.markers.dispose();

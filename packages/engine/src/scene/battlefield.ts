@@ -40,6 +40,7 @@ import { ThreatOverlay } from "./threat";
 import type { ThreatArea } from "../intel";
 import { StreetReflections, wetGround } from "./puddles";
 import { noAir, plain, shot, SHOT_STEP } from "./shot";
+import { capture, hideForCapture } from "./capture";
 import { LOOK } from "./look";
 import { Post } from "./post";
 import { StreetAir } from "./street-air";
@@ -625,7 +626,7 @@ export class Battlefield {
     this.camera.updateProjectionMatrix();
     this.pixelRatioSeen = devicePixelRatio;
     this.renderer.setPixelRatio(
-      renderPixelRatio(width, height, devicePixelRatio, this.renderMode),
+      capture?.scale ?? renderPixelRatio(width, height, devicePixelRatio, this.renderMode),
     );
     this.renderer.setSize(width, height);
     this.post.resize();
@@ -1363,6 +1364,7 @@ export class Battlefield {
     // The layout view draws without the dressed scenery or the street's air: hidden for this frame only, so the scenery's own state never moves.
     const hidden = this.layout ? this.scenery.filter((o) => o.visible) : [];
     for (const o of hidden) o.visible = false;
+    const uncapture = capture ? this.captureFrame() : null;
     try {
       if (plain) this.renderer.render(this.scene, this.camera);
       else
@@ -1373,6 +1375,7 @@ export class Battlefield {
         );
     } finally {
       for (const o of hidden) o.visible = true;
+      uncapture?.();
     }
     this.profiler.end(now, elapsed, cpuStart, this.renderMode);
     if (shot && this.shotStep > shot.frames) this.host.dataset.shot = "ready";
@@ -1396,9 +1399,23 @@ export class Battlefield {
     reticle.style.top = `${(-p.y * 0.5 + 0.5) * this.viewportHeight}px`;
   }
 
+  /** `&capture`: hide the field's markings (and the units unless asked for) for this draw; returns the restore. */
+  private captureFrame() {
+    this.renderer.shadowMap.needsUpdate = true;
+    return hideForCapture([
+      ...this.overlays.reflectionExcluded,
+      this.threat.object,
+      this.blast.group,
+      ...(capture!.units ? [] : this.units.bodies),
+    ]);
+  }
+
   /** Update scenery visibility against the camera focus, living units and aim point. */
   private updateOcclusion(dt: number) {
-    const points = [this.controls.target, ...this.units.chestPoints(this.chestPoints)];
+    // A capture cuts away nothing, or only what stands before its target (`&cut`).
+    const points = capture
+      ? capture.cut ? [this.controls.target] : []
+      : [this.controls.target, ...this.units.chestPoints(this.chestPoints)];
     if (this.aimPoint) points.push(this.aimPoint);
     const wasFading = this.occlusion.active;
     this.host.dataset.occludedBuildings = String(this.occlusion.update(this.camera.position, points, dt));
