@@ -164,7 +164,7 @@ function SignInGate({ what }: { what: string }) {
                     id="gate-sign-in"
                     group="rows"
                     instant
-                    headline="Identification required"
+                    headline="Sign in required"
                     action="Sign in"
                     title="Sign in"
                     hint="With a passkey or a provider"

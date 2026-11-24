@@ -174,7 +174,7 @@ export function HqGateView({
                     id="gate-sign-in"
                     instant
                     group="gate"
-                    headline="Identification required"
+                    headline="Sign in required"
                     action="Sign in"
                     title="Sign in"
                     hint={`Your ${what} is kept with your account`}
