@@ -27,8 +27,14 @@ export interface TileInfo {
   x: number;
   y: number;
   type: GroundTile["t"];
-  /** The side covers a Cover tile carries, north first. */
-  sides: { side: CompassSide; level: "low" | "high" }[];
+  /**
+   * The cover on this tile's four edges as the rules test them, north first:
+   * an edge is as covered as the higher of the two tiles' facing sides, so an
+   * edge piece beside an obstacle, a wall or an unwalkable tile (which hold no
+   * sides of their own) still shows. `by` marks a cover that is not an edge
+   * piece but the neighbour itself: a wall (high) or an obstacle (low) next door.
+   */
+  sides: { side: CompassSide; level: "low" | "high"; by?: "wall" | "obstacle" }[];
   /** What the level places here: a cell asset, or an edge asset on one of this tile's edges. */
   placed: { uid: string; name: string; edge?: CompassSide }[];
   /** The painted floor here (the road, a crosswalk, the store floor), when there is one. */
@@ -45,6 +51,46 @@ const ORDER: [CompassSide, number][] = [
   ["W", 0],
 ];
 
+/** The step to the neighbour on each side, in `[x, y]`. */
+const STEP: Record<CompassSide, readonly [number, number]> = { N: [0, -1], E: [1, 0], S: [0, 1], W: [-1, 0] };
+const OPPOSITE: Record<CompassSide, CompassSide> = { N: "S", E: "W", S: "N", W: "E" };
+const INDEX: Record<CompassSide, number> = { W: 0, N: 1, E: 2, S: 3 };
+
+type Tiles = readonly (readonly GroundTile[])[];
+
+/** A tile's own side on `side`: only a Cover tile carries any (`side_cover!`). */
+function ownSide(tiles: Tiles, [x, y]: LayoutCell, side: CompassSide): number {
+  const tile = tiles[y]?.[x];
+  return tile?.t === "cover" ? tile.sides[INDEX[side]] : 0;
+}
+
+/**
+ * The cover on the edge of `cell` toward `side`, the way the rules test it:
+ * the higher of this tile's side toward it and the neighbour's side toward
+ * this tile (`is_edge_high_cover!`). 0 none, 1 low, 2 high.
+ */
+export function edgeCover(tiles: Tiles, cell: LayoutCell, side: CompassSide): number {
+  const [dx, dy] = STEP[side];
+  return Math.max(ownSide(tiles, cell, side), ownSide(tiles, [cell[0] + dx, cell[1] + dy], OPPOSITE[side]));
+}
+
+/**
+ * Every edge with cover on the grid, once each: named by the tile whose north
+ * or west side it is (that tile may be off the grid, on the far rim).
+ */
+export function coverEdges(tiles: Tiles): { cell: LayoutCell; side: "N" | "W"; level: 1 | 2 }[] {
+  const out: { cell: LayoutCell; side: "N" | "W"; level: 1 | 2 }[] = [];
+  const rows = tiles.length,
+    cols = tiles[0]?.length ?? 0;
+  for (let y = 0; y <= rows; y++)
+    for (let x = 0; x <= cols; x++)
+      for (const side of ["N", "W"] as const) {
+        const level = edgeCover(tiles, [x, y], side);
+        if (level === 1 || level === 2) out.push({ cell: [x, y], side, level });
+      }
+  return out;
+}
+
 const same = (a: LayoutCell, b: LayoutCell) => a[0] === b[0] && a[1] === b[1];
 
 /** The tile at `cell`, or null off the grid. `level` is optional: without it nothing is said about placements. */
@@ -52,8 +98,20 @@ export function tileInfo(tiles: readonly (readonly GroundTile[])[], level: Level
   const tile = tiles[cell[1]]?.[cell[0]];
   if (!tile) return null;
   const sides: TileInfo["sides"] = [];
-  if (tile.t === "cover")
-    for (const [side, i] of ORDER) if (tile.sides[i] === 1 || tile.sides[i] === 2) sides.push({ side, level: tile.sides[i] === 2 ? "high" : "low" });
+  const standable = tile.t === "empty" || tile.t === "cover";
+  for (const [side] of ORDER) {
+    const edge = edgeCover(tiles, cell, side);
+    if (edge === 1 || edge === 2) {
+      sides.push({ side, level: edge === 2 ? "high" : "low" });
+      continue;
+    }
+    // A wall or an obstacle beside a tile to stand on covers it on that side (`tile_cover!`).
+    if (!standable) continue;
+    const [dx, dy] = STEP[side];
+    const next = tiles[cell[1] + dy]?.[cell[0] + dx];
+    if (next?.t === "wall") sides.push({ side, level: "high", by: "wall" });
+    else if (next?.t === "obstacle") sides.push({ side, level: "low", by: "obstacle" });
+  }
   const info: TileInfo = { x: cell[0], y: cell[1], type: tile.t, sides, placed: [] };
   if (!level) return info;
   for (const p of placementsAt(level, [cell[0], cell[1]])) {
@@ -77,7 +135,8 @@ export function tileInfo(tiles: readonly (readonly GroundTile[])[], level: Level
   return info;
 }
 
-const sidesText = (info: TileInfo) => (info.sides.length ? info.sides.map((s) => `${s.side} ${s.level}`).join(", ") : "no sides");
+const sidesText = (info: TileInfo) =>
+  info.sides.length ? info.sides.map((s) => `${s.side} ${s.level}${s.by ? ` (${s.by})` : ""}`).join(", ") : "no sides";
 
 const floorText = (info: TileInfo) => (info.floor ? `floor ${info.floor.uid} (${info.floor.name})` : "");
 

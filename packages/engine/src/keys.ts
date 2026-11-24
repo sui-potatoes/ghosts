@@ -94,7 +94,7 @@ export const DEFAULT_COMBAT_BINDINGS: CombatBindings = {
   "rotate-left": ["q"],
   "rotate-right": ["e"],
   inspect: ["i"],
-  layout: ["l"],
+  layout: ["p"],
 };
 
 type KeyLike = { key: string; altKey: boolean; ctrlKey: boolean; metaKey: boolean };

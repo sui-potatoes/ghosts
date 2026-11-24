@@ -27,7 +27,7 @@ import type { ChainGround, Ground } from "../chain-ground.ts";
 import type { Level } from "../editor/level.ts";
 import { groundAfter, type Side } from "../guide/cover.ts";
 import type { GameEvent } from "../events.ts";
-import { addRect, rectCells, tileInfo, toggleCell, type LayoutCell, type TileInfo } from "../layout-readout.ts";
+import { addRect, coverEdges, edgeCover, rectCells, tileInfo, toggleCell, type LayoutCell, type TileInfo } from "../layout-readout.ts";
 import { CELL } from "../map.ts";
 import { glow, lineGlow, sideSeat, simPalette, type SimPalette } from "./schematic.ts";
 
@@ -233,29 +233,22 @@ export class LayoutView {
       pits: LayoutCell[] = [],
       walls: LayoutCell[] = [],
       obstacles: LayoutCell[] = [];
-    const edges = new Map<string, { cell: LayoutCell; side: Side; level: 1 | 2 }>();
+    const edges: { cell: LayoutCell; side: Side; level: 1 | 2 }[] = coverEdges(this.tiles).map((e) => ({ cell: e.cell, side: e.side === "N" ? "top" : "left", level: e.level }));
     const shields: { cell: LayoutCell; side: Side; level: 1 | 2 }[] = [];
-    const SIDES: [Side, number][] = [["left", 0], ["top", 1], ["right", 2], ["bottom", 3]];
+    const COMPASS: [Side, "N" | "E" | "S" | "W"][] = [["left", "W"], ["top", "N"], ["right", "E"], ["bottom", "S"]];
     this.tiles.forEach((row, y) =>
       row.forEach((tile, x) => {
         const cell: LayoutCell = [x, y];
         if (tile.t === "wall") walls.push(cell);
         else if (tile.t === "unwalkable") pits.push(cell);
-        else if (tile.t === "obstacle") {
+        else {
           floors.push(cell);
-          obstacles.push(cell);
-        } else {
-          floors.push(cell);
-          if (tile.t === "cover")
-            for (const [side, i] of SIDES) {
-              const level = tile.sides[i];
-              if (level !== 1 && level !== 2) continue;
-              shields.push({ cell, side, level });
-              // One panel per shared edge, at the higher of its two sides: named by the cell whose left or top it is.
-              const [cx, cy, edge] = side === "right" ? [x + 1, y, "left"] : side === "bottom" ? [x, y + 1, "top"] : [x, y, side];
-              const key = `${cx},${cy}:${edge}`;
-              const seen = edges.get(key);
-              if (!seen || seen.level < level) edges.set(key, { cell: [cx, cy], side: edge as Side, level });
+          if (tile.t === "obstacle") obstacles.push(cell);
+          // The protected side: where an edge has cover, whichever of the two tiles holds the piece.
+          else
+            for (const [side, compass] of COMPASS) {
+              const level = edgeCover(this.tiles, cell, compass);
+              if (level === 1 || level === 2) shields.push({ cell, side, level });
             }
         }
       }),
@@ -306,7 +299,7 @@ export class LayoutView {
     this.blocks.push({ mesh: obstacleMesh, cells: obstacles });
     // Edge panels: thin, low or high, on the shared edge.
     for (const level of [1, 2] as const) {
-      const list = [...edges.values()].filter((e) => e.level === level);
+      const list = edges.filter((e) => e.level === level);
       const h = level === 2 ? HIGH_H : LOW_H;
       const mesh = instanced(unitBox(), solid(level === 2 ? p.high.clone().lerp(p.void, 0.3) : p.low.clone().lerp(p.void, 0.3), level === 2 ? 0.6 : 0.8), list.length);
       list.forEach((e, i) => {
