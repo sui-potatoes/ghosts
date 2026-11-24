@@ -11,9 +11,16 @@ import {
     onScreen,
     siteOf,
     sitesOf,
+    between,
+    foldX,
+    nearestTurn,
+    panView,
+    stepZoom,
+    turnOf,
     WORLD,
     WORLD_ZOOM,
-    worldView,
+    ZOOM_LEVELS,
+    zoomLevel,
 } from "../src/features/missions/world.ts";
 
 const mission = (id: string, position?: Mission["position"]): Mission => ({
@@ -92,33 +99,95 @@ test("missions group into one site per city, in board order", () => {
     assert.deepEqual(sitesOf([mission("basics")]), []);
 });
 
-test("with no focus the whole world fits, centred", () => {
-    const view = worldView({ width: 1000, height: 1000 });
-    near(view.scale, 1000 / 1800);
-    near(view.x, 0);
-    near(view.y, (1000 - 720 * view.scale) / 2);
-    const wide = worldView({ width: 2000, height: 400 });
-    near(wide.scale, 400 / 720);
-    near(wide.y, 0);
+const TOKYO = { lat: 35 + 41 / 60, lon: 139 + 42 / 60 };
+const DUBAI = { lat: 25.2, lon: 55 + 16 / 60 };
+
+test("zoom steps from the whole world to a close view, held at the ends", () => {
+    assert.deepEqual([...ZOOM_LEVELS], [1, 2, 4, 8]);
+    assert.ok(ZOOM_LEVELS.includes(WORLD_ZOOM as 4));
+    assert.equal(stepZoom(4, 1), 8);
+    assert.equal(stepZoom(8, 1), 8);
+    assert.equal(stepZoom(4, -1), 2);
+    assert.equal(stepZoom(1, -1), 1);
+    assert.equal(stepZoom(3, 1), 8, "an off-step zoom snaps to the nearest step first");
+    assert.equal(zoomLevel(5.5), 4);
+    assert.equal(zoomLevel(0.2), 1);
 });
 
-test("a focus leans in and never leaves the map's edges", () => {
-    const box = { width: 700, height: 600 };
-    const fit = 700 / 1800;
-    const tokyo = { lat: 35.68, lon: 139.69 };
-    const view = worldView(box, tokyo);
-    assert.ok(view.scale > fit && view.scale <= fit * WORLD_ZOOM + 1e-9);
-    // Clamped to the map's right edge: no empty band beside the planet.
-    near(view.x, box.width - 1800 * view.scale);
-    const p = onScreen(view, tokyo.lat, tokyo.lon);
-    assert.ok(p.x > 0 && p.x < box.width && p.y > 0 && p.y < box.height);
-    // A short box leans in the same, and stays inside the map top and bottom.
-    const strip = worldView({ width: 900, height: 360 }, tokyo);
-    near(strip.scale, 0.5 * WORLD_ZOOM);
-    assert.ok(strip.y <= 0 && strip.y >= 360 - 720 * strip.scale);
-    // Never zooms past the cap, however tall the box.
-    const tall = worldView({ width: 400, height: 2000 }, tokyo);
-    near(tall.scale, (400 / 1800) * WORLD_ZOOM);
+test("with no place the map idles at the whole world, one turn across the box", () => {
+    const box = { width: 1440, height: 900 };
+    const view = panView({ box, point: null, zoom: 8 });
+    near(view.scale, 1440 / 1800);
+    near(turnOf(view.scale), 1440);
+    near(view.x, 0);
+    near(view.y, (900 - 720 * view.scale) / 2);
+});
+
+test("a place is brought to the middle of the open area at the zoom asked", () => {
+    const box = { width: 1440, height: 900 };
+    const open = { x: 330, y: 150, width: 700, height: 600 };
+    for (const zoom of ZOOM_LEVELS) {
+        const view = panView({ box, open, point: TOKYO, zoom });
+        near(view.scale, (1440 / 1800) * zoom);
+        const p = onScreen(view, TOKYO.lat, TOKYO.lon);
+        near(p.x, open.x + open.width / 2, 1e-6);
+        // Never past the map's top or bottom edge; in the open middle whenever that allows.
+        const h = 720 * view.scale;
+        if (h > box.height) {
+            assert.ok(view.y <= 0 && view.y >= box.height - h, `zoom ${zoom}`);
+            const clamped = view.y === 0 || view.y === box.height - h;
+            if (!clamped) near(p.y, open.y + open.height / 2, 1e-6);
+        } else near(view.y, (box.height - h) / 2);
+    }
+    // Close in, Tokyo sits in the open middle both ways.
+    {
+        const view = panView({ box, open, point: TOKYO, zoom: 8 });
+        const p = onScreen(view, TOKYO.lat, TOKYO.lon);
+        near(p.y, open.y + open.height / 2, 1e-6);
+    }
+});
+
+test("a pan takes the shorter way round the planet", () => {
+    const box = { width: 1440, height: 900 };
+    const open = { x: 330, y: 150, width: 700, height: 600 };
+    const tokyo = panView({ box, open, point: TOKYO, zoom: 4 });
+    const dubai = panView({ box, open, point: DUBAI, zoom: 4, from: tokyo });
+    // Tokyo to Dubai is 84° west: the map moves east by that much, not round the other way.
+    near(dubai.x - tokyo.x, (139.7 - 55.267) * 5 * tokyo.scale, 0.5);
+    // Coming back the long way is folded too.
+    const far = { ...tokyo, x: tokyo.x - turnOf(tokyo.scale) * 3 };
+    const back = panView({ box, open, point: TOKYO, zoom: 4, from: far });
+    near(back.x, far.x, 1e-6);
+    // Zooming keeps the longitude under the open middle.
+    const out = panView({ box, open, point: TOKYO, zoom: 1, from: far });
+    near(onScreen(out, TOKYO.lat, TOKYO.lon, 680).x, open.x + open.width / 2, 1e-6);
+    assert.ok(Math.abs(out.x - far.x / 4) < turnOf(out.scale));
+});
+
+test("wrapping: a copy nearest any point, two copies cover the box", () => {
+    near(nearestTurn(100, 1050, 1000), 1100);
+    near(nearestTurn(100, -380, 1000), 100);
+    near(nearestTurn(100, -420, 1000), -900);
+    for (const x of [-2500, -1000, -1, 0, 1, 999, 1001, 4321]) {
+        const folded = foldX({ scale: 1000 / 1800, x, y: 0 });
+        assert.ok(folded <= 0 && folded > -1000, `${x} → ${folded}`);
+        near(((x - folded) / 1000) % 1, 0, 1e-9);
+    }
+    const view = { scale: 3.2, x: -4200, y: -100 };
+    const p = onScreen(view, TOKYO.lat, TOKYO.lon, 700);
+    assert.ok(Math.abs(p.x - 700) <= turnOf(view.scale) / 2);
+});
+
+test("a move part way: every map point on a straight line between", () => {
+    const a = { scale: 1, x: 0, y: 0 };
+    const b = { scale: 3, x: -200, y: -100 };
+    const mid = between(a, b, 0.5);
+    assert.deepEqual(mid, { scale: 2, x: -100, y: -50 });
+    const pa = onScreen(a, TOKYO.lat, TOKYO.lon);
+    const pb = onScreen(b, TOKYO.lat, TOKYO.lon);
+    const pm = onScreen(mid, TOKYO.lat, TOKYO.lon);
+    near(pm.x, (pa.x + pb.x) / 2, 1e-9);
+    near(pm.y, (pa.y + pb.y) / 2, 1e-9);
 });
 
 test("every continent name sits on the base map", () => {

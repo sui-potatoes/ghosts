@@ -7,7 +7,6 @@ import test from "node:test";
 import {
     briefParts,
     cellSize,
-    clockOf,
     columnLabel,
     openingMission,
     plotOf,
@@ -133,8 +132,4 @@ test("the next mission is the first open one; the board opens on it", () => {
     assert.equal(openingMission(cleared), "a");
     assert.equal(openingMission([]), null);
     assert.equal(tally(board), "1 / 4");
-});
-
-test("the clock is UTC, two digits each", () => {
-    assert.equal(clockOf(new Date(Date.UTC(2026, 0, 2, 3, 4, 5))), "03:04:05");
 });

@@ -31,6 +31,7 @@ import {
     StatusStrip,
     tally,
     useLockedMission,
+    WORLD_ZOOM,
     type BoardView,
     type Mission,
     type Readout,
@@ -88,6 +89,8 @@ function Console({ source, frame, view, onView }: ConsoleProps) {
     const [missions] = useState(() => trainingMissions(engine, editor));
     const [asked] = useState(lastDeployed);
     const { locked, shown } = useLockedMission(missions, asked);
+    // The map's zoom is the player's: it holds across missions.
+    const [zoom, setZoom] = useState(WORLD_ZOOM);
     const deploy = (mission: Mission) => {
         const route = DEMO_SCENARIOS.find((s) => s.id === mission.id)?.route;
         if (!route) return;
@@ -107,7 +110,9 @@ function Console({ source, frame, view, onView }: ConsoleProps) {
                     world={missions}
                     view={view}
                     onView={onView}
-                    strip={<StatusStrip readouts={readoutsOf(shown)} clock />}
+                    zoom={zoom}
+                    onZoom={setZoom}
+                    strip={<StatusStrip readouts={readoutsOf(shown)} />}
                 />
                 <BriefingPanel mission={shown} commit={locked} onDeploy={deploy} />
             </OpsConsole>

@@ -109,17 +109,19 @@
     overflow: hidden;
 }
 
-.gui-ops-plot-box,
+.gui-ops-plot-box {
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+    display: grid;
+}
+
 .gui-ops-stage-box {
     position: relative;
     min-width: 0;
     min-height: 0;
     display: grid;
     place-items: center;
-}
-
-.gui-ops-plot {
-    position: relative;
 }
 
 /* The lock-on: four brackets that close onto what is locked, and one sweep. */
@@ -198,77 +200,6 @@
     animation: none;
 }
 
-/* --- The plot --- */
-
-.gui-ops-svg {
-    display: block;
-    overflow: visible;
-}
-
-.gui-ops-rule {
-    font: 400 var(--t-micro) / 1 var(--font-mono);
-    letter-spacing: 0.08em;
-    fill: var(--disabled-color);
-}
-
-.gui-ops-floor {
-    fill: color-mix(in srgb, var(--surface-color) 70%, transparent);
-}
-
-.gui-ops-grid {
-    stroke: color-mix(in srgb, var(--text-color) 6%, transparent);
-    stroke-width: 1;
-    fill: none;
-}
-
-.gui-ops-bounds {
-    fill: none;
-    stroke: var(--line-strong);
-    stroke-width: 1;
-}
-
-.gui-ops-hatch {
-    stroke: color-mix(in srgb, var(--text-color) 14%, transparent);
-    stroke-width: 1;
-}
-
-/* Walls read as mass, not light: the plot's brightest marks are its cover and markers. */
-.gui-ops-wall {
-    fill: color-mix(in srgb, var(--text-color) 30%, var(--background-color));
-}
-
-.gui-ops-obstacle {
-    fill: color-mix(in srgb, var(--text-color) 18%, var(--background-color));
-}
-
-.gui-ops-edge {
-    stroke-linecap: square;
-}
-.gui-ops-edge[data-level="high"] {
-    stroke: var(--accent-color);
-    stroke-width: 2;
-}
-.gui-ops-edge[data-level="low"] {
-    stroke: color-mix(in srgb, var(--accent-color) 50%, var(--background-color));
-    stroke-width: 1.5;
-}
-
-.gui-ops-squad {
-    fill: var(--text-color);
-}
-
-.gui-ops-hostile {
-    fill: none;
-    stroke: var(--warn-color);
-    stroke-width: 1.5;
-}
-
-.gui-ops-objective {
-    fill: none;
-    stroke: var(--accent-color);
-    stroke-width: 1.5;
-}
-
 /* --- Legend --- */
 
 .gui-ops-legend {
@@ -299,45 +230,6 @@
     height: 10px;
     flex: none;
 }
-.gui-ops-key i[data-key="squad"] {
-    width: 6px;
-    height: 6px;
-    margin: 2px;
-    background: var(--text-color);
-}
-.gui-ops-key i[data-key="hostile"] {
-    width: 7px;
-    height: 7px;
-    margin: 1.5px;
-    border: 1.5px solid var(--warn-color);
-    transform: rotate(45deg);
-}
-.gui-ops-key i[data-key="objective"] {
-    border: 1.5px solid var(--accent-color);
-    border-radius: 50%;
-}
-.gui-ops-key i[data-key="wall"] {
-    background: color-mix(in srgb, var(--text-color) 30%, var(--background-color));
-}
-.gui-ops-key i[data-key="high"],
-.gui-ops-key i[data-key="low"] {
-    height: 2px;
-    width: 12px;
-    background: var(--accent-color);
-}
-.gui-ops-key i[data-key="low"] {
-    height: 1.5px;
-    background: color-mix(in srgb, var(--accent-color) 50%, var(--background-color));
-}
-.gui-ops-key i[data-key="void"] {
-    background: repeating-linear-gradient(
-        45deg,
-        color-mix(in srgb, var(--text-color) 22%, transparent) 0 1px,
-        transparent 1px 4px
-    );
-    outline: 1px solid var(--line);
-}
-
 /* --- A mission drawn as its stages --- */
 
 .gui-ops-stage-box .gui-ops-reticle {
@@ -874,17 +766,45 @@
     right: calc(var(--u) * 3);
 }
 
-/* The planet fills the display edge to edge, on the display's own dot ground. */
-.gui-ops-display[data-view="world"] {
+/* The board's two layers share the display and crossfade: the map edge to edge,
+   the site drawing with the display's own margins. */
+.gui-ops-display[data-view] {
     padding: 0;
 }
-.gui-ops-view {
+.gui-ops-view,
+.gui-ops-site {
+    grid-area: 1 / 1;
     position: relative;
     min-width: 0;
     min-height: 0;
+    opacity: 0;
+    visibility: hidden;
+    transition:
+        opacity 200ms linear,
+        visibility 0s linear 200ms;
 }
-.gui-ops-view[hidden] {
-    display: none;
+.gui-ops-view[data-on],
+.gui-ops-site[data-on] {
+    opacity: 1;
+    visibility: visible;
+    transition:
+        opacity 200ms linear,
+        visibility 0s;
+}
+.gui-ops-site {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr);
+}
+.gui-ops-display:not([data-view]) .gui-ops-site {
+    opacity: 1;
+    visibility: visible;
+}
+.gui-ops-display[data-view] .gui-ops-site {
+    padding: calc(var(--u) * 5) calc(var(--u) * 6) calc(var(--u) * 3);
+}
+/* The map draws on the board's own dark ground: nothing dims it. */
+.gui-ops-display[data-view="world"] {
+    background: var(--background-color);
 }
 
 .gui-ops-world {
@@ -901,20 +821,28 @@
 }
 
 .gui-ops-world-plane {
-    transition:
-        transform 200ms var(--snap),
-        opacity 200ms linear;
+    will-change: transform;
+}
+/* Reduced motion: no travel, a short crossfade on each change instead. */
+.gui-ops-world[data-fade="0"] .gui-ops-world-map {
+    animation: gui-ops-world-fade-a 160ms linear;
+}
+.gui-ops-world[data-fade="1"] .gui-ops-world-map {
+    animation: gui-ops-world-fade-b 160ms linear;
+}
+@keyframes gui-ops-world-fade-a {
+    from {
+        opacity: 0.2;
+    }
+}
+@keyframes gui-ops-world-fade-b {
+    from {
+        opacity: 0.2;
+    }
 }
 
 .gui-ops-world-sea {
     fill: var(--background-color);
-}
-
-.gui-ops-world-edge {
-    fill: none;
-    stroke: var(--line);
-    stroke-width: 1px;
-    vector-effect: non-scaling-stroke;
 }
 
 .gui-ops-world-grid {
@@ -931,23 +859,13 @@
     vector-effect: non-scaling-stroke;
 }
 
-/* White hairline coasts over a faint land wash. */
-.gui-ops-world-land path {
-    fill: color-mix(in srgb, currentColor 6%, transparent);
-    stroke: color-mix(in srgb, currentColor 82%, transparent);
-    stroke-width: 0.9px;
-    stroke-linejoin: round;
-    vector-effect: non-scaling-stroke;
-}
-
-/* Everything placed on a map point: a zero-size anchor that slides with the map. */
+/* Everything placed on a map point: a zero-size anchor, moved with the map in the same frame. */
 .gui-ops-world-at {
     position: absolute;
     left: 0;
     top: 0;
     width: 0;
     height: 0;
-    transition: transform 200ms var(--snap);
 }
 
 .gui-ops-world-name {
@@ -959,7 +877,6 @@
     white-space: nowrap;
     color: color-mix(in srgb, var(--text-color) 34%, transparent);
     pointer-events: none;
-    transition: opacity 200ms linear;
 }
 
 .gui-ops-world-name[data-out] {
@@ -968,27 +885,22 @@
 
 /* --- Pins: amber, only where a mission is --- */
 
+/* The cursor target: a square the size of the reticle, centred on the city. */
 .gui-ops-world-pin {
     position: absolute;
-    left: -9px;
-    top: -9px;
-    display: flex;
-    align-items: center;
-    gap: calc(var(--u) * 2);
-    height: 18px;
-    padding: 0 calc(var(--u) * 1) 0 0;
+    left: -16px;
+    top: -16px;
+    width: 32px;
+    height: 32px;
+    display: grid;
+    place-items: center;
     color: var(--warn-color);
-    font: 500 var(--t-micro) / 1 var(--font-mono);
-    letter-spacing: 0.24em;
-    text-transform: uppercase;
-    white-space: nowrap;
 }
 
 .gui-ops-world-pin-mark {
     position: relative;
     width: 18px;
     height: 18px;
-    flex: none;
 }
 /* A square dot in a thin ring. */
 .gui-ops-world-pin-mark::before,
@@ -1005,26 +917,34 @@
     border-radius: 50%;
 }
 
+/* The name beside the pin: not part of the target, never moves it. */
 .gui-ops-world-pin-name {
+    position: absolute;
+    top: 0;
+    left: 18px;
+    transform: translateY(-50%);
     display: inline-flex;
     gap: calc(var(--u) * 2);
+    color: var(--warn-color);
+    font: 500 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    pointer-events: none;
+}
+.gui-ops-world-pin-name[data-flip] {
+    left: auto;
+    right: 18px;
 }
 .gui-ops-world-pin-count {
     color: color-mix(in srgb, var(--warn-color) 60%, var(--background-color));
 }
-.gui-ops-world-pin[data-flip] {
-    left: auto;
-    right: -9px;
-    flex-direction: row-reverse;
-    padding: 0 0 0 calc(var(--u) * 1);
-}
-
 /* Locked on: the readout names the place, so the pin keeps only its mark. */
-.gui-ops-world-pin[data-locked] .gui-ops-world-pin-name {
+.gui-ops-world-pin-name[data-locked] {
     visibility: hidden;
 }
 
-/* --- The lock-on, the leader and the readout --- */
+/* --- The lock-on and the readout --- */
 
 .gui-ops-world-mark {
     pointer-events: none;
@@ -1037,6 +957,10 @@
     top: -16px;
     width: 32px;
     height: 32px;
+}
+/* The white cursor on the pin stands in for the reticle: one marker, not two. */
+.gui-ops-world-lock[data-hidden] {
+    visibility: hidden;
 }
 .gui-ops-world-lock > i {
     position: absolute;
@@ -1070,53 +994,36 @@
     --from: 10px 10px;
 }
 
-/* The leader leaves the reticle's corner toward the middle of the board. */
-.gui-ops-world-leader {
-    position: absolute;
-    width: 44px;
-    height: 18px;
-    overflow: visible;
-    fill: none;
-    stroke: color-mix(in srgb, var(--accent-color) 70%, transparent);
-    stroke-width: 1px;
-    left: 16px;
-    top: 16px;
-}
-.gui-ops-world-leader[data-side="w"] {
-    left: -60px;
-    transform: scaleX(-1);
-}
-.gui-ops-world-leader[data-rise="n"] {
-    top: -34px;
-    transform: scaleY(-1);
-}
-.gui-ops-world-leader[data-side="w"][data-rise="n"] {
-    transform: scale(-1, -1);
-}
-
+/* The readout against the reticle: its box is placed by the board (the side away from land). */
 .gui-ops-world-readout {
     position: absolute;
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
+    justify-content: center;
     gap: calc(var(--u) * 1.5);
-    padding: calc(var(--u) * 2) calc(var(--u) * 3);
-    border: 1px solid color-mix(in srgb, var(--accent-color) 35%, transparent);
-    background: color-mix(in srgb, var(--background-color) 88%, transparent);
+    padding: 0 calc(var(--u) * 3);
+    border: 1px solid color-mix(in srgb, var(--accent-color) 45%, transparent);
+    background: color-mix(in srgb, var(--background-color) 90%, transparent);
     white-space: nowrap;
     font: 400 var(--t-micro) / 1 var(--font-mono);
     letter-spacing: 0.16em;
     text-transform: uppercase;
-    left: 60px;
-    top: 34px;
-    transform: translateY(-50%);
+    animation: gui-ops-readout-in 160ms linear;
 }
 .gui-ops-world-readout[data-side="w"] {
-    left: auto;
-    right: 60px;
+    align-items: flex-end;
     text-align: right;
 }
-.gui-ops-world-readout[data-rise="n"] {
-    top: -34px;
+.gui-ops-world-readout[data-side="n"],
+.gui-ops-world-readout[data-side="s"] {
+    align-items: center;
+    text-align: center;
+}
+@keyframes gui-ops-readout-in {
+    from {
+        opacity: 0;
+    }
 }
 
 .gui-ops-world-readout-city {
@@ -1132,41 +1039,7 @@
     font-variant-numeric: tabular-nums;
 }
 
-/* --- Off the map: a place with no position (a simulation) --- */
-
-.gui-ops-world[data-off] .gui-ops-world-plane {
-    opacity: 0.45;
-}
-.gui-ops-world[data-off] .gui-ops-world-name {
-    opacity: 0.4;
-}
-
-.gui-ops-world-off {
-    position: absolute;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: calc(var(--u) * 1.5);
-    padding: calc(var(--u) * 2.5) calc(var(--u) * 5);
-    white-space: nowrap;
-    border: 1px solid var(--line-strong);
-    background: color-mix(in srgb, var(--background-color) 90%, transparent);
-    text-align: center;
-    font: 400 var(--t-micro) / 1.4 var(--font-mono);
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: var(--text-secondary);
-}
-.gui-ops-world-off-head {
-    margin-bottom: calc(var(--u) * 0.5);
-    font: 500 var(--t-label) / 1 var(--font-mono);
-    letter-spacing: 0.28em;
-    color: var(--text-color);
-}
-
-/* --- World legend keys --- */
+/* --- World legend: the keys, and the zoom control at the row's end --- */
 
 .gui-ops-key i[data-key="site"] {
     width: 4px;
@@ -1186,11 +1059,123 @@
     mask-composite: intersect;
 }
 
-.gui-ops-display[data-still] .gui-ops-world-plane,
-.gui-ops-display[data-still] .gui-ops-world-at,
-.gui-ops-display[data-still] .gui-ops-world-name {
-    transition: none;
+.gui-ops-world-legend {
+    flex-wrap: nowrap;
 }
-.gui-ops-display[data-still] .gui-ops-world-lock > i {
+
+/* The zoom: an instrument control at the end of the key row. */
+.gui-ops-zoom {
+    display: flex;
+    align-items: stretch;
+    margin-left: auto;
+    height: calc(var(--u) * 7);
+    border: 1px solid var(--line-strong);
+    font: 500 var(--t-micro) / 1 var(--font-mono);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+.gui-ops-zoom-label {
+    display: flex;
+    align-items: center;
+    padding: 0 calc(var(--u) * 2.5);
+    border-right: 1px solid var(--line);
+    color: var(--disabled-color);
+}
+.gui-ops-zoom-step {
+    position: relative;
+    width: calc(var(--u) * 7);
+    display: grid;
+    place-items: center;
+    color: var(--text-color);
+    cursor: pointer;
+}
+.gui-ops-zoom-step:hover {
+    background: color-mix(in srgb, var(--text-color) 8%, transparent);
+}
+/* The signs drawn as hairlines, not type. */
+.gui-ops-zoom-step i {
+    position: relative;
+    width: 9px;
+    height: 9px;
+}
+.gui-ops-zoom-step i::before,
+.gui-ops-zoom-step i[data-sign="plus"]::after {
+    content: "";
+    position: absolute;
+    background: currentColor;
+}
+.gui-ops-zoom-step i::before {
+    left: 0;
+    right: 0;
+    top: 4px;
+    height: 1px;
+}
+.gui-ops-zoom-step i[data-sign="plus"]::after {
+    top: 0;
+    bottom: 0;
+    left: 4px;
+    width: 1px;
+}
+.gui-ops-zoom-step[data-end] {
+    color: var(--disabled-color);
+    cursor: default;
+}
+.gui-ops-zoom-value {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: calc(var(--u) * 8);
+    border-left: 1px solid var(--line);
+    border-right: 1px solid var(--line);
+    color: var(--text-color);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.08em;
+}
+.gui-ops-zoom[data-focused] {
+    background: var(--band);
+    border-color: var(--band);
+}
+.gui-ops-zoom[data-focused] .gui-ops-zoom-label,
+.gui-ops-zoom[data-focused] .gui-ops-zoom-step,
+.gui-ops-zoom[data-focused] .gui-ops-zoom-value {
+    color: var(--on-band);
+    border-color: color-mix(in srgb, var(--on-band) 25%, transparent);
+}
+.gui-ops-zoom[data-focused] .gui-ops-zoom-step[data-end] {
+    color: color-mix(in srgb, var(--on-band) 40%, transparent);
+}
+@media (hover: none), (pointer: coarse) {
+    .gui-ops-zoom-step {
+        width: calc(44px / var(--ui-scale, 1));
+    }
+}
+
+.gui-ops-world[data-still] .gui-ops-world-lock > i {
     animation: none;
+}
+
+/* The site layer keeps the display's margins at each console width. */
+@media (max-width: 1180px) {
+    .gui-ops-display[data-view] .gui-ops-site {
+        padding: calc(var(--u) * 5) calc(var(--u) * 4) calc(var(--u) * 3);
+    }
+}
+@media (max-width: 760px) {
+    .gui-ops-board .gui-ops-display[data-view] {
+        padding: 0;
+    }
+    .gui-ops-display[data-view] .gui-ops-site {
+        padding: calc(var(--u) * 6) calc(var(--u) * 4) calc(var(--u) * 3);
+    }
+    .gui-ops-world-legend .gui-ops-key {
+        display: none;
+    }
+}
+
+/* The queue's cursor is its selection: the remembered-row band would read as a
+   second selection, so a queue line shows only the cursor and its notch. */
+.gui-ops-line[data-current]:not([data-selected]) {
+    background: none;
+    box-shadow: none;
 }

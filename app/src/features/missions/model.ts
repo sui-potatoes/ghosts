@@ -38,6 +38,8 @@ export interface MissionPlot {
     squad: PlotCell[];
     hostiles: PlotCell[];
     objective?: PlotCell;
+    /** Metres a tile spans, when the source knows (the level export's `render.cell`); the site plan's scale reads in tiles without it. */
+    tile?: number;
 }
 
 /** Where the mission stands for this player. */
@@ -214,12 +216,6 @@ export function withNext(missions: readonly Mission[]): Mission[] {
 /** `done` of `total` as the console says it: `2 / 4`. */
 export const tally = (missions: readonly Mission[]) =>
     `${missions.filter((m) => m.state === "done").length} / ${missions.length}`;
-
-/** The UTC clock the status strip shows: `14:02:09`. */
-export function clockOf(date: Date): string {
-    const two = (n: number) => String(n).padStart(2, "0");
-    return `${two(date.getUTCHours())}:${two(date.getUTCMinutes())}:${two(date.getUTCSeconds())}`;
-}
 
 /**
  * One coordinate as the briefings write it (`35° 41′ N`, `139° 42′ E`, an

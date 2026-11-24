@@ -47,7 +47,7 @@ function placeOf(scenario: Scenario): string {
 const CITIES: Record<string, Pick<MissionPosition, "city">> = {
     "black-rain": { city: "Tokyo" },
     "night-shift": { city: "Tokyo" },
-    "paper-trail": { city: "Tokyo" },
+    "paper-trail": { city: "Dubai" },
 };
 
 /** Where an operation is on the planet: its briefing's coordinates in its city; none when they do not read. */
@@ -120,11 +120,15 @@ function operation(base: DemoScenario, scenario: Scenario, level: Level, editor:
                   max: 5,
               }
             : undefined,
-        plot: plotOf(
-            tiles,
-            { squad: level.spawns.a, hostiles: level.spawns.b },
-            objective ? level.objective : undefined,
-        ),
+        plot: {
+            ...plotOf(
+                tiles,
+                { squad: level.spawns.a, hostiles: level.spawns.b },
+                objective ? level.objective : undefined,
+            ),
+            // Metres a tile spans, from the level's own export (the engine's CELL, 1.35).
+            tile: editor.exportLevel(level).render.cell,
+        },
         state: "open",
         verb: "Deploy",
     };

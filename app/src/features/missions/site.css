@@ -1,0 +1,255 @@
+/*
+ * The site plan (SitePlot.tsx): a level's ground as an engineer's plate,
+ * white line on the dark, the accent and amber as small marks only.
+ *
+ * Three line weights, hierarchy by opacity within them:
+ *   heavy  2px  what stops a round: structure outlines, high cover
+ *   medium 1px  what a unit works round: low cover, obstacles, the markers
+ *   light  1px  the drawing's furniture: frame, rules, ground dots, hatching
+ * Every colour is a mix of the theme tokens through currentColor.
+ */
+
+.gui-site {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    color: var(--text-color);
+    background: transparent;
+}
+
+.gui-site-svg {
+    position: absolute;
+    inset: 0;
+    display: block;
+    overflow: visible;
+    shape-rendering: crispEdges;
+}
+
+/* Shapes are line work; a hatched one names its pattern in its fill attribute. */
+:where(.gui-site-svg, .gui-site-key svg) :where(path:not([fill]), rect, circle) {
+    fill: none;
+}
+
+.gui-site-svg path,
+.gui-site-key svg path {
+    stroke-linecap: butt;
+    stroke-linejoin: miter;
+}
+
+/* Diagonals and rings are drawn smooth; everything square stays crisp. */
+.gui-site-hatch,
+.gui-site-cross,
+.gui-site-obstacle-cross,
+.gui-site-obstacle-legend,
+.gui-site-hostile path,
+.gui-site-objective,
+.gui-site-unit,
+.gui-site-leader,
+.gui-site-north-head {
+    shape-rendering: geometricPrecision;
+}
+
+/* --- Light: the drawing's furniture --- */
+
+.gui-site-label {
+    font: 400 var(--t-micro, 10px) / 1 var(--font-mono);
+    letter-spacing: 0.22em;
+    fill: color-mix(in srgb, currentColor 42%, transparent);
+    stroke: none;
+}
+
+.gui-site-title {
+    letter-spacing: 0.3em;
+    fill: color-mix(in srgb, currentColor 58%, transparent);
+}
+
+.gui-site-svg .gui-site-tick,
+.gui-site-svg .gui-site-reg {
+    stroke: color-mix(in srgb, currentColor 34%, transparent);
+    stroke-width: 1;
+}
+
+.gui-site-svg .gui-site-reg {
+    stroke: color-mix(in srgb, currentColor 24%, transparent);
+}
+
+.gui-site-svg .gui-site-scale-fill {
+    fill: color-mix(in srgb, currentColor 34%, transparent);
+    stroke: none;
+}
+
+.gui-site-svg .gui-site-north-line {
+    stroke: color-mix(in srgb, currentColor 44%, transparent);
+    stroke-width: 1;
+}
+.gui-site-svg .gui-site-north-head {
+    fill: color-mix(in srgb, currentColor 58%, transparent);
+    stroke: none;
+}
+
+.gui-site-svg .gui-site-frame {
+    stroke: color-mix(in srgb, currentColor 22%, transparent);
+    stroke-width: 1;
+}
+
+.gui-site-svg .gui-site-ground {
+    stroke: color-mix(in srgb, currentColor 40%, transparent);
+    stroke-width: 1;
+}
+
+.gui-site-svg .gui-site-hatch,
+.gui-site-key .gui-site-hatch {
+    stroke: color-mix(in srgb, currentColor 34%, transparent);
+    stroke-width: 1;
+}
+
+.gui-site-svg .gui-site-cross,
+.gui-site-key .gui-site-cross {
+    stroke: color-mix(in srgb, currentColor 15%, transparent);
+    stroke-width: 1;
+}
+
+/* Ground nothing walks on: a sparse cross-hatch inside a dashed edge. */
+.gui-site-svg .gui-site-void,
+.gui-site-key .gui-site-void {
+    stroke: color-mix(in srgb, currentColor 30%, transparent);
+    stroke-width: 1;
+    stroke-dasharray: 2 2;
+}
+
+/* --- Medium: what a unit works round --- */
+
+.gui-site-svg .gui-site-obstacle,
+.gui-site-key .gui-site-obstacle {
+    stroke: color-mix(in srgb, currentColor 62%, transparent);
+    stroke-width: 1;
+}
+.gui-site-svg .gui-site-obstacle-cross {
+    stroke: color-mix(in srgb, currentColor 34%, transparent);
+    stroke-width: 1;
+}
+
+.gui-site-svg .gui-site-low,
+.gui-site-key .gui-site-low {
+    stroke: color-mix(in srgb, currentColor 72%, transparent);
+    stroke-width: 1;
+}
+
+.gui-site-svg .gui-site-threshold {
+    stroke: color-mix(in srgb, currentColor 30%, transparent);
+    stroke-width: 1;
+    stroke-dasharray: 1 2;
+}
+.gui-site-svg .gui-site-jamb {
+    stroke: color-mix(in srgb, currentColor 72%, transparent);
+    stroke-width: 1;
+}
+
+/* --- Heavy: what stops a round --- */
+
+.gui-site-svg .gui-site-mass,
+.gui-site-key .gui-site-mass {
+    stroke: color-mix(in srgb, currentColor 88%, transparent);
+    stroke-width: 2;
+}
+.gui-site-key .gui-site-mass {
+    stroke-width: 1.5;
+}
+
+.gui-site-svg .gui-site-high,
+.gui-site-key .gui-site-high {
+    stroke: color-mix(in srgb, currentColor 88%, transparent);
+    stroke-width: 2;
+}
+
+/* --- Markers: the squad in the foreground tone (the accent when it leads), hostiles amber --- */
+
+.gui-site-squad {
+    color: var(--text-color);
+}
+.gui-site-squad[data-lead] {
+    color: var(--accent-color);
+}
+.gui-site-svg .gui-site-zone,
+.gui-site-key .gui-site-zone {
+    stroke: color-mix(in srgb, currentColor 80%, transparent);
+    stroke-width: 1;
+}
+.gui-site-svg .gui-site-unit,
+.gui-site-key .gui-site-unit {
+    stroke: currentColor;
+    stroke-width: 1;
+}
+.gui-site-svg .gui-site-unit-dot {
+    fill: currentColor;
+    stroke: none;
+}
+.gui-site-squad .gui-site-tag {
+    fill: color-mix(in srgb, currentColor 85%, transparent);
+}
+
+.gui-site-hostile {
+    color: var(--warn-color);
+}
+.gui-site-svg .gui-site-hostile path,
+.gui-site-key .gui-site-hostile path {
+    stroke: currentColor;
+    stroke-width: 1.25;
+}
+.gui-site-hostile .gui-site-tag {
+    fill: color-mix(in srgb, currentColor 80%, transparent);
+}
+
+.gui-site-objective {
+    color: var(--accent-color);
+}
+.gui-site-svg .gui-site-objective circle,
+.gui-site-svg .gui-site-objective path,
+.gui-site-key .gui-site-objective circle,
+.gui-site-key .gui-site-objective path {
+    stroke: currentColor;
+    stroke-width: 1.25;
+}
+.gui-site-svg .gui-site-objective .gui-site-leader {
+    stroke: color-mix(in srgb, currentColor 70%, transparent);
+    stroke-width: 1;
+}
+.gui-site-objective .gui-site-tag {
+    fill: currentColor;
+}
+
+/* --- The key --- */
+
+.gui-site-legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 16px;
+    color: var(--text-color);
+}
+
+.gui-site-defs {
+    position: absolute;
+    width: 0;
+    height: 0;
+}
+
+.gui-site-key {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font: 400 var(--t-micro, 10px) / 1 var(--font-mono);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.gui-site-key svg {
+    flex: none;
+    overflow: visible;
+    shape-rendering: crispEdges;
+}
