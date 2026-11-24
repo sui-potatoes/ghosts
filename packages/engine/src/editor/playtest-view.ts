@@ -167,6 +167,20 @@ export function levelView(level: Level): MapView {
       const poles: T.Vector3[] = [];
       const roofs = new Map<string, T.Group[]>();
       const ceilingLamps: T.PointLight[] = [];
+      // A closed building (a mass nobody enters) is one thing: every piece and its roof in one
+      // group, so it cuts away whole, never a tile at a time. A store's skin still opens by the cell.
+      const blocks = buildingBlocks(level).blocks;
+      const massOf = new Map<string, number>();
+      blocks.forEach((block, n) => { if (!block.shell) for (const c of block.cells) massOf.set(c.join(), n); });
+      const masses = new Map<number, T.Group>();
+      const mass = (n: number) => {
+        let group = masses.get(n);
+        if (!group) {
+          masses.set(n, (group = new T.Group()));
+          scene.add(group);
+        }
+        return group;
+      };
       for (const prop of levelProps(level).fixed) {
         const asset = kit.props.get(prop);
         const root = new T.Group();
@@ -199,6 +213,11 @@ export function levelView(level: Level): MapView {
           scene.add(root);
           continue;
         }
+        const whole = massOf.get(cell.join());
+        if (whole !== undefined) {
+          mass(whole).add(root);
+          continue;
+        }
         // The battlefield resets an occluder's own transform: the cell sits inside one.
         const group = new T.Group();
         group.add(root);
@@ -215,7 +234,7 @@ export function levelView(level: Level): MapView {
       const slabTop = Math.max(0, ...level.floors.map((f) => floorRaise(level, f.at)));
       const roofing = new T.MeshStandardMaterial({ color: 0x2a2c2f, roughness: 0.95 });
       const tankSteel = new T.MeshStandardMaterial({ color: 0x8a8c88, roughness: 0.6, metalness: 0.4 });
-      buildingBlocks(level).blocks.forEach((block, n) => {
+      blocks.forEach((block, n) => {
         const y = (c: [number, number]) => floorRaise(level, c);
         // A cut-away mass shows a flat dark fill at pavement height, nothing raised. A store’s
         // skin keeps the shop floor under its fixtures instead.
@@ -232,6 +251,10 @@ export function levelView(level: Level): MapView {
           const roof = new T.Mesh(new T.BoxGeometry(CELL, 0.012, CELL), roofing);
           roof.position.set((cell[0] + minX) * CELL, y(cell) + block.height + 0.006, (cell[1] + minZ) * CELL);
           roof.receiveShadow = true;
+          if (!block.shell) {
+            mass(n).add(roof);
+            continue;
+          }
           group.add(roof);
           scene.add(group);
           occluders.push({ group, bounds: new T.Box3(
@@ -252,9 +275,13 @@ export function levelView(level: Level): MapView {
             tank.add(leg);
           }
           tank.traverse((o) => { if (o instanceof T.Mesh) o.castShadow = true; });
-          scene.add(tank);
+          (block.shell ? scene : mass(n)).add(tank);
         }
       });
+      for (const group of masses.values()) {
+        group.updateMatrixWorld(true);
+        occluders.push({ group, bounds: new T.Box3().setFromObject(group) });
+      }
 
       // A roof is every roof and ceiling tile joined four ways: one occluder, so with anyone
       // inside (or the camera's focus there) the whole sales floor opens at once.
