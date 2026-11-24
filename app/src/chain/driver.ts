@@ -46,7 +46,7 @@ import {
     gameEvents,
     hitChance,
     isOver,
-    lineOfSight,
+    lineOfFire,
     lineOfThrow,
     stepAllowed,
     terrainAt,
@@ -150,12 +150,12 @@ export function chainDriver({
             terrain: (cell) => terrainAt(latest, tile(cell)),
             // `trace_path`'s step: no high side across the edge, never two obstacles in a row
             step: (from, to) => stepAllowed(latest, tile(from), tile(to)),
-            clearShot: (from, to) => lineOfSight(latest, tile(from), tile(to)),
+            clearShot: (from, to) => lineOfFire(latest, tile(from), tile(to)),
             clearThrow: (from, to) => lineOfThrow(latest, tile(from), tile(to)),
             cover: (from, at) => coverBonus(latest, tile(from.pos), tile(at.pos)),
             chance: (a, b) => {
                 const [from, to] = [tile(a.pos), tile(b.pos)];
-                if (!lineOfSight(latest, from, to)) return 0;
+                if (!lineOfFire(latest, from, to)) return 0;
                 const distance = Math.abs(from[0] - to[0]) + Math.abs(from[1] - to[1]);
                 // the shooter's effective aim, the target's effective defense
                 const aim = effectiveStats({ aim: a.aim, defense: 0 }, effectBytes(a.effects)).aim;

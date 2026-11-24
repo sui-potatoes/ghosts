@@ -191,19 +191,22 @@ const HUNKER_BONUS = 25;
  * `ghosts::map` has them (`chain-ground.ts`), the odds as `Unit.perform_attack`
  * works them out. Hunkering, a demo-only order, keeps its flat bonus.
  */
-export function groundAuthority(ground: ChainGround): GameAuthority {
+export function groundAuthority(
+  ground: ChainGround,
+  occupied: (cell: Cell) => boolean = () => false,
+): GameAuthority {
   const cover = (from: Unit, at: Unit) => ground.cover(from.pos, at.pos) + (at.hunkered ? HUNKER_BONUS : 0);
   return {
     terrain: (cell) => ground.terrain(cell),
     step: (from, to) => ground.step(from, to),
     shelter: (at) => ground.shelter(at),
-    clearShot: (from, to) => ground.clearShot(from, to),
+    clearShot: (from, to) => ground.clearFire(from, to, occupied),
     clearThrow: (from, to) => ground.clearThrow(from, to),
     blast: (at) => ground.blast(at),
     cover,
     // `Unit.perform_attack`: the shooter's effective aim, the target's cover plus effective defense.
     chance: (a, b) =>
-      ground.clearShot(a.pos, b.pos)
+      ground.clearFire(a.pos, b.pos, occupied)
         ? ChainGround.hitChance(unitCombat(a).aim, a.range, distance(a.pos, b.pos), cover(a, b) + unitCombat(b).defense)
         : 0,
   };
@@ -232,7 +235,9 @@ export class Encounter {
   constructor(scenario: Scenario = blackRain) {
     this.scenario = scenario;
     this.map = new TacticalMap(scenario.map);
-    if (scenario.ground) this.authority = groundAuthority(new ChainGround(scenario.ground));
+    if (scenario.ground) this.authority = groundAuthority(new ChainGround(scenario.ground), (cell) =>
+        this.units.some((u) => u.hp > 0 && u.pos[0] === cell[0] && u.pos[1] === cell[1]),
+      );
     this.units = initialUnits(scenario);
     this.log = [scenario.lines.opening];
   }

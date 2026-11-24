@@ -488,6 +488,176 @@ fun test_attack_without_line_of_sight_fails() {
     abort
 }
 
+#[test]
+/// A shooter behind the end of a wall peeks past the corner: the straight line
+/// is refused, the line of fire is not. Only the shooter peeks.
+fun test_corner_peek_clears_shot() {
+    let mut map = new(@0.to_id(), 5);
+
+    *&mut map.grid[3, 0].tile_type = TileType::Wall;
+    assert!(!map.line_of_sight(4, 0, 0, 0));
+    assert!(map.line_of_fire(4, 0, 0, 0));
+
+    // the target behind the wall peeks no more than it did: it has no corner
+    assert!(!map.line_of_sight(0, 0, 4, 0));
+    assert!(!map.line_of_fire(0, 0, 4, 0));
+
+    // a clear straight line is clear
+    assert!(map.line_of_fire(4, 0, 4, 4) && map.line_of_fire(1, 1, 1, 1));
+
+    // the peek is a sideways step, whichever side the wall is on
+    *&mut map.grid[3, 0].tile_type = TileType::Empty;
+    *&mut map.grid[1, 4].tile_type = TileType::Wall;
+    assert!(!map.line_of_sight(0, 4, 4, 4) && map.line_of_fire(0, 4, 4, 4));
+    *&mut map.grid[1, 4].tile_type = TileType::Empty;
+    *&mut map.grid[0, 1].tile_type = TileType::Wall;
+    assert!(!map.line_of_sight(0, 0, 0, 4) && map.line_of_fire(0, 0, 0, 4));
+    *&mut map.grid[4, 3].tile_type = TileType::Wall;
+    assert!(!map.line_of_sight(4, 4, 4, 0) && map.line_of_fire(4, 4, 4, 0));
+
+    map.destroy();
+}
+
+#[test]
+/// No peek when the wall goes on past the peek tile, nor from the middle of a
+/// wall that is closed, nor from the edge of the map.
+fun test_no_corner_peek() {
+    let mut map = new(@0.to_id(), 5);
+
+    // the wall continues past (4, 1)
+    *&mut map.grid[3, 0].tile_type = TileType::Wall;
+    *&mut map.grid[3, 1].tile_type = TileType::Wall;
+    assert!(!map.line_of_fire(4, 0, 0, 0));
+    *&mut map.grid[3, 1].tile_type = TileType::Empty;
+    *&mut map.grid[3, 0].tile_type = TileType::Empty;
+
+    // a full wall: nothing to peek around from either row beside it
+    5u16.do!(|y| *&mut map.grid[2, y].tile_type = TileType::Wall);
+    assert!(!map.line_of_fire(3, 2, 0, 2) && !map.line_of_fire(4, 2, 0, 2));
+    assert!(!map.line_of_fire(3, 0, 0, 0) && !map.line_of_fire(3, 4, 0, 4));
+    5u16.do!(|y| *&mut map.grid[2, y].tile_type = TileType::Empty);
+
+    // the edge of the map is not a cover: a shooter in the corner blocked by a
+    // wall in the open sees no better
+    *&mut map.grid[1, 0].tile_type = TileType::Wall;
+    assert!(!map.line_of_sight(4, 0, 0, 0) && !map.line_of_fire(4, 0, 0, 0));
+
+    map.destroy();
+}
+
+#[test]
+/// A peek tile must be one to stand on, with nobody on it, and the step to it open.
+fun test_peek_tile_must_be_free() {
+    use std::unit_test::destroy;
+
+    let ctx = &mut tx_context::dummy();
+    let (no, high) = (NO_COVER, HIGH_COVER);
+    let mut map = new(@0.to_id(), 5);
+    let recruit = recruit_of(BOB, ctx);
+
+    *&mut map.grid[3, 0].tile_type = TileType::Wall;
+    assert!(map.line_of_fire(4, 0, 0, 0));
+
+    // a unit on it
+    map.place_recruit(&recruit, 4, 1);
+    assert!(!map.line_of_fire(4, 0, 0, 0));
+    map.kill_for_testing(object::id(&recruit));
+    assert!(map.line_of_fire(4, 0, 0, 0));
+
+    // an obstacle, an unwalkable tile
+    *&mut map.grid[4, 1].tile_type = TileType::Obstacle;
+    assert!(!map.line_of_fire(4, 0, 0, 0));
+    *&mut map.grid[4, 1].tile_type = TileType::Unwalkable;
+    assert!(!map.line_of_fire(4, 0, 0, 0));
+    *&mut map.grid[4, 1].tile_type = TileType::Empty;
+
+    // a high cover on the step, declared on either side of the edge
+    *&mut map.grid[4, 0].tile_type = cover(no, no, high, no);
+    assert!(!map.line_of_fire(4, 0, 0, 0));
+    *&mut map.grid[4, 0].tile_type = TileType::Empty;
+    *&mut map.grid[4, 1].tile_type = cover(high, no, no, no);
+    assert!(!map.line_of_fire(4, 0, 0, 0));
+    *&mut map.grid[4, 1].tile_type = TileType::Empty;
+    assert!(map.line_of_fire(4, 0, 0, 0));
+
+    destroy(recruit);
+    map.destroy();
+}
+
+#[test]
+/// A high cover on the edge is a corner like a wall is, on the shooter's side or
+/// the other, and it must not go on past the peek tile.
+fun test_corner_peek_around_high_cover() {
+    let (no, high) = (NO_COVER, HIGH_COVER);
+    let mut map = new(@0.to_id(), 5);
+
+    // a wall on the straight line, and a high cover above the shooter
+    *&mut map.grid[2, 0].tile_type = TileType::Wall;
+    *&mut map.grid[4, 0].tile_type = cover(no, high, no, no);
+    assert!(!map.line_of_sight(4, 0, 0, 1) && map.line_of_fire(4, 0, 0, 1));
+
+    // the same edge declared by the tile above
+    *&mut map.grid[4, 0].tile_type = TileType::Empty;
+    *&mut map.grid[3, 0].tile_type = cover(no, no, no, high);
+    assert!(!map.line_of_sight(4, 0, 0, 1) && map.line_of_fire(4, 0, 0, 1));
+
+    // the cover goes on over the peek tile, on either side of its edge
+    *&mut map.grid[4, 1].tile_type = cover(high, no, no, no);
+    assert!(!map.line_of_fire(4, 0, 0, 1));
+    *&mut map.grid[4, 1].tile_type = TileType::Empty;
+    *&mut map.grid[3, 1].tile_type = cover(no, no, no, high);
+    assert!(!map.line_of_fire(4, 0, 0, 1));
+    *&mut map.grid[3, 1].tile_type = TileType::Empty;
+
+    // with the cover gone the shooter has no corner to peek around
+    *&mut map.grid[4, 0].tile_type = TileType::Empty;
+    *&mut map.grid[3, 0].tile_type = TileType::Empty;
+    assert!(!map.line_of_fire(4, 0, 0, 1));
+
+    map.destroy();
+}
+
+#[test]
+/// The peek only gives sight: the range is the shooter's own, not the peek tile's.
+fun test_corner_peek_attack() {
+    use std::unit_test::destroy;
+
+    let ctx = &mut tx_context::dummy();
+    let mut rng = sui::random::new_generator_from_seed_for_testing(vector[1]);
+    let mut map = new(@0.to_id(), 9);
+    let shooter = shooter_of(ALICE, 99, 0, ctx);
+    let target = recruit_of(BOB, ctx);
+
+    *&mut map.grid[7, 0].tile_type = TileType::Wall;
+    map.place_recruit(&shooter, 8, 0);
+    map.place_recruit(&target, 6, 1);
+
+    // 3 tiles from the shooter: past the corner, a hit
+    let history = map.perform_attack(&mut rng, 8, 0, 6, 1);
+    assert!(history::list_kia(&history).length() == 1);
+
+    destroy(shooter);
+    destroy(target);
+    map.destroy();
+}
+
+#[test, expected_failure(abort_code = ghosts::unit::ERangeExceeded)]
+/// 8 tiles from the shooter, 7 from the peek tile, a rifle reaching 4 + 3: sight is there, range is not.
+fun test_corner_peek_range_from_shooter_fail() {
+    let ctx = &mut tx_context::dummy();
+    let mut rng = sui::random::new_generator_from_seed_for_testing(vector[1]);
+    let mut map = new(@0.to_id(), 9);
+    let shooter = shooter_of(ALICE, 99, 0, ctx);
+    let target = recruit_of(BOB, ctx);
+
+    *&mut map.grid[7, 0].tile_type = TileType::Wall;
+    map.place_recruit(&shooter, 8, 0);
+    map.place_recruit(&target, 1, 1);
+    assert!(map.line_of_fire(8, 0, 1, 1) && !map.line_of_sight(8, 0, 1, 1));
+    map.perform_attack(&mut rng, 8, 0, 1, 1);
+    abort
+}
+
 /// The frag grenade destroys covers in its area and leaves walls alone.
 #[test]
 fun test_grenade_destroys_cover() {

@@ -7,6 +7,7 @@ import { ChainGround, type GroundTile } from "../../packages/engine/src/chain-gr
 import type { ChainGame } from "../src/chain/bcs.ts";
 import {
     coverBonus,
+    lineOfFire,
     lineOfSight,
     lineOfThrow,
     stepAllowed,
@@ -94,6 +95,17 @@ test("the playtest's chain rules agree with the live match's on cover, sight, th
                 ground.clearShot(cell(...a), cell(...b)),
                 lineOfSight(game, a, b),
                 `sight ${where}`,
+            );
+            // the line of fire: with the corner peek on, and off (the deployed package)
+            assert.equal(
+                ground.clearFire(cell(...a), cell(...b), () => false, true),
+                lineOfFire(game, a, b, true),
+                `fire ${where}`,
+            );
+            assert.equal(
+                ground.clearFire(cell(...a), cell(...b), () => false, false),
+                lineOfFire(game, a, b, false),
+                `fire, no peek ${where}`,
             );
             assert.equal(
                 ground.clearThrow(cell(...a), cell(...b)),

@@ -361,6 +361,66 @@ function traceLine(
 export const lineOfSight = (s: GameState, x0: number, y0: number, x1: number, y1: number) =>
     traceLine(s, x0, y0, x1, y1, true);
 
+/**
+ * What the package the agent plays on rules, for the mirrors here that must not be stricter or
+ * looser than it. `cornerPeek`: `Map.line_of_fire` lets a shooter hugging the end of a cover
+ * shoot from the tile past the corner. The deployed package has `line_of_sight` only; flip it in
+ * the publish that adds `line_of_fire`, together with `GHOSTS_RULES.cornerPeek` in the app's
+ * `constants.ts` and `TESTNET_DEPLOYMENT`.
+ */
+export const RULES = { cornerPeek: false };
+
+/** `is_cover_toward`: a wall beside the tile, or a high side on the edge; never the map's edge. */
+function coverToward(state: GameState, x: number, y: number, direction: number): boolean {
+    const [dx, dy] = STEPS[direction];
+    const [nx, ny] = [x + dx, y + dy];
+    if (!inBounds(state, nx, ny)) return false;
+    const next = state.tiles[nx][ny];
+    return next.kind === "wall" || edgeHighCover(state.tiles[x][y], next, direction);
+}
+
+/** `peek_clear`: the peek tile one step from the shooter is a corner to peek around, and sees the target. */
+function peekClear(
+    state: GameState,
+    x0: number,
+    y0: number,
+    step: number,
+    x1: number,
+    y1: number,
+): boolean {
+    const [dx, dy] = STEPS[step];
+    const [px, py] = [x0 + dx, y0 + dy];
+    if (!inBounds(state, px, py)) return false;
+    const peek = state.tiles[px][py];
+    if (!isStandable(peek) || unitAt(state, px, py)) return false;
+    if (edgeHighCover(state.tiles[x0][y0], peek, step)) return false;
+    const across = step === UP || step === DOWN ? [LEFT, RIGHT] : [UP, DOWN];
+    const corner = across.some(
+        (side) => coverToward(state, x0, y0, side) && !coverToward(state, px, py, side),
+    );
+    return corner && traceLine(state, px, py, x1, y1, true);
+}
+
+/**
+ * `line_of_fire`: the line of sight, or the one from a tile past the corner of the cover the
+ * shooter hugs. Only the shooter peeks, so it is not symmetric. With `cornerPeek` off it is
+ * `lineOfSight`.
+ */
+export function lineOfFire(
+    s: GameState,
+    x0: number,
+    y0: number,
+    x1: number,
+    y1: number,
+    cornerPeek: boolean = RULES.cornerPeek,
+): boolean {
+    if (traceLine(s, x0, y0, x1, y1, true)) return true;
+    return (
+        cornerPeek &&
+        [UP, DOWN, LEFT, RIGHT].some((step) => peekClear(s, x0, y0, step, x1, y1))
+    );
+}
+
 /** Only walls block a throw. */
 export const lineOfThrow = (s: GameState, x0: number, y0: number, x1: number, y1: number) =>
     traceLine(s, x0, y0, x1, y1, false);
@@ -442,7 +502,7 @@ export function shotChance(
 ): number | null {
     const range = manhattan(x0, y0, x1, y1);
     if (stats.range + MAX_RANGE_OFFSET < range) return null;
-    if (!lineOfSight(state, x0, y0, x1, y1)) return null;
+    if (!lineOfFire(state, x0, y0, x1, y1)) return null;
     if (stats.areaSize > 0) return hitChance(stats, range, 0);
     const cover = range > 0 ? coverBonus(state, x0, y0, x1, y1) : 0;
     return hitChance(stats, range, Math.min(100, cover + naturalDefense));

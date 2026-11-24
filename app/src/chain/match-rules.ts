@@ -10,6 +10,7 @@
 
 import type { GameEvent } from "@ghosts/engine";
 
+import { GHOSTS_RULES } from "../constants.ts";
 import type { ChainGame, ChainRecord } from "./bcs";
 
 /** `TURN_LIMIT_MS` in `ghosts::ghosts`: past it, a turn only takes `next_turn`. */
@@ -311,6 +312,58 @@ function traceLine(game: ChainGame, from: Tile, to: Tile, highCoverBlocks: boole
 /** `line_of_sight`: walls and high covers block a shot, units and unwalkable tiles don't. */
 export const lineOfSight = (game: ChainGame, from: Tile, to: Tile) =>
     traceLine(game, from, to, true);
+
+/** The four steps from a tile, as row and column offsets: up, down, left, right. */
+const STEPS: readonly (readonly [row: number, col: number])[] = [
+    [-1, 0],
+    [1, 0],
+    [0, -1],
+    [0, 1],
+];
+
+/**
+ * `is_cover_toward`: the side of a tile toward `step` is blocked, a wall beside it or a high
+ * side on the edge. The edge of the map is never a cover.
+ */
+function coverToward(game: ChainGame, at: Tile, step: Tile): boolean {
+    const next: Tile = [at[0] + step[0], at[1] + step[1]];
+    const type = tileType(game, next);
+    if (!type) return false;
+    return type.$kind === "Wall" || highEdge(game, at, next);
+}
+
+/** `peek_clear`: the peek tile one step from `from` is one to hug a corner around, and sees `to`. */
+function peekClear(game: ChainGame, from: Tile, step: Tile, to: Tile): boolean {
+    const peek: Tile = [from[0] + step[0], from[1] + step[1]];
+    const type = tileType(game, peek);
+    if (!type || (type.$kind !== "Empty" && type.$kind !== "Cover")) return false;
+    if (game.map.grid.grid[peek[0]][peek[1]].unit) return false;
+    if (highEdge(game, from, peek)) return false;
+    const across = STEPS.filter(([row]) => (row === 0) !== (step[0] === 0));
+    const corner = across.some(
+        (side) => coverToward(game, from, side) && !coverToward(game, peek, side),
+    );
+    return corner && traceLine(game, peek, to, true);
+}
+
+/**
+ * `line_of_fire`: the line of sight, or the line of sight from a tile past the corner of the
+ * cover the shooter hugs. Only the shooter peeks, so it is not symmetric. Grenades do not
+ * peek (`lineOfThrow`).
+ *
+ * The chain only has the rule from the package that publishes it: `cornerPeek` is
+ * `GHOSTS_RULES.cornerPeek`, which says whether the deployed package has it. Off, this is
+ * `lineOfSight`.
+ */
+export function lineOfFire(
+    game: ChainGame,
+    from: Tile,
+    to: Tile,
+    cornerPeek: boolean = GHOSTS_RULES.cornerPeek,
+): boolean {
+    if (traceLine(game, from, to, true)) return true;
+    return cornerPeek && STEPS.some((step) => peekClear(game, from, step, to));
+}
 
 /** `line_of_throw` and `perform_grenade`: only walls stop a throw, and it can't land on one. */
 export const lineOfThrow = (game: ChainGame, from: Tile, to: Tile) =>

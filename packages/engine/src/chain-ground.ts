@@ -18,7 +18,9 @@
  *   facing it, 25 a level (`cover_bonus`); a wall counts as high all round, an
  *   obstacle as low all round.
  * - Sight: walls block, high cover on an inner edge blocks (`trace_line`);
- *   obstacles block neither sight nor throws.
+ *   obstacles block neither sight nor throws. A shot has the line of fire
+ *   (`line_of_fire`): sight, or sight from the tile past the corner of a cover
+ *   the shooter hugs (`clearFire`).
  * - Grenades: only walls stop a throw, it cannot land on one, and the blast
  *   turns every Cover and Obstacle tile in reach to Empty (`explode`).
  *
@@ -54,6 +56,17 @@ const BLAST_RADIUS = 2;
 const MAX_RANGE_OFFSET = 3;
 const DISTANCE_BONUS = 5;
 const DISTANCE_PENALTY = 10;
+
+/**
+ * Whether the rules this ground mirrors let a shooter peek around a corner
+ * (`Map.line_of_fire`). On for the bundled encounters, which have no chain.
+ * A match on chain plays by what the deployed package has: the app's
+ * `GHOSTS_RULES.cornerPeek`, with `chain/match-rules.ts` for its own authority.
+ */
+export const CORNER_PEEK = true;
+
+/** The four steps between tiles as `[row, col]` offsets: up, down, left, right. */
+const STEPS: readonly Tile[] = [[-1, 0], [1, 0], [0, -1], [0, 1]];
 
 export class ChainGround {
   /** A private copy: blasts clear cover tiles as the encounter goes. */
@@ -195,6 +208,42 @@ export class ChainGround {
   /** `line_of_sight`: walls and high covers block a shot; units and unwalkable tiles don't. */
   clearShot(from: Cell, to: Cell): boolean {
     return this.trace(this.tileOf(from), this.tileOf(to), true);
+  }
+
+  /** `is_cover_toward`: a wall beside the tile, or a high side on the edge; never the map's edge. */
+  private coverToward(at: Tile, [dRow, dCol]: Tile) {
+    const next: Tile = [at[0] + dRow, at[1] + dCol];
+    const type = this.at(next);
+    if (!type) return false;
+    return type.t === "wall" || this.highEdge(at, next);
+  }
+
+  /** `peek_clear`: the peek tile one step from `from` hugs a corner and sees `to`. */
+  private peekClear(from: Tile, step: Tile, to: Tile, occupied: (cell: Cell) => boolean) {
+    const peek: Tile = [from[0] + step[0], from[1] + step[1]];
+    const type = this.at(peek)?.t;
+    if ((type !== "empty" && type !== "cover") || occupied(this.cellOf(peek))) return false;
+    if (this.highEdge(from, peek)) return false;
+    const across = STEPS.filter(([row]) => (row === 0) !== (step[0] === 0));
+    const corner = across.some((side) => this.coverToward(from, side) && !this.coverToward(peek, side));
+    return corner && this.trace(peek, to, true);
+  }
+
+  /** The cell of a tile: the inverse of `tileOf`. */
+  private cellOf([row, col]: Tile): Cell {
+    return [col + this.minX, row + this.minZ];
+  }
+
+  /**
+   * `line_of_fire`: sight, or sight from a tile past the corner of the cover the
+   * shooter hugs. Only the shooter peeks, so it is not symmetric. `occupied` says
+   * whether a unit stands on a cell (the ground keeps no units); `cornerPeek` off
+   * is `clearShot`.
+   */
+  clearFire(from: Cell, to: Cell, occupied: (cell: Cell) => boolean = () => false, cornerPeek = CORNER_PEEK): boolean {
+    const [a, b] = [this.tileOf(from), this.tileOf(to)];
+    if (this.trace(a, b, true)) return true;
+    return cornerPeek && STEPS.some((step) => this.peekClear(a, step, b, occupied));
   }
 
   /** `line_of_throw`: only walls stop a throw, and it can't land on one. */

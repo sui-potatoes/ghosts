@@ -18,6 +18,15 @@ export const NAMES = {
 } as const;
 
 /**
+ * What the published ghosts package rules, for the mirrors in `chain/match-rules.ts` that must
+ * not be stricter or looser than it. `cornerPeek`: `Map.line_of_fire` lets a shooter hugging
+ * the end of a cover shoot from the tile past the corner. The package on testnet still has
+ * `line_of_sight` only; flip it to `true` in the publish that adds `line_of_fire`, together
+ * with `RULES.cornerPeek` in `packages/agent/src/rules.ts` and the `TESTNET_DEPLOYMENT` ids.
+ */
+export const GHOSTS_RULES = { cornerPeek: false };
+
+/**
  * Testnet IDs for the published ghosts Move package and what its initializer
  * creates: the Registry, the queue for owned recruits (`Matchmaker<Ghosts>`), the
  * frozen map preset it starts with (Black Rain, the level stakes games start on),

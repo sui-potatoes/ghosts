@@ -297,7 +297,8 @@ public fun move_unit(map: &mut Map, path: vector<u8>): Record {
 /// the target is any tile but a `Wall`, defense does not apply, and a hit
 /// explodes with the radius `area_size` (see `explode`). The weapon's
 /// `can_be_dodged` stat decides whether the damage can be dodged. Either way
-/// the attacker needs a line of sight to the target (see `line_of_sight`).
+/// the attacker needs a line of fire to the target (see `line_of_fire`): a
+/// line of sight, or one from the tile past the corner of the cover it hides behind.
 ///
 /// Both sides' stats are their `effective_stats`: the attacker's aim, the
 /// target's natural `defense`, with whatever effects they have.
@@ -342,7 +343,7 @@ public fun perform_attack(
         0
     };
 
-    assert!(map.line_of_sight(x0, y0, x1, y1), ENoLineOfSight);
+    assert!(map.line_of_fire(x0, y0, x1, y1), ENoLineOfSight);
 
     let unit = map.grid[x0, y0].unit.borrow_mut();
     let (is_hit, _, is_crit, damage, _) = unit.perform_attack(rng, range, target_defense);
@@ -826,6 +827,96 @@ fun refuse(strict: bool, code: u64): Option<vector<u16>> {
 /// high covers block it, unwalkable tiles and units do not. See `trace_line`.
 public fun line_of_sight(map: &Map, x0: u16, y0: u16, x1: u16, y1: u16): bool {
     map.trace_line(x0, y0, x1, y1, true)
+}
+
+/// Check the line of fire for a shot from `(x0, y0)` to `(x1, y1)`: the line of
+/// sight, or, for a shooter hugging the end of a cover, the line of sight from
+/// the tile just past its corner. A unit behind a wall may peek out and shoot.
+///
+/// The shot has sight if the straight line from the shooter is clear (see
+/// `line_of_sight`), or if there is a peek tile `P` of the shooter from which
+/// the line to the target is clear, the same walk with the end tiles being `P`
+/// and the target. `P` is a peek tile when:
+/// - it is a neighbor of the shooter's tile, inside the map;
+/// - a unit can stand on it, and none does: `Empty` or `Cover`, no unit;
+/// - the step to it is open: no high cover on the edge, on either side;
+/// - the shooter stands behind the end of a cover: for a direction `D` across
+///   the step, the shooter's side toward `D` is blocked (a `Wall` there, or a
+///   high cover on the edge) and `P`'s side toward `D` is not. Outside the map
+///   is never a cover, nor does it block `P`.
+///
+/// The shooter does not move: range, hit chance, the target's cover, damage and
+/// AP are all those of the shot from `(x0, y0)`. Only the shooter peeks: the
+/// target is no more exposed by peeking itself, so unlike `line_of_sight` this
+/// is not symmetric. Grenades do not peek, see `line_of_throw`.
+///
+/// Costs one walk when the straight line is clear, and at most four more.
+public fun line_of_fire(map: &Map, x0: u16, y0: u16, x1: u16, y1: u16): bool {
+    use grid::direction::{up, down, left, right};
+
+    map.trace_line(x0, y0, x1, y1, true)
+        || map.peek_clear(x0, y0, up!(), x1, y1)
+        || map.peek_clear(x0, y0, down!(), x1, y1)
+        || map.peek_clear(x0, y0, left!(), x1, y1)
+        || map.peek_clear(x0, y0, right!(), x1, y1)
+}
+
+/// Whether the shooter at `(x0, y0)` has the peek tile one step in `step` and
+/// sees `(x1, y1)` from it. See `line_of_fire`.
+fun peek_clear(map: &Map, x0: u16, y0: u16, step: u8, x1: u16, y1: u16): bool {
+    use grid::direction::{up, down, left, right};
+
+    let (rows, cols) = map.size();
+    let (px, py) = if (step == up!()) {
+        if (x0 == 0) return false;
+        (x0 - 1, y0)
+    } else if (step == down!()) {
+        if (x0 + 1 >= rows) return false;
+        (x0 + 1, y0)
+    } else if (step == left!()) {
+        if (y0 == 0) return false;
+        (x0, y0 - 1)
+    } else {
+        if (y0 + 1 >= cols) return false;
+        (x0, y0 + 1)
+    };
+
+    let (from, peek) = (&map.grid[x0, y0], &map.grid[px, py]);
+    if (peek.unit.is_some() || !is_standable!(peek)) return false;
+    if (is_edge_high_cover!(from, peek, step)) return false;
+
+    // the shooter hugs a cover that ends at the peek tile, across the step
+    let (a, b) = if (step == up!() || step == down!()) (left!(), right!()) else (up!(), down!());
+    let corner =
+        (map.is_cover_toward(x0, y0, a) && !map.is_cover_toward(px, py, a))
+        || (map.is_cover_toward(x0, y0, b) && !map.is_cover_toward(px, py, b));
+
+    corner && map.trace_line(px, py, x1, y1, true)
+}
+
+/// Whether the side of the tile `(x, y)` toward `direction` is blocked: a
+/// `Wall` next to it, or a high cover on the edge, either side. Never at the
+/// edge of the map.
+fun is_cover_toward(map: &Map, x: u16, y: u16, direction: u8): bool {
+    use grid::direction::{up, down, left, right};
+
+    let (rows, cols) = map.size();
+    let (nx, ny) = if (direction == up!()) {
+        if (x == 0) return false;
+        (x - 1, y)
+    } else if (direction == down!()) {
+        if (x + 1 >= rows) return false;
+        (x + 1, y)
+    } else if (direction == left!()) {
+        if (y == 0) return false;
+        (x, y - 1)
+    } else {
+        if (y + 1 >= cols) return false;
+        (x, y + 1)
+    };
+
+    let (tile, next) = (&map.grid[x, y], &map.grid[nx, ny]);
+    is_wall!(next) || is_edge_high_cover!(tile, next, direction)
 }
 
 /// Check the line of throw for a grenade from `(x0, y0)` to `(x1, y1)`: only

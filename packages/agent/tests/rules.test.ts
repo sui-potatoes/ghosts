@@ -16,12 +16,15 @@ import {
     hitChance,
     LEFT,
     legalActions,
+    lineOfFire,
     lineOfSight,
     manhattan,
     parseAction,
     actionId,
     refusal,
     RIGHT,
+    RULES,
+    shotChance,
     UP,
     validateBatch,
 } from "../src/rules.ts";
@@ -357,3 +360,100 @@ test("two grenade actions keep their own counts, and an unlimited one never runs
     assert.ok(hasUsesLeft(thrower, "grenade"));
     assert.ok(!hasUsesLeft({ ...thrower, actions: acts("move") }, "grenade"), "none at all");
 });
+
+// === Line of fire: a shooter hugging a cover peeks past its corner (`Map.line_of_fire`) ===
+
+const wall: Tile = { kind: "wall" };
+const side = (left: number, top: number, right: number, bottom: number): Tile => ({
+    kind: "cover",
+    left,
+    top,
+    right,
+    bottom,
+});
+/** A 5x5 open board with `tiles` set, `[x, y]` to the tile. */
+function yard(tiles: [number, number, Tile][] = [], units: [number, number][] = []): GameState {
+    const state = open(5, 5);
+    for (const [x, y, tile] of tiles) state.tiles[x][y] = tile;
+    state.units = units.map(([x, y]) => ({ ...unitStub, recruit: `0x${x}${y}`, x, y }));
+    return state;
+}
+const unitStub = {
+    owner: "0xb",
+    side: 1,
+    ap: 2,
+    apMax: 2,
+    hp: 10,
+    hpMax: 10,
+    ammo: 4,
+    ammoMax: 4,
+    stats: OPERATIVE,
+    actions: [],
+    effects: [],
+};
+const fire = (s: GameState, a: [number, number], b: [number, number]) =>
+    lineOfFire(s, a[0], a[1], b[0], b[1], true);
+
+test("a corner peek clears the shot the straight line refuses, for the shooter only", () => {
+    const s = yard([[3, 0, wall]]);
+    assert.equal(lineOfSight(s, 4, 0, 0, 0), false);
+    assert.equal(fire(s, [4, 0], [0, 0]), true);
+    assert.equal(fire(s, [0, 0], [4, 0]), false, "the target peeks no better");
+    assert.equal(lineOfFire(s, 4, 0, 0, 0, false), false, "off: the line of sight");
+    assert.equal(fire(yard(), [4, 0], [4, 4]), true);
+    // the peek is a sideways step on either axis
+    assert.equal(fire(yard([[1, 4, wall]]), [0, 4], [4, 4]), true);
+    assert.equal(fire(yard([[0, 1, wall]]), [0, 0], [0, 4]), true);
+    assert.equal(fire(yard([[4, 3, wall]]), [4, 4], [4, 0]), true);
+});
+
+test("no peek where the wall goes on past the peek tile, or there is no corner at all", () => {
+    assert.equal(fire(yard([[3, 0, wall], [3, 1, wall]]), [4, 0], [0, 0]), false);
+    const full = yard([0, 1, 2, 3, 4].map((y): [number, number, Tile] => [2, y, wall]));
+    for (const from of [[3, 2], [4, 2], [3, 0], [3, 4]] as [number, number][]) {
+        assert.equal(fire(full, from, [0, from[1]]), false, `${from}`);
+    }
+    assert.equal(fire(yard([[1, 0, wall]]), [4, 0], [0, 0]), false, "the map's edge is no cover");
+});
+
+test("the peek tile must be free to stand on, with the step to it open", () => {
+    const base: [number, number, Tile][] = [[3, 0, wall]];
+    assert.equal(fire(yard(base, [[4, 1]]), [4, 0], [0, 0]), false, "a unit on it");
+    assert.equal(fire(yard([...base, [4, 1, { kind: "obstacle" }]]), [4, 0], [0, 0]), false);
+    assert.equal(fire(yard([...base, [4, 1, { kind: "unwalkable" }]]), [4, 0], [0, 0]), false);
+    assert.equal(fire(yard([...base, [4, 0, side(0, 0, 2, 0)]]), [4, 0], [0, 0]), false);
+    assert.equal(fire(yard([...base, [4, 1, side(2, 0, 0, 0)]]), [4, 0], [0, 0]), false);
+    assert.equal(fire(yard(base), [4, 0], [0, 0]), true);
+});
+
+test("a high side on the edge is a corner like a wall, and must end at the peek tile", () => {
+    const behind: [number, number, Tile] = [2, 0, wall];
+    assert.equal(fire(yard([behind, [4, 0, side(0, 2, 0, 0)]]), [4, 0], [0, 1]), true);
+    assert.equal(fire(yard([behind, [3, 0, side(0, 0, 0, 2)]]), [4, 0], [0, 1]), true);
+    assert.equal(fire(yard([behind, [4, 0, side(0, 2, 0, 0)], [4, 1, side(2, 0, 0, 0)]]), [4, 0], [0, 1]), false);
+    assert.equal(fire(yard([behind, [4, 0, side(0, 2, 0, 0)], [3, 1, side(0, 0, 0, 2)]]), [4, 0], [0, 1]), false);
+    assert.equal(fire(yard([behind]), [4, 0], [0, 1]), false, "no cover, no corner");
+});
+
+test("a peek shot is a shot: range stays the shooter's, and it is a legal attack", () => {
+    const s = yard([[3, 0, wall]]);
+    const stats = OPERATIVE;
+    // 4 tiles from the shooter, 3 from the peek tile: the hit chance is the shooter's range
+    const [x, y] = [0, 0];
+    assert.equal(manhattan(4, 0, x, y), 4);
+    RULES_ON(() => {
+        assert.notEqual(shotChance(s, stats, 4, 0, x, y, 0), null);
+        assert.equal(shotChance(s, stats, 4, 0, x, y, 0), shotChance(yard(), stats, 4, 0, x, y, 0));
+        assert.equal(shotChance(s, stats, x, y, 4, 0, 0), null);
+    });
+    assert.equal(shotChance(s, stats, 4, 0, x, y, 0), null, "off by default");
+});
+
+function RULES_ON(run: () => void) {
+    RULES.cornerPeek = true;
+    try {
+        run();
+    } finally {
+        RULES.cornerPeek = false;
+    }
+}

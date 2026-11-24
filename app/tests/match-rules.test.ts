@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { GHOSTS_RULES } from "../src/constants.ts";
 import { Encounter } from "../../packages/engine/src/game.ts";
 import { blackRain, type Scenario } from "../../packages/engine/src/scenario.ts";
 import {
@@ -17,6 +18,7 @@ import {
     hasUsesLeft,
     hitChance,
     isOver,
+    lineOfFire,
     lineOfSight,
     lineOfThrow,
     checkPath,
@@ -592,4 +594,92 @@ test("effects run out over two turn changes, each end named after the turn that 
         ["turn", "effect-end"],
     );
     assert.deepEqual(rules.unit("a1")!.effects, []);
+});
+
+// === Line of fire: a shooter hugging a cover peeks past its corner (`Map.line_of_fire`) ===
+
+type Edit = [row: number, col: number, tile: unknown];
+const sided = (left: number, top: number, right: number, bottom: number) => ({
+    $kind: "Cover",
+    Cover: { left, top, right, bottom },
+});
+const WALL = { $kind: "Wall" };
+/** A 5x5 open board with the tiles edited, and units standing on `at`. */
+function yard(edits: Edit[] = [], at: [number, number][] = []) {
+    const game = board(".....", ".....", ".....", ".....", ".....");
+    const grid = (
+        game as unknown as { map: { grid: { grid: { tileType: unknown; unit: unknown }[][] } } }
+    ).map.grid.grid;
+    for (const [row, col, tile] of edits) grid[row][col].tileType = tile;
+    for (const [row, col] of at) grid[row][col].unit = { recruit: "0x1" };
+    return game;
+}
+const fire = (g: ReturnType<typeof yard>, a: [number, number], b: [number, number]) =>
+    lineOfFire(g, a, b, true);
+
+test("the rule is off for the deployed package, and then the line of fire is the line of sight", () => {
+    assert.equal(GHOSTS_RULES.cornerPeek, false);
+    const g = yard([[3, 0, WALL]]);
+    assert.equal(lineOfFire(g, [4, 0], [0, 0]), false);
+    assert.equal(lineOfFire(g, [4, 0], [4, 4]), true);
+});
+
+test("a corner peek clears the shot the straight line refuses, for the shooter only", () => {
+    const g = yard([[3, 0, WALL]]);
+    assert.equal(lineOfSight(g, [4, 0], [0, 0]), false);
+    assert.equal(fire(g, [4, 0], [0, 0]), true);
+    assert.equal(fire(g, [0, 0], [4, 0]), false, "the target peeks no better");
+    assert.equal(fire(yard(), [4, 0], [4, 4]), true);
+    assert.equal(fire(yard([[1, 4, WALL]]), [0, 4], [4, 4]), true);
+    assert.equal(fire(yard([[0, 1, WALL]]), [0, 0], [0, 4]), true);
+    assert.equal(fire(yard([[4, 3, WALL]]), [4, 4], [4, 0]), true);
+});
+
+test("no peek where the wall goes on, from the middle of a wall, or at the map's edge", () => {
+    assert.equal(
+        fire(
+            yard([
+                [3, 0, WALL],
+                [3, 1, WALL],
+            ]),
+            [4, 0],
+            [0, 0],
+        ),
+        false,
+    );
+    const full = yard([0, 1, 2, 3, 4].map((c): Edit => [2, c, WALL]));
+    for (const from of [
+        [3, 2],
+        [4, 2],
+        [3, 0],
+        [3, 4],
+    ] as [number, number][]) {
+        assert.equal(fire(full, from, [0, from[1]]), false, `${from}`);
+    }
+    assert.equal(fire(yard([[1, 0, WALL]]), [4, 0], [0, 0]), false);
+});
+
+test("the peek tile must be free to stand on, with the step to it open", () => {
+    const base: Edit[] = [[3, 0, WALL]];
+    assert.equal(fire(yard(base, [[4, 1]]), [4, 0], [0, 0]), false, "a unit on it");
+    assert.equal(fire(yard([...base, [4, 1, { $kind: "Obstacle" }]]), [4, 0], [0, 0]), false);
+    assert.equal(fire(yard([...base, [4, 1, { $kind: "Unwalkable" }]]), [4, 0], [0, 0]), false);
+    assert.equal(fire(yard([...base, [4, 0, sided(0, 0, 2, 0)]]), [4, 0], [0, 0]), false);
+    assert.equal(fire(yard([...base, [4, 1, sided(2, 0, 0, 0)]]), [4, 0], [0, 0]), false);
+    assert.equal(fire(yard(base), [4, 0], [0, 0]), true);
+});
+
+test("a high side on the edge is a corner like a wall, and must end at the peek tile", () => {
+    const behind: Edit = [2, 0, WALL];
+    assert.equal(fire(yard([behind, [4, 0, sided(0, 2, 0, 0)]]), [4, 0], [0, 1]), true);
+    assert.equal(fire(yard([behind, [3, 0, sided(0, 0, 0, 2)]]), [4, 0], [0, 1]), true);
+    assert.equal(
+        fire(yard([behind, [4, 0, sided(0, 2, 0, 0)], [4, 1, sided(2, 0, 0, 0)]]), [4, 0], [0, 1]),
+        false,
+    );
+    assert.equal(
+        fire(yard([behind, [4, 0, sided(0, 2, 0, 0)], [3, 1, sided(0, 0, 0, 2)]]), [4, 0], [0, 1]),
+        false,
+    );
+    assert.equal(fire(yard([behind]), [4, 0], [0, 1]), false);
 });
