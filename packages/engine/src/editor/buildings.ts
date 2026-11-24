@@ -19,6 +19,8 @@ export interface Block {
   cells: Cell[];
   /** The interior cells: unwalkable, nothing placed, roofed by the play view. */
   interior: Cell[];
+  /** A store’s skin (shell walls and built-ins) rather than a solid mass: its tiles keep their own floor. */
+  shell: boolean;
   /** Roof height in metres: the tallest piece in the ring. */
   height: number;
 }
@@ -47,7 +49,7 @@ export function buildingBlocks(level: Level): { blocks: Block[]; faces: Map<numb
   const blocks: Block[] = [];
   for (const [start, first] of pieces) {
     if (owner.has(start)) continue;
-    const block: Block = { cells: [], interior: [], height: 0 };
+    const block: Block = { cells: [], interior: [], height: 0, shell: first.shell };
     const queue: Cell[] = [pieces.get(start)!.at];
     owner.set(start, blocks.length);
     while (queue.length) {

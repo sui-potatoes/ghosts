@@ -85,7 +85,7 @@ test("no line of sight slips through a building: its interior could be solid and
 
 test("every door is an open edge: no cover across it, a step through it", () => {
   const doors = level.placements.filter((p) => ["u05", "u21", "o17", "o18"].includes(p.asset));
-  assert.ok(doors.length >= 5, "front, road side, back, staff and toilet doors");
+  assert.ok(doors.length >= 4, "front, road side, back and staff doors");
   const ground = new ChainGround({ tiles, minX: 0, minZ: 0 });
   for (const p of doors) {
     const [a, b] = edgeCells(p.at, p.turn);

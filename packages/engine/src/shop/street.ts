@@ -342,12 +342,12 @@ export const SHELL_T = 0.075;
 
 /**
  * A wall tile for a building's shell, as a thin wall: a panel on the cell's
- * north edge (the west edge too for `corner`), its outside (-z) tiled in the
+ * north edge (the east edge too for `corner`), its outside (-z) tiled in the
  * store's panels with the chain's fascia band, its inside painted, and the
  * rest of the tile a low dark built-in plinth so it never reads as floor.
  * Faces between neighbouring pieces are left out (`b.faces`).
  */
-export function shell(b: Build, kind: Shell, plinth = true) {
+export function shell(b: Build, kind: Shell, plinth = false) {
   const paint = b.kit.material(0xc9c5b8, 0, 0.88), skirting = b.kit.material(0x3a3c3e, 0.1, 0.7);
   const core = kind === "timber" ? b.woodTrim : kind === "concrete" ? b.kit.material(0x7c7d78, 0, 0.92) : paint;
   const coping = b.kit.material(0x55585a, 0.1, 0.85);

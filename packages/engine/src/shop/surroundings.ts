@@ -22,7 +22,10 @@ export interface Bounds { minX: number; maxX: number; minZ: number; maxZ: number
 const tones = [0xc8bfae, 0x7c7f7a, 0x8a6a52, 0x9aa49a, 0x6e6a64, 0xa8a196, 0x5e5a56];
 
 /** Builds the surroundings into a group; dispose its geometries and materials with it. */
-export function buildSurroundings(bounds: Bounds, sides: Surroundings): T.Group {
+/** Where the level’s own roadway meets a side, as world ranges along that edge: the street beyond opens there. */
+export type RoadMouths = Partial<Record<"north" | "south" | "east" | "west", [from: number, to: number][]>>;
+
+export function buildSurroundings(bounds: Bounds, sides: Surroundings, mouths: RoadMouths = {}): T.Group {
   const random = propRandom(sides.seed ?? 11);
   const parts = new Map<number, T.BufferGeometry[]>();
   const add = (color: number, x: number, y: number, z: number, w: number, h: number, d: number) => {
@@ -47,11 +50,21 @@ export function buildSurroundings(bounds: Bounds, sides: Surroundings): T.Group 
     };
     let v = 0.5;
     if (kind === "street") {
-      put(0x6a6c68, 0, 0.08, v + 1.5, length, 0.16, 3);
+      // The near pavement, broken where the level’s roadway runs out into this street: a junction, not a kerb across the road.
+      const c0 = along === "x" ? cx : cz;
+      const open = (mouths[name as keyof RoadMouths] ?? []).map(([a, b]): readonly [number, number] => [a - c0, b - c0]).sort((p, q) => p[0] - q[0]);
+      const inMouth = (u: number) => open.some(([a, b]) => u > a - 0.6 && u < b + 0.6);
+      let from = -length / 2;
+      for (const [a, b] of [...open, [length / 2, length / 2] as readonly [number, number]]) {
+        if (a > from) put(0x6a6c68, (from + a) / 2, 0.08, v + 1.5, a - from, 0.16, 3);
+        if (b > a) put(0x24272b, (a + b) / 2, -0.005, v + 1.5 - 0.25, b - a, 0.01, 3.5);
+        from = Math.max(from, b);
+      }
       put(0x24272b, 0, -0.005, v + 3 + 4.5, length, 0.01, 9);
       for (let u = -length / 2; u < length / 2; u += 6) put(0xb8b5a2, u, 0.004, v + 7.5, 3, 0.01, 0.15);
       put(0x6a6c68, 0, 0.08, v + 13.5, length, 0.16, 3);
       for (let u = -length / 2 + 4; u < length / 2; u += 22) {
+        if (inMouth(u)) continue;
         put(0x9a9890, u, 4.3, v + 2.6, 0.24, 8.6, 0.24);
         put(0x4a4e52, u, 7.25, v + 2.6, 1.3, 0.1, 0.1);
       }

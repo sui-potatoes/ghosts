@@ -21,7 +21,7 @@ const glow = (b: Build, color: number, strength = 1.2) => b.kit.material(color, 
 
 /** The dark plinth from a fixture's front to the tile's edge: the Wall tile's leftover floor. */
 function plinth(b: Build, front: number) {
-  b.box(0, 0.025, (front + H) / 2, C, 0.05, H - front, b.kit.material(0x24272a, 0.1, 0.8));
+  void b; void front; // the shop floor runs under the fixture to the wall
 }
 
 export type BuiltIn = `fridge-${RunPiece}` | `chiller-${RunPiece}` | `shelf-${RunPiece}` | "cigarettes" | "atm" | "terminal" | "copier" | "stock";

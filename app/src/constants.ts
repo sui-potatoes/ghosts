@@ -53,8 +53,9 @@ export const GHOSTS: {
  * level (`packages/agent/src/bin/level.ts`) moves its old ID there.
  */
 export const LEVELS: { nightShift: string; retired: readonly string[] } = {
-    nightShift: "0xbfbc86fdc3f54682a5b778d2b8dadd4c1bc5d4022a1f79ab68ba2d565e65d4d3",
+    nightShift: "0xdfa103128575d8916a6220f33bb9485f456ba899c8c8d9cd6e89e3e789dd9822",
     retired: [
+        "0xbfbc86fdc3f54682a5b778d2b8dadd4c1bc5d4022a1f79ab68ba2d565e65d4d3",
         "0xa22f157c02881b8308e22a81528e7dbb2c906cd7d8b8f8ca330663e9b5b4b9df",
         "0x95a7813aed0edf3ca2d421471cec34e5766e2a22e43fd3862db0f300b10cfbb5",
     ],

@@ -137,10 +137,26 @@ export function levelView(level: Level): MapView {
       // mass fades like the district's buildings when it stands between the camera and a
       // unit: a cutaway of the cells in the way, not the block.
       // Beyond the grid: the streets and buildings the level declares per side, into the fog.
+      // Where the level’s roadway reaches an edge, the street beyond opens into a junction.
+      const paved = new Set(level.floors.map((f) => f.at.join()));
+      const road = (c: [number, number]) => paved.has(c.join()) && floorRaise(level, c) === 0;
+      const mouths = (cells: [number, number][], axis: 0 | 1, origin: number) => {
+        const runs: [number, number][] = [];
+        for (const c of cells) {
+          if (!road(c)) continue;
+          const a = (c[axis] + origin - 0.5) * CELL, last = runs[runs.length - 1];
+          if (last && Math.abs(last[1] - a) < 1e-6) last[1] = a + CELL; else runs.push([a, a + CELL]);
+        }
+        return runs;
+      };
+      const xs = Array.from({ length: level.width }, (_, x) => x), zs = Array.from({ length: level.depth }, (_, z) => z);
       if (level.surroundings) scene.add(buildSurroundings({
         minX: (minX - 0.5) * CELL, maxX: (minX + level.width - 0.5) * CELL,
         minZ: (minZ - 0.5) * CELL, maxZ: (minZ + level.depth - 0.5) * CELL,
-      }, level.surroundings));
+      }, level.surroundings, {
+        north: mouths(xs.map((x) => [x, 0]), 0, minX), south: mouths(xs.map((x) => [x, level.depth - 1]), 0, minX),
+        west: mouths(zs.map((z) => [0, z]), 1, minZ), east: mouths(zs.map((z) => [level.width - 1, z]), 1, minZ),
+      }));
       const occluders: Occluder[] = [];
       const poles: T.Vector3[] = [];
       const roofs = new Map<string, T.Group[]>();
@@ -189,27 +205,17 @@ export function levelView(level: Level): MapView {
       // cut away cell by cell like the pieces around them. At most one rooftop object per
       // block, large enough to read: a water tank on legs on the bigger, taller blocks.
       const fill = new T.MeshStandardMaterial({ color: 0x16181b, roughness: 0.95 });
-      const cut = new T.MeshStandardMaterial({ color: 0x8a8c88, roughness: 0.8 });
-      const slabTop = Math.max(0, ...level.floors.map((f) => floorRaise(level, f.at))) + 0.45;
+      const slabTop = Math.max(0, ...level.floors.map((f) => floorRaise(level, f.at)));
       const roofing = new T.MeshStandardMaterial({ color: 0x2a2c2f, roughness: 0.95 });
       const tankSteel = new T.MeshStandardMaterial({ color: 0x8a8c88, roughness: 0.6, metalness: 0.4 });
       buildingBlocks(level).blocks.forEach((block, n) => {
         const y = (c: [number, number]) => floorRaise(level, c);
-        // A cut-away block reads as a mass sliced off at knee height: a dark slab half a metre
-        // above the pavement, its outer edge picked out in a lighter line. Hidden inside the
-        // building while it stands.
-        const inBlock = new Set(block.cells.map((c) => c.join()));
-        for (const cell of block.cells) {
-          const base = y(cell), height = slabTop - base;
-          const slab = new T.Mesh(new T.BoxGeometry(CELL, height, CELL), fill);
-          slab.position.set((cell[0] + minX) * CELL, base + height / 2, (cell[1] + minZ) * CELL);
+        // A cut-away mass shows a flat dark fill at pavement height, nothing raised. A store’s
+        // skin keeps the shop floor under its fixtures instead.
+        if (!block.shell) for (const cell of block.cells) {
+          const slab = new T.Mesh(new T.BoxGeometry(CELL, 0.02, CELL), fill);
+          slab.position.set((cell[0] + minX) * CELL, slabTop + 0.01, (cell[1] + minZ) * CELL);
           scene.add(slab);
-          for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-            if (inBlock.has([cell[0] + dx, cell[1] + dz].join())) continue;
-            const edge = new T.Mesh(new T.BoxGeometry(dx ? 0.1 : CELL, 0.03, dx ? CELL : 0.1), cut);
-            edge.position.set((cell[0] + minX + dx * 0.46) * CELL, slabTop + 0.015, (cell[1] + minZ + dz * 0.46) * CELL);
-            scene.add(edge);
-          }
         }
         // Only over a real roofed interior, so it can never land on a shop's skin or a lone wall.
         const tankAt = block.interior.length >= 4 && block.height >= 6 && n % 2 === 0
