@@ -79,10 +79,19 @@ export function buildSurroundings(bounds: Bounds, sides: Surroundings, mouths: R
       v += 15;
     }
     // A row of narrow buildings, two to four tiles wide, two to six storeys, small gaps between.
-    // The camera looks north: the south row stays low so it never walls off the field.
-    const tallest = name === "south" ? 2 : 6;
+    // The camera starts south-east of the field looking north-west: the south and east rows stay low so they never wall it off.
+    const tallest = name === "south" || name === "east" ? 2 : 6;
+    const [lo, hi] = along === "x" ? (["west", "east"] as const) : (["north", "south"] as const);
+    const reach = along === "x" ? half.x : half.z;
+    // The north and south rows own the corners; an east or west row stops at the grid’s ends when a side is built there.
+    const taken = (s: SurroundSide | undefined) => !!s && s !== "none";
+    const crossed = (a: number, z: number) => along === "z"
+      ? (taken(sides[lo]) && a < -reach) || (taken(sides[hi]) && z > reach)
+      : (sides[lo] === "street" && z > -reach - 15.5 && a < -reach) || (sides[hi] === "street" && a < reach + 15.5 && z > reach);
     for (let u = -length / 2; u < length / 2;) {
       const w = 2.7 + random() * 3, h = (2 + Math.floor(random() * (tallest - 1))) * 3, d = 8 + random() * 4;
+      // A street on a neighbouring side runs across this row: leave it clear, kerb to kerb.
+      if (crossed(u - 0.5, u + w + 0.5)) { u += w + 0.15; continue; }
       put(tones[Math.floor(random() * tones.length)], u + w / 2, h / 2, v + d / 2, w, h, d);
       put(0x2a2c2f, u + w / 2, h + 0.05, v + d / 2, w, 0.1, d);
       for (let f = 1; f < h / 3; f++) for (let x = u + 0.6; x < u + w - 0.5; x += 1.1) {
