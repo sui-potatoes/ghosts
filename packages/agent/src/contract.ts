@@ -69,7 +69,7 @@ export const TESTNET_DEPLOYMENT: Deployment = {
     registry: "0x77b6c9ac252b820fc7415ede00d388b56fa9f7851e7b6eb345a0a5e8c0f2dc3b",
     matchmaker: "0x3030458a71901bf5706e91b43520a41ea3dda0d031b1195f2601dc781f039776",
     preset: "0xf58f2397b910eaa735e7d0675e7f148ee466f549d462e13dab8e379bc3b45153",
-    friendlyLevel: "0xa22f157c02881b8308e22a81528e7dbb2c906cd7d8b8f8ca330663e9b5b4b9df",
+    friendlyLevel: "0xbfbc86fdc3f54682a5b778d2b8dadd4c1bc5d4022a1f79ab68ba2d565e65d4d3",
     lobbies: "0x9f1db66b7d7b587f81d943245a349d4c7aaf885e96ef6dba71f96fae81b11f1a",
     rules: "0xd08bf87e9ae0c50680088ecdec506ad02e5588eec66b288db1e8aa4832fdc40f",
     names: TESTNET_NAMES,

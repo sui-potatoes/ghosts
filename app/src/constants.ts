@@ -53,8 +53,11 @@ export const GHOSTS: {
  * level (`packages/agent/src/bin/level.ts`) moves its old ID there.
  */
 export const LEVELS: { nightShift: string; retired: readonly string[] } = {
-    nightShift: "0xa22f157c02881b8308e22a81528e7dbb2c906cd7d8b8f8ca330663e9b5b4b9df",
-    retired: ["0x95a7813aed0edf3ca2d421471cec34e5766e2a22e43fd3862db0f300b10cfbb5"],
+    nightShift: "0xbfbc86fdc3f54682a5b778d2b8dadd4c1bc5d4022a1f79ab68ba2d565e65d4d3",
+    retired: [
+        "0xa22f157c02881b8308e22a81528e7dbb2c906cd7d8b8f8ca330663e9b5b4b9df",
+        "0x95a7813aed0edf3ca2d421471cec34e5766e2a22e43fd3862db0f300b10cfbb5",
+    ],
 };
 
 /** Same Google OAuth client as `app/`; both origins are registered on it. */

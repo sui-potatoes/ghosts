@@ -31,7 +31,7 @@ const COPY: Pick<Scenario, "briefing" | "contract" | "location" | "objectives" |
     facts: [
       ["EMPLOYER", "HELIOS INDUSTRIES"],
       ["OPPOSITION", "WRAITH CELL"],
-      ["GROUND", "19 × 24 TILES"],
+      ["GROUND", "21 × 22 TILES"],
       ["WIN", "NO HOSTILE STANDING"],
     ],
   },
