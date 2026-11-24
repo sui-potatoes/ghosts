@@ -102,7 +102,7 @@ test("with no focus the whole world fits, centred", () => {
     near(wide.y, 0);
 });
 
-test("a focus leans in gently and never leaves the map's edges", () => {
+test("a focus leans in and never leaves the map's edges", () => {
     const box = { width: 700, height: 600 };
     const fit = 700 / 1800;
     const tokyo = { lat: 35.68, lon: 139.69 };
@@ -112,9 +112,10 @@ test("a focus leans in gently and never leaves the map's edges", () => {
     near(view.x, box.width - 1800 * view.scale);
     const p = onScreen(view, tokyo.lat, tokyo.lon);
     assert.ok(p.x > 0 && p.x < box.width && p.y > 0 && p.y < box.height);
-    // A short box asks for no lean at all.
+    // A short box leans in the same, and stays inside the map top and bottom.
     const strip = worldView({ width: 900, height: 360 }, tokyo);
-    near(strip.scale, 0.5);
+    near(strip.scale, 0.5 * WORLD_ZOOM);
+    assert.ok(strip.y <= 0 && strip.y >= 360 - 720 * strip.scale);
     // Never zooms past the cap, however tall the box.
     const tall = worldView({ width: 400, height: 2000 }, tokyo);
     near(tall.scale, (400 / 1800) * WORLD_ZOOM);

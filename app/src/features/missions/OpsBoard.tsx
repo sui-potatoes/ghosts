@@ -57,7 +57,9 @@ export function OpsBoard({
 }: OpsBoardProps) {
     const [still] = useState(reducedMotion);
     const glyphs = useGlyphSet();
-    const onWorld = world !== undefined && view === "world";
+    // A mission with no place on the planet (a simulation) keeps its own board in either view.
+    const placed = !mission || mission.position !== undefined;
+    const onWorld = world !== undefined && view === "world" && placed;
     return (
         <Panel
             label={label}

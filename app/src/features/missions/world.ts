@@ -69,17 +69,17 @@ export function sitesOf(missions: readonly Mission[]): WorldSite[] {
 export const siteOf = (sites: readonly WorldSite[], mission: Mission | null) =>
     mission ? (sites.find((s) => s.missions.some((m) => m.id === mission.id)) ?? null) : null;
 
-/** How far the board leans in on a place: never so far the continent around it is lost. */
-export const WORLD_ZOOM = 2;
+/** How far the board leans in on a place: close enough to read its coast, with its continent still around it. */
+export const WORLD_ZOOM = 4;
 
 /** The base map placed in a box: `screen = (x + scale · mapX, y + scale · mapY)`. */
 export type WorldView = { scale: number; x: number; y: number };
 
 /**
  * The view of the base map in a `width` × `height` box. With no focus the
- * whole world fits, centred. With a focus the map leans in (up to `zoom`, and
- * no further than the box's height asks for) and slides toward the point,
- * never past the map's own edges, so the frame is always full of planet.
+ * whole world fits, centred. With a focus the map leans in by `zoom` and
+ * slides toward the point, never past the map's own edges, so the frame is
+ * always full of planet.
  */
 export function worldView(
     box: { width: number; height: number },
@@ -88,7 +88,7 @@ export function worldView(
 ): WorldView {
     const fit = Math.min(box.width / WORLD.width, box.height / WORLD.height);
     if (!(fit > 0)) return { scale: 1, x: 0, y: 0 };
-    const lean = focus ? Math.max(1, Math.min(zoom, box.height / (WORLD.height * fit))) : 1;
+    const lean = focus ? Math.max(1, zoom) : 1;
     const scale = fit * lean;
     const w = WORLD.width * scale;
     const h = WORLD.height * scale;

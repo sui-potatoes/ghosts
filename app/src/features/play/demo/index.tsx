@@ -142,6 +142,7 @@ function readoutsOf(mission: Mission | null): Readout[] {
     out.push({ label: "Sector", value: mission.location });
     if (mission.coordinates)
         out.push({ label: "Grid ref", value: mission.coordinates.join(" "), minor: true });
+    if (!mission.position) out.push({ label: "Location", value: "Unknown" });
     out.push({
         label: "Status",
         value: mission.state === "done" ? "Cleared" : mission.next ? "Next" : "Open",

@@ -145,7 +145,10 @@ function basics(base: DemoScenario, engine: Engine | null): Mission {
             "One room, rebuilt for every lesson. Orders arrive one at a time on the card, and each one waits until it is carried out",
         ],
         objectives: [{ title: "Clear the room" }],
-        facts: engine ? [{ label: "Lessons", value: String(engine.BASICS_CHAPTERS.length) }] : [],
+        facts: [
+            { label: "Location", value: "Unknown" },
+            ...(engine ? [{ label: "Lessons", value: String(engine.BASICS_CHAPTERS.length) }] : []),
+        ],
         stages: engine?.BASICS_CHAPTERS.map((c) => ({
             id: c.id,
             title: c.title,
