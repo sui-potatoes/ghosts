@@ -6,8 +6,10 @@
  * road, dropped kerbs, tactile paving, manholes and drain grates; Tokyo's
  * bins (the konbini's recycling bank, a net-covered rubbish point, the
  * folding rubbish cage, a vending can bin); a bicycle rack, a roadworks
- * group and a row of lanterns under the eaves.
+ * barricade that stands in a row as one roadblock, and a row of lanterns
+ * under the eaves.
  */
+import * as T from "three";
 import { paintBox } from "../road-paint.ts";
 import { Build, C, H } from "./kit.ts";
 import { lantern } from "./interiors.ts";
@@ -104,23 +106,36 @@ export function bikeRack(b: Build) {
   }
 }
 
-/** A roadworks group for the kerb: striped barrier boards on feet, cones, a 工事中 board and a flashing lamp. */
+/**
+ * A roadworks barricade straight across its cell (local x), built to stand in a
+ * row: two boards striped yellow and black run the full cell width, so
+ * neighbours meet board to board and the stripes carry on unbroken; a steel
+ * A-frame at each end, an amber lamp at the middle of the top rail, a white
+ * 工事中 plate on both faces and one cone in front (+z), all on the cell's
+ * centre line, so a row of them reads as one roadblock.
+ */
 export function roadworks(b: Build) {
-  const yellow = b.kit.material(0xd9a52b, 0, 0.6), black = b.kit.material(0x1a1a1a, 0, 0.7);
-  for (const z of [-0.45, 0.45]) {
-    for (let i = 0; i < 6; i++) b.box(-0.5 + i * 0.2, 0.7, z, 0.1, 0.24, 0.03, i % 2 ? yellow : black).rotation.z = 0.5;
-    b.box(0, 0.7, z, 1.2, 0.26, 0.02, yellow);
-    for (const x of [-0.55, 0.55]) { b.box(x, 0.4, z, 0.04, 0.8, 0.04, black); b.box(x, 0.03, z, 0.06, 0.06, 0.4, black); }
+  const yellow = b.kit.material(0xe2b322, 0, 0.55), black = b.kit.material(0x161616, 0, 0.7);
+  const steel = b.kit.material(0x7a7f82, 0.6, 0.5), stripe = C / 8;
+  for (const [y, h] of [[0.86, 0.2], [0.5, 0.15]]) {
+    b.box(0, y, 0, C, h, 0.028, yellow);
+    for (let i = 0; i < 8; i++) b.box(-H + (i + 0.5) * stripe, y, 0, 0.055, h * 0.8, 0.034, black).rotation.z = 0.62;
   }
-  for (const [x, z] of [[-0.45, 0], [0, 0.1], [0.45, -0.05]]) {
-    b.cyl(x, 0.3, z, 0.12, 0.6, b.kit.material(0xd77439, 0, 0.7), 12, b.root, 0.025);
-    b.cyl(x, 0.35, z, 0.09, 0.08, b.kit.material(0xe8e4d8, 0, 0.6), 12);
-    b.box(x, 0.02, z, 0.32, 0.04, 0.32, black);
+  for (const x of [-0.6, 0.6]) {
+    for (const s of [-1, 1]) b.tube(new T.Vector3(x, 0.97, 0), new T.Vector3(x, 0.02, s * 0.27), 0.018, steel);
+    b.box(x, 0.02, 0, 0.04, 0.03, 0.6, steel);
   }
-  b.box(0.55, 0.9, 0.45, 0.04, 0.04, 0.04, black);
-  b.cyl(0.55, 0.97, 0.45, 0.05, 0.1, b.kit.material(0xffb24a, 0, 0.4, 1.5, 0xff9a2a), 12);
-  b.box(-0.2, 1.15, 0.47, 0.5, 0.3, 0.02, b.kit.material(0xf0eee6, 0, 0.6));
-  b.sign("works", -0.2, 1.15, 0.482, 0.44, 0.14);
+  b.box(0, 0.975, 0, C - 0.1, 0.025, 0.03, steel);
+  b.box(0, 1.01, 0, 0.09, 0.05, 0.06, b.kit.material(0x222222, 0, 0.6));
+  b.cyl(0, 1.08, 0, 0.065, 0.08, b.kit.material(0xffb02a, 0, 0.4, 1.8, 0xff9a20), 12).rotation.x = Math.PI / 2;
+  for (const yaw of [0, Math.PI]) {
+    const face = b.frame(yaw);
+    b.box(0, 0.68, 0.03, 0.5, 0.17, 0.012, b.kit.material(0xf0eee6, 0, 0.6), face);
+    b.sign("works", 0, 0.68, 0.037, 0.44, 0.14, face);
+  }
+  b.cyl(0, 0.36, 0.42, 0.13, 0.66, b.kit.material(0xd8662e, 0, 0.6), 12, b.root, 0.022);
+  for (const y of [0.36, 0.5]) b.cyl(0, y, 0.42, 0.1 - (y - 0.36) * 0.4, 0.06, b.kit.material(0xe8e6de, 0, 0.5), 12);
+  b.box(0, 0.025, 0.42, 0.36, 0.05, 0.36, black);
 }
 
 /** Three chōchin in a short row under the eaves, on a wall bracket (wall mount, hang +z). */
