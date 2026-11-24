@@ -59,6 +59,10 @@ export interface Mission {
     /** The full place name the briefing opens on. */
     place?: string;
     coordinates?: readonly [lat: string, lon: string];
+    /** Where on the planet, in decimal degrees (north and east positive); none for a place off the map (a simulation). */
+    position?: MissionPosition;
+    /** The location's picture: the full 16:9 still and its small copy, as public paths, and what it shows. */
+    preview?: { full: string; thumb: string; alt?: string };
     /** Who issued it: `Helios Strategic Industries / Eyes only`. */
     issuer?: string;
     /** The contract, a line per paragraph; `*word*` marks an order name. */
@@ -82,6 +86,9 @@ export interface Mission {
     reward?: { label: string; value: string };
     standing?: { label: string; value: number; max: number };
 }
+
+/** A mission's place on the planet: decimal degrees, north and east positive. */
+export type MissionPosition = { lat: number; lon: number; city: string };
 
 type Grid = readonly (readonly PlotTile[])[];
 
@@ -212,4 +219,43 @@ export const tally = (missions: readonly Mission[]) =>
 export function clockOf(date: Date): string {
     const two = (n: number) => String(n).padStart(2, "0");
     return `${two(date.getUTCHours())}:${two(date.getUTCMinutes())}:${two(date.getUTCSeconds())}`;
+}
+
+/**
+ * One coordinate as the briefings write it (`35° 41′ N`, `139° 42′ E`, an
+ * optional `″` part, ASCII `'` and `"` too) in decimal degrees, south and west
+ * negative; null when it does not read.
+ */
+export function parseCoordinate(text: string): number | null {
+    const match = text
+        .trim()
+        .match(
+            /^(\d+(?:\.\d+)?)\s*°\s*(?:(\d+(?:\.\d+)?)\s*[′']\s*)?(?:(\d+(?:\.\d+)?)\s*[″"]\s*)?([NSEW])$/i,
+        );
+    if (!match) return null;
+    const [, d, m = "0", s = "0", hemisphere] = match;
+    const value = Number(d) + Number(m) / 60 + Number(s) / 3600;
+    return /[SW]/i.test(hemisphere) ? -value : value;
+}
+
+/** The world map's latitude crop: the base art runs from 84° N to 60° S (no Antarctica). */
+export const MAP_NORTH = 84;
+export const MAP_SOUTH = -60;
+
+/**
+ * A point on the world map scaled to `width` × `height`, as the base art
+ * (`public/world/world-base.svg`, 1800 × 720) draws it: equirectangular,
+ * longitude −180…180 left to right, latitude 84…−60 top to bottom; at the
+ * art's own size `x = (lon + 180) * 5`, `y = (84 − lat) * 5`.
+ */
+export function project(
+    lat: number,
+    lon: number,
+    width: number = 1800,
+    height: number = 720,
+): { x: number; y: number } {
+    return {
+        x: ((lon + 180) / 360) * width,
+        y: ((MAP_NORTH - lat) / (MAP_NORTH - MAP_SOUTH)) * height,
+    };
 }

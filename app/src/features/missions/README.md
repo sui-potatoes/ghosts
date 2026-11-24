@@ -10,15 +10,17 @@ interface language in `src/ui/` (one cursor, commands in the bar); styles in
 
 ## Pieces
 
-| Piece              | What it is                                                                                                                                                                                                                                                 |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `OpsConsole`       | The layout: three columns, the board taking what the side panels leave; one scrolling column on a phone (it is the cursor's scroll container there).                                                                                                       |
-| `OpsQueue`         | The operations as status lines (index, name, place, state over file code). Each line is a cursor target whose primary is the mission's `verb`: keys and pad commit at once, a click locks the board on the line and the next click commits. Lines preview. |
-| `OpsBoard`         | The situation display. Draws `mission.plot` (walls, obstacles, voids, cover by edge and height, both deployments, the objective) on a ruled grid in whole pixels, or `mission.stages` in the same frame when there is no ground. One lock-on per retarget. |
-| `StatusStrip`      | A row of readouts (`{ label, value, tone?, minor? }`) and, with `clock`, the UTC time. `minor` readouts drop first on a narrow console.                                                                                                                    |
-| `BriefingPanel`    | Issuer, name, place and coordinates, the contract (`*word*` is an order name), objectives, intel facts, threat pips, reward when there is one, and the commit control under it all.                                                                        |
-| `useLockedMission` | Which mission the console is locked on (the queue's subject: what the commit runs) and which one is shown (the line the pointer rests on, else the locked one). Puts the cursor on the asked or next mission on arrival.                                   |
-| `model.ts`         | The view-model and its pure helpers (`plotOf`, `withNext`, `openingMission`, `tally`, rules and clock), tested in `tests/missions-model.test.ts`.                                                                                                          |
+| Piece              | What it is                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OpsConsole`       | The layout: three columns, the board taking what the side panels leave; one scrolling column on a phone (it is the cursor's scroll container there).                                                                                                                                                                                                                                                                                                                                                                                        |
+| `OpsQueue`         | The operations as status lines (index, name, place, state over file code). Each line is a cursor target whose primary is the mission's `verb`: keys and pad commit at once, a click locks the board on the line and the next click commits. Lines preview.                                                                                                                                                                                                                                                                                  |
+| `OpsBoard`         | The situation display. Site view: `mission.plot` (walls, obstacles, voids, cover by edge and height, both deployments, the objective) on a ruled grid in whole pixels, or `mission.stages` in the same frame when there is no ground. Given `world` (every mission) it also has a World view, switched by the World / Site tabs in its header (the screen's `onTab` steps them). One lock-on per retarget.                                                                                                                                  |
+| `WorldBoard`       | The World view: the planet from `public/world/world-base.svg` (a copy of `docs/design/world-base.svg`, fetched once per visit), a 30° graticule, the six continent names, an amber pin per city that holds a mission (`sitesOf`), the reticle, leader line and coordinates on the shown mission's city, a gentle lean toward it (`worldView`). A mission without `position` dims the map: "Off the map". Confirming a pin puts the queue's cursor on its mission. No countries, no borders; a city is pinned only while a mission is there. |
+| `StatusStrip`      | A row of readouts (`{ label, value, tone?, minor? }`) and, with `clock`, the UTC time. `minor` readouts drop first on a narrow console.                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `BriefingPanel`    | Issuer, name, place and coordinates, the contract (`*word*` is an order name), objectives, intel facts, threat pips, reward when there is one, and the commit control under it all.                                                                                                                                                                                                                                                                                                                                                         |
+| `useLockedMission` | Which mission the console is locked on (the queue's subject: what the commit runs) and which one is shown (the line the pointer rests on, else the locked one). Puts the cursor on the asked or next mission on arrival.                                                                                                                                                                                                                                                                                                                    |
+| `model.ts`         | The view-model and its pure helpers (`plotOf`, `withNext`, `openingMission`, `tally`, rules and clock), tested in `tests/missions-model.test.ts`.                                                                                                                                                                                                                                                                                                                                                                                           |
+| `world.ts`         | The world board's pure geometry (`sitesOf`, `worldView`, continent placements, graticule) over `model.ts`'s `project`, which is the base map's own projection (equirectangular, 84° N to 60° S). Tested in `tests/missions-world.test.ts`.                                                                                                                                                                                                                                                                                                  |
 
 The board and the briefing follow the pointer; the commit never does. It names
 the mission it will run, so a pointer crossing the queue on its way to the
@@ -34,6 +36,8 @@ interface Mission {
     location: string; // short: "Tokyo / Sector 09"
     place?: string; // the briefing's place line
     coordinates?: [lat, lon];
+    position?: { lat; lon; city }; // decimal degrees; drives the World pin. None: off the map
+    preview?: { full; thumb; alt? }; // the location still at the briefing's head
     issuer?: string;
     brief: string[]; // contract paragraphs
     objectives: { title; detail? }[];
@@ -67,12 +71,18 @@ call `withNext` if there is an order to suggest, and render
 ```tsx
 <OpsConsole>
     <OpsQueue missions={missions} selected={locked?.id ?? null} onDeploy={take} />
-    <OpsBoard mission={shown} strip={<StatusStrip readouts={…} clock />} />
+    <OpsBoard
+        mission={shown}
+        world={missions}
+        view={view}
+        onView={setView}
+        strip={<StatusStrip readouts={…} clock />}
+    />
     <BriefingPanel mission={shown} commit={locked} onDeploy={take} />
 </OpsConsole>
 ```
 
-inside the screen's `FocusRoot` and `ScreenFrame` (`columns="minmax(0, 1fr)"`).
+inside the screen's `FocusRoot` (with `onTab` stepping the board's view) and `ScreenFrame` (`columns="minmax(0, 1fr)"`). Each mission's `position` puts its city on the World view; missions in one city share one pin.
 The briefing shows the faction in its header and the reward with the intel. A
 city map of districts would be a new board view beside `LayoutPlot`, keyed by
 `district`, inside the same reticle.

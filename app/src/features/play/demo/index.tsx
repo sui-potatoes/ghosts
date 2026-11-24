@@ -31,6 +31,7 @@ import {
     StatusStrip,
     tally,
     useLockedMission,
+    type BoardView,
     type Mission,
     type Readout,
 } from "../../missions";
@@ -41,9 +42,12 @@ export function DemoScreen() {
     const leave = useGoUp();
     const glyphs = useGlyphSet();
     const back: Command = { action: "back", label: "Back", run: leave };
+    // The board opens on the planet; the tabs (bumpers) switch to the site and back.
+    const [view, setView] = useState<BoardView>("world");
+    const step = () => setView((v) => (v === "world" ? "site" : "world"));
     const frame = { location: ["Play", "Training"], onLocation: leave, columns: "minmax(0, 1fr)" };
     return (
-        <FocusRoot back={back}>
+        <FocusRoot back={back} onTab={step}>
             <Suspense
                 fallback={
                     <ScreenFrame {...frame} commands={<FocusCommandBar glyphs={glyphs} />}>
@@ -61,7 +65,7 @@ export function DemoScreen() {
                     </ScreenFrame>
                 }
             >
-                <Console source={loadTrainingSource()} frame={frame} />
+                <Console source={loadTrainingSource()} frame={frame} view={view} onView={setView} />
             </Suspense>
         </FocusRoot>
     );
@@ -69,7 +73,14 @@ export function DemoScreen() {
 
 type FrameProps = { location: string[]; onLocation: () => void; columns: string };
 
-function Console({ source, frame }: { source: Promise<TrainingSource>; frame: FrameProps }) {
+type ConsoleProps = {
+    source: Promise<TrainingSource>;
+    frame: FrameProps;
+    view: BoardView;
+    onView: (view: BoardView) => void;
+};
+
+function Console({ source, frame, view, onView }: ConsoleProps) {
     const { engine, editor } = use(source);
     const glyphs = useGlyphSet();
     const navigate = useNavigate();
@@ -93,6 +104,9 @@ function Console({ source, frame }: { source: Promise<TrainingSource>; frame: Fr
                 <OpsQueue missions={missions} selected={locked?.id ?? null} onDeploy={deploy} />
                 <OpsBoard
                     mission={shown}
+                    world={missions}
+                    view={view}
+                    onView={onView}
                     strip={<StatusStrip readouts={readoutsOf(shown)} clock />}
                 />
                 <BriefingPanel mission={shown} commit={locked} onDeploy={deploy} />

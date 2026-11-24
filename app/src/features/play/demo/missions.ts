@@ -15,7 +15,14 @@ import type { Scenario } from "@ghosts/engine";
 import type { Level } from "@ghosts/engine/editor";
 
 import { completedChapters } from "../../../screens/basics-progress";
-import { plotOf, withNext, type Mission, type MissionFact } from "../../missions";
+import {
+    parseCoordinate,
+    plotOf,
+    withNext,
+    type Mission,
+    type MissionFact,
+    type MissionPosition,
+} from "../../missions";
 import { DEMO_SCENARIOS, type DemoScenario } from "../model";
 import { completedTrainings } from "./progress";
 
@@ -35,6 +42,38 @@ function placeOf(scenario: Scenario): string {
     if (scenario.briefing.scene) return scenario.briefing.scene.place;
     return scenario.briefing.setting.split(" / ").slice(0, 2).join(" / ");
 }
+
+/** The city each operation is fought in; its coordinates come from the scenario. */
+const CITIES: Record<string, Pick<MissionPosition, "city">> = {
+    "black-rain": { city: "Tokyo" },
+    "night-shift": { city: "Tokyo" },
+    "paper-trail": { city: "Tokyo" },
+};
+
+/** Where an operation is on the planet: its briefing's coordinates in its city; none when they do not read. */
+function positionOf(id: string, scenario: Scenario): MissionPosition | undefined {
+    const city = CITIES[id];
+    const [lat, lon] = scenario.location.coordinates.map(parseCoordinate);
+    return city && lat !== null && lon !== null ? { lat, lon, ...city } : undefined;
+}
+
+/** What each training's picture shows. */
+const SCENES: Record<string, string> = {
+    "night-shift":
+        "An all-night convenience store lit up behind its car park on a wet main road at night, a taxi in the foreground",
+    "black-rain":
+        "A rain-soaked crossroads at night: roadworks crates in the foreground, the relay at the junction, a lit corner shop beyond",
+    "paper-trail":
+        "An office floor at night: desks either side of a carpeted aisle leading to the records room",
+    basics: "A dark simulation room outlined in glowing lines: crates, a barrier, barrels and a vending machine marked as cover, a red target ring on the floor",
+};
+
+/** Every training's picture, rendered from its scene (`scripts/locations/capture.mjs`). */
+const previewOf = (id: string) => ({
+    full: `/locations/${id}.webp`,
+    thumb: `/locations/${id}-thumb.webp`,
+    alt: SCENES[id],
+});
 
 /** An operation: a scenario fought on a level's ground. */
 function operation(base: DemoScenario, scenario: Scenario, level: Level, editor: Editor): Mission {
@@ -69,6 +108,7 @@ function operation(base: DemoScenario, scenario: Scenario, level: Level, editor:
         location: base.place,
         place: placeOf(scenario),
         coordinates: scenario.location.coordinates,
+        position: positionOf(base.id, scenario),
         issuer: scenario.briefing.issuer,
         brief: scenario.briefing.contract,
         objectives,
@@ -128,7 +168,12 @@ const plain = (base: DemoScenario): Mission => ({
     verb: "Deploy",
 });
 
+/** A training as a mission, with its picture (a simulation has no place on the planet). */
 function describe(base: DemoScenario, engine: Engine | null, editor: Editor | null): Mission {
+    return { ...described(base, engine, editor), preview: previewOf(base.id) };
+}
+
+function described(base: DemoScenario, engine: Engine | null, editor: Editor | null): Mission {
     if (base.id === "basics") return basics(base, engine);
     if (!engine || !editor) return plain(base);
     if (base.id === "night-shift")

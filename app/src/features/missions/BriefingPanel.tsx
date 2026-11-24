@@ -44,6 +44,7 @@ export function BriefingPanel({
                     data-more={more || undefined}
                     data-gui-scroll
                 >
+                    {mission.preview && <Still key={mission.id} mission={mission} />}
                     <header className="gui-ops-brief-head">
                         {mission.issuer && <span className="gui-ops-issuer">{mission.issuer}</span>}
                         <h2 className="gui-ops-title">{mission.name}</h2>
@@ -141,6 +142,35 @@ export function BriefingPanel({
                 </div>
             )}
         </Panel>
+    );
+}
+
+/**
+ * The location's picture at the head of the briefing: a 16:9 box reserved
+ * whatever loads, the picture fading in once it has. A picture that fails to
+ * load takes its box with it.
+ */
+function Still({ mission }: { mission: Mission }) {
+    const [state, setState] = useState<"loading" | "shown" | "failed">("loading");
+    const preview = mission.preview!;
+    if (state === "failed") return null;
+    return (
+        <figure className="gui-ops-still" data-state={state}>
+            <img
+                src={preview.thumb}
+                srcSet={`${preview.thumb} 640w, ${preview.full} 1600w`}
+                sizes="(max-width: 760px) 100vw, 360px"
+                alt={preview.alt ?? `${mission.name}, ${mission.place ?? mission.location}`}
+                loading="lazy"
+                decoding="async"
+                onLoad={() => setState("shown")}
+                onError={() => setState("failed")}
+            />
+            <i data-at="tl" />
+            <i data-at="tr" />
+            <i data-at="bl" />
+            <i data-at="br" />
+        </figure>
     );
 }
 

@@ -3,7 +3,7 @@
 
 import { useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
-import { Panel } from "../../ui";
+import { Panel, Tabs, useGlyphSet } from "../../ui";
 import { reducedMotion } from "../../ui/motion";
 import {
     cellSize,
@@ -14,6 +14,15 @@ import {
     type MissionStage,
     type PlotEdge,
 } from "./model";
+import { WorldBoard, WorldLegend } from "./WorldBoard";
+
+/** The board's two views: the planet (where) and the site (what ground). */
+export type BoardView = "world" | "site";
+
+const VIEWS = [
+    { id: "world", label: "World" },
+    { id: "site", label: "Site" },
+];
 
 type OpsBoardProps = {
     /** The mission the board is locked on; null draws the empty display. */
@@ -21,6 +30,14 @@ type OpsBoardProps = {
     label?: string;
     /** Above the display: the status strip. */
     strip?: ReactNode;
+    /**
+     * Every mission on the board, for the World view (a pin per place). With
+     * it the board has two views, World and Site, switched by the tabs in its
+     * header (the screen's `onTab` steps them); without it, Site alone.
+     */
+    world?: Mission[];
+    view?: BoardView;
+    onView?: (view: BoardView) => void;
 };
 
 /**
@@ -30,13 +47,44 @@ type OpsBoardProps = {
  * ground to draw. Retargeting runs one lock-on (the reticle closes in, one
  * sweep, 180 ms) that never hides the plot and is held under reduced motion.
  */
-export function OpsBoard({ mission, label = "Situation", strip }: OpsBoardProps) {
+export function OpsBoard({
+    mission,
+    label = "Situation",
+    strip,
+    world,
+    view = "site",
+    onView,
+}: OpsBoardProps) {
     const [still] = useState(reducedMotion);
+    const glyphs = useGlyphSet();
+    const onWorld = world !== undefined && view === "world";
     return (
-        <Panel label={label} className="gui-ops-board">
+        <Panel
+            label={label}
+            meta={
+                world && (
+                    <Tabs
+                        tabs={VIEWS}
+                        active={view}
+                        onSelect={(id) => onView?.(id as BoardView)}
+                        glyphs={glyphs}
+                    />
+                )
+            }
+            className="gui-ops-board"
+        >
             {strip}
-            <div className="gui-ops-display" data-still={still || undefined}>
-                {mission?.plot ? (
+            <div
+                className="gui-ops-display"
+                data-still={still || undefined}
+                data-view={world ? view : undefined}
+            >
+                {world && (
+                    <div className="gui-ops-view" hidden={!onWorld}>
+                        <WorldBoard missions={world} mission={mission} active={onWorld} />
+                    </div>
+                )}
+                {onWorld ? null : mission?.plot ? (
                     <LayoutPlot key={mission.id} plot={mission.plot} />
                 ) : mission?.stages ? (
                     <StagePlot key={mission.id} mission={mission} stages={mission.stages} />
@@ -46,7 +94,7 @@ export function OpsBoard({ mission, label = "Situation", strip }: OpsBoardProps)
                     </Reticle>
                 )}
             </div>
-            {mission?.plot && <Legend plot={mission.plot} />}
+            {onWorld ? <WorldLegend /> : mission?.plot && <Legend plot={mission.plot} />}
         </Panel>
     );
 }
