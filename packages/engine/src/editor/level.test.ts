@@ -115,6 +115,20 @@ test("the Move grid ranks footprints and writes edge cover onto both sides", () 
   assert.deepEqual(map.tiles[2][0], { t: "empty" });
 });
 
+test("a car is unwalkable with a low rim: low sides round it on both tiles, none between its own cells", () => {
+  const level = newLevel(5, 5);
+  level.placements.push(place("shop-van", [1, 1])); // cells (1,1) (1,2) (2,1) (2,2) (1,3) (2,3)
+  const { tiles } = toMoveMap(level);
+  for (const [x, z] of [[1, 1], [2, 2], [1, 3]]) assert.deepEqual(tiles[z][x], { t: "unwalkable" });
+  // [left, top, right, bottom] on the tile beside it, facing the car.
+  assert.deepEqual(tiles[1][0], { t: "cover", sides: [0, 0, 1, 0] });
+  assert.deepEqual(tiles[0][2], { t: "cover", sides: [0, 0, 0, 1] });
+  assert.deepEqual(tiles[1][3], { t: "cover", sides: [1, 0, 0, 0] });
+  assert.deepEqual(tiles[4][1], { t: "cover", sides: [0, 1, 0, 0] });
+  // Nothing at the diagonal.
+  assert.deepEqual(tiles[0][0], { t: "empty" });
+});
+
 test("every catalog edge asset exports a pinned level: obstacles and walls high, low pieces low, doors nothing", () => {
   // glass pane, tall sheet/chain-link/picket, office glass wall, tall car-park mesh
   const obstacles = ["s13", "s14", "s15", "s16", "o22", "k90", "u20"]; // … and the storefront glass

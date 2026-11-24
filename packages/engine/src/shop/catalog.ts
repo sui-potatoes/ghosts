@@ -285,12 +285,14 @@ function batch2(): Record<string, ShopEntry> {
   add("no-smoking-pole", "No-smoking pole sign", "Street · Smoking", "no smoking sign pole sidewalk", { footprint: "none", cells: one, hp: 20, scheme: none });
   add("no-smoking-paint", "No-smoking marking", "Street · Smoking", "no smoking pavement marking paint", { footprint: "none", cells: one, hp: 0, scheme: none });
   add("ashtray-stand", "Standing ashtray", "Street · Smoking", "ashtray smoking area bin stand", { footprint: "none", cells: one, hp: 20, scheme: none });
-  // Vehicles: indestructible for now (destruction deferred), so a wall tile like a building:
-  // the rules never clear a cell a car still stands on. Seeded paint colours.
+  // Vehicles: indestructible for now (destruction deferred), so never an Obstacle: the rules would
+  // clear the cell with the car still standing. Unwalkable instead (nobody enters), with a low rim
+  // (`lowRim`) so shots and throws pass over and a unit beside a car has low cover. Accepted: a blast
+  // beside a car clears the neighbouring tiles' low sides while the car stands. Seeded paint colours.
   n = 1;
   const v = () => `v${String(n++).padStart(2, "0")}`;
   const car = (kind: string, name: string, tags: string, cells: AssetSpec["cells"]) =>
-    (rows[kind] = { uid: v(), name, group: "Street · Vehicles", tags: `vehicle parked ${tags}`, footprint: "solid", cells, hp: 0, scheme: none });
+    (rows[kind] = { uid: v(), name, group: "Street · Vehicles", tags: `vehicle parked ${tags}`, footprint: "obstacle", lowRim: true, cells, hp: 0, scheme: none });
   car("kei-car", "Kei car", "car kei mini", long1);
   car("hatchback", "Compact hatchback", "car hatchback sedan", long2);
   car("kei-truck", "Kei truck", "truck kei pickup flatbed", long1);

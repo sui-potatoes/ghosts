@@ -154,7 +154,8 @@ test("buildings stack whole storeys and vehicles keep to their bays", () => {
     assert(size.z <= rows * CELL + 0.01, `${kind} length fits its ${rows} cells`);
     // A kei car is 1.48 m at most against a 1.35 m tile: a hand's width over each side, mirrors aside.
     assert(size.x - 0.32 <= cols * CELL, `${kind} body fits its ${cols} column(s), mirrors aside`);
-    assert.equal(spec.footprint, "solid");
+    assert.equal(spec.footprint, "obstacle", "nobody enters a car");
+    assert.equal(spec.lowRim, true, "but shots and throws pass over it");
     assert.equal(spec.hp, 0, "vehicles are indestructible for now");
   }
   assets.dispose();

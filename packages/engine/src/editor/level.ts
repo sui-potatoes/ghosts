@@ -432,7 +432,8 @@ export interface LevelExport {
  * Unwalkable, `solid` is Wall. Edge assets write cover levels onto the sides
  * of both adjacent tiles — high for a solid wall, glazing and tall fences (the
  * contract has no see-through blocker, so they block sight too), low for low
- * partitions, nothing for a door. Painted unwalkable tiles stay Unwalkable;
+ * partitions, nothing for a door; a `lowRim` footprint (a car) writes low sides
+ * round its cells the same way. Painted unwalkable tiles stay Unwalkable;
  * where claims overlap a cell the strongest wins (wall, unwalkable, obstacle,
  * then edge cover). Destructibility stays with
  * the render props for now.
@@ -467,7 +468,19 @@ export function toMoveMap(level: Level): MoveMapExport {
       continue;
     }
     if (spec.footprint === "none") continue;
-    for (const cell of placementCells(spec, p)) {
+    const own = placementCells(spec, p);
+    if (spec.lowRim) {
+      const mine = new Set(own.map(key));
+      // Sides order is [left, top, right, bottom]; the far tile's side is the opposite one.
+      for (const cell of own)
+        ([[-1, 0], [0, -1], [1, 0], [0, 1]] as const).forEach(([dx, dz], i) => {
+          const far: Cell = [cell[0] + dx, cell[1] + dz];
+          if (mine.has(key(far))) return;
+          side(cell, i as 0 | 1 | 2 | 3, LOW);
+          side(far, ((i + 2) % 4) as 0 | 1 | 2 | 3, LOW);
+        });
+    }
+    for (const cell of own) {
       if (!inLevel(level, cell)) continue;
       if (spec.footprint === "solid") walls.add(key(cell));
       else if (spec.footprint === "obstacle") pits.add(key(cell));

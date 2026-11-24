@@ -119,7 +119,8 @@ test("the shop pack maps onto the existing tactical classes", () => {
     "beer-crates", "sake-barrel", "cafe-table", "dumpster", "ac-pair", "roll-cage"])
     assert.equal(of(kind).footprint, "cover", kind);
   // No new cell asset is a permanent no-go tile: seating is walk-through dressing.
-  for (const a of shop) if (a.place !== "edge") assert.notEqual(a.footprint, "obstacle", a.uid);
+  // Cars are the exception: unwalkable with a low rim, never a wall or destructible cover.
+  for (const a of shop) if (a.place !== "edge" && !a.lowRim) assert.notEqual(a.footprint, "obstacle", a.uid);
   for (const kind of ["stool", "cafe-chair"]) assert.equal(of(kind).footprint, "none");
   // The register and hot case are counter-top clutter; the counter carries them.
   for (const kind of ["register", "hot-case"]) {
@@ -142,9 +143,15 @@ test("the shop pack maps onto the existing tactical classes", () => {
   assert.equal(of("rail-mesh").footprint, assetByUid("s15")!.footprint);
   for (const kind of ["rail-chain", "rail-gap", "auto-door", "noren"]) assert.equal(of(kind).footprint, "none");
   for (const kind of ["bus-shelter", "taxi-shelter"]) assert.equal(of(kind).footprint, "cover");
-  // Things a frag cannot remove are wall tiles with no hit points, like the building block.
-  for (const kind of ["kei-car", "van", "taxi", "building-1", "building-8"]) {
+  // Buildings a frag cannot remove are wall tiles with no hit points, like the building block.
+  for (const kind of ["building-1", "building-8"]) {
     assert.equal(of(kind).footprint, assetByUid("b06")!.footprint);
+    assert.equal(of(kind).hp, 0);
+  }
+  // Cars cannot be cleared either, but they are no wall: unwalkable with a low rim, shot over.
+  for (const kind of ["kei-car", "van", "taxi"]) {
+    assert.equal(of(kind).footprint, assetByUid("b05")!.footprint);
+    assert.equal(of(kind).lowRim, true);
     assert.equal(of(kind).hp, 0);
   }
   // Shell walls are permanent wall tiles, like the masses they replace in a store's shell.

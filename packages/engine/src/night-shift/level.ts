@@ -10,7 +10,7 @@
  *       012345678901234567890
  *     0 ,,....,,####-###-####  # building ring or store wall (Wall)
  *     1 ,,....,,KKKx-#%#-#%%#  % empty building interior (Unwalkable)
- *     2 ,,....,,::::-#%#-#%%#  K vehicle (Wall)  V vending (Wall)
+ *     2 ,,....,,::::-#%#-#%%#  K vehicle (Unwalkable, low rim)  V vending (Wall)
  *     3 ,,....i,BBBB-###-####  F built-in fridge/chiller  S stock
  *     4 ,,....,,---i-x-x-x---  c cigarettes  t terminal  a ATM
  *     5 ,s....,,KKK--------##  C counter  k self-checkout

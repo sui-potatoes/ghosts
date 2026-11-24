@@ -88,6 +88,13 @@ export interface AssetSpec {
   top?: number;
   /** Fixed height above the floor for a wall-mounted item. */
   lift?: number;
+  /**
+   * Low cover round the footprint: every edge between one of its cells and a
+   * cell outside it exports as a low side (as a `cover` edge piece would write
+   * it), so units shoot and throw over it and crouch beside it. A cell footprint
+   * only; with an `obstacle` footprint the cells stay unenterable.
+   */
+  lowRim?: boolean;
   /** Hit points; 0 marks terrain that cannot be destroyed. */
   hp: number;
   /** Full-height masonry or steel: rifle fire cannot damage it. */
@@ -233,7 +240,8 @@ export function replacementsFor(uid: string): AssetSpec[] {
       a.uid !== uid &&
       (a.place === "edge") === (spec.place === "edge") &&
       a.mount === spec.mount &&
-      a.footprint === spec.footprint,
+      a.footprint === spec.footprint &&
+      !a.lowRim === !spec.lowRim,
   );
 }
 
