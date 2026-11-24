@@ -9,7 +9,7 @@ import { cycleUnit, observerAllows } from "./observer";
 import { combatActionOf, isEditable as typing, type CombatAction } from "./keys";
 import { session } from "./session";
 import { engineSettings } from "./settings";
-import { toggleGrid, toggleView } from "./ui/view";
+import { leaveLayout, toggleGrid, toggleLayout, toggleView } from "./ui/view";
 import { closeInspect, cycleInspect, hoverUnit, pinUnit, tapUnit } from "./ui/intel/store";
 
 export interface ControlOptions {
@@ -54,6 +54,12 @@ export function runCombatAction(command: CombatAction, { onPause, reverse }: Con
   if (s.observer && command === "next-operator") {
     const next = cycleUnit(s.game.units, s.selected, reverse ? -1 : 1);
     if (next) select(next.id);
+    return;
+  }
+  // The layout view is a way of looking, never locked; Escape leaves it before anything else lets go.
+  if (command === "cancel" && leaveLayout()) return;
+  if (command === "layout") {
+    toggleLayout();
     return;
   }
   // Cancel steps back: out of targeting, then off the selected operator, and
@@ -121,6 +127,16 @@ export function bindControls({ onPause }: ControlOptions = {}): () => void {
         scene.open = false;
         scene.querySelector("summary")?.focus();
       }
+      return;
+    }
+    if (command === "cancel" && s.battlefield.layout) {
+      e.preventDefault();
+      leaveLayout();
+      return;
+    }
+    if (command === "layout" && !typing(target)) {
+      e.preventDefault();
+      toggleLayout();
       return;
     }
     if (command === "cancel" && s.mode === "move") {

@@ -23,6 +23,7 @@ import { SceneClock } from "./clock";
 import { Effects, reducedMotion } from "./effects";
 import { Destruction } from "./destruction";
 import { mapView } from "./maps";
+import { LayoutView } from "./layout-view";
 import { Occlusion } from "./occlusion";
 import { OccluderBatch } from "./occluder-batch";
 import { BlastFlash } from "./blast-flash";
@@ -111,6 +112,10 @@ export class Battlefield {
   /** Run after units and plates are placed each rendered frame (the readout follows its unit). */
   readonly frameHooks = new Set<() => void>();
   private hoveredUnit: string | null = null;
+  /** The layout view while it is on (`setLayout`): the rules' tiles in place of the dressed scenery. */
+  layout: LayoutView | null = null;
+  /** The dressed scenery the layout view hides for the frame it draws. */
+  private scenery: T.Object3D[] = [];
   private threat!: ThreatOverlay;
   /** The tiles a grenade's burst lights as it goes off. */
   private blast!: BlastFlash;
@@ -235,6 +240,7 @@ export class Battlefield {
       this.effects.light,
       this.effects.group,
     );
+    this.scenery = this.scene.children.filter((o) => !(o as T.Light).isLight && o !== this.effects.light && o !== this.effects.group);
     renderer.shadowMap.autoUpdate = false;
     renderer.shadowMap.needsUpdate = true;
     this.overlays = new Overlays(this.scene, this.space);
@@ -265,6 +271,7 @@ export class Battlefield {
       animator: this,
       effects: this.effects,
       onPick: (id) => {
+        if (this.layout) return;
         const current = this.game.unit(id);
         if (current) this.onPick(current.pos, current.id);
       },
@@ -398,6 +405,12 @@ export class Battlefield {
     let press = 0;
     let pressed = false;
     host.addEventListener("pointerdown", (e) => {
+      if (this.layout) {
+        if (e.button === 0 && e.shiftKey) this.layout.pointerDown(this.layout.pick(this.pointerRay(e)));
+        down = [e.clientX, e.clientY];
+        this.invalidate();
+        return;
+      }
       down = [e.clientX, e.clientY];
       pressed = false;
       clearTimeout(press);
@@ -411,8 +424,26 @@ export class Battlefield {
       }
       this.invalidate();
     });
-    host.addEventListener("pointercancel", () => clearTimeout(press));
+    host.addEventListener("pointercancel", () => {
+      clearTimeout(press);
+      this.controls.enabled = true;
+    });
+    // The camera's own controls hear the canvas first: a Shift-press in the layout view is held back from them, so the drag draws a region.
+    host.addEventListener(
+      "pointerdown",
+      (e) => {
+        if (this.layout && e.button === 0 && e.shiftKey) this.controls.enabled = false;
+      },
+      true,
+    );
     host.addEventListener("pointerup", (e) => {
+      if (this.layout) {
+        // A click that did not drag picks a tile, a Shift-drag a region; any other drag was the camera's.
+        this.controls.enabled = true;
+        if (e.button === 0) this.layout.pointerUp(this.layout.pick(this.pointerRay(e)), e.shiftKey, Math.hypot(e.clientX - down[0], e.clientY - down[1]) <= 5);
+        else this.layout.pointerLeave();
+        return;
+      }
       clearTimeout(press);
       if (pressed) return;
       this.lastPointer = e.pointerType;
@@ -429,6 +460,10 @@ export class Battlefield {
     });
     host.addEventListener("pointermove", (e) => {
       if (e.pointerType === "touch" && Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 8) clearTimeout(press);
+      if (this.layout) {
+        if (e.pointerType !== "touch" && !this.draggingCamera && (!e.buttons || e.buttons === 1)) this.layout.pointerMove(this.layout.pick(this.pointerRay(e)));
+        return;
+      }
       if (e.buttons || this.draggingCamera || this.cameraMotion || this.aimKey) return;
       if (e.pointerType !== "touch") this.hoverUnit(this.unitAtScreen(e.clientX, e.clientY));
       const p = this.pick(e);
@@ -441,6 +476,10 @@ export class Battlefield {
       }
     });
     host.addEventListener("pointerleave", () => {
+      if (this.layout) {
+        this.layout.pointerLeave();
+        return;
+      }
       this.hoverUnit(null);
       this.overlays.leave();
       this.onLeave();
@@ -510,6 +549,42 @@ export class Battlefield {
       if (d < nearest) [best, nearest] = [u.id, d];
     }
     return best;
+  }
+
+  /** Whether the scene has the rules' tile grid to show as a layout (an editor level's, Night Shift's). */
+  get layoutAvailable() {
+    return !!this.game.scenario.ground;
+  }
+
+  /**
+   * Show the level as the rules see it (`layout-view.ts`) in place of the dressed
+   * scenery, or put the scenery back. Picks and hovers belong to the layout while
+   * it is on; the camera works as ever (a click that does not drag picks a tile,
+   * Shift-drag draws a region and holds the camera for that gesture only).
+   * `onChange` is told when the selection or hover moves.
+   */
+  setLayout(on: boolean, onChange: () => void = () => {}) {
+    if (on === !!this.layout || (on && !this.game.scenario.ground)) return;
+    if (on) {
+      this.layout = new LayoutView({
+        ground: this.game.scenario.ground!,
+        level: mapView(this.game.map.plan.id).level ?? null,
+        onChange: () => {
+          onChange();
+          this.invalidate();
+        },
+      });
+      this.layout.start(this.game.events);
+      this.scene.add(this.layout.group);
+      this.setHover(false);
+      this.showPath(undefined);
+    } else {
+      this.layout!.dispose();
+      this.layout = null;
+      this.controls.enabled = true;
+    }
+    this.renderer.shadowMap.needsUpdate = true;
+    this.invalidate();
   }
 
   /** The inspected unit's reach on the ground; null clears. */
@@ -1281,16 +1356,24 @@ export class Battlefield {
       this.reflectionsDirty = false;
     }
     this.updateOcclusion(elapsed);
+    if (this.layout?.sync(this.game.events)) this.renderer.shadowMap.needsUpdate = true;
     // Interior shadows follow moving actors / camera cutaways, then reuse their maps at rest.
     if (this.indoors && active) this.renderer.shadowMap.needsUpdate = true;
     this.profiler.begin();
-    if (plain) this.renderer.render(this.scene, this.camera);
-    else
-      this.post.render(
-        this.scene,
-        this.camera,
-        noAir ? undefined : this.airScene,
-      );
+    // The layout view draws without the dressed scenery or the street's air: hidden for this frame only, so the scenery's own state never moves.
+    const hidden = this.layout ? this.scenery.filter((o) => o.visible) : [];
+    for (const o of hidden) o.visible = false;
+    try {
+      if (plain) this.renderer.render(this.scene, this.camera);
+      else
+        this.post.render(
+          this.scene,
+          this.camera,
+          noAir || this.layout ? undefined : this.airScene,
+        );
+    } finally {
+      for (const o of hidden) o.visible = true;
+    }
     this.profiler.end(now, elapsed, cpuStart, this.renderMode);
     if (shot && this.shotStep > shot.frames) this.host.dataset.shot = "ready";
   };
@@ -1387,6 +1470,7 @@ export class Battlefield {
     this.pixelRatioQuery?.removeEventListener("change", this.onPixelRatio);
     this.controls.dispose();
     this.callouts.clear();
+    this.layout?.dispose();
     this.units.dispose();
     this.occlusion.dispose();
     this.occluderBatch.dispose();

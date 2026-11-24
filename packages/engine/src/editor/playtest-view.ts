@@ -44,6 +44,7 @@ export function levelView(level: Level): MapView {
   const cx = (minX + (level.width - 1) / 2) * CELL, cz = (minZ + (level.depth - 1) / 2) * CELL;
   const lighting = level.lighting;
   return {
+    level,
     // No barrier meshes for cover cells: the level's own props are its cover.
     furnishedCover: true,
     defaults: { time, weather: interior || time !== "night" ? "clear" : "rain" },

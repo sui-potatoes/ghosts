@@ -128,8 +128,8 @@ Session and UI:
   interface language: header strip, squad rail, unit panel, and the command
   bar that is the command deck), `Field.tsx` (the field's overlays: plates,
   reticle, the pad's wheel, the status line), `Dialogs.tsx` (the briefing as a
-  framed prompt, the debrief host), `DestructionPreview.tsx` and
-  `OfficePreview.tsx` (asset labs, only under the dev server).
+  framed prompt, the debrief host), `LayoutPanel.tsx` (the layout view's
+  legend, readout and Copy).
 - `audio.ts`, `voice.ts`, `sfx.ts`: effects and voice lines from `/sounds/`,
   levelled master × effects and master × dialogue; kinds without a recording
   keep a synthesized tone at the effects level. Only voices listed in

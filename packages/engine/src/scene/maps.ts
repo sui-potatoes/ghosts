@@ -3,6 +3,7 @@
 
 import type * as T from "three";
 import { buildDistrict, loadDistrictTextures } from "../district";
+import type { Level } from "../editor/level";
 import type { Occluder } from "./occlusion";
 import { buildOffice } from "../office/scene";
 import type { TimeOfDay } from "../scene-weather";
@@ -17,6 +18,8 @@ export interface SceneryKit {
 
 /** How a map looks: its textures and its scenery. The rules know only the `MapPlan`. */
 export interface MapView {
+  /** The editor level this scenery dresses, when it is one: what the layout view says is placed where. */
+  level?: Level;
   /** The scenery itself supplies cover meshes (e.g. office furniture). */
   furnishedCover?: boolean;
   defaults?: { time: TimeOfDay; weather: Weather };

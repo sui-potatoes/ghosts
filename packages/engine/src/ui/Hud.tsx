@@ -14,7 +14,7 @@
  * frame; the turn clock ticks in its own component.
  */
 
-import { lazy, Suspense, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import {
   actionDescription,
   commandsOf,
@@ -48,15 +48,6 @@ import { TargetIntel } from "./intel/IntelLayer";
 import { INSPECT_COMMAND, useInspect } from "./intel/store";
 import { useSession } from "./useSession";
 import { cap } from "./view";
-
-// Development tools: only under the dev server, never in a build (the import is dropped with the branch).
-const DEV_TOOLS = import.meta.env.MODE === "development" && import.meta.env.DEV;
-const DestructionPreview = DEV_TOOLS
-  ? lazy(() => import("./DestructionPreview").then((m) => ({ default: m.DestructionPreview })))
-  : null;
-const OfficePreview = DEV_TOOLS
-  ? lazy(() => import("./OfficePreview").then((m) => ({ default: m.OfficePreview })))
-  : null;
 
 // === Glyphs ===
 
@@ -144,71 +135,52 @@ function TurnClock({ deadline }: { deadline: number }) {
   );
 }
 
-/** The scene's look: time of day and weather; dev builds add the asset labs. */
+/** The scene's look: time of day and weather */
 function SceneMenu() {
   const s = useSession();
   const { battlefield } = s;
   const [time, setTime] = useState<TimeOfDay>(battlefield.timeOfDay);
   const [weather, setWeather] = useState<Weather>(battlefield.weather);
-  const [lab, setLab] = useState<"" | "destruction" | "office">("");
   return (
-    <>
-      <details id="scene-controls" className="hud-scene">
-        <summary className="hud-tool" aria-label="Scene">
-          <Icon name="sun" />
-        </summary>
-        <section aria-label="Scene controls">
-          <label htmlFor="scene-time">Time of day</label>
-          <select
-            id="scene-time"
-            value={time}
-            onChange={(e) => {
-              const next = e.target.value as TimeOfDay;
-              if (!Object.hasOwn(timePresets, next)) return;
-              setTime(next);
-              battlefield.setTimeOfDay(next);
-            }}
-          >
-            <option value="morning">Morning</option>
-            <option value="day">Day</option>
-            <option value="overcast">Overcast</option>
-            <option value="evening">Evening</option>
-            <option value="night">Night</option>
-          </select>
-          <label htmlFor="scene-weather">Weather</label>
-          <select
-            id="scene-weather"
-            value={weather}
-            onChange={(e) => {
-              const next = e.target.value as Weather;
-              if (next !== "clear" && next !== "rain" && next !== "snow") return;
-              setWeather(next);
-              battlefield.setWeather(next);
-            }}
-          >
-            <option value="clear">Clear</option>
-            <option value="rain">Rain</option>
-            <option value="snow">Snow</option>
-          </select>
-          {DestructionPreview && (
-            <button type="button" disabled={s.busy} onClick={() => setLab("destruction")}>
-              Destruction preview (dev)
-            </button>
-          )}
-          {OfficePreview && (
-            <button type="button" disabled={s.busy} onClick={() => setLab("office")}>
-              Office asset pack (dev)
-            </button>
-          )}
-        </section>
-      </details>
-      <Suspense fallback={null}>
-        {lab === "destruction" && DestructionPreview && (
-          <DestructionPreview initialKind={battlefield.indoors ? "office-desk" : "crate"} onClose={() => setLab("")} />
-        )}
-        {lab === "office" && OfficePreview && <OfficePreview onClose={() => setLab("")} />}
-      </Suspense>
-    </>
+    <details id="scene-controls" className="hud-scene">
+      <summary className="hud-tool" aria-label="Scene">
+        <Icon name="sun" />
+      </summary>
+      <section aria-label="Scene controls">
+        <label htmlFor="scene-time">Time of day</label>
+        <select
+          id="scene-time"
+          value={time}
+          onChange={(e) => {
+            const next = e.target.value as TimeOfDay;
+            if (!Object.hasOwn(timePresets, next)) return;
+            setTime(next);
+            battlefield.setTimeOfDay(next);
+          }}
+        >
+          <option value="morning">Morning</option>
+          <option value="day">Day</option>
+          <option value="overcast">Overcast</option>
+          <option value="evening">Evening</option>
+          <option value="night">Night</option>
+        </select>
+        <label htmlFor="scene-weather">Weather</label>
+        <select
+          id="scene-weather"
+          value={weather}
+          onChange={(e) => {
+            const next = e.target.value as Weather;
+            if (next !== "clear" && next !== "rain" && next !== "snow") return;
+            setWeather(next);
+            battlefield.setWeather(next);
+          }}
+        >
+          <option value="clear">Clear</option>
+          <option value="rain">Rain</option>
+          <option value="snow">Snow</option>
+        </select>
+      </section>
+    </details>
   );
 }
 
@@ -309,6 +281,7 @@ export function HudHeader({ onMenu }: { onMenu?: () => void }) {
             pressed={battlefield.cinematic}
           />
           <Tool icon="map" label="Tactical grid" command="grid" pad={binds.grid} pressed={battlefield.gridVisible} />
+          {battlefield.layoutAvailable && <Tool icon="layout" label="Layout" command="layout" pressed={!!battlefield.layout} />}
           <Tool icon="focus" label="Focus operator" command="focus" pad={binds.focus} disabled={!s.selected} />
           <Tool icon="scan" label="Inspect unit" command={INSPECT_COMMAND.action} pad={INSPECT_COMMAND.pad} />
           {onMenu && (
@@ -445,7 +418,12 @@ export function SquadRail() {
                 <i style={{ width: `${(a.hp / a.maxHp) * 100}%` }} />
               </span>
             </span>
-            <Pips filled={a.ap} max={2} />
+            <span className="hud-member-stat">
+              <span className="hud-member-ammo" data-tone={a.ammo ? undefined : "warn"} aria-label="Rounds left">
+                {a.actions.some((x) => x.kind === "Attack") ? `${a.ammo}/${a.clip}` : ""}
+              </span>
+              <Pips filled={a.ap} max={2} />
+            </span>
             {!pad && !touch && i < 9 && <kbd className="hud-glyph hud-member-key">{i + 1}</kbd>}
           </button>
         ))}

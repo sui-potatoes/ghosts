@@ -46,6 +46,7 @@ const PATHS = {
   ),
   gun: <path d="M3 8h16v5H9l-2 7H3l2-8H2V9m17-1V6h3v6h-3M9 13v3h5v-3" />,
   chevron: <path d="m9 5 7 7-7 7" />,
+  layout: <path d="M4 4h16v16H4zm0 6h16M10 10v10" />,
   map: <path d="m3 5 6-2 6 2 6-2v16l-6 2-6-2-6 2zm6-2v16m6-14v16" />,
   focus: (
     <>

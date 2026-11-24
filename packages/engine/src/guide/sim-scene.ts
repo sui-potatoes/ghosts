@@ -36,88 +36,22 @@ import { levelOrigin } from "../editor/playtest.ts";
 import { CELL, type Cell } from "../map.ts";
 import type { MapView } from "../scene/maps.ts";
 import { coverPieces, tileAt, type CoverRelation, type Side } from "./cover.ts";
+import {
+  BACK,
+  centre,
+  glow,
+  HIGH_H,
+  lineGlow,
+  LOW_H,
+  NEXT,
+  sideSeat,
+  SIDES,
+  simPalette,
+  WALL_H,
+  type SimPalette,
+} from "../scene/schematic.ts";
 
-/** The simulation's tones, read from the theme. */
-export interface SimPalette {
-  void: T.Color;
-  floor: T.Color;
-  grid: T.Color;
-  wall: T.Color;
-  high: T.Color;
-  low: T.Color;
-  hostile: T.Color;
-}
-
-function token(el: Element | null, name: string, fallback: string): T.Color {
-  const raw = el ? getComputedStyle(el).getPropertyValue(name).trim() : "";
-  const c = new T.Color();
-  try {
-    c.setStyle(raw || fallback);
-  } catch {
-    c.setStyle(fallback);
-  }
-  return c;
-}
-
-/** The palette from the theme tokens on the page (the encounter's root when mounted). */
-export function simPalette(): SimPalette {
-  const doc = typeof document !== "undefined" ? document : null;
-  const root = doc?.querySelector(".encounter") ?? doc?.documentElement ?? null;
-  const text = token(root, "--text-color", "#ffffff");
-  const accent = token(root, "--accent-color", "#7fe3ef");
-  const background = token(root, "--background-color", "#0a0b0d");
-  const surface = token(root, "--surface-color", "#101215");
-  const hostile = token(root, "--hostile", "#d67c73");
-  return {
-    void: background.clone().lerp(new T.Color(0, 0, 0), 0.4),
-    floor: surface.clone().lerp(background, 0.5),
-    grid: accent.clone().lerp(background, 0.8),
-    wall: text.clone().lerp(background, 0.12),
-    high: accent.clone(),
-    low: accent.clone().lerp(background, 0.5),
-    hostile,
-  };
-}
-
-/** Unlit and pushed past the bloom threshold: a glowing line or face. */
-const glow = (c: T.Color, strength = 1.8, opacity = 1) =>
-  new T.MeshBasicMaterial({
-    color: c.clone().multiplyScalar(strength),
-    toneMapped: false,
-    transparent: opacity < 1,
-    opacity,
-    depthWrite: opacity >= 1,
-  });
-const lineGlow = (c: T.Color, strength = 1.8) =>
-  new T.LineBasicMaterial({ color: c.clone().multiplyScalar(strength), toneMapped: false });
-
-/** The world point of a cell's centre at height `y`. */
-const centre = ([x, z]: Cell, y = 0) => new T.Vector3(x * CELL, y, z * CELL);
-
-/** The midpoint of a cell's side and the direction along it. */
-function sideSeat(cell: Cell, side: Side): { mid: T.Vector3; along: "x" | "z"; inward: T.Vector3 } {
-  const c = centre(cell);
-  const h = CELL / 2;
-  switch (side) {
-    case "top":
-      return { mid: c.clone().add(new T.Vector3(0, 0, -h)), along: "x", inward: new T.Vector3(0, 0, 1) };
-    case "bottom":
-      return { mid: c.clone().add(new T.Vector3(0, 0, h)), along: "x", inward: new T.Vector3(0, 0, -1) };
-    case "left":
-      return { mid: c.clone().add(new T.Vector3(-h, 0, 0)), along: "z", inward: new T.Vector3(1, 0, 0) };
-    case "right":
-      return { mid: c.clone().add(new T.Vector3(h, 0, 0)), along: "z", inward: new T.Vector3(-1, 0, 0) };
-  }
-}
-
-const NEXT: Record<Side, Cell> = { left: [-1, 0], top: [0, -1], right: [1, 0], bottom: [0, 1] };
-const BACK: Record<Side, Side> = { left: "right", right: "left", top: "bottom", bottom: "top" };
-const SIDES: Side[] = ["left", "top", "right", "bottom"];
-
-/** Heights in metres: a wall stands over a unit, high cover to the shoulder, low cover to the waist. */
-const WALL_H = 2.6,
-  HIGH_H = 1.9,
-  LOW_H = 0.85;
+export { simPalette, type SimPalette };
 
 /** The level's own floor in the void: a slab per walkable cell and the grid between them. */
 export function simulationView(level: Level): MapView {
@@ -176,7 +110,7 @@ export function simulationView(level: Level): MapView {
         lineGlow(p.grid, 0.9),
       );
       scene.add(tiles, grid);
-      // The room's edge: a low wall of light, fading upwards.
+      // The room's edge: a low wall of light, faint and fading upwards; it never writes depth, so it cannot hide a unit or a target.
       const fade = document.createElement("canvas");
       fade.width = 2;
       fade.height = 64;
@@ -184,13 +118,13 @@ export function simulationView(level: Level): MapView {
       if (g) {
         const ramp = g.createLinearGradient(0, 0, 0, 64);
         ramp.addColorStop(0, "rgba(255,255,255,0)");
-        ramp.addColorStop(1, "rgba(255,255,255,0.55)");
+        ramp.addColorStop(1, "rgba(255,255,255,0.18)");
         g.fillStyle = ramp;
         g.fillRect(0, 0, 2, 64);
       }
       const wallTexture = new T.CanvasTexture(fade);
       const light = new T.MeshBasicMaterial({
-        color: p.high.clone().multiplyScalar(0.9),
+        color: p.high.clone().multiplyScalar(0.3),
         map: wallTexture,
         transparent: true,
         depthWrite: false,

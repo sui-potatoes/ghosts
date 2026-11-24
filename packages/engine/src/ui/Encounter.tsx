@@ -19,6 +19,7 @@ import type { EncounterDebrief } from "../aftermath/report";
 import { Briefing, Debrief } from "./Dialogs";
 import type { Guide } from "../guide/run";
 import { GuideLayer } from "./Guide";
+import { LayoutPanel } from "./LayoutPanel";
 import { Field, type FieldRefs } from "./Field";
 import { CommandBar, HudHeader, SquadRail, UnitPanel } from "./Hud";
 import { useSession } from "./useSession";
@@ -240,6 +241,7 @@ function EncounterView({
         {ready && <SquadRail />}
         {ready && <UnitPanel />}
         {ready && !observer && <CommandBar />}
+        {ready && !observer && <LayoutPanel />}
         {guide && <GuideLayer guide={guide} />}
       </main>
       {ready &&
