@@ -53,7 +53,7 @@ const KNOWN: Record<string, string> = {
   "cover-height@14,13": "self-checkout is 1.77 m tall but low cover (Obstacle) on chain, so it blocks no sight",
   "cover-height@10,1": "kei truck (1.76 m): cars are low rim cover by the owner's decision, so shots pass over them",
   "cover-height@8,6": "delivery van (1.89 m): car, low rim by decision",
-  "cover-height@5,16": "kei car (1.80 m): car, low rim by decision",
+  "cover-height@5,12": "kei car (1.80 m): car, low rim by decision",
   "cover-height@11,1": "roll cage (1.70 m), low cover on chain",
   "cover-height@12,6": "stacked AC condensers (2.50 m), low cover on chain",
   "cover-height@17,4": "AC condenser (2.10 m), low cover on chain",
@@ -62,8 +62,8 @@ const KNOWN: Record<string, string> = {
 
 /** Night Shift's own limits where it is over the default budget. */
 const NIGHT_SHIFT_BUDGET = {
-  // over budget: 75 distinct kinds against 60; the street, the store and the depot each bring their own
-  kinds: 75,
+  // over budget: 77 distinct kinds against 60; the street, the store and the depot each bring their own
+  kinds: 77,
   // over budget: 19 lamps against 16 (7 ceiling lights, 4 poles, 3 bulkheads, 2 floodlights, 2 street lamps, 1 wall bulkhead); play pairs the ceiling ones
   lights: 19,
 };
@@ -76,7 +76,7 @@ test("Night Shift passes layout common sense, bar its known faults", () => {
   assert.deepEqual(problems.map(keyOf).sort(), Object.keys(KNOWN).sort(), problems.map((p) => `${keyOf(p)}: ${p.message}`).join("\n"));
   // the limits are tight: relax them and the level is within, tighten them and it is not
   assert.equal(level.placements.length <= LAYOUT_BUDGET.placements, true);
-  assert.equal(layoutProblems(level, { ...measured, budget: { kinds: 74, lights: 18 } }, ["budget"]).length, 2);
+  assert.equal(layoutProblems(level, { ...measured, budget: { kinds: 76, lights: 18 } }, ["budget"]).length, 2);
 });
 
 // ---------------------------------------------------------------------------
