@@ -11,6 +11,8 @@
 import * as T from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { propRandom } from "../environment.ts";
+import { drawFront, drawUpper, FRONT, GLOWS, pickFront, type Brush, type FrontKind } from "./fronts.ts";
+import { SignAtlas } from "./signs.ts";
 
 export type SurroundSide = "street" | "buildings" | "none";
 export interface Surroundings {
@@ -21,7 +23,6 @@ export interface Bounds { minX: number; maxX: number; minZ: number; maxZ: number
 
 const tones = [0xc8bfae, 0x7c7f7a, 0x8a6a52, 0x9aa49a, 0x6e6a64, 0xa8a196, 0x5e5a56];
 
-/** Builds the surroundings into a group; dispose its geometries and materials with it. */
 /** Where the level’s own roadway meets a side, as world ranges along that edge: the street beyond opens there. */
 export type RoadMouths = Partial<Record<"north" | "south" | "east" | "west", [from: number, to: number][]>>;
 
@@ -29,25 +30,40 @@ export type RoadMouths = Partial<Record<"north" | "south" | "east" | "west", [fr
 export const surroundingBuildings = (surroundings: T.Group) =>
   (surroundings.userData.buildings ?? []) as { group: T.Group; bounds: T.Box3 }[];
 
+/** Builds the surroundings into a group; dispose its geometries and materials with it. */
 export function buildSurroundings(bounds: Bounds, sides: Surroundings, mouths: RoadMouths = {}): T.Group {
   const random = propRandom(sides.seed ?? 11);
   const parts = new Map<number, T.BufferGeometry[]>();
   // A building in a row collects its own boxes: it stands as one group, so the view can cut it away.
   let building: Map<number, T.BufferGeometry[]> | null = null;
+  // Its lettering planes, by ink.
+  let lettering: Map<number, T.BufferGeometry[]> | null = null;
+  const MATTE = -1, tint = new T.Color();
+  // Everything in a row building that does not glow is one vertex-coloured material: one draw call for all its paint, not one per colour.
   const add = (color: number, x: number, y: number, z: number, w: number, h: number, d: number) => {
     const g = new T.BoxGeometry(w, h, d).translate(x, y, z), into = building ?? parts;
-    (into.get(color) ?? into.set(color, []).get(color)!).push(g);
+    let key = color;
+    if (building && !GLOWS.has(color)) {
+      key = MATTE;
+      tint.setHex(color);
+      const n = g.getAttribute("position").count, colors = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) tint.toArray(colors, i * 3);
+      g.setAttribute("color", new T.BufferAttribute(colors, 3));
+    }
+    (into.get(key) ?? into.set(key, []).get(key)!).push(g);
   };
-  const LIT = 0xffe2b0, COLD = 0xc8e4ec, DARK = 0x161a1e;
+  const LIT = FRONT.lit, COLD = FRONT.cold, DARK = FRONT.dark;
   const materials = new Map<number, T.MeshStandardMaterial>();
   const material = (color: number) => {
-    const lit = color === LIT || color === COLD;
+    if (color === MATTE) return materials.get(MATTE) ?? materials.set(MATTE, new T.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 })).get(MATTE)!;
+    const lit = GLOWS.has(color);
     return materials.get(color) ?? materials.set(color, new T.MeshStandardMaterial({ color, roughness: 0.9, ...(lit ? { emissive: color, emissiveIntensity: 0.8 } : {}) })).get(color)!;
   };
-  const merged = (color: number, geometries: T.BufferGeometry[]) => {
+  let atlas: SignAtlas | undefined;
+  const merged = (color: number, geometries: T.BufferGeometry[], m: T.Material = material(color)) => {
     const geometry = mergeGeometries(geometries);
     for (const g of geometries) g.dispose();
-    const mesh = new T.Mesh(geometry, material(color));
+    const mesh = new T.Mesh(geometry, m);
     mesh.receiveShadow = false; mesh.castShadow = false;
     return mesh;
   };
@@ -70,6 +86,19 @@ export function buildSurroundings(bounds: Bounds, sides: Surroundings, mouths: R
       if (along === "x") add(color, c + u, y, at, w, h, d);
       else add(color, at, y, c + u, d, h, w);
     };
+    // The face's frame for a frontage: its x runs with u on the north and east sides, against it on the others (so lettering reads left to right from outside).
+    const sign = along === "x" ? -out : out, turn = along === "x" ? (out > 0 ? Math.PI : 0) : -out * Math.PI / 2;
+    const brush = (u0: number, face: number): Brush => ({
+      box: (c, x, y, z, w, h, d) => put(c, u0 + sign * x, y, face - z, w, h, d),
+      glyph: (id, ink, x, y, z, w, h, yaw = 0) => {
+        atlas ??= new SignAtlas();
+        const [gw, gh] = atlas.fit(id, w, h), g = atlas.plane(id, gw, gh).clone().rotateY(turn + yaw);
+        const at = edge + out * (face - z), c = (along === "x" ? cx : cz) + u0 + sign * x;
+        if (along === "x") g.translate(c, y, at); else g.translate(at, y, c);
+        (lettering!.get(ink) ?? lettering!.set(ink, []).get(ink)!).push(g);
+      },
+    });
+    let previous: FrontKind | undefined;
     let v = 0.5;
     if (kind === "street") {
       // The near pavement, broken where the level’s roadway runs out into this street: a junction, not a kerb across the road.
@@ -114,24 +143,28 @@ export function buildSurroundings(bounds: Bounds, sides: Surroundings, mouths: R
       const w = 2.7 + random() * 3, h = (2 + Math.floor(random() * (tallest - 1))) * 3, d = 8 + random() * 4;
       // A street on a neighbouring side runs across this row: leave it clear, kerb to kerb.
       if (crossed(u - 0.5, u + w + 0.5)) { u += w + 0.15; continue; }
-      building = new Map();
+      building = new Map(); lettering = new Map();
       put(tones[Math.floor(random() * tones.length)], u + w / 2, h / 2, v + d / 2, w, h, d);
       put(0x2a2c2f, u + w / 2, h + 0.05, v + d / 2, w, 0.1, d);
       for (let f = 1; f < h / 3; f++) for (let x = u + 0.6; x < u + w - 0.5; x += 1.1) {
         const on = random();
         put(on < 0.22 ? LIT : on < 0.32 ? COLD : DARK, x + 0.3, f * 3 + 1.5, v - 0.02, 0.6, 1.1, 0.04);
       }
-      put(on(random) ? 0x23292d : 0x8a8e90, u + w / 2, 1.2, v - 0.03, w - 0.4, 2.2, 0.04);
+      // A ground floor with a human door in it, never the same front as its neighbour; a little on the floors above.
+      const draw = brush(u + w / 2, v);
+      previous = pickFront(random, w, previous);
+      drawFront(previous, draw, w, random, 0.3, h >= 6 && random() < 0.4);
+      for (let f = 1; f < h / 3; f++) if (random() < 0.12) drawUpper(draw, sign * (u + 0.9 + Math.floor(random() * Math.max(1, w - 1.6)) - (u + w / 2)), f * 3, random);
       const block = new T.Group();
       block.name = "surrounding building";
       for (const [color, geometries] of building) block.add(merged(color, geometries));
-      building = null;
+      for (const [ink, geometries] of lettering) block.add(merged(ink, geometries, atlas!.glyphs(ink, "print")));
+      building = null; lettering = null;
       group.add(block);
       buildings.push({ group: block, bounds: new T.Box3().setFromObject(block) });
       u += w + 0.15 + random() * 0.4;
     }
   };
-  const on = (r: () => number) => r() < 0.5;
   for (const name of ["north", "south", "east", "west"] as const) side(name, sides[name]);
   // Distant towers on the skyline, a few lit windows each.
   for (let i = 0; i < 9; i++) {

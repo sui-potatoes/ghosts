@@ -12,6 +12,7 @@
  */
 import * as T from "three";
 import { paintBox } from "../road-paint.ts";
+import { drawFront, FRONT, pickFront, type Brush } from "./fronts.ts";
 import { C, H, type Build } from "./kit.ts";
 
 const glow = (b: Build, color: number, strength = 1.2) => b.kit.material(color, 0, 0.4, strength, color);
@@ -209,6 +210,25 @@ export function mass(b: Build, w: number, d: number, floors: number) {
   const lit = glow(b, 0xe8d6b0, 0.75), litCold = glow(b, 0xc8e4ec, 0.7);
   const ac = b.kit.material(0xc8c6be, 0.2, 0.6), slab = b.kit.material(0x5a5650, 0, 0.9), rail = b.kit.material(0x6a6e72, 0.5, 0.5);
   b.box(0, h / 2, 0, w * C, h, d * C, tile);
+  // Every outside face has a human door: one ground cell of it, a frontage that fits a cell.
+  const doors = new Map<number, { at: number; kind: ReturnType<typeof pickFront> }>();
+  for (const yaw of b.outsideFaces()) doors.set(yaw, {
+    at: Math.floor(b.random() * (Math.abs(Math.sin(yaw)) > 0.5 ? d : w)),
+    kind: pickFront(b.random, C, undefined, ["door", "stairwell", "izakaya"]),
+  });
+  const brush = (face: T.Object3D, cx: number, reach: number): Brush => ({
+    // The mass's own few materials stand in for the front's tones: a face costs no draw calls of its own.
+    box: (c, x, y, z, bw, bh, bd) => {
+      const m = c === FRONT.lit || c === FRONT.red ? lit : c === FRONT.cold ? litCold
+        : c === FRONT.dark || c === FRONT.glass ? b.dark : c === FRONT.steel ? rail
+        : c === FRONT.paper || c === FRONT.cream || c === FRONT.white ? ac : slab;
+      b.box(cx + x, y, reach + z, bw, bh, bd, m, face);
+    },
+    glyph: (id, ink, x, y, z, gw, gh, yaw = 0) => {
+      const atlas = b.kit.signs, [pw, ph] = atlas.fit(id, gw, gh), m = new T.Mesh(atlas.plane(id, pw, ph), atlas.glyphs(ink, "print"));
+      m.position.set(cx + x, y, reach + z); m.rotation.y = yaw; face.add(m);
+    },
+  });
   for (let f = 0; f < floors; f++) {
     const y = f * STOREY;
     for (const yaw of b.outsideFaces()) {
@@ -218,15 +238,21 @@ export function mass(b: Build, w: number, d: number, floors: number) {
       for (let i = 0; i < n; i++) {
         const cx = (i - (n - 1) / 2) * C;
         b.box(cx, y + 0.06, reach + 0.012, C, 0.12, 0.024, slab, face);
+        const entrance = doors.get(yaw)!;
+        if (f === 0 && entrance.at === i) {
+          drawFront(entrance.kind, brush(face, cx, reach), C, b.random, 0.12);
+          continue;
+        }
         if (f === 0 && floors > 1) {
           if (style % 2 === 0) {
             // A roll-down shutter.
             b.box(cx, 1.2, reach + 0.02, C - 0.2, 2.2, 0.03, b.kit.material(0x8a8e90, 0.5, 0.5), face);
             for (let k = 0; k < 10; k++) b.box(cx, 0.2 + k * 0.2, reach + 0.037, C - 0.2, 0.01, 0.004, b.dark, face);
           } else {
-            // A small shop front: dark glass under a coloured awning.
+            // A small shop front: dark glass under a flat fascia board, a tiled plinth below.
             b.box(cx, 1.1, reach + 0.01, C - 0.12, 2.0, 0.02, b.kit.material(0x23292d, 0.4, 0.3), face);
-            b.box(cx, 2.35, reach + 0.3, C, 0.06, 0.6, b.kit.material(b.pick([0x7a2a2a, 0x2a4a3a, 0x3a3a5a, 0xa8823a]), 0, 0.7), face).rotation.x = 0.25;
+            b.box(cx, 2.62, reach + 0.03, C - 0.04, 0.4, 0.05, slab, face);
+            b.box(cx, 0.25, reach + 0.025, C - 0.12, 0.5, 0.03, slab, face);
           }
           continue;
         }
