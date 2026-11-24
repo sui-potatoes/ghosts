@@ -20,7 +20,7 @@ import { floorMaterial, floorMeshes, type FloorTextures } from "./floors.ts";
 import { floorRaise, interiorPreset, type Level } from "./level.ts";
 import { levelOrigin, levelProps, scenarioFromLevel } from "./playtest.ts";
 import { buildingBlocks } from "./buildings.ts";
-import { buildSurroundings } from "../shop/surroundings.ts";
+import { buildSurroundings, surroundingBuildings } from "../shop/surroundings.ts";
 
 /** A flat plane on the ground with metric UVs (one texture repeat per 2m). */
 function ground(width: number, depth: number, material: T.Material, x: number, y: number, z: number) {
@@ -150,16 +150,23 @@ export function levelView(level: Level): MapView {
         return runs;
       };
       const xs = Array.from({ length: level.width }, (_, x) => x), zs = Array.from({ length: level.depth }, (_, z) => z);
-      if (level.surroundings) scene.add(buildSurroundings({
+      const beyond = !level.surroundings ? null : buildSurroundings({
         minX: (minX - 0.5) * CELL, maxX: (minX + level.width - 0.5) * CELL,
         minZ: (minZ - 0.5) * CELL, maxZ: (minZ + level.depth - 0.5) * CELL,
       }, level.surroundings, {
         north: mouths(xs.map((x) => [x, 0]), 0, minX), south: mouths(xs.map((x) => [x, level.depth - 1]), 0, minX),
         west: mouths(zs.map((z) => [0, z]), 1, minZ), east: mouths(zs.map((z) => [level.width - 1, z]), 1, minZ),
-      }));
+      });
       const occluders: Occluder[] = [];
+      // The rows beyond the grid cut away like the level’s own buildings when they stand between the camera and a unit.
+      if (beyond) {
+        scene.add(beyond);
+        beyond.updateMatrixWorld(true);
+        occluders.push(...surroundingBuildings(beyond));
+      }
       const poles: T.Vector3[] = [];
       const roofs = new Map<string, T.Group[]>();
+      const ceilingLamps: T.PointLight[] = [];
       for (const prop of levelProps(level).fixed) {
         const asset = kit.props.get(prop);
         const root = new T.Group();
@@ -175,7 +182,7 @@ export function levelView(level: Level): MapView {
           if (/^shop-building-(roof|ceiling)/.test(prop.kind)) {
             root.updateMatrixWorld(true);
             lamp.position.copy(root.localToWorld(asset.light.at.clone()));
-            scene.add(lamp);
+            ceilingLamps.push(lamp);
           } else {
             lamp.position.copy(asset.light.at);
             root.add(lamp);
@@ -269,6 +276,8 @@ export function levelView(level: Level): MapView {
         occluders.push({ group, bounds });
       }
 
+      for (const lamp of pairLamps(ceilingLamps)) scene.add(lamp);
+
       // Overhead lines between neighbouring utility poles: each pole wires to its nearest
       // neighbours within eight tiles, three sagging conductors and a lower telecom cable.
       if (poles.length > 1) scene.add(poleCables(poles));
@@ -295,6 +304,38 @@ export function playtestScenario(level: Level): Scenario {
   const scenario = scenarioFromLevel(level);
   registerMapView(scenario.map.id, levelView(level));
   return scenario;
+}
+
+/**
+ * A ceiling's lamps for the renderer: every point light costs every lit pixel
+ * of the scene, so neighbouring lamps of a grid (two cells apart at most, same
+ * light and height) share one light between them, as bright as both, reaching
+ * as far. Below a ceiling that reads the same; the panels themselves still glow.
+ * `userData.stands` keeps the two lamps a merged light stands for.
+ */
+export function pairLamps(lamps: readonly T.PointLight[]): T.PointLight[] {
+  const reach = 2 * CELL + 1e-3;
+  const pairs: [number, number, number][] = [];
+  lamps.forEach((a, i) => lamps.forEach((b, j) => {
+    const d = a.position.distanceTo(b.position);
+    if (j > i && d <= reach && a.color.equals(b.color) && a.intensity === b.intensity && a.distance === b.distance &&
+      Math.abs(a.position.y - b.position.y) < 1e-3) pairs.push([d, i, j]);
+  }));
+  // Closest first; ties in the order the lamps came, so a level always pairs the same way.
+  pairs.sort((p, q) => p[0] - q[0] || p[1] - q[1] || p[2] - q[2]);
+  const paired = new Set<number>(), out: T.PointLight[] = [];
+  for (const [d, i, j] of pairs) {
+    if (paired.has(i) || paired.has(j)) continue;
+    paired.add(i).add(j);
+    const a = lamps[i], b = lamps[j];
+    const lamp = new T.PointLight(a.color, a.intensity + b.intensity, a.distance + d / 2, a.decay);
+    lamp.position.copy(a.position).add(b.position).multiplyScalar(0.5);
+    // The battlefield splits it back into the two for its reflection probe, which sees the difference.
+    lamp.userData.stands = [a, b];
+    out.push(lamp);
+  }
+  lamps.forEach((lamp, i) => { if (!paired.has(i)) out.push(lamp); });
+  return out;
 }
 
 /** Catenary spans between nearby poles, as one line batch (no collision, no shadow). */

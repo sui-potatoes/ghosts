@@ -24,9 +24,11 @@ import { Effects, reducedMotion } from "./effects";
 import { Destruction } from "./destruction";
 import { mapView } from "./maps";
 import { Occlusion } from "./occlusion";
+import { OccluderBatch } from "./occluder-batch";
 import { BlastFlash } from "./blast-flash";
 import { Overlays } from "./overlays";
 import { RenderProfiler } from "./profiler";
+import { exposeRenderDebug } from "./render-debug";
 import { buildCovers, buildRelay } from "./props";
 import { hasExtraction } from "../scenario";
 import { Precipitation, RoofMap, type Weather } from "./precipitation";
@@ -119,6 +121,8 @@ export class Battlefield {
   private readonly effects = new Effects(this);
   private readonly destruction: Destruction;
   private readonly occlusion = new Occlusion();
+  /** The cut-away scenery standing in full, one draw call per material (built with the scenery). */
+  private readonly occluderBatch: OccluderBatch;
   private readonly reflections = new StreetReflections();
   private reflectionsDirty = true;
   private readonly precipitation: Precipitation;
@@ -223,6 +227,8 @@ export class Battlefield {
       group.quaternion.identity();
       this.scene.add(group);
     }
+    this.occluderBatch = new OccluderBatch(this.occlusion.occluders);
+    if (this.occluderBatch.batches.length) this.scene.add(...this.occluderBatch.batches);
     this.scene.add(
       this.destruction.group,
       this.mist.mesh,
@@ -312,6 +318,16 @@ export class Battlefield {
       this.setTimeOfDay(defaults.time);
       this.setWeather(defaults.weather);
     }
+    exposeRenderDebug({
+      renderer, scene: this.scene, air: this.airScene,
+      frame: (shadows) => {
+        if (shadows) renderer.shadowMap.needsUpdate = true;
+        renderer.info.autoReset = false;
+        renderer.info.reset();
+        if (plain) renderer.render(this.scene, this.camera);
+        else this.post.render(this.scene, this.camera, noAir ? undefined : this.airScene);
+      },
+    });
     this.invalidate();
   }
 
@@ -1251,7 +1267,7 @@ export class Battlefield {
       this.scene.environment = null;
       try {
         if (this.reflectionsDirty)
-          this.reflections.capture(this.renderer, this.scene);
+          this.withAuthoredLamps(() => this.reflections.capture(this.renderer, this.scene));
       } finally {
         this.scene.environment = this.reflections.texture;
         this.scene.environmentIntensity = LOOK.environment;
@@ -1303,6 +1319,7 @@ export class Battlefield {
     if (this.aimPoint) points.push(this.aimPoint);
     const wasFading = this.occlusion.active;
     this.host.dataset.occludedBuildings = String(this.occlusion.update(this.camera.position, points, dt));
+    this.occluderBatch.sync((group) => this.occlusion.amount(group));
     if (wasFading || this.occlusion.active) this.renderer.shadowMap.needsUpdate = true;
     this.destruction.syncBuildingVisibility(this.occlusion.occluders.map(({ group }) => this.occlusion.amount(group)));
     this.destruction.syncOfficeVisibility(this.camera.position, points, dt);
@@ -1311,12 +1328,41 @@ export class Battlefield {
 
   // === Lifecycle ===
 
+  /**
+   * Run `fn` with every light that stands in for several (`userData.stands`:
+   * a map view's merged ceiling lamps) split back into the lamps it stands
+   * for. The reflection probe sits close enough to the lamps to tell the
+   * difference; everything else draws with the cheaper merged set.
+   */
+  private withAuthoredLamps<R>(fn: () => R): R {
+    const merged: T.Light[] = [];
+    this.scene.traverse((o) => {
+      if (o instanceof T.Light && o.visible && Array.isArray(o.userData.stands)) merged.push(o);
+    });
+    for (const light of merged) {
+      light.visible = false;
+      light.parent!.add(...(light.userData.stands as T.Light[]));
+    }
+    try {
+      return fn();
+    } finally {
+      for (const light of merged) {
+        light.visible = true;
+        for (const lamp of light.userData.stands as T.Light[]) lamp.removeFromParent();
+      }
+    }
+  }
+
   /** Temporarily show all weapons, compile scene shaders, then restore weapon visibility. */
   async warmup() {
     const restore = this.units.showAllWeapons();
     try {
+      // The reflection probe draws with the authored lamps (`withAuthoredLamps`): its programs too.
       await this.post.compiling(() =>
-        this.renderer.compileAsync(this.scene, this.camera),
+        Promise.all([
+          this.renderer.compileAsync(this.scene, this.camera),
+          this.withAuthoredLamps(() => this.renderer.compileAsync(this.scene, this.camera)),
+        ]),
       );
     } finally {
       restore();
@@ -1343,6 +1389,7 @@ export class Battlefield {
     this.callouts.clear();
     this.units.dispose();
     this.occlusion.dispose();
+    this.occluderBatch.dispose();
     this.reflections.dispose();
     this.destruction.dispose();
     this.blast.dispose();

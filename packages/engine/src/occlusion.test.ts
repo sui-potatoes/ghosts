@@ -5,6 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as T from "three";
 import { Occlusion } from "./scene/occlusion.ts";
+import { OccluderBatch } from "./scene/occluder-batch.ts";
 
 test("building cutaways fade, reverse mid-transition and leave shared materials untouched", () => {
   const occlusion = new Occlusion();
@@ -37,5 +38,44 @@ test("building cutaways fade, reverse mid-transition and leave shared materials 
   } finally {
     occlusion.dispose();
     geometry.dispose(); material.dispose();
+  }
+});
+
+test("standing cut-away cells draw from one batch per material and hand over to their own meshes while they fade", () => {
+  const occlusion = new Occlusion();
+  const wall = new T.MeshStandardMaterial(), glass = new T.MeshStandardMaterial({ transparent: true, opacity: 0.3 });
+  const geometry = new T.BoxGeometry(1, 1, 1);
+  const cell = (x: number) => {
+    const group = new T.Group();
+    const a = new T.Mesh(geometry, wall), pane = new T.Mesh(geometry, glass);
+    a.position.x = x; pane.position.x = x;
+    group.add(a, pane);
+    occlusion.occluders.push({ group, bounds: new T.Box3(new T.Vector3(x - 0.5, -1, 3), new T.Vector3(x + 0.5, 1, 5)) });
+    return { group, a, pane };
+  };
+  const near = cell(0), far = cell(4);
+  const batch = new OccluderBatch(occlusion.occluders);
+  try {
+    assert.equal(batch.batches.length, 1, "one batch for the shared opaque material; glass stays out");
+    assert.equal(batch.batches[0].instanceCount, 2);
+    assert.equal(near.a.visible, false);
+    assert.equal(near.pane.visible, true);
+    const matrix = new T.Matrix4();
+    batch.batches[0].getMatrixAt(1, matrix);
+    assert.equal(new T.Vector3().setFromMatrixPosition(matrix).x, 4, "instances keep their cell's world transform");
+    occlusion.update(new T.Vector3(0, 0, 10), [new T.Vector3()], 0.06);
+    batch.sync((group) => occlusion.amount(group));
+    assert.equal(near.a.visible, true, "a fading cell draws its own meshes");
+    assert.equal(batch.batches[0].getVisibleAt(0), false);
+    assert.equal(far.a.visible, false);
+    assert.equal(batch.batches[0].getVisibleAt(1), true);
+    occlusion.update(new T.Vector3(0, 0, 10), [], 1);
+    batch.sync((group) => occlusion.amount(group));
+    assert.equal(near.a.visible, false, "back in full: the batch draws it again");
+    assert.equal(batch.batches[0].getVisibleAt(0), true);
+  } finally {
+    batch.dispose();
+    occlusion.dispose();
+    geometry.dispose(); wall.dispose(); glass.dispose();
   }
 });
