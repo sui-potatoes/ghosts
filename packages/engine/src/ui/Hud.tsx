@@ -491,6 +491,9 @@ export function UnitPanel() {
               <dt>Ammo</dt>
               <dd>
                 <Pips filled={u.ammo} max={u.clip} tone={u.ammo ? undefined : "warn"} />
+                <span>
+                  {u.ammo}/{u.clip}
+                </span>
               </dd>
             </div>
           )}

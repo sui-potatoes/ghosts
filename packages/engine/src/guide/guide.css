@@ -143,7 +143,7 @@
   left: auto;
   right: calc(var(--u) * 4);
   translate: none;
-  width: 348px;
+  width: 392px;
   top: calc(var(--h-l) + var(--u) * 3);
   animation-name: guide-in-side;
 }
@@ -167,6 +167,40 @@
   align-items: center;
   justify-content: space-between;
   gap: calc(var(--u) * 2);
+  min-height: calc(var(--u) * 5);
+  white-space: nowrap;
+}
+.encounter .guide-head .guide-pad-hint,
+.encounter .guide-head .guide-tag {
+  margin-left: auto;
+}
+
+/* The step's text: every step's copy sits in the same cell, unseen, so the card is as tall as the longest one. */
+.encounter .guide-body {
+  display: grid;
+  align-items: start;
+}
+.encounter .guide-body > * {
+  grid-area: 1 / 1;
+  min-width: 0;
+}
+.encounter .guide-step {
+  display: grid;
+  gap: calc(var(--u) * 2);
+}
+.encounter .guide-body [data-sizer],
+.encounter .guide-live[data-hidden] {
+  visibility: hidden;
+  pointer-events: none;
+}
+/* One place for what the card has to say beyond the step: sized for two lines. */
+.encounter .guide-status {
+  display: flex;
+  align-items: flex-start;
+  min-height: calc(var(--u) * 12);
+}
+.encounter .guide-status > * {
+  flex: 1;
 }
 .encounter .guide-eyebrow,
 .encounter .guide-tag {
@@ -255,29 +289,43 @@
   background: currentColor;
 }
 
+/* The card's commands: four slots in one row, each in its place whether or not the step offers it. */
 .encounter .guide-commands {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 80px 84px 108px;
+  align-items: center;
   gap: var(--u);
-  margin-top: var(--u);
+  padding-top: calc(var(--u) * 2);
+  border-top: 1px solid var(--line);
 }
 .encounter .guide-commands .hud-bar-cmd {
+  min-width: 0;
+  width: 100%;
+  justify-content: center;
+  gap: calc(var(--u) * 2);
+  padding: 0 calc(var(--u) * 2);
   cursor: pointer;
   transition: translate 60ms ease;
 }
-.encounter .guide-commands .hud-bar-cmd:active {
+.encounter .guide-commands .hud-bar-cmd:disabled {
+  cursor: default;
+}
+.encounter .guide-commands .hud-bar-cmd:not(:disabled):active {
   translate: 0 1px;
 }
-.encounter .guide-skip {
-  margin-right: auto;
+.encounter .guide-commands .hud-bar-cmd[data-slot="skip"] {
+  width: auto;
+  min-width: calc(var(--u) * 16);
+  justify-content: flex-start;
+  justify-self: start;
+  margin-left: calc(var(--u) * -2);
 }
-.encounter .guide-skip[data-armed] {
+.encounter .guide-commands .hud-bar-cmd[data-armed] {
   color: var(--warn-color);
   border-color: var(--warn-color);
 }
 @media (hover: hover) {
-  .encounter .guide-commands .hud-bar-cmd:not([data-tone]):hover {
+  .encounter .guide-commands .hud-bar-cmd:not(:disabled):not([data-tone]):hover {
     color: var(--text-color);
     border-color: var(--line-strong);
   }
@@ -422,14 +470,10 @@
   display: inline-flex;
   align-items: center;
   gap: calc(var(--u) * 2);
-  margin-right: auto;
   font: 500 var(--t-micro) / 1 var(--font-mono);
   letter-spacing: var(--track);
   text-transform: uppercase;
   color: var(--text-secondary);
-}
-.encounter .guide-pad-hint + .guide-skip {
-  margin-right: 0;
 }
 
 /* Phone width: the card spans the glass, its commands at touch size. */

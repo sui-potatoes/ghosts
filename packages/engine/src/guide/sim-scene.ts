@@ -426,17 +426,10 @@ export class SimulationConstructs {
     }
     if (!relation) return;
     const p = this.palette;
-    const from = centre(relation.from, 1.2),
-      to = centre(relation.to, 1.2);
-    let end = to;
     const edge = relation.cover.edge;
     if (relation.sight && edge) {
-      // The line stops on the protecting side: the piece takes the shot.
+      // The protecting side lights where the piece takes the shot.
       const seat = sideSeat(edge.cell, edge.side);
-      const mid = seat.mid.clone().setY(1.2);
-      const dir = to.clone().sub(from);
-      const t = Math.min(1, Math.max(0, mid.clone().sub(from).dot(dir) / dir.lengthSq()));
-      end = from.clone().addScaledVector(dir, t);
       const bar =
         seat.along === "x" ? new T.BoxGeometry(CELL * 0.9, 0.06, 0.06) : new T.BoxGeometry(0.06, 0.06, CELL * 0.9);
       const impact = new T.Mesh(bar, glow(relation.cover.value >= 50 ? p.high : p.low, 3.2));
@@ -451,12 +444,5 @@ export class SimulationConstructs {
         if (line) line.visible = false;
       }
     }
-    const geometry = new T.BufferGeometry().setFromPoints([from, end]);
-    const material = relation.sight
-      ? lineGlow(p.hostile, 2)
-      : new T.LineDashedMaterial({ color: p.hostile.clone().multiplyScalar(1.2), dashSize: 0.25, gapSize: 0.2, toneMapped: false });
-    const line = new T.Line(geometry, material);
-    if (!relation.sight) line.computeLineDistances();
-    this.relation.add(line);
   }
 }

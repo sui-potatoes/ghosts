@@ -348,6 +348,8 @@ export const CARD = {
   skip: "Skip",
   /** The skip, armed: a second press leaves. */
   leave: "Leave training",
+  /** The same, on the card's narrow slot. */
+  leaveNow: "Leave",
   continue: "Continue",
   lessons: "Lessons",
   /** The pad's way into the card's own commands, and out. */

@@ -168,14 +168,11 @@ function pointersOf(guide: Guide): { pointers: Pointer[]; selectFirst: string | 
   return { pointers: step.point?.(now) ?? [], selectFirst: null };
 }
 
-const overlap = (a: DOMRect | Box, b: Box) =>
-  Math.max(0, Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)) *
-  Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y));
-
-type Box = { x: number; y: number; width: number; height: number };
-
 /** How wide the card is when it stands at the right of a wide screen, in px (with its margin). */
-const SIDE_CARD = 372;
+const SIDE_CARD = 416;
+/** The card's commands, left to right: each keeps its place whether or not the step offers it. */
+const SLOTS = ["skip", "lessons", "back", "primary"] as const;
+type Slot = (typeof SLOTS)[number];
 /** A screen wide enough for the card at the side, leaving the room most of it. */
 const sideCard = (w: number, h: number) => w >= 760 && w > h * 1.15;
 
@@ -759,50 +756,13 @@ export function GuideLayer({ guide }: { guide: Guide }) {
     }
     const root = host.closest<HTMLElement>(".encounter");
     if (!root) return;
-    // A phone held upright: the card on top, the room framed in the band below it (`frameCamera`).
-    const upright = host.clientWidth < host.clientHeight;
-    const targets: Box[] = [];
-    for (const p of pointersRef.current) {
-      if ("hud" in p) {
-        const r = hudElement(root, s, p.hud)?.getBoundingClientRect();
-        if (r) targets.push(r);
-      } else if ("unit" in p) {
-        const box = s.battlefield.unitBox(p.unit);
-        const view = s.battlefield.host.getBoundingClientRect();
-        if (box) targets.push({ x: view.left + box.x, y: view.top + box.y, width: box.w, height: box.h });
-      }
-    }
-    for (const shape of tiles.current?.querySelectorAll("polygon, path") ?? []) targets.push(shape.getBoundingClientRect());
-    // The operator taking orders is worth keeping in sight too.
-    const chosen = s.selected ? s.battlefield.unitBox(s.selected) : null;
-    if (chosen) {
-      const view = s.battlefield.host.getBoundingClientRect();
-      targets.push({ x: view.left + chosen.x, y: view.top + chosen.y, width: chosen.w, height: chosen.h });
-    }
-    const height = el.offsetHeight;
-    const width = el.offsetWidth;
+    // The card always stands at the top, in one place for the whole run: a card that moves between steps is read twice.
     const origin = host.getBoundingClientRect();
-    const left = origin.left + (origin.width - width) / 2;
     const header = root.querySelector(".hud-header")?.getBoundingClientRect().bottom ?? origin.top;
-    const floor = Math.min(
-      ...[".hud-unit", ".hud-bar"].map((q) => root.querySelector(q)?.getBoundingClientRect().top ?? origin.bottom),
-    );
-    const top = header + 12,
-      bottom = floor - 12 - height;
-    const at = (y: number): Box => ({ x: left, y, width, height });
-    const cost = (box: Box) => targets.reduce((sum, t) => sum + overlap(t, box), 0);
-    const up = cost(at(top)),
-      down = bottom > top ? cost(at(bottom)) : Infinity;
-    const style = root.style;
-    setPlace((was) => {
-      // Stay put unless the other place is clearly better: a card that jumps is read twice.
-      const next = upright ? "top" : was.at !== "bottom" ? (down < up * 0.6 ? "bottom" : "top") : up <= down * 1.2 ? "top" : "bottom";
-      const y = Math.round((next === "top" ? top : bottom) - origin.top);
-      // The status line keeps clear of a card at the top.
-      if (next === "top") style.setProperty("--guide-card-bottom", `${y + height}px`);
-      else style.removeProperty("--guide-card-bottom");
-      return next === was.at && y === was.y ? was : { at: next, y };
-    });
+    const y = Math.round(header + 12 - origin.top);
+    // The status line keeps clear of the card.
+    root.style.setProperty("--guide-card-bottom", `${y + el.offsetHeight}px`);
+    setPlace((was) => (was.at === "top" && y === was.y ? was : { at: "top", y }));
   }
 
   // The HUD around the card changes with the field (a unit panel comes and goes): place it again after each render.
@@ -816,34 +776,37 @@ export function GuideLayer({ guide }: { guide: Guide }) {
   });
 
   /** The card's commands, in order: what a click, a tap, a key or the pad's card cursor presses. */
-  type CardCommand = { id: string; label: string; run: () => void; tone?: "primary" | "warn"; glyph?: ReactNode };
+  type CardCommand = { id: string; slot: Slot; label: string; run: () => void; tone?: "primary" | "warn"; glyph?: ReactNode; title?: string };
   function cardCommands(): CardCommand[] {
     const view = guide.steps[guide.state.view];
     if (!view) return [];
     const closing = view === guide.steps[guide.steps.length - 1];
     const reading = guide.state.view < guide.state.index;
     const out: CardCommand[] = [];
+    const lessons = (): CardCommand => ({ id: "chapters", slot: "lessons", label: CARD.lessons, run: () => setMenu((m) => ({ ...m, list: !m.list, row: 0 })) });
+    // Each command has its own slot on the card, left to right: skip, lessons, back, then the one to press next.
     if (closing) {
-      guide.host.exits?.forEach((exit, i) =>
-        out.push({ id: `exit-${i}`, label: exit.label, run: exit.run, tone: i === 0 ? "primary" : undefined, glyph: i === 0 ? <Glyph action="confirm" pad="a" /> : undefined }),
-      );
-      if (guide.script.stages?.length) out.push({ id: "chapters", label: CARD.lessons, run: () => setMenu((m) => ({ ...m, list: !m.list, row: 0 })) });
+      const exits = guide.host.exits ?? [];
+      if (guide.script.stages?.length) out.push(lessons());
+      if (exits[1]) out.push({ id: "exit-1", slot: "back", label: exits[1].label, run: exits[1].run });
+      if (exits[0]) out.push({ id: "exit-0", slot: "primary", label: exits[0].label, run: exits[0].run, tone: "primary", glyph: <Glyph action="confirm" pad="a" /> });
       return out;
     }
+    out.push({ id: "skip", slot: "skip", label: armed ? CARD.leaveNow : CARD.skip, title: armed ? CARD.leave : undefined, run: () => (armed ? guide.skip() : setArmed(true)), tone: armed ? "warn" : undefined });
+    if (guide.script.stages?.length) out.push(lessons());
     if (guide.state.view > 0)
       out.push({
         id: "back",
+        slot: "back",
         label: CARD.back,
         run: () => guide.back(),
         glyph: input === "keys" ? <kbd className="hud-glyph" data-shape="key">⌫</kbd> : undefined,
       });
-    if (reading) out.push({ id: "next", label: guide.state.view + 1 === guide.state.index ? CARD.current : CARD.next, run: () => guide.forward() });
-    if (guide.script.stages?.length) out.push({ id: "chapters", label: CARD.lessons, run: () => setMenu((m) => ({ ...m, list: !m.list, row: 0 })) });
-    out.push({ id: "skip", label: armed ? CARD.leave : CARD.skip, run: () => (armed ? guide.skip() : setArmed(true)), tone: armed ? "warn" : undefined });
-    if (view.confirm && !reading)
-      out.push({ id: "continue", label: CARD.continue, run: () => guide.proceed(), tone: "primary", glyph: <Glyph action="confirm" pad="a" /> });
+    if (reading) out.push({ id: "next", slot: "primary", label: guide.state.view + 1 === guide.state.index ? CARD.current : CARD.next, run: () => guide.forward() });
+    else if (view.confirm)
+      out.push({ id: "continue", slot: "primary", label: CARD.continue, run: () => guide.proceed(), tone: "primary", glyph: <Glyph action="confirm" pad="a" /> });
     // A control lesson is never a wall: Next passes it however the player's hands are set up.
-    if (view.passable && !reading) out.push({ id: "pass", label: CARD.next, run: () => guide.proceed(), glyph: <Glyph action="confirm" pad="a" /> });
+    else if (view.passable) out.push({ id: "pass", slot: "primary", label: CARD.next, run: () => guide.proceed(), glyph: <Glyph action="confirm" pad="a" /> });
     return out;
   }
   const commandsRef = useRef<CardCommand[]>([]);
@@ -973,7 +936,6 @@ export function GuideLayer({ guide }: { guide: Guide }) {
   const reading = guide.state.view < guide.state.index;
   const total = guide.steps.length - 1;
   const ticks = !reading ? guide.ticks() : null;
-  const lines = copy ? copy.lines[input] : [];
   const commands = cardCommands();
   commandsRef.current = commands;
   // The lesson on view and where in it the step is.
@@ -988,6 +950,69 @@ export function GuideLayer({ guide }: { guide: Guide }) {
     audio.tone("click");
     fn();
   };
+  /** One step's text: the live one, or an unseen copy of it that only reserves room. */
+  const stepBody = (i: number, live: boolean) => {
+    const step = guide.steps[i];
+    const text = step && guide.script.copy[step.id];
+    if (!text) return null;
+    const stage = stageAt(guide.steps, i);
+    const last = i === guide.steps.length - 1;
+    return (
+      <div key={live ? "live" : step.id} className="guide-step" data-sizer={live ? undefined : true} aria-hidden={live ? undefined : true}>
+        <h2 className="guide-title">{text.title}</h2>
+        {text.lines[input].map((line, k) => (
+          <Line key={`${input}${k}`} text={line} />
+        ))}
+        {(live ? ticks : true) && text.ticks && (
+          <ul className="guide-ticks" aria-label={live ? "Progress" : undefined}>
+            {text.ticks.map((label, k) => (
+              <li key={label} data-done={(live && ticks?.[k]) || undefined}>
+                <i />
+                {label}
+              </li>
+            ))}
+          </ul>
+        )}
+        {!last && stage && guide.script.controls?.[stage] && (
+          <div className="guide-controls" aria-label={live ? "Controls" : undefined}>
+            {guide.script.controls[stage][input].map((line, k) => (
+              <Line key={`c${input}${k}`} text={line} />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+  /** The lessons to jump to: the live list, or an unseen one that reserves its room. */
+  const lessonList = (live: boolean) =>
+    guide.script.stages ? (
+      <ol key={live ? "lessons" : "lessons-size"} className="guide-chapters" data-sizer={live ? undefined : true} aria-hidden={live ? undefined : true} aria-label={live ? CARD.lessons : undefined}>
+        {lessonsOf(guide).map((c, i) => (
+          <li key={c.id}>
+            <button
+              type="button"
+              className="hud-bar-cmd"
+              tabIndex={live ? undefined : -1}
+              data-cursor={(live && menu.open && i === menu.row) || undefined}
+              data-current={c.current || undefined}
+              onClick={
+                live
+                  ? press(() => {
+                      setMenu({ open: false, index: 0, list: false, row: 0 });
+                      guide.jumpTo(c.id);
+                    })
+                  : undefined
+              }
+            >
+              <span>
+                {i + 1}. {c.title}
+              </span>
+              {c.done && <small className="guide-tag">{CARD.done}</small>}
+            </button>
+          </li>
+        ))}
+      </ol>
+    ) : null;
   const padOn = input === "pad";
   const gridButton = engineSettings().padCombat().grid;
 
@@ -1021,90 +1046,70 @@ export function GuideLayer({ guide }: { guide: Guide }) {
               )}
             </small>
             {reading && <small className="guide-tag">{CARD.earlier}</small>}
-          </header>
-          {ack && !reading && (
-            <p className="guide-ack" key={ack.at}>
-              <i />
-              {ack.text}
-            </p>
-          )}
-          <h2 className="guide-title">{copy.title}</h2>
-          {selectFirst && !reading && <p className="guide-line" data-tone="warn">{CARD.selectFirst(selectFirst)}</p>}
-          {heldTarget && !reading && !selectFirst && (
-            <p className="guide-line" data-tone="warn">
-              {CARD.heldTarget(heldTarget)}
-            </p>
-          )}
-          {lines.map((line, i) => (
-            <Line key={`${input}${i}`} text={line} />
-          ))}
-          {ticks && copy.ticks && (
-            <ul className="guide-ticks" aria-label="Progress">
-              {copy.ticks.map((label, i) => (
-                <li key={label} data-done={ticks[i] || undefined}>
-                  <i />
-                  {label}
-                </li>
-              ))}
-            </ul>
-          )}
-          {nudge && !reading && (
-            <p className="guide-nudge" key={guide.nudge?.at}>
-              <i className="hud-warn-mark" />
-              {nudge}
-            </p>
-          )}
-          {!closing && viewStage && guide.script.controls?.[viewStage] && (
-            <div className="guide-controls" aria-label="Controls">
-              {guide.script.controls[viewStage][input].map((line, i) => (
-                <Line key={`c${input}${i}`} text={line} />
-              ))}
-            </div>
-          )}
-          {menu.list && guide.script.stages && (
-            <ol className="guide-chapters" aria-label={CARD.lessons}>
-              {lessonsOf(guide).map((c, i) => (
-                <li key={c.id}>
-                  <button
-                    type="button"
-                    className="hud-bar-cmd"
-                    data-cursor={(menu.open && i === menu.row) || undefined}
-                    data-current={c.current || undefined}
-                    onClick={press(() => {
-                      setMenu({ open: false, index: 0, list: false, row: 0 });
-                      guide.jumpTo(c.id);
-                    })}
-                  >
-                    <span>
-                      {i + 1}. {c.title}
-                    </span>
-                    {c.done && <small className="guide-tag">{CARD.done}</small>}
-                  </button>
-                </li>
-              ))}
-            </ol>
-          )}
-          <div className="guide-commands">
             {padOn && gridButton && (
               <span className="guide-pad-hint" data-open={menu.open || undefined}>
                 <Glyph pad={gridButton} />
                 <span>{menu.open ? CARD.close : CARD.commands}</span>
               </span>
             )}
-            {commands.map((command, i) => (
-              <button
-                key={command.id}
-                type="button"
-                className={`hud-bar-cmd${command.id === "skip" ? " guide-skip" : ""}`}
-                data-tone={command.tone === "primary" ? "primary" : undefined}
-                data-armed={command.tone === "warn" || undefined}
-                data-cursor={(menu.open && !menu.list && i === menu.index) || undefined}
-                onClick={press(command.run)}
-              >
-                {command.glyph}
-                <span>{command.label}</span>
-              </button>
-            ))}
+          </header>
+          <div className="guide-body">
+            {/* Every step's text laid under the live one, unseen: the card is as tall as the longest and never resizes. */}
+            {guide.steps.map((_, i) => stepBody(i, false))}
+            {lessonList(false)}
+            <div className="guide-live" data-hidden={menu.list || undefined}>
+              {stepBody(guide.state.view, true)}
+            </div>
+            {menu.list && lessonList(true)}
+          </div>
+          <div className="guide-status" aria-live="polite">
+            {nudge && !reading ? (
+              <p className="guide-nudge" key={guide.nudge?.at}>
+                <i className="hud-warn-mark" />
+                {nudge}
+              </p>
+            ) : selectFirst && !reading ? (
+              <p className="guide-line" data-tone="warn">{CARD.selectFirst(selectFirst)}</p>
+            ) : heldTarget && !reading ? (
+              <p className="guide-line" data-tone="warn">
+                {CARD.heldTarget(heldTarget)}
+              </p>
+            ) : ack && !reading ? (
+              <p className="guide-ack" key={ack.at}>
+                <i />
+                {ack.text}
+              </p>
+            ) : null}
+          </div>
+          <div className="guide-commands">
+            {SLOTS.map((slot) => {
+              const command = commands.find((c) => c.slot === slot);
+              if (!command) {
+                if (slot !== "back" && slot !== "primary") return <span key={slot} className="guide-slot" data-slot={slot} />;
+                return (
+                  <button key={slot} type="button" className="hud-bar-cmd guide-slot" data-slot={slot} disabled>
+                    <span>{slot === "back" ? CARD.back : CARD.next}</span>
+                  </button>
+                );
+              }
+              const i = commands.indexOf(command);
+              return (
+                <button
+                  key={slot}
+                  type="button"
+                  className="hud-bar-cmd guide-slot"
+                  data-slot={slot}
+                  data-tone={command.tone === "primary" ? "primary" : undefined}
+                  data-armed={command.tone === "warn" || undefined}
+                  data-cursor={(menu.open && !menu.list && i === menu.index) || undefined}
+                  title={command.title}
+                  onClick={press(command.run)}
+                >
+                  {command.glyph}
+                  <span>{command.label}</span>
+                </button>
+              );
+            })}
           </div>
         </aside>
       )}
