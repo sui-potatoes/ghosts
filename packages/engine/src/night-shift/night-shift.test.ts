@@ -4,9 +4,9 @@
 /**
  * Night Shift as shipped (`level.json`, `chain.ts`): the file
  * reads whole and its chain copy is pinned; buildings are sealed rings round
- * empty interiors; every door is an open edge; the ground has two levels, the
- * roadway and everything else; every walkable tile can be reached; and the
- * opening move gives nobody a shot.
+ * empty interiors; the store has its doors; the ground has two levels, the
+ * roadway and everything else; and the opening move gives nobody a shot.
+ * Reachability, doors and the rest of the layout rules are `layout-checks`.
  */
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -86,24 +86,9 @@ test("no line of sight slips through a building: its interior could be solid and
   assert.ok(pairs > 40000);
 });
 
-test("every door is an open edge: no cover across it, a step through it", () => {
+test("the store has its doors: front, road side, back and staff (each one's step and cover are `layout-checks`' door rule)", () => {
   const doors = level.placements.filter((p) => ["u05", "u21", "o17", "o18"].includes(p.asset));
   assert.ok(doors.length >= 4, "front, road side, back and staff doors");
-  const ground = new ChainGround({ tiles, minX: 0, minZ: 0 });
-  for (const p of doors) {
-    const [a, b] = edgeCells(p.at, p.turn);
-    for (const c of [a, b]) assert.ok(["empty", "cover"].includes(tile(c)!.t), `door ${p.asset} at ${p.at} opens onto ${c}`);
-    assert.ok(ground.step(a, b) && ground.step(b, a), `a unit walks through ${p.asset} at ${p.at}`);
-    // a door adds nothing: the edge carries no side but what the walls beside it give
-    const sides = (c: Cell) => {
-      const t = tile(c)!;
-      return t.t === "cover" ? t.sides : [0, 0, 0, 0];
-    };
-    const [dx, dz] = [b[0] - a[0], b[1] - a[1]];
-    const out = dz < 0 ? 1 : dz > 0 ? 3 : dx < 0 ? 0 : 2; // [left, top, right, bottom]
-    assert.equal(sides(a)[out], 0, `no cover on ${a} across ${p.asset}`);
-    assert.equal(sides(b)[(out + 2) % 4], 0, `no cover on ${b} across ${p.asset}`);
-  }
 });
 
 test("two ground levels: the roadway, and everything else at pavement height", () => {
@@ -122,30 +107,6 @@ test("two ground levels: the roadway, and everything else at pavement height", (
   }
   // no kerb pieces: the raised pavement slab shows its own side face at the road edge
   assert.equal(level.placements.filter((p) => p.asset === "u64" || p.asset === "u65").length, 0);
-});
-
-test("every walkable tile can be reached from both deployments", () => {
-  const scenario = nightShiftScenario(level);
-  const ground = new ChainGround(scenario.ground!);
-  const { minX, minZ } = scenario.ground!;
-  const standable = (c: Cell) => ["empty", "cover"].includes(tile(c)?.t ?? "");
-  for (const side of ["a", "b"] as const) {
-    const seen = new Set([key(level.spawns[side][0])]);
-    const queue: Cell[] = [level.spawns[side][0]];
-    while (queue.length) {
-      const c = queue.shift()!;
-      for (const [dx, dz] of N4) {
-        const n: Cell = [c[0] + dx, c[1] + dz];
-        if (!inside(n) || seen.has(key(n)) || tile(n)!.t === "wall" || tile(n)!.t === "unwalkable") continue;
-        if (!ground.step([c[0] + minX, c[1] + minZ], [n[0] + minX, n[1] + minZ])) continue;
-        seen.add(key(n));
-        queue.push(n);
-      }
-    }
-    tiles.forEach((row, z) => row.forEach((_, x) => {
-      if (standable([x, z])) assert.ok(seen.has(key([x, z])), `${x},${z} cannot be reached from side ${side}`);
-    }));
-  }
 });
 
 test("the opening move gives nobody a shot or a grenade, at four a side", () => {
